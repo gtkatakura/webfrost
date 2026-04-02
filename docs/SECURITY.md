@@ -11,7 +11,7 @@ and the Content-Security-Policy policy for the HTTP server.
 ## Content-Security-Policy (CSP)
 
 The `@webfrost/server` package does **not** currently set a `Content-Security-Policy` response
-header. Until [WEB-46](/WEB/issues/WEB-46) (server CSP hardening) is resolved, operators **must**
+header. Until [WEB-49](/WEB/issues/WEB-49) (server CSP hardening) is resolved, operators **must**
 apply the header at the reverse-proxy layer.
 
 ### Recommended policy for the API + UI server
@@ -49,7 +49,7 @@ add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
 ## SSRF (Server-Side Request Forgery)
 
-**Status: unmitigated — see [WEB-47](/WEB/issues/WEB-47)**
+**Status: unmitigated — see [WEB-48](/WEB/issues/WEB-48)**
 
 `packages/core/src/pipeline.ts` calls `fetch(url)` with the raw user-supplied URL. There is
 currently **no blocklist for private, loopback, link-local, or cloud metadata addresses**.
@@ -62,7 +62,7 @@ POST /api/snapshots { "url": "http://169.254.169.254/latest" }   # AWS/GCP metad
 POST /api/snapshots { "url": "http://10.0.0.1:22" }              # Internal SSH
 ```
 
-### Mitigation (to be implemented in WEB-47)
+### Mitigation (to be implemented in WEB-48)
 
 Before calling `fetch()`, resolve the hostname and reject requests whose IP falls within:
 
@@ -87,13 +87,13 @@ archive intranet content.
 
 - **Server** (`POST /api/snapshots`): validates `http:`/`https:` protocol — no SSRF check yet.
 - **CLI** (`webfrost add <url>`): passes URL directly to `addUrl()` without any validation.
-  See [WEB-48](/WEB/issues/WEB-48).
+  See [WEB-50](/WEB/issues/WEB-50).
 
 ### Path / extractor parameter
 
 `GET /api/snapshots/:id/archives/:extractor/download` — the `extractor` path segment is passed to
 SQLite as a parameter (preventing injection) but is **not validated** against the known set of
-extractor names (`html`, `warc`, `pdf`, `readability`). See [WEB-49](/WEB/issues/WEB-49).
+extractor names (`html`, `warc`, `pdf`, `readability`). See [WEB-51](/WEB/issues/WEB-51).
 
 File paths stored in `archive_results.content` for WARC and PDF extractors are passed to
 `Bun.file()` without verifying the path is within the expected `snapshots/` directory.

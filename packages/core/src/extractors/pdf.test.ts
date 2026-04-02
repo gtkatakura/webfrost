@@ -3,8 +3,18 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Page } from "playwright";
 import { openDb } from "../db";
 import { pdfExtractor } from "./pdf";
+
+/** Minimal Page stub whose pdf() always throws (simulates Playwright unavailable). */
+function makeFailingPage(): Page {
+  return {
+    pdf: async () => {
+      throw new Error("Playwright unavailable (stub)");
+    },
+  } as unknown as Page;
+}
 
 let testDir: string;
 let db: Database;
@@ -26,21 +36,18 @@ afterEach(() => {
 });
 
 describe("pdfExtractor", () => {
-  test("does not throw when Playwright is unavailable (graceful degradation)", async () => {
-    // We can't mock the import, but we can at least verify pdfExtractor doesn't crash the pipeline
-    // when invoked against an unreachable URL (Playwright would fail to load the page)
+  test("does not throw when page.pdf() fails (graceful degradation)", async () => {
     const snapshotDir = join(testDir, "snapshots", "1");
+    const page = makeFailingPage();
 
-    // Expect no throw even if Playwright isn't installed / page fails to load
-    await expect(
-      pdfExtractor(db, 1, "http://localhost:19998/unreachable", snapshotDir),
-    ).resolves.toBeUndefined();
+    await expect(pdfExtractor(db, 1, snapshotDir, page)).resolves.toBeUndefined();
   });
 
   test("does not insert archive_result row when extraction fails", async () => {
     const snapshotDir = join(testDir, "snapshots", "1");
+    const page = makeFailingPage();
 
-    await pdfExtractor(db, 1, "http://localhost:19998/unreachable", snapshotDir);
+    await pdfExtractor(db, 1, snapshotDir, page);
 
     const rows = db
       .query<{ extractor: string }, []>(

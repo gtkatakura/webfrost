@@ -61,7 +61,7 @@ auth is assumed.
 - **Threats:**
   - **SSRF (critical):** Attacker supplies a private/loopback IP or cloud metadata URL. The
     server fetches it and stores the response. No IP blocklist exists today.
-    *Tracking: [WEB-47](/WEB/issues/WEB-47)*
+    *Tracking: [WEB-48](/WEB/issues/WEB-48)*
   - **Amplification / DoS:** Attacker supplies a URL pointing to a large file. `fetch()` has no
     response size cap; memory exhaustion is possible.
   - **Open redirect follow-through:** `fetch()` follows 3xx redirects. A redirect chain can
@@ -89,14 +89,14 @@ auth is assumed.
   - **Parameter injection:** `extractor` is not validated against the known set. An attacker
     supplying an unexpected value gets an empty response, but this should be hardened with an
     allowlist.
-    *Tracking: [WEB-49](/WEB/issues/WEB-49)*
+    *Tracking: [WEB-51](/WEB/issues/WEB-51)*
   - **Path traversal (indirect):** For `warc` and `pdf` extractors the stored `content` column
     is a filesystem path passed directly to `Bun.file()`. If the pipeline is compromised or a
     row is manually crafted, a path outside `snapshots/` could be served.
   - **Stored XSS (latent):** The `html` extractor stores verbatim HTML. It is currently served
     only as a download. If a future "preview" feature serves it inline without a sandboxed
     context, any script in the archived page executes in the origin of the WebFrost server.
-    *Tracking: [WEB-46](/WEB/issues/WEB-46)*
+    *Tracking: [WEB-49](/WEB/issues/WEB-49)*
 
 ### 4. CLI — `webfrost add <url>`
 
@@ -104,7 +104,7 @@ auth is assumed.
 - **Threats:**
   - **No client-side URL validation:** An invalid or non-HTTP URL (e.g. `file:///etc/passwd`)
     is passed to `addUrl()` which calls `fetch()`. On the CLI path there is no protocol check.
-    *Tracking: [WEB-48](/WEB/issues/WEB-48)*
+    *Tracking: [WEB-50](/WEB/issues/WEB-50)*
 
 ### 5. Static file serving (`public/`)
 
@@ -127,13 +127,13 @@ auth is assumed.
 
 | Risk | Severity | Status | Issue |
 |------|----------|--------|-------|
-| SSRF via bare `fetch()` | Critical | **Open** | [WEB-47](/WEB/issues/WEB-47) |
-| No CSP header on server responses | High | **Open** | [WEB-46](/WEB/issues/WEB-46) |
-| No URL validation in CLI | Medium | **Open** | [WEB-48](/WEB/issues/WEB-48) |
-| Extractor param not allowlisted | Medium | **Open** | [WEB-49](/WEB/issues/WEB-49) |
-| No response size cap | Medium | **Open** | (file via WEB-47) |
-| Redirect follow-through SSRF | Medium | **Open** | (file via WEB-47) |
-| Stored XSS (latent — downloads only) | Low/High* | **Latent** | [WEB-46](/WEB/issues/WEB-46) |
+| SSRF via bare `fetch()` | Critical | **Open** | [WEB-48](/WEB/issues/WEB-48) |
+| No CSP header on server responses | High | **Open** | [WEB-49](/WEB/issues/WEB-49) |
+| No URL validation in CLI | Medium | **Open** | [WEB-50](/WEB/issues/WEB-50) |
+| Extractor param not allowlisted | Medium | **Open** | [WEB-51](/WEB/issues/WEB-51) |
+| No response size cap | Medium | **Open** | (file via WEB-48) |
+| Redirect follow-through SSRF | Medium | **Open** | (file via WEB-48) |
+| Stored XSS (latent — downloads only) | Low/High* | **Latent** | [WEB-49](/WEB/issues/WEB-49) |
 | Chromium `--no-sandbox` risk | Medium | Monitor | deployment config |
 | DB file permissions | Low | Ops | docs/DEPLOY.md |
 
