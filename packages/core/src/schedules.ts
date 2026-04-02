@@ -56,12 +56,16 @@ export function markScheduleRun(db: Database, id: number, cron: string): void {
   const now = new Date();
   const nowIso = now.toISOString().replace("T", " ").slice(0, 19);
 
-  // Advance from the current next_run_at so we always move to the period
-  // after the one that just fired, even if we're still within that window.
+  // Advance from max(now, current_next_run_at) so that:
+  // - if the schedule ran on time (next_run_at ≥ now), we skip the current
+  //   cron window rather than landing on the same slot again;
+  // - if the schedule was overdue (next_run_at < now), we advance from now
+  //   so the new next_run_at is a near-future time.
   const row = db
     .query<{ next_run_at: string }, [number]>("SELECT next_run_at FROM schedules WHERE id = ?")
     .get(id);
-  const advanceFrom = row ? new Date(`${row.next_run_at.replace(" ", "T")}Z`) : now;
+  const prevNext = row ? new Date(`${row.next_run_at.replace(" ", "T")}Z`) : now;
+  const advanceFrom = prevNext > now ? prevNext : now;
   const nextRun = nextCronDate(cron, advanceFrom);
   const nextRunIso = nextRun.toISOString().replace("T", " ").slice(0, 19);
 
