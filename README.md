@@ -118,6 +118,23 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) if it exists, or open an issue with quest
 
 ---
 
+## Roadmap
+
+WebFrost is under active development. See [ROADMAP.md](./ROADMAP.md) for the full feature roadmap and ArchiveBox comparison.
+
+**Near-term highlights (P0/P1):**
+- Full-text search (FTS5 + Sonic backends)
+- Screenshot extractor (PNG)
+- SingleFile extractor (self-contained HTML)
+- Media extraction via yt-dlp
+- RSS feed auto-import
+- Browser extension (Chrome/Firefox)
+- Tag-based organization
+- API authentication (bearer tokens)
+- S3/remote storage backend
+
+---
+
 ## Releasing
 
 See [docs/RELEASE.md](docs/RELEASE.md) for the full release process and [docs/VERSIONING.md](docs/VERSIONING.md) for the version bump policy.
