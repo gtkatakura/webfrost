@@ -6,7 +6,7 @@
   "scripts": {
     "build": "bun run --filter '*' build",
     "test": "bun run --filter '*' test",
-    "bench": "bun run --filter '*' bench",
+    "bench": "bun run --filter '*' bench && bun bench/page-load.ts",
     "lint": "biome check .",
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -16,6 +16,7 @@
     "@biomejs/biome": "^1.9.4",
     "bun-types": "^1.3.11",
     "lefthook": "^2.1.4",
+    "playwright": "^1.59.1",
     "typescript": "^5.7.3"
   }
 }
