@@ -109,6 +109,7 @@ function SnapshotRow({ snapshot }: { snapshot: Snapshot }) {
         overflow: "hidden",
       }}
     >
+      {/* Use a button for keyboard-accessible row toggling */}
       <button
         type="button"
         style={{
