@@ -38,22 +38,29 @@ export async function runPipeline(
   // Use the provided shared cache, or create a one-shot cache for this run
   const fetchCache = cache ?? new FetchCache();
 
+  function markFailed() {
+    try {
+      db.query<null, [number]>("UPDATE snapshots SET status = 'failed' WHERE id = ?").run(
+        snapshotId,
+      );
+      db.query<null, [number]>("UPDATE job_queue SET status = 'failed' WHERE snapshot_id = ?").run(
+        snapshotId,
+      );
+    } catch {
+      // DB unavailable (e.g. closed after test cleanup) — best effort
+    }
+  }
+
   let cached: Awaited<ReturnType<FetchCache["get"]>>;
   try {
     cached = await fetchCache.get(url);
   } catch {
-    db.query<null, [number]>("UPDATE snapshots SET status = 'failed' WHERE id = ?").run(snapshotId);
-    db.query<null, [number]>("UPDATE job_queue SET status = 'failed' WHERE snapshot_id = ?").run(
-      snapshotId,
-    );
+    markFailed();
     return;
   }
 
   if (!cached.status || cached.status >= 400) {
-    db.query<null, [number]>("UPDATE snapshots SET status = 'failed' WHERE id = ?").run(snapshotId);
-    db.query<null, [number]>("UPDATE job_queue SET status = 'failed' WHERE snapshot_id = ?").run(
-      snapshotId,
-    );
+    markFailed();
     return;
   }
 
@@ -87,10 +94,14 @@ export async function runPipeline(
     await browser?.close();
   }
 
-  db.query<null, [number]>("UPDATE snapshots SET status = 'done' WHERE id = ?").run(snapshotId);
-  db.query<null, [number]>("UPDATE job_queue SET status = 'done' WHERE snapshot_id = ?").run(
-    snapshotId,
-  );
+  try {
+    db.query<null, [number]>("UPDATE snapshots SET status = 'done' WHERE id = ?").run(snapshotId);
+    db.query<null, [number]>("UPDATE job_queue SET status = 'done' WHERE snapshot_id = ?").run(
+      snapshotId,
+    );
+  } catch {
+    // DB unavailable — best effort
+  }
 }
 
 /** Convenience: create a snapshot and run the full pipeline synchronously. */

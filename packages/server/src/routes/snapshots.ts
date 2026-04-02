@@ -49,13 +49,17 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       let snapshotId: number;
       try {
         snapshotId = createSnapshot(db, url);
-        // Fire and forget — do not await so the HTTP response returns immediately
-        runPipeline(db, snapshotId, url, getWebfrostDir()).catch((err: unknown) => {
-          console.error("[pipeline] error for snapshot", snapshotId, err);
-        });
       } finally {
         db.close();
       }
+
+      // Fire and forget with its own DB connection so the request DB can close immediately
+      const pipelineDb = getDb();
+      runPipeline(pipelineDb, snapshotId, url, getWebfrostDir())
+        .catch((err: unknown) => {
+          console.error("[pipeline] error for snapshot", snapshotId, err);
+        })
+        .finally(() => pipelineDb.close());
 
       set.status = 202;
       return { id: snapshotId, url, status: "pending" };
