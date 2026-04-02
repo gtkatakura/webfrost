@@ -7,7 +7,7 @@
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target bun",
     "test": "bun test",
-    "bench": "bun bench src/**/*.bench.ts || true"
+    "benchmarks": "bun bench src/**/*.bench.ts"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
