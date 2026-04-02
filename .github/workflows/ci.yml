@@ -42,7 +42,7 @@ jobs:
         run: bun run typecheck
 
       - name: Test
-        run: bun test
+        run: bun run test
 
       - name: Cache Playwright browsers
         id: playwright-cache
