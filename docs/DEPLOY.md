@@ -10,11 +10,11 @@ File: `.github/workflows/ci.yml`
 
 | Step | Command | Notes |
 |------|---------|-------|
-| Install deps | `bun install --frozen-lockfile` | Bun dep cache keyed on `bun.lockb` |
+| Install deps | `bun install --frozen-lockfile` | Bun dep cache keyed on `bun.lock` |
 | Lint | `bun run lint` | Biome check |
 | Typecheck | `bun run typecheck` | `tsc --noEmit` |
 | Test | `bun test` | All workspace packages |
-| Playwright browsers | `bunx playwright install --with-deps chromium` | Cached per `bun.lockb` hash |
+| Playwright browsers | `bunx playwright install --with-deps chromium` | Cached per `bun.lock` hash |
 | Bench (PR) | `bun run bench` | 5-min timeout, `continue-on-error: true` |
 | Bench (main) | `bun run bench` | Full suite, results uploaded as artifact |
 
@@ -26,47 +26,81 @@ File: `.github/workflows/ci.yml`
 
 ### 1. Docker → GitHub Container Registry (GHCR)
 
-**Target:** `ghcr.io/<org>/webfrost/server`
+**Image:** `ghcr.io/<org>/webfrost/server`
 
-**Trigger:** Push a semver tag (e.g. `v0.1.0`) or run `release.yml` manually with target `docker-ghcr`.
+**Triggers:**
+- Push a semver tag (e.g. `v0.1.0`) — tags image as `v<semver>`, `<major>.<minor>`, and `sha-<sha>`.
+- Merge to `main` — tags image as `latest` and `sha-<sha>`.
+- Manual dispatch in GitHub Actions with target `docker-ghcr`.
 
 **Steps (automated via `.github/workflows/release.yml`):**
 
 1. CI gate passes (lint, typecheck, test).
 2. GHCR login via `GITHUB_TOKEN` (no extra secret needed).
-3. Docker image built from `packages/server/Dockerfile`.
-4. Tagged as `v<semver>`, `<major>.<minor>`, and `sha-<sha>`.
-5. Layer cache via GitHub Actions cache (`cache-from/to: type=gha`).
+3. Docker image built from `packages/server/Dockerfile` (multi-stage: UI → server → runtime).
+4. Layer cache via GitHub Actions cache (`cache-from/to: type=gha`).
 
-**To release a new server image:**
+**Dockerfile stages:**
+
+| Stage | Base | What it does |
+|-------|------|--------------|
+| `ui-builder` | `oven/bun:1` | Builds `@webfrost/ui` with Vite → `packages/ui/dist/` |
+| `server-builder` | `oven/bun:1` | Builds `@webfrost/core` + `@webfrost/server` → `packages/server/dist/` |
+| runtime | `oven/bun:1-slim` | Copies `dist/` (server bundle) and `public/` (UI assets) |
+
+**To release a versioned image:**
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-**Required files (to be created by Engineer):**
-- `packages/server/Dockerfile` — multi-stage Bun image
+**To deploy latest from main:** just merge to `main` — CI gate + Docker push run automatically.
 
-**Suggested Dockerfile pattern:**
+**Pulling the image:**
 
-```dockerfile
-FROM oven/bun:1 AS builder
-WORKDIR /app
-COPY package.json bun.lockb ./
-COPY packages/core/package.json packages/core/
-COPY packages/server/package.json packages/server/
-RUN bun install --frozen-lockfile
-COPY . .
-RUN bun run build --filter @webfrost/server
+```bash
+# Latest from main
+docker pull ghcr.io/<org>/webfrost/server:latest
 
-FROM oven/bun:1-slim
-WORKDIR /app
-COPY --from=builder /app/packages/server/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-EXPOSE 3000
-CMD ["bun", "dist/index.js"]
+# Pinned version
+docker pull ghcr.io/<org>/webfrost/server:v0.1.0
 ```
+
+**Running the container:**
+
+```bash
+docker run -d \
+  -p 3000:3000 \
+  -e WEBFROST_DIR=/data \
+  -v /path/to/local/data:/data \
+  ghcr.io/<org>/webfrost/server:latest
+```
+
+**Environment variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3000` | HTTP port the server listens on |
+| `WEBFROST_DIR` | `~/.webfrost` | Directory for SQLite database and archive files |
+
+**Volume mounts:**
+
+| Container path | Purpose |
+|----------------|---------|
+| `/data` (or your `WEBFROST_DIR`) | Persists the SQLite database (`webfrost.db`) and snapshot archive files across container restarts |
+
+> **Important:** always mount a volume for `WEBFROST_DIR`. Without it, all snapshots are lost when the container stops.
+
+**API endpoints (served alongside UI):**
+
+| Route | Description |
+|-------|-------------|
+| `GET /` | React UI (served as static files) |
+| `GET /health` | Health check — returns `{"status":"ok"}` |
+| `POST /api/snapshots` | Submit a URL for archiving |
+| `GET /api/snapshots` | List all snapshots |
+| `GET /api/snapshots/:id` | Get snapshot detail |
 
 ---
 

@@ -1,11 +1,13 @@
 name: Release
 
-# Triggered manually or on version tags.
+# Triggered on version tags, merges to main, or manually.
 # See docs/DEPLOY.md for full deploy path documentation.
 on:
   push:
     tags:
       - "v*.*.*"
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       target:
@@ -39,7 +41,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
           restore-keys: |
             ${{ runner.os }}-bun-
       - run: bun install --frozen-lockfile
@@ -79,6 +81,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
