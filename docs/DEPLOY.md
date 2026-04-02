@@ -67,7 +67,27 @@ docker pull ghcr.io/<org>/webfrost/server:latest
 docker pull ghcr.io/<org>/webfrost/server:v0.1.0
 ```
 
-**Running the container:**
+**Running with Docker Compose (recommended):**
+
+A production-ready Compose file is at `docker-compose.prod.yml`. It mounts a named volume, sets `WEBFROST_DIR=/data`, and configures a health-check.
+
+```bash
+# Copy and customise env vars
+cp .env.example .env
+# Edit .env as needed, then start
+docker compose -f docker-compose.prod.yml up -d
+# Verify health
+curl http://localhost:3000/health
+# {"status":"ok"}
+```
+
+To pull a specific version, set `IMAGE_TAG` before starting:
+
+```bash
+IMAGE_TAG=v0.1.0 docker compose -f docker-compose.prod.yml up -d
+```
+
+**Running the container (single docker run):**
 
 ```bash
 docker run -d \
@@ -83,6 +103,14 @@ docker run -d \
 |----------|---------|-------------|
 | `PORT` | `3000` | HTTP port the server listens on |
 | `WEBFROST_DIR` | `~/.webfrost` | Directory for SQLite database and archive files |
+
+See `.env.example` at the repo root for a template. Never commit `.env` to version control.
+
+**Secrets handling:**
+
+- Do not store secrets in the image or the Compose file.
+- Inject runtime values via environment variables or Docker secrets.
+- For CI/CD, use GitHub Actions repository secrets (Settings → Secrets).
 
 **Volume mounts:**
 
@@ -101,6 +129,65 @@ docker run -d \
 | `POST /api/snapshots` | Submit a URL for archiving |
 | `GET /api/snapshots` | List all snapshots |
 | `GET /api/snapshots/:id` | Get snapshot detail |
+
+---
+
+---
+
+## Backup and Restore
+
+WebFrost state lives in two places inside `WEBFROST_DIR` (default `/data` in Docker):
+
+| Path | Contents |
+|------|----------|
+| `webfrost.db` | SQLite database — snapshot metadata, extractor results |
+| `snapshots/` | Archive files (WARC, PDF, readability JSON) |
+
+### Backup
+
+```bash
+# Stop the container first (or use SQLite online-backup via sqlite3 CLI)
+docker compose -f docker-compose.prod.yml stop
+
+# Back up to a timestamped tarball
+tar -czf "webfrost-backup-$(date +%Y%m%d-%H%M%S).tar.gz" \
+  -C /var/lib/docker/volumes/webfrost_webfrost_data/_data .
+
+# Restart
+docker compose -f docker-compose.prod.yml start
+```
+
+> **Hot backup (no downtime):** Use SQLite's `.backup` command to copy `webfrost.db` online:
+> ```bash
+> sqlite3 /data/webfrost.db ".backup /backups/webfrost-$(date +%Y%m%d).db"
+> ```
+> Then copy the `snapshots/` directory separately.
+
+### Restore
+
+```bash
+# Stop container
+docker compose -f docker-compose.prod.yml stop
+
+# Extract backup into the volume
+tar -xzf webfrost-backup-20240101-120000.tar.gz \
+  -C /var/lib/docker/volumes/webfrost_webfrost_data/_data
+
+# Start container and verify
+docker compose -f docker-compose.prod.yml start
+curl http://localhost:3000/health
+curl http://localhost:3000/api/snapshots
+```
+
+**Smoke-test after restore:** confirm the `GET /health` endpoint returns `{"status":"ok"}` and `GET /api/snapshots` returns your historical snapshot list.
+
+### Scheduled backups
+
+Example cron entry (backs up nightly at 2 AM, keeps 7 days):
+
+```cron
+0 2 * * * sqlite3 /data/webfrost.db ".backup /backups/webfrost-$(date +\%Y\%m\%d).db" && find /backups -name 'webfrost-*.db' -mtime +7 -delete
+```
 
 ---
 
