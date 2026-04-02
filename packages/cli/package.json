@@ -1,0 +1,16 @@
+{
+  "name": "@webfrost/cli",
+  "version": "0.0.0",
+  "private": true,
+  "bin": {
+    "webfrost": "src/index.ts"
+  },
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "test": "bun test",
+    "bench": "echo 'no benchmarks'"
+  },
+  "dependencies": {
+    "@webfrost/core": "workspace:*"
+  }
+}
