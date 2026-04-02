@@ -14,6 +14,10 @@ git clone https://github.com/<org>/webfrost.git
 cd webfrost
 bun install
 
+# Create the data directory and initialize the archive
+mkdir -p ./data
+WEBFROST_DIR=./data bun run packages/cli/src/index.ts init
+
 # Archive a URL
 WEBFROST_DIR=./data bun run packages/cli/src/index.ts add https://example.com
 
@@ -24,6 +28,7 @@ WEBFROST_DIR=./data bun run packages/cli/src/index.ts list
 Or run the server with UI:
 
 ```bash
+mkdir -p ./data
 WEBFROST_DIR=./data bun run packages/server/src/index.ts
 # Open http://localhost:3000
 ```
@@ -66,6 +71,7 @@ webfrost list                              List all snapshots
 webfrost schedule add <url> --cron <expr>  Add a recurring archive schedule
 webfrost schedule list                     List all schedules
 webfrost schedule remove <id>             Remove a schedule
+webfrost schedule worker                   Run a background worker that polls and executes due schedules
 
 webfrost import <file>                     Bulk import URLs from a plain-text, OPML, or
                                            Netscape bookmark HTML file
@@ -75,7 +81,7 @@ webfrost import <file>                     Bulk import URLs from a plain-text, O
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WEBFROST_DIR` | `~/.webfrost` | Directory for the SQLite database and archive files |
+| `WEBFROST_DIR` | `.` (CLI) / `~/.webfrost` (server) | Directory for the SQLite database and archive files |
 
 ---
 
