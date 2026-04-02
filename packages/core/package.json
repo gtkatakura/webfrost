@@ -7,7 +7,7 @@
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target bun",
     "test": "bun test",
-    "benchmarks": "bun bench src/**/*.bench.ts"
+    "benchmarks": "bun run src/extractors/readability.bench.ts && bun run src/extractors/warc.bench.ts"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
@@ -15,6 +15,7 @@
     "playwright": "^1.59.1"
   },
   "devDependencies": {
-    "@types/jsdom": "^28.0.1"
+    "@types/jsdom": "^28.0.1",
+    "mitata": "^1.0.0"
   }
 }

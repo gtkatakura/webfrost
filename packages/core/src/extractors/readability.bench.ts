@@ -1,9 +1,7 @@
-// bench and run are injected by `bun bench`
-declare function bench(name: string, fn: () => unknown): void;
-declare function run(): Promise<void>;
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { bench, run } from "mitata";
 import { openDb } from "../db";
 import { readabilityExtractor } from "./readability";
 

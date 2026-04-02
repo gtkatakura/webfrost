@@ -15,6 +15,6 @@
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target browser --dts",
     "test": "bun test",
-    "benchmarks": "bun bench src/client.bench.ts"
+    "benchmarks": "bun run src/client.bench.ts"
   }
 }
