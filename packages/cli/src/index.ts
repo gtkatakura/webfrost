@@ -18,7 +18,7 @@ switch (command) {
       process.exit(1);
     }
     const db = openDb(archiveDir);
-    await addUrl(db, url);
+    await addUrl(db, url, archiveDir);
     db.close();
     break;
   }
