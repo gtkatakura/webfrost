@@ -24,6 +24,14 @@ export function openDb(dir: string): Database {
       status TEXT NOT NULL DEFAULT 'pending',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS schedules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      url TEXT NOT NULL,
+      cron TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_run_at TEXT,
+      next_run_at TEXT NOT NULL
+    );
   `);
   return db;
 }

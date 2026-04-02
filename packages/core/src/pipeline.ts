@@ -5,6 +5,7 @@ import { htmlExtractor } from "./extractors/html";
 import { pdfExtractor } from "./extractors/pdf";
 import { readabilityExtractor } from "./extractors/readability";
 import { warcExtractor } from "./extractors/warc";
+import { FetchCache } from "./fetch-cache";
 
 /** Insert a snapshot row and enqueue a job. Returns the new snapshot id. */
 export function createSnapshot(db: Database, url: string): number {
@@ -29,13 +30,17 @@ export async function runPipeline(
   snapshotId: number,
   url: string,
   dir: string,
+  cache?: FetchCache,
 ): Promise<void> {
   const snapshotDir = join(dir, "snapshots", String(snapshotId));
   await mkdir(snapshotDir, { recursive: true });
 
-  let response: Response;
+  // Use the provided shared cache, or create a one-shot cache for this run
+  const fetchCache = cache ?? new FetchCache();
+
+  let cached: Awaited<ReturnType<FetchCache["get"]>>;
   try {
-    response = await fetch(url);
+    cached = await fetchCache.get(url);
   } catch {
     db.query<null, [number]>("UPDATE snapshots SET status = 'failed' WHERE id = ?").run(snapshotId);
     db.query<null, [number]>("UPDATE job_queue SET status = 'failed' WHERE snapshot_id = ?").run(
@@ -44,7 +49,7 @@ export async function runPipeline(
     return;
   }
 
-  if (!response.ok) {
+  if (!cached.status || cached.status >= 400) {
     db.query<null, [number]>("UPDATE snapshots SET status = 'failed' WHERE id = ?").run(snapshotId);
     db.query<null, [number]>("UPDATE job_queue SET status = 'failed' WHERE snapshot_id = ?").run(
       snapshotId,
@@ -52,16 +57,35 @@ export async function runPipeline(
     return;
   }
 
-  const html = await response.text();
-  const { headers, status, statusText } = response;
+  const { html, headers, status, statusText } = cached;
 
-  // Run all extractors in parallel — partial failure is non-fatal
-  await Promise.allSettled([
-    htmlExtractor(db, snapshotId, html),
-    warcExtractor(db, snapshotId, url, headers, status, statusText, html, snapshotDir),
-    readabilityExtractor(db, snapshotId, url, html),
-    pdfExtractor(db, snapshotId, url, snapshotDir),
-  ]);
+  // Launch Playwright once for all Playwright-dependent extractors.
+  // A single page.goto() is shared — no duplicate browser navigations per snapshot.
+  let page: import("playwright").Page | undefined;
+  let browser: import("playwright").Browser | undefined;
+  try {
+    const pw = await import("playwright");
+    browser = await pw.chromium.launch();
+    page = await browser.newPage();
+    await page.goto(url, { timeout: 30_000, waitUntil: "load" });
+  } catch {
+    // Playwright unavailable or navigation failed — PDF will be skipped
+    await browser?.close();
+    browser = undefined;
+    page = undefined;
+  }
+
+  try {
+    // Run all extractors in parallel — partial failure is non-fatal
+    await Promise.allSettled([
+      htmlExtractor(db, snapshotId, html),
+      warcExtractor(db, snapshotId, url, headers, status, statusText, html, snapshotDir),
+      readabilityExtractor(db, snapshotId, url, html),
+      page ? pdfExtractor(db, snapshotId, snapshotDir, page) : Promise.resolve(),
+    ]);
+  } finally {
+    await browser?.close();
+  }
 
   db.query<null, [number]>("UPDATE snapshots SET status = 'done' WHERE id = ?").run(snapshotId);
   db.query<null, [number]>("UPDATE job_queue SET status = 'done' WHERE snapshot_id = ?").run(
