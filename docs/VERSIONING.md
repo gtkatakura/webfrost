@@ -2,6 +2,10 @@
 
 WebFrost uses [Semantic Versioning 2.0](https://semver.org/): `MAJOR.MINOR.PATCH`.
 
+Version management and changelog generation are handled by [changesets](https://github.com/changesets/changesets).
+
+**Current policy:** all packages stay on `0.x` until the board decides to release `1.x`.
+
 ---
 
 ## Version bump rules
@@ -26,21 +30,32 @@ Append a pre-release suffix to the version tag before cutting a release candidat
 | `-beta.N` | Feature-complete but may still have known issues |
 | `-rc.N` | Release candidate — expected to ship unless a blocking bug is found |
 
-Examples: `v1.0.0-alpha.1`, `v1.0.0-beta.2`, `v1.0.0-rc.1`, `v1.0.0`
+Examples: `v0.2.0-alpha.1`, `v0.2.0-beta.2`, `v0.2.0-rc.1`, `v0.2.0`
 
 ---
 
-## Tagging and releasing
+## Changesets workflow
 
-All version tags live on `main`. The tag triggers the release pipeline (`release.yml`):
+### Adding a changeset (per-PR)
 
 ```bash
-# Bump package versions (all packages move together)
-bun version patch   # or minor / major
+bun changeset
+# Select bump type and write a short description.
+# Commit the generated .changeset/<random-name>.md with your PR.
+```
 
-# Tag and push — triggers Docker image build + GHCR push
-git tag v1.0.0
-git push origin v1.0.0
+### Version bump (release preparation)
+
+The `changesets/action` bot creates a **"chore: version packages"** PR on every push to `main` that contains pending changesets. Merge it to apply bumps and update `CHANGELOG.md`.
+
+### Tagging and releasing
+
+After the Version Packages PR is merged:
+
+```bash
+NEW_VERSION=$(node -p "require('./packages/core/package.json').version")
+git tag "v$NEW_VERSION"
+git push origin HEAD "v$NEW_VERSION"
 ```
 
 The CI pipeline gates every release: lint → typecheck → test must pass before Docker publish runs.
@@ -49,28 +64,25 @@ The CI pipeline gates every release: lint → typecheck → test must pass befor
 
 ## Package versioning policy
 
-All packages in the monorepo (`@webfrost/core`, `@webfrost/cli`, `@webfrost/server`, `@webfrost/sdk`, `@webfrost/ui`) move together — they share a single version number. This keeps the release matrix simple and avoids cross-package compatibility questions.
+All packages in the monorepo (`@webfrost/core`, `@webfrost/cli`, `@webfrost/server`, `@webfrost/sdk`, `@webfrost/ui`) move together — they share a single version number, enforced via a changesets `fixed` group in `.changeset/config.json`. This keeps the release matrix simple and avoids cross-package compatibility questions.
 
 ---
 
 ## CHANGELOG format
 
-Maintain `CHANGELOG.md` at the repo root. Each entry follows this structure:
+Changesets auto-generates `CHANGELOG.md` entries. The format follows:
 
 ```markdown
-## [version] — YYYY-MM-DD
+## <version>
 
-### Added
-- Short description of new features
+### Major Changes
+- Description of breaking change
 
-### Changed
-- Backwards-compatible behaviour changes, dependency updates
+### Minor Changes
+- Description of new feature
 
-### Fixed
-- Bug fixes
-
-### Breaking
-- Anything that requires user action on upgrade (migration steps, removed flags)
+### Patch Changes
+- Description of bug fix
 ```
 
-Only include sections that have entries. Keep bullets concise — one line each.
+For manual edits or entries not covered by changesets, use the same structure and keep bullets concise — one line each.
