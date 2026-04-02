@@ -30,16 +30,19 @@ interface CliResult {
   stderr: string;
 }
 
-function runCli(args: string[], cwd: string): CliResult {
-  const proc = Bun.spawnSync(["bun", "run", CLI, ...args], {
+async function runCli(args: string[], cwd: string): Promise<CliResult> {
+  const proc = Bun.spawn(["bun", "run", CLI, ...args], {
     cwd,
     env: { ...process.env, WEBFROST_DIR: cwd },
+    stdout: "pipe",
+    stderr: "pipe",
   });
-  return {
-    exitCode: proc.exitCode ?? 1,
-    stdout: new TextDecoder().decode(proc.stdout),
-    stderr: new TextDecoder().decode(proc.stderr),
-  };
+  const [exitCode, stdout, stderr] = await Promise.all([
+    proc.exited,
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+  return { exitCode: exitCode ?? 1, stdout, stderr };
 }
 
 function openDb(archiveDir: string): Database {
@@ -77,8 +80,8 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("init", () => {
-  test("creates archive.db with required tables", () => {
-    const result = runCli(["init"], testDir);
+  test("creates archive.db with required tables", async () => {
+    const result = await runCli(["init"], testDir);
 
     expect(result.exitCode).toBe(0);
 
@@ -97,9 +100,9 @@ describe("init", () => {
     db.close();
   });
 
-  test("is idempotent — re-running init does not error or corrupt the DB", () => {
-    runCli(["init"], testDir);
-    const second = runCli(["init"], testDir);
+  test("is idempotent — re-running init does not error or corrupt the DB", async () => {
+    await runCli(["init"], testDir);
+    const second = await runCli(["init"], testDir);
 
     expect(second.exitCode).toBe(0);
 
@@ -120,7 +123,7 @@ describe("init", () => {
 
 describe("add URL (success)", () => {
   test("records snapshot row with status=done and stores archive_results", async () => {
-    runCli(["init"], testDir);
+    await runCli(["init"], testDir);
 
     const server = startMockServer(
       () =>
@@ -132,7 +135,7 @@ describe("add URL (success)", () => {
 
     try {
       const url = `http://localhost:${server.port}/page`;
-      const result = runCli(["add", url], testDir);
+      const result = await runCli(["add", url], testDir);
 
       expect(result.exitCode).toBe(0);
 
@@ -162,7 +165,7 @@ describe("add URL (success)", () => {
   });
 
   test("adding the same URL twice creates two independent snapshot rows", async () => {
-    runCli(["init"], testDir);
+    await runCli(["init"], testDir);
 
     const server = startMockServer(
       () =>
@@ -173,8 +176,8 @@ describe("add URL (success)", () => {
 
     try {
       const url = `http://localhost:${server.port}/dup`;
-      runCli(["add", url], testDir);
-      runCli(["add", url], testDir);
+      await runCli(["add", url], testDir);
+      await runCli(["add", url], testDir);
 
       const db = openDb(testDir);
       const count = db
@@ -194,12 +197,12 @@ describe("add URL (success)", () => {
 // ---------------------------------------------------------------------------
 
 describe("add URL (partial failure)", () => {
-  test("unreachable host records snapshot with failed/partial status — no crash", () => {
-    runCli(["init"], testDir);
+  test("unreachable host records snapshot with failed/partial status — no crash", async () => {
+    await runCli(["init"], testDir);
 
     // Use a port that is not bound to anything
     const url = "http://localhost:19999/unreachable";
-    const result = runCli(["add", url], testDir);
+    const result = await runCli(["add", url], testDir);
 
     // CLI must exit cleanly — partial failure is not a fatal error
     expect(result.exitCode).toBe(0);
@@ -225,13 +228,13 @@ describe("add URL (partial failure)", () => {
   });
 
   test("5xx response records failed/partial status — no crash", async () => {
-    runCli(["init"], testDir);
+    await runCli(["init"], testDir);
 
     const server = startMockServer(() => new Response("Internal Server Error", { status: 500 }));
 
     try {
       const url = `http://localhost:${server.port}/error`;
-      const result = runCli(["add", url], testDir);
+      const result = await runCli(["add", url], testDir);
 
       expect(result.exitCode).toBe(0);
 
@@ -258,7 +261,7 @@ describe("add URL (partial failure)", () => {
 
 describe("list", () => {
   test("returns all added URLs with expected fields", async () => {
-    runCli(["init"], testDir);
+    await runCli(["init"], testDir);
 
     const server = startMockServer(
       () =>
@@ -271,10 +274,10 @@ describe("list", () => {
       const urls = [`http://localhost:${server.port}/a`, `http://localhost:${server.port}/b`];
 
       for (const url of urls) {
-        runCli(["add", url], testDir);
+        await runCli(["add", url], testDir);
       }
 
-      const result = runCli(["list"], testDir);
+      const result = await runCli(["list"], testDir);
 
       expect(result.exitCode).toBe(0);
 
@@ -286,10 +289,10 @@ describe("list", () => {
     }
   });
 
-  test("list on empty archive exits 0 and produces no error output", () => {
-    runCli(["init"], testDir);
+  test("list on empty archive exits 0 and produces no error output", async () => {
+    await runCli(["init"], testDir);
 
-    const result = runCli(["list"], testDir);
+    const result = await runCli(["list"], testDir);
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
