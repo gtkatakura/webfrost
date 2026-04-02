@@ -5,7 +5,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "test": "echo 'no tests'",
+    "test": "bun test src",
     "benchmarks": "echo 'no benchmarks'"
   },
   "dependencies": {
@@ -15,6 +15,8 @@
     "react-router-dom": "^6.30.0"
   },
   "devDependencies": {
+    "@happy-dom/global-registrator": "^20.8.9",
+    "@testing-library/react": "^16.0.0",
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

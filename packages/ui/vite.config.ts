@@ -12,4 +12,10 @@ export default defineConfig({
       "/api": "http://localhost:3000",
     },
   },
+  preview: {
+    // Proxy API calls to the WebFrost server when running vite preview (E2E)
+    proxy: {
+      "/api": "http://localhost:3000",
+    },
+  },
 });

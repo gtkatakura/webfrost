@@ -1,11 +1,17 @@
 import { WebFrostClient, WebFrostError } from "@webfrost/sdk";
 import type { Snapshot, SnapshotDetail } from "@webfrost/sdk";
-import { useCallback, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { Link, Route, Routes, useNavigate, useParams } from "react-router-dom";
 
 // "/api" — routes are mounted at /api/snapshots on the Elysia server;
 // in dev the Vite proxy forwards /api → localhost:3000
-const client = new WebFrostClient({ baseUrl: "/api" });
+const defaultClient = new WebFrostClient({ baseUrl: "/api" });
+
+const ClientContext = createContext<WebFrostClient>(defaultClient);
+
+function useClient(): WebFrostClient {
+  return useContext(ClientContext);
+}
 
 const PAGE_SIZE = 20;
 
@@ -168,6 +174,7 @@ function SnapshotListRow({ snapshot }: { snapshot: Snapshot }) {
 const KNOWN_EXTRACTORS = ["warc", "readability", "pdf"] as const;
 
 function ListPage() {
+  const client = useClient();
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [url, setUrl] = useState("");
   const [initialLoading, setInitialLoading] = useState(true);
@@ -190,7 +197,7 @@ function ListPage() {
     } finally {
       setInitialLoading(false);
     }
-  }, []);
+  }, [client]);
 
   useEffect(() => {
     fetchSnapshots();
@@ -560,6 +567,7 @@ function ArchiveResultSection({
 }
 
 function DetailPage() {
+  const client = useClient();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [detail, setDetail] = useState<SnapshotDetail | null>(null);
@@ -578,7 +586,7 @@ function DetailPage() {
         setError(e instanceof WebFrostError ? e.message : String(e));
       })
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, client]);
 
   return (
     <main style={{ maxWidth: 760, margin: "0 auto", padding: "2rem 1rem" }}>
@@ -689,14 +697,14 @@ function DetailPage() {
 // App — router
 // ---------------------------------------------------------------------------
 
-export default function App() {
+export default function App({ client = defaultClient }: { client?: WebFrostClient }) {
   return (
-    <>
+    <ClientContext.Provider value={client}>
       <style>{GLOBAL_CSS}</style>
       <Routes>
         <Route path="/" element={<ListPage />} />
         <Route path="/snapshots/:id" element={<DetailPage />} />
       </Routes>
-    </>
+    </ClientContext.Provider>
   );
 }
