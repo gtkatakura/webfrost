@@ -63,11 +63,14 @@ function startMockServer(handler: (req: Request) => Response | Promise<Response>
 let testDir: string;
 
 beforeEach(() => {
+  // Integration tests use in-process mock servers on localhost — allow private URLs
+  process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
   testDir = join(tmpdir(), `webfrost-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   mkdirSync(testDir, { recursive: true });
 });
 
 afterEach(() => {
+  process.env.WEBFROST_ALLOW_PRIVATE_URLS = undefined;
   try {
     rmSync(testDir, { recursive: true, force: true });
   } catch {

@@ -32,6 +32,17 @@ switch (command) {
       console.error("Usage: webfrost add <url>");
       process.exit(1);
     }
+    let parsedAdd: URL;
+    try {
+      parsedAdd = new URL(url);
+    } catch {
+      console.error("Invalid URL");
+      process.exit(1);
+    }
+    if (parsedAdd.protocol !== "http:" && parsedAdd.protocol !== "https:") {
+      console.error("Only http/https URLs are supported");
+      process.exit(1);
+    }
     const db = openDb(archiveDir);
     await addUrl(db, url, archiveDir);
     db.close();
@@ -59,6 +70,18 @@ switch (command) {
 
       if (!urlArg || !cronExpr) {
         console.error("Usage: webfrost schedule add <url> --cron <expr>");
+        process.exit(1);
+      }
+
+      let parsedSchedule: URL;
+      try {
+        parsedSchedule = new URL(urlArg);
+      } catch {
+        console.error("Invalid URL");
+        process.exit(1);
+      }
+      if (parsedSchedule.protocol !== "http:" && parsedSchedule.protocol !== "https:") {
+        console.error("Only http/https URLs are supported");
         process.exit(1);
       }
 

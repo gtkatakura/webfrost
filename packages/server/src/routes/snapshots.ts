@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   createSnapshot,
   getSnapshot,
@@ -12,6 +12,8 @@ import { Elysia, t } from "elysia";
 function getWebfrostDir(): string {
   return process.env.WEBFROST_DIR ?? join(homedir(), ".webfrost");
 }
+
+const ALLOWED_EXTRACTORS = new Set(["html", "warc", "pdf", "readability"]);
 
 function getDb() {
   return openDb(getWebfrostDir());
@@ -125,6 +127,13 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
         });
       }
 
+      if (!ALLOWED_EXTRACTORS.has(extractor)) {
+        return new Response(JSON.stringify({ error: "unknown extractor" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
       const db = getDb();
       let content: string | null = null;
       try {
@@ -151,8 +160,16 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
         });
       }
 
-      // WARC and PDF store a file path; readability stores a JSON string
+      // WARC and PDF store a filesystem path — sandbox to the snapshots directory
+      const snapshotsDir = resolve(getWebfrostDir(), "snapshots");
+
       if (extractor === "warc") {
+        if (!resolve(content).startsWith(`${snapshotsDir}/`)) {
+          return new Response(JSON.stringify({ error: "forbidden" }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
         const file = Bun.file(content);
         if (!(await file.exists())) {
           return new Response(JSON.stringify({ error: "file not found" }), {
@@ -169,6 +186,12 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       }
 
       if (extractor === "pdf") {
+        if (!resolve(content).startsWith(`${snapshotsDir}/`)) {
+          return new Response(JSON.stringify({ error: "forbidden" }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
         const file = Bun.file(content);
         if (!(await file.exists())) {
           return new Response(JSON.stringify({ error: "file not found" }), {

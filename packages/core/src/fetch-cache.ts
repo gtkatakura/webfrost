@@ -5,6 +5,8 @@
  * HTTP response per URL, preventing duplicate network requests.
  */
 
+import { safeFetch } from "./ssrf-guard";
+
 export interface CachedResponse {
   html: string;
   headers: Headers;
@@ -28,7 +30,7 @@ export class FetchCache {
   }
 
   private async _fetchOnce(url: string): Promise<CachedResponse> {
-    const response = await fetch(url);
+    const response = await safeFetch(url);
     const html = await response.text();
     return {
       html,

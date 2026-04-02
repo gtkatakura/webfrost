@@ -6,6 +6,8 @@ let server: ReturnType<typeof Bun.serve> | undefined;
 let fetchCount = 0;
 
 beforeEach(() => {
+  // Allow localhost so in-process test servers pass the SSRF guard
+  process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
   fetchCount = 0;
   server = Bun.serve({
     port: 0, // random available port
@@ -19,6 +21,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  process.env.WEBFROST_ALLOW_PRIVATE_URLS = undefined;
   server?.stop(true);
   server = undefined;
 });

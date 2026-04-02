@@ -211,6 +211,68 @@ describe("GET /snapshots/:id/archives/:extractor/download", () => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /snapshots/:id/archives/:extractor/download — extractor allowlist + path sandbox
+// ---------------------------------------------------------------------------
+
+describe("GET /snapshots/:id/archives/:extractor/download — security", () => {
+  test("returns 400 for unknown extractor", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    const id = createSnapshot(db, "https://example.com");
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request(`http://localhost/snapshots/${id}/archives/malicious/download`),
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("unknown extractor");
+  });
+
+  test("returns 403 when warc path escapes snapshots directory", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    const id = createSnapshot(db, "https://example.com");
+    // Inject a path traversal value into the DB
+    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
+      id,
+      "warc",
+      "/etc/passwd",
+    );
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request(`http://localhost/snapshots/${id}/archives/warc/download`),
+    );
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("forbidden");
+  });
+
+  test("returns 403 when pdf path escapes snapshots directory", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    const id = createSnapshot(db, "https://example.com");
+    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
+      id,
+      "pdf",
+      "/etc/shadow",
+    );
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request(`http://localhost/snapshots/${id}/archives/pdf/download`),
+    );
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("forbidden");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET /snapshots/:id
 // ---------------------------------------------------------------------------
 
