@@ -11,6 +11,8 @@ export interface Snapshot {
   url: string;
   status: string;
   createdAt: string;
+  /** Extractor names that have produced results for this snapshot (e.g. ["warc", "readability"]) */
+  extractors: string[];
 }
 
 /** Archive result extracted by a single extractor */

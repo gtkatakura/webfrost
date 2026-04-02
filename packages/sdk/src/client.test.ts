@@ -67,8 +67,20 @@ describe("WebFrostClient.createSnapshot", () => {
 describe("WebFrostClient.listSnapshots", () => {
   test("returns array of snapshots", async () => {
     const raw = [
-      { id: 1, url: "https://a.com", status: "done", createdAt: "2024-01-01T00:00:00.000Z" },
-      { id: 2, url: "https://b.com", status: "pending", createdAt: "2024-01-02T00:00:00.000Z" },
+      {
+        id: 1,
+        url: "https://a.com",
+        status: "done",
+        createdAt: "2024-01-01T00:00:00.000Z",
+        extractors: ["warc"],
+      },
+      {
+        id: 2,
+        url: "https://b.com",
+        status: "pending",
+        createdAt: "2024-01-02T00:00:00.000Z",
+        extractors: [],
+      },
     ];
     fetchSpy.mockResolvedValueOnce(jsonResponse(raw));
 
@@ -94,6 +106,7 @@ describe("WebFrostClient.getSnapshot", () => {
       url: "https://example.com",
       status: "done",
       createdAt: "2024-01-01T00:00:00.000Z",
+      extractors: ["warc"],
       archiveResults: [
         { id: 10, extractor: "warc", content: "data", created_at: "2024-01-01T00:01:00.000Z" },
       ],
@@ -108,6 +121,7 @@ describe("WebFrostClient.getSnapshot", () => {
       url: "https://example.com",
       status: "done",
       createdAt: "2024-01-01T00:00:00.000Z",
+      extractors: ["warc"],
       archiveResults: [
         { id: 10, extractor: "warc", content: "data", createdAt: "2024-01-01T00:01:00.000Z" },
       ],

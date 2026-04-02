@@ -1,6 +1,12 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { createSnapshot, getSnapshot, listSnapshots, openDb, runPipeline } from "@webfrost/core";
+import {
+  createSnapshot,
+  getSnapshot,
+  listSnapshotsWithExtractors,
+  openDb,
+  runPipeline,
+} from "@webfrost/core";
 import { Elysia, t } from "elysia";
 
 function getWebfrostDir(): string {
@@ -63,11 +69,12 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
   .get("/", () => {
     const db = getDb();
     try {
-      return listSnapshots(db).map((s) => ({
+      return listSnapshotsWithExtractors(db).map((s) => ({
         id: s.id,
         url: s.url,
         status: s.status,
         createdAt: s.created_at,
+        extractors: s.extractors,
       }));
     } finally {
       db.close();
@@ -102,5 +109,90 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
     },
     {
       params: t.Object({ id: t.String() }),
+    },
+  )
+  .get(
+    "/:id/archives/:extractor/download",
+    async ({ params, set }) => {
+      const id = Number(params.id);
+      const { extractor } = params;
+
+      if (!Number.isInteger(id) || id <= 0) {
+        set.status = 404;
+        return new Response(JSON.stringify({ error: "not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const db = getDb();
+      let content: string | null = null;
+      try {
+        const row = db
+          .query<{ content: string | null }, [number, string]>(
+            "SELECT content FROM archive_results WHERE snapshot_id = ? AND extractor = ? LIMIT 1",
+          )
+          .get(id, extractor);
+        if (!row) {
+          return new Response(JSON.stringify({ error: "not found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        content = row.content;
+      } finally {
+        db.close();
+      }
+
+      if (!content) {
+        return new Response(JSON.stringify({ error: "no content" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      // WARC and PDF store a file path; readability stores a JSON string
+      if (extractor === "warc") {
+        const file = Bun.file(content);
+        if (!(await file.exists())) {
+          return new Response(JSON.stringify({ error: "file not found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(await file.bytes(), {
+          headers: {
+            "Content-Type": "application/warc",
+            "Content-Disposition": 'attachment; filename="archive.warc"',
+          },
+        });
+      }
+
+      if (extractor === "pdf") {
+        const file = Bun.file(content);
+        if (!(await file.exists())) {
+          return new Response(JSON.stringify({ error: "file not found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(await file.bytes(), {
+          headers: {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": 'attachment; filename="page.pdf"',
+          },
+        });
+      }
+
+      // Default: return raw content (e.g. readability JSON)
+      return new Response(content, {
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Disposition": `attachment; filename="${extractor}.json"`,
+        },
+      });
+    },
+    {
+      params: t.Object({ id: t.String(), extractor: t.String() }),
     },
   );

@@ -22,6 +22,7 @@ interface RawSnapshot {
   url: string;
   status: string;
   createdAt: string;
+  extractors: string[];
 }
 
 interface RawArchiveResult {
@@ -36,6 +37,7 @@ interface RawSnapshotDetail {
   url: string;
   status: string;
   createdAt: string;
+  extractors?: string[];
   archiveResults: RawArchiveResult[];
 }
 
@@ -49,6 +51,7 @@ function toSnapshotDetail(raw: RawSnapshotDetail): SnapshotDetail {
     url: raw.url,
     status: raw.status,
     createdAt: raw.createdAt,
+    extractors: raw.extractors ?? [],
     archiveResults: raw.archiveResults.map(toArchiveResult),
   };
 }
