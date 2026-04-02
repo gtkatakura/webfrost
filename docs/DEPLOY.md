@@ -103,6 +103,8 @@ docker run -d \
 |----------|---------|-------------|
 | `PORT` | `3000` | HTTP port the server listens on |
 | `WEBFROST_DIR` | `~/.webfrost` | Directory for SQLite database and archive files |
+| `GITHUB_REPOSITORY` | `your-org/webfrost` | Used by `docker-compose.prod.yml` to construct the image name (`ghcr.io/$GITHUB_REPOSITORY/server`) |
+| `IMAGE_TAG` | `latest` | Docker image tag to pull — set to a version like `v0.1.0` to pin a release |
 
 See `.env.example` at the repo root for a template. Never commit `.env` to version control.
 
@@ -129,8 +131,10 @@ See `.env.example` at the repo root for a template. Never commit `.env` to versi
 | `POST /api/snapshots` | Submit a URL for archiving |
 | `GET /api/snapshots` | List all snapshots |
 | `GET /api/snapshots/:id` | Get snapshot detail |
-
----
+| `GET /api/snapshots/:id/archives/:extractor/download` | Download raw archive file (extractor: `warc`, `pdf`, `readability`) |
+| `POST /api/schedules` | Create a recurring archive schedule |
+| `GET /api/schedules` | List all schedules |
+| `DELETE /api/schedules/:id` | Remove a schedule |
 
 ---
 

@@ -1,6 +1,6 @@
 services:
   webfrost:
-    image: ghcr.io/${GITHUB_REPOSITORY:-your-org/webfrost}/server:latest
+    image: ghcr.io/${GITHUB_REPOSITORY:-your-org/webfrost}/server:${IMAGE_TAG:-latest}
     # Or build locally: uncomment the build block and comment out image above
     # build:
     #   context: .
