@@ -9,6 +9,7 @@ import { screenshotExtractor } from "./extractors/screenshot";
 import { singleFileExtractor } from "./extractors/singlefile";
 import { warcExtractor } from "./extractors/warc";
 import { FetchCache } from "./fetch-cache";
+import { extractIndexFields, indexSnapshot } from "./search";
 
 /** Insert a snapshot row and enqueue a job. Returns the new snapshot id. */
 export function createSnapshot(db: Database, url: string): number {
@@ -107,6 +108,23 @@ export async function runPipeline(
     );
   } catch {
     // DB unavailable — best effort
+  }
+
+  // Index the snapshot for full-text search
+  try {
+    const readabilityRow = db
+      .query<{ content: string | null }, [number]>(
+        "SELECT content FROM archive_results WHERE snapshot_id = ? AND extractor = 'readability' LIMIT 1",
+      )
+      .get(snapshotId);
+    const { title, textContent, tags } = extractIndexFields(
+      db,
+      snapshotId,
+      readabilityRow?.content,
+    );
+    indexSnapshot(db, snapshotId, url, title, textContent, tags);
+  } catch {
+    // FTS indexing failure is non-fatal
   }
 }
 

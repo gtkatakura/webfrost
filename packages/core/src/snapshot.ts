@@ -1,6 +1,7 @@
 import type Database from "bun:sqlite";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
+import { removeFromIndex } from "./search";
 
 interface ArchiveResult {
   id: number;
@@ -55,6 +56,7 @@ export async function deleteSnapshot(
   db.query<null, [number]>("DELETE FROM archive_results WHERE snapshot_id = ?").run(id);
   db.query<null, [number]>("DELETE FROM job_queue WHERE snapshot_id = ?").run(id);
   // snapshot_tags has ON DELETE CASCADE but explicit delete is fine
+  removeFromIndex(db, id);
   db.query<null, [number]>("DELETE FROM snapshots WHERE id = ?").run(id);
 
   // Remove artifact files from disk (best effort — don't fail if already gone)

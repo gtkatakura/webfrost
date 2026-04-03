@@ -1,5 +1,6 @@
 import type {
   ArchiveResult,
+  SearchResult,
   Snapshot,
   SnapshotCreated,
   SnapshotDetail,
@@ -144,6 +145,16 @@ export class WebFrostClient {
 
     const raw = (await res.json()) as RawSnapshotDetail;
     return toSnapshotDetail(raw);
+  }
+
+  /**
+   * Full-text search across snapshots.
+   * Returns ranked results with HTML snippets (matching terms wrapped in <mark>).
+   */
+  async searchSnapshots(query: string): Promise<SearchResult[]> {
+    const res = await fetch(`${this.baseUrl}/snapshots?q=${encodeURIComponent(query)}`);
+    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    return res.json() as Promise<SearchResult[]>;
   }
 
   /** Delete a snapshot by id. Returns true if deleted, false if not found. */

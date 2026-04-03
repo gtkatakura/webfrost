@@ -43,3 +43,12 @@ export interface WebFrostClientOptions {
   /** Base URL of the WebFrost server, e.g. "http://localhost:3000" */
   baseUrl: string;
 }
+
+/** Single result from GET /snapshots?q=term */
+export interface SearchResult {
+  id: number;
+  url: string;
+  /** HTML snippet with <mark> highlights around matching terms */
+  snippet: string;
+  rank: number;
+}

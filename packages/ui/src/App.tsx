@@ -1,5 +1,5 @@
 import { WebFrostClient, WebFrostError } from "@webfrost/sdk";
-import type { Snapshot, SnapshotDetail, Tag } from "@webfrost/sdk";
+import type { SearchResult, Snapshot, SnapshotDetail, Tag } from "@webfrost/sdk";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { Link, Route, Routes, useNavigate, useParams } from "react-router-dom";
 
@@ -257,7 +257,12 @@ function ListPage() {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
-  // Filter state
+  // FTS search state
+  const [ftsQuery, setFtsQuery] = useState("");
+  const [ftsResults, setFtsResults] = useState<SearchResult[]>([]);
+  const [ftsLoading, setFtsLoading] = useState(false);
+
+  // Filter state (used when ftsQuery is empty)
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -279,6 +284,27 @@ function ListPage() {
   useEffect(() => {
     fetchSnapshots();
   }, [fetchSnapshots]);
+
+  // Debounced FTS search: fires 400 ms after the user stops typing
+  useEffect(() => {
+    if (!ftsQuery.trim()) {
+      setFtsResults([]);
+      return;
+    }
+    setFtsLoading(true);
+    const timer = setTimeout(() => {
+      client
+        .searchSnapshots(ftsQuery)
+        .then((results) => {
+          setFtsResults(results);
+        })
+        .catch(() => {
+          setFtsResults([]);
+        })
+        .finally(() => setFtsLoading(false));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [ftsQuery, client]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -411,15 +437,27 @@ function ListPage() {
         }}
       >
         <input
-          type="text"
-          placeholder="Filter by URL…"
-          value={search}
+          type="search"
+          placeholder="Full-text search (title, content, tags)…"
+          value={ftsQuery}
           onChange={(e) => {
-            setSearch(e.target.value);
+            setFtsQuery(e.target.value);
             setPage(1);
           }}
           style={{ ...inputStyle, width: "100%" }}
         />
+        {!ftsQuery && (
+          <input
+            type="text"
+            placeholder="Filter by URL…"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            style={{ ...inputStyle, width: "100%" }}
+          />
+        )}
         <div
           style={{
             display: "flex",
@@ -498,8 +536,52 @@ function ListPage() {
         )}
       </div>
 
-      {/* Snapshot list */}
-      {initialLoading ? (
+      {/* FTS search results */}
+      {ftsQuery.trim() && (
+        <div style={{ marginBottom: "1rem" }}>
+          {ftsLoading ? (
+            <p style={{ color: "#9ca3af" }}>Searching…</p>
+          ) : ftsResults.length === 0 ? (
+            <p style={{ color: "#9ca3af" }}>No results for "{ftsQuery}".</p>
+          ) : (
+            <ul
+              style={{
+                listStyle: "none",
+                padding: 0,
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.75rem",
+              }}
+            >
+              {ftsResults.map((r) => (
+                <li
+                  key={r.id}
+                  style={{
+                    background: "white",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 8,
+                    padding: "0.75rem 1rem",
+                  }}
+                >
+                  <Link to={`/snapshots/${r.id}`} style={{ fontWeight: 600 }}>
+                    {r.url}
+                  </Link>
+                  {r.snippet && (
+                    <p
+                      style={{ margin: "0.4rem 0 0", fontSize: "0.8rem", color: "#6b7280" }}
+                      // biome-ignore lint/security/noDangerouslySetInnerHtml: controlled server snippet
+                      dangerouslySetInnerHTML={{ __html: r.snippet }}
+                    />
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* Snapshot list (hidden when FTS is active) */}
+      {!ftsQuery.trim() && initialLoading ? (
         <ul
           style={{
             listStyle: "none",
@@ -514,13 +596,13 @@ function ListPage() {
             <SkeletonRow key={i} />
           ))}
         </ul>
-      ) : filtered.length === 0 ? (
+      ) : !ftsQuery.trim() && filtered.length === 0 ? (
         <p style={{ color: "#9ca3af", textAlign: "center", marginTop: "3rem" }}>
           {snapshots.length === 0
             ? "No snapshots yet. Archive a URL above."
             : "No snapshots match your filters."}
         </p>
-      ) : (
+      ) : !ftsQuery.trim() ? (
         <>
           <ul
             style={{
@@ -583,7 +665,7 @@ function ListPage() {
             </div>
           )}
         </>
-      )}
+      ) : null}
     </main>
   );
 }

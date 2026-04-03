@@ -7,6 +7,7 @@ import {
   listSnapshotsWithExtractors,
   openDb,
   runPipeline,
+  searchSnapshots,
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
 
@@ -81,27 +82,37 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       },
     },
   )
-  .get("/", () => {
-    const db = getDb();
-    try {
-      return listSnapshotsWithExtractors(db).map((s) => ({
-        id: s.id,
-        url: s.url,
-        status: s.status,
-        createdAt: s.created_at,
-        extractors: s.extractors,
-        tags: s.tags.map((t) => ({
-          id: t.id,
-          name: t.name,
-          slug: t.slug,
-          color: t.color,
-          createdAt: t.created_at,
-        })),
-      }));
-    } finally {
-      db.close();
-    }
-  })
+  .get(
+    "/",
+    ({ query }) => {
+      const db = getDb();
+      try {
+        const q = query.q?.trim();
+        if (q) {
+          // FTS5 ranked search — returns results with snippet
+          const results = searchSnapshots(db, q);
+          return results.map((r) => ({ id: r.id, url: r.url, snippet: r.snippet, rank: r.rank }));
+        }
+        return listSnapshotsWithExtractors(db).map((s) => ({
+          id: s.id,
+          url: s.url,
+          status: s.status,
+          createdAt: s.created_at,
+          extractors: s.extractors,
+          tags: s.tags.map((t) => ({
+            id: t.id,
+            name: t.name,
+            slug: t.slug,
+            color: t.color,
+            createdAt: t.created_at,
+          })),
+        }));
+      } finally {
+        db.close();
+      }
+    },
+    { query: t.Object({ q: t.Optional(t.String()) }) },
+  )
   .get(
     "/:id",
     ({ params, set }) => {

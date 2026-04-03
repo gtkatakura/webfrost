@@ -19,8 +19,10 @@ import {
   markScheduleRun,
   openDb,
   parseUrls,
+  rebuildIndex,
   removeSchedule,
   runPipeline,
+  searchSnapshots,
 } from "@webfrost/core";
 
 const archiveDir = process.env.WEBFROST_DIR ?? process.cwd();
@@ -367,6 +369,43 @@ switch (command) {
 
     console.error("Usage: webfrost tag <add|list|create|remove>");
     process.exit(1);
+    break;
+  }
+
+  case "search": {
+    // webfrost search <query>
+    const query = args.join(" ");
+    if (!query.trim()) {
+      console.error("Usage: webfrost search <query>");
+      process.exit(1);
+    }
+    const db = openDb(archiveDir);
+    try {
+      const results = searchSnapshots(db, query);
+      if (results.length === 0) {
+        console.log("No results.");
+      }
+      for (const r of results) {
+        console.log(`${r.id}\t${r.url}`);
+        if (r.snippet) {
+          console.log(`  ${r.snippet.replace(/<\/?mark>/g, "")}`);
+        }
+      }
+    } finally {
+      db.close();
+    }
+    break;
+  }
+
+  case "search:rebuild": {
+    // webfrost search:rebuild — rebuild FTS index from existing data
+    const db = openDb(archiveDir);
+    try {
+      rebuildIndex(db);
+      console.log("Search index rebuilt.");
+    } finally {
+      db.close();
+    }
     break;
   }
 

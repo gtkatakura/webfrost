@@ -45,6 +45,12 @@ export function openDb(dir: string): Database {
       tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
       PRIMARY KEY (snapshot_id, tag_id)
     );
+    CREATE VIRTUAL TABLE IF NOT EXISTS snapshots_fts USING fts5(
+      url,
+      title,
+      text_content,
+      tags
+    );
   `);
   return db;
 }

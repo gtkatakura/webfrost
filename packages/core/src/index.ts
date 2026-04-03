@@ -29,3 +29,5 @@ export {
   slugify,
 } from "./tags";
 export type { Tag } from "./tags";
+export { indexSnapshot, rebuildIndex, removeFromIndex, searchSnapshots } from "./search";
+export type { SearchResult } from "./search";
