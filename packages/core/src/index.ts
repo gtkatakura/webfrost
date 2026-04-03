@@ -1,5 +1,18 @@
 // @webfrost/core — DB, pipeline, extractors
 export { openDb } from "./db";
+export {
+  createAdminUser,
+  createApiKey,
+  createSessionToken,
+  getAdminUsername,
+  hasAdminUser,
+  listApiKeys,
+  revokeApiKey,
+  validateAdminCredentials,
+  validateApiKey,
+  verifySessionToken,
+} from "./auth";
+export type { ApiKey } from "./auth";
 export { FetchCache } from "./fetch-cache";
 export type { CachedResponse } from "./fetch-cache";
 export { detectFormat, parseUrls } from "./import";

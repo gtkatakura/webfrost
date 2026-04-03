@@ -1,10 +1,19 @@
 import { staticPlugin } from "@elysiajs/static";
 import { Elysia } from "elysia";
+import { authPlugin, authRouter } from "./routes/auth";
 import { schedulesRouter } from "./routes/schedules";
 import { snapshotsRouter } from "./routes/snapshots";
 import { snapshotTagsRouter, tagsRouter } from "./routes/tags";
 
 const PORT = Number(process.env.PORT ?? "3000");
+
+// Refuse to start if auth is enabled but SESSION_SECRET is not configured
+if (process.env.AUTH_DISABLED !== "true" && !process.env.SESSION_SECRET) {
+  console.error(
+    "[server] SESSION_SECRET env var is required. Set it to a random string of at least 32 characters, or set AUTH_DISABLED=true for development.",
+  );
+  process.exit(1);
+}
 
 export const app = new Elysia()
   .onAfterHandle(({ set }) => {
@@ -17,7 +26,13 @@ export const app = new Elysia()
   .use(staticPlugin({ assets: "public", prefix: "/" }))
   .get("/health", () => ({ status: "ok" }))
   .group("/api", (app) =>
-    app.use(snapshotsRouter).use(snapshotTagsRouter).use(schedulesRouter).use(tagsRouter),
+    app
+      .use(authPlugin)
+      .use(authRouter)
+      .use(snapshotsRouter)
+      .use(snapshotTagsRouter)
+      .use(schedulesRouter)
+      .use(tagsRouter),
   );
 
 if (import.meta.main) {

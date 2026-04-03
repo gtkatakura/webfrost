@@ -86,9 +86,17 @@ function toSnapshotDetail(raw: RawSnapshotDetail): SnapshotDetail {
 
 export class WebFrostClient {
   private readonly baseUrl: string;
+  private readonly apiKey: string | undefined;
 
   constructor(options: WebFrostClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
+    this.apiKey = options.apiKey;
+  }
+
+  private request(url: string, init?: RequestInit): Promise<Response> {
+    const headers = new Headers(init?.headers);
+    if (this.apiKey) headers.set("Authorization", `Bearer ${this.apiKey}`);
+    return fetch(url, { ...init, headers });
   }
 
   /**
@@ -97,7 +105,7 @@ export class WebFrostClient {
    * Throws {@link WebFrostError} on HTTP errors.
    */
   async createSnapshot(url: string): Promise<SnapshotCreated> {
-    const res = await fetch(`${this.baseUrl}/snapshots`, {
+    const res = await this.request(`${this.baseUrl}/snapshots`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url }),
@@ -117,7 +125,7 @@ export class WebFrostClient {
    * List all snapshots.
    */
   async listSnapshots(): Promise<Snapshot[]> {
-    const res = await fetch(`${this.baseUrl}/snapshots`);
+    const res = await this.request(`${this.baseUrl}/snapshots`);
 
     if (!res.ok) {
       throw new WebFrostError(res.status, res.statusText);
@@ -133,7 +141,7 @@ export class WebFrostClient {
    * Throws {@link WebFrostError} for other HTTP errors.
    */
   async getSnapshot(id: number): Promise<SnapshotDetail | null> {
-    const res = await fetch(`${this.baseUrl}/snapshots/${id}`);
+    const res = await this.request(`${this.baseUrl}/snapshots/${id}`);
 
     if (res.status === 404) {
       return null;
@@ -152,14 +160,14 @@ export class WebFrostClient {
    * Returns ranked results with HTML snippets (matching terms wrapped in <mark>).
    */
   async searchSnapshots(query: string): Promise<SearchResult[]> {
-    const res = await fetch(`${this.baseUrl}/snapshots?q=${encodeURIComponent(query)}`);
+    const res = await this.request(`${this.baseUrl}/snapshots?q=${encodeURIComponent(query)}`);
     if (!res.ok) throw new WebFrostError(res.status, res.statusText);
     return res.json() as Promise<SearchResult[]>;
   }
 
   /** Delete a snapshot by id. Returns true if deleted, false if not found. */
   async deleteSnapshot(id: number): Promise<boolean> {
-    const res = await fetch(`${this.baseUrl}/snapshots/${id}`, { method: "DELETE" });
+    const res = await this.request(`${this.baseUrl}/snapshots/${id}`, { method: "DELETE" });
     if (res.status === 404) return false;
     if (!res.ok) throw new WebFrostError(res.status, res.statusText);
     return true;
@@ -167,7 +175,7 @@ export class WebFrostClient {
 
   /** List all tags. */
   async listTags(): Promise<Tag[]> {
-    const res = await fetch(`${this.baseUrl}/tags`);
+    const res = await this.request(`${this.baseUrl}/tags`);
     if (!res.ok) throw new WebFrostError(res.status, res.statusText);
     const raw = (await res.json()) as RawTag[];
     return raw.map(toTag);
@@ -175,7 +183,7 @@ export class WebFrostClient {
 
   /** Create a new tag. Throws WebFrostError(409) if name already exists. */
   async createTag(name: string, color?: string): Promise<Tag> {
-    const res = await fetch(`${this.baseUrl}/tags`, {
+    const res = await this.request(`${this.baseUrl}/tags`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, ...(color !== undefined ? { color } : {}) }),
@@ -189,7 +197,7 @@ export class WebFrostClient {
 
   /** Delete a tag by id. Returns true if deleted, false if not found. */
   async deleteTag(id: number): Promise<boolean> {
-    const res = await fetch(`${this.baseUrl}/tags/${id}`, { method: "DELETE" });
+    const res = await this.request(`${this.baseUrl}/tags/${id}`, { method: "DELETE" });
     if (res.status === 404) return false;
     if (!res.ok) throw new WebFrostError(res.status, res.statusText);
     return true;
@@ -197,7 +205,7 @@ export class WebFrostClient {
 
   /** List tags on a snapshot. */
   async listSnapshotTags(snapshotId: number): Promise<Tag[]> {
-    const res = await fetch(`${this.baseUrl}/snapshots/${snapshotId}/tags`);
+    const res = await this.request(`${this.baseUrl}/snapshots/${snapshotId}/tags`);
     if (res.status === 404) return [];
     if (!res.ok) throw new WebFrostError(res.status, res.statusText);
     const raw = (await res.json()) as RawTag[];
@@ -206,7 +214,7 @@ export class WebFrostClient {
 
   /** Add a tag to a snapshot. */
   async addTagToSnapshot(snapshotId: number, tagId: number): Promise<Tag> {
-    const res = await fetch(`${this.baseUrl}/snapshots/${snapshotId}/tags`, {
+    const res = await this.request(`${this.baseUrl}/snapshots/${snapshotId}/tags`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tagId }),
@@ -220,7 +228,7 @@ export class WebFrostClient {
 
   /** Remove a tag from a snapshot. */
   async removeTagFromSnapshot(snapshotId: number, tagId: number): Promise<boolean> {
-    const res = await fetch(`${this.baseUrl}/snapshots/${snapshotId}/tags/${tagId}`, {
+    const res = await this.request(`${this.baseUrl}/snapshots/${snapshotId}/tags/${tagId}`, {
       method: "DELETE",
     });
     if (res.status === 404) return false;

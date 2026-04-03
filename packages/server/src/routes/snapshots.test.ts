@@ -273,6 +273,161 @@ describe("GET /snapshots/:id/archives/:extractor/download — security", () => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /snapshots?q= (FTS5 search)
+// ---------------------------------------------------------------------------
+
+describe("GET /snapshots?q=", () => {
+  test("returns empty array when nothing is indexed", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await app.handle(new Request("http://localhost/snapshots?q=anything"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as unknown[];
+    expect(Array.isArray(body)).toBe(true);
+    expect(body).toHaveLength(0);
+  });
+
+  test("returns ranked results with snippet for indexed snapshot", async () => {
+    const { openDb, indexSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    db.query("INSERT INTO snapshots (url, status) VALUES ('https://example.com', 'done')").run();
+    indexSnapshot(
+      db,
+      1,
+      "https://example.com",
+      "SQLite Full-Text Search Guide",
+      "FTS5 is powerful",
+      "",
+    );
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(new Request("http://localhost/snapshots?q=SQLite"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Array<{
+      id: number;
+      url: string;
+      snippet: string;
+      rank: number;
+    }>;
+    expect(body.length).toBeGreaterThan(0);
+    expect(body[0]?.id).toBe(1);
+    expect(body[0]?.url).toBe("https://example.com");
+    expect(typeof body[0]?.snippet).toBe("string");
+    expect(typeof body[0]?.rank).toBe("number");
+  });
+
+  test("returns empty array for blank query (falls through to list)", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    // Empty q param is treated as missing — returns list, not search
+    const res = await app.handle(new Request("http://localhost/snapshots?q="));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as unknown[];
+    expect(Array.isArray(body)).toBe(true);
+  });
+
+  test("does not throw on invalid FTS query expression", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request(`http://localhost/snapshots?q=${encodeURIComponent('"unclosed')}`),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as unknown[];
+    expect(Array.isArray(body)).toBe(true);
+    expect(body).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /snapshots/:id
+// ---------------------------------------------------------------------------
+
+describe("DELETE /snapshots/:id", () => {
+  test("returns 404 for non-existent snapshot", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request("http://localhost/snapshots/99999", { method: "DELETE" }),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  test("returns 204 and removes snapshot for existing id", async () => {
+    const { openDb, createSnapshot, getSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    const id = createSnapshot(db, "https://example.com/del");
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request(`http://localhost/snapshots/${id}`, { method: "DELETE" }),
+    );
+    expect(res.status).toBe(204);
+
+    // Verify snapshot is gone from the DB
+    const db2 = openDb(testDir);
+    const snap = getSnapshot(db2, id);
+    db2.close();
+    expect(snap).toBeNull();
+  });
+
+  test("cascades to archive_results on delete", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    const id = createSnapshot(db, "https://example.com/cascade");
+    db.query(
+      "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'html', '<p>hi</p>')",
+    ).run(id);
+    db.close();
+
+    const app = await getApp();
+    await app.handle(new Request(`http://localhost/snapshots/${id}`, { method: "DELETE" }));
+
+    const db2 = openDb(testDir);
+    const rows = db2
+      .query<{ id: number }, [number]>("SELECT id FROM archive_results WHERE snapshot_id = ?")
+      .all(id);
+    db2.close();
+    expect(rows).toHaveLength(0);
+  });
+
+  test("removes snapshot from FTS index on delete", async () => {
+    const { openDb, createSnapshot, indexSnapshot, searchSnapshots } = await import(
+      "@webfrost/core"
+    );
+    const db = openDb(testDir);
+    const id = createSnapshot(db, "https://example.com/fts-del");
+    indexSnapshot(
+      db,
+      id,
+      "https://example.com/fts-del",
+      "Unique FTS Delete Test ZZZ",
+      "content",
+      "",
+    );
+    db.close();
+
+    const app = await getApp();
+    await app.handle(new Request(`http://localhost/snapshots/${id}`, { method: "DELETE" }));
+
+    const db2 = openDb(testDir);
+    const results = searchSnapshots(db2, "ZZZ");
+    db2.close();
+    expect(results).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET /snapshots/:id
 // ---------------------------------------------------------------------------
 

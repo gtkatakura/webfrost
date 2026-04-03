@@ -30,11 +30,10 @@ describe("WebFrostClient.createSnapshot", () => {
     const result = await client.createSnapshot("https://example.com");
 
     expect(result).toEqual({ id: 1, url: "https://example.com", status: "pending" });
-    expect(fetchSpy).toHaveBeenCalledWith(`${BASE}/snapshots`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: "https://example.com" }),
-    });
+    const [calledUrl, calledInit] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(calledUrl).toBe(`${BASE}/snapshots`);
+    expect(calledInit.method).toBe("POST");
+    expect(calledInit.body).toBe(JSON.stringify({ url: "https://example.com" }));
   });
 
   test("throws WebFrostError with message on 400", async () => {
@@ -90,7 +89,7 @@ describe("WebFrostClient.listSnapshots", () => {
     const result = await client.listSnapshots();
 
     expect(result).toEqual(raw);
-    expect(fetchSpy).toHaveBeenCalledWith(`${BASE}/snapshots`);
+    expect((fetchSpy.mock.calls[0] as unknown[])[0]).toBe(`${BASE}/snapshots`);
   });
 
   test("throws WebFrostError on non-200", async () => {
@@ -129,7 +128,7 @@ describe("WebFrostClient.getSnapshot", () => {
         { id: 10, extractor: "warc", content: "data", createdAt: "2024-01-01T00:01:00.000Z" },
       ],
     });
-    expect(fetchSpy).toHaveBeenCalledWith(`${BASE}/snapshots/1`);
+    expect((fetchSpy.mock.calls[0] as unknown[])[0]).toBe(`${BASE}/snapshots/1`);
   });
 
   test("returns null on 404", async () => {

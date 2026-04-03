@@ -42,6 +42,8 @@ export interface SnapshotDetail extends Snapshot {
 export interface WebFrostClientOptions {
   /** Base URL of the WebFrost server, e.g. "http://localhost:3000" */
   baseUrl: string;
+  /** API key for Bearer authentication. All requests will include Authorization: Bearer <apiKey>. */
+  apiKey?: string;
 }
 
 /** Single result from GET /snapshots?q=term */

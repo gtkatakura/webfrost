@@ -4,6 +4,8 @@ import {
   addSchedule,
   addTagToSnapshot,
   addUrl,
+  createAdminUser,
+  createApiKey,
   createSnapshot,
   createTag,
   deleteSnapshot,
@@ -12,6 +14,7 @@ import {
   getDueSchedules,
   getSnapshot,
   getTag,
+  listApiKeys,
   listSchedules,
   listSnapshotTags,
   listSnapshots,
@@ -21,6 +24,7 @@ import {
   parseUrls,
   rebuildIndex,
   removeSchedule,
+  revokeApiKey,
   runPipeline,
   searchSnapshots,
 } from "@webfrost/core";
@@ -368,6 +372,114 @@ switch (command) {
     }
 
     console.error("Usage: webfrost tag <add|list|create|remove>");
+    process.exit(1);
+    break;
+  }
+
+  case "admin": {
+    const sub = args[0];
+
+    if (sub === "create") {
+      // webfrost admin create --username <name> --password <pass>
+      const usernameIdx = args.indexOf("--username");
+      const passwordIdx = args.indexOf("--password");
+      const usernameArg = usernameIdx !== -1 ? args[usernameIdx + 1] : undefined;
+      const passwordArg = passwordIdx !== -1 ? args[passwordIdx + 1] : undefined;
+
+      if (!usernameArg || !passwordArg) {
+        console.error("Usage: webfrost admin create --username <name> --password <pass>");
+        process.exit(1);
+      }
+
+      const db = openDb(archiveDir);
+      try {
+        await createAdminUser(db, usernameArg, passwordArg);
+        const { id, rawKey } = createApiKey(db, "default");
+        console.log(`Admin user "${usernameArg}" created.`);
+        console.log("Default API key (save this — shown once):");
+        console.log(`  ID:  ${id}`);
+        console.log(`  Key: ${rawKey}`);
+      } catch (err) {
+        console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      } finally {
+        db.close();
+      }
+      break;
+    }
+
+    if (sub === "key") {
+      const keyCmd = args[1];
+
+      if (keyCmd === "create") {
+        // webfrost admin key create --name <label> [--expires <ISO date>]
+        const nameIdx = args.indexOf("--name");
+        const expiresIdx = args.indexOf("--expires");
+        const nameArg = nameIdx !== -1 ? args[nameIdx + 1] : undefined;
+        const expiresArg = expiresIdx !== -1 ? args[expiresIdx + 1] : undefined;
+
+        if (!nameArg) {
+          console.error("Usage: webfrost admin key create --name <label> [--expires <ISO date>]");
+          process.exit(1);
+        }
+
+        const db = openDb(archiveDir);
+        try {
+          const { id, rawKey } = createApiKey(db, nameArg, expiresArg);
+          console.log("API key created (save this — shown once):");
+          console.log(`  ID:  ${id}`);
+          console.log(`  Key: ${rawKey}`);
+        } finally {
+          db.close();
+        }
+        break;
+      }
+
+      if (keyCmd === "list") {
+        const db = openDb(archiveDir);
+        try {
+          const keys = listApiKeys(db);
+          if (keys.length === 0) {
+            console.log("No active API keys.");
+          }
+          for (const k of keys) {
+            const expires = k.expiresAt ?? "never";
+            const lastUsed = k.lastUsedAt ?? "never";
+            console.log(`${k.id}\t${k.name}\texpires:${expires}\tlast_used:${lastUsed}`);
+          }
+        } finally {
+          db.close();
+        }
+        break;
+      }
+
+      if (keyCmd === "revoke") {
+        const keyId = args[2];
+        if (!keyId) {
+          console.error("Usage: webfrost admin key revoke <id>");
+          process.exit(1);
+        }
+        const db = openDb(archiveDir);
+        try {
+          const revoked = revokeApiKey(db, keyId);
+          if (revoked) {
+            console.log(`API key ${keyId} revoked.`);
+          } else {
+            console.error(`API key ${keyId} not found or already revoked.`);
+            process.exit(1);
+          }
+        } finally {
+          db.close();
+        }
+        break;
+      }
+
+      console.error("Usage: webfrost admin key <create|list|revoke>");
+      process.exit(1);
+      break;
+    }
+
+    console.error("Usage: webfrost admin <create|key>");
     process.exit(1);
     break;
   }
