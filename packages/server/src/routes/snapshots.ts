@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import {
   createSnapshot,
+  deleteSnapshot,
   getSnapshot,
   listSnapshotsWithExtractors,
   openDb,
@@ -131,6 +132,30 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
     {
       params: t.Object({ id: t.String() }),
     },
+  )
+  .delete(
+    "/:id",
+    async ({ params, set }) => {
+      const id = Number(params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        set.status = 404;
+        return { error: "not found" };
+      }
+
+      const db = getDb();
+      try {
+        const deleted = await deleteSnapshot(db, id, getWebfrostDir());
+        if (!deleted) {
+          set.status = 404;
+          return { error: "not found" };
+        }
+        set.status = 204;
+        return null;
+      } finally {
+        db.close();
+      }
+    },
+    { params: t.Object({ id: t.String() }) },
   )
   .get(
     "/:id/archives/:extractor/download",

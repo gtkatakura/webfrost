@@ -146,6 +146,14 @@ export class WebFrostClient {
     return toSnapshotDetail(raw);
   }
 
+  /** Delete a snapshot by id. Returns true if deleted, false if not found. */
+  async deleteSnapshot(id: number): Promise<boolean> {
+    const res = await fetch(`${this.baseUrl}/snapshots/${id}`, { method: "DELETE" });
+    if (res.status === 404) return false;
+    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    return true;
+  }
+
   /** List all tags. */
   async listTags(): Promise<Tag[]> {
     const res = await fetch(`${this.baseUrl}/tags`);

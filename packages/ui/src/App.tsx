@@ -703,6 +703,22 @@ function DetailPage() {
   const [detail, setDetail] = useState<SnapshotDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    if (!id) return;
+    if (!window.confirm("Delete this snapshot and all its artifacts? This cannot be undone.")) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      await client.deleteSnapshot(Number(id));
+      navigate("/");
+    } catch (e) {
+      setError(e instanceof WebFrostError ? e.message : String(e));
+      setDeleting(false);
+    }
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -797,6 +813,26 @@ function DetailPage() {
             </span>
             <span style={{ color: "#6b7280" }}>Created</span>
             <span>{new Date(detail.createdAt).toLocaleString()}</span>
+          </div>
+
+          <div style={{ marginBottom: "1.75rem" }}>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              style={{
+                background: "#fee2e2",
+                border: "1px solid #fca5a5",
+                color: "#b91c1c",
+                cursor: deleting ? "not-allowed" : "pointer",
+                fontSize: "0.875rem",
+                borderRadius: 6,
+                padding: "0.4rem 0.875rem",
+                opacity: deleting ? 0.6 : 1,
+              }}
+            >
+              {deleting ? "Deleting…" : "Delete snapshot"}
+            </button>
           </div>
 
           <h2

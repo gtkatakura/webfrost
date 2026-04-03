@@ -7,7 +7,7 @@ export type { ImportFormat } from "./import";
 export { listSnapshots, listSnapshotsWithExtractors } from "./list";
 export type { Snapshot, SnapshotWithExtractors } from "./list";
 export { addUrl, createSnapshot, runPipeline } from "./pipeline";
-export { getSnapshot } from "./snapshot";
+export { deleteSnapshot, getSnapshot } from "./snapshot";
 export type { SnapshotDetail } from "./snapshot";
 export {
   addSchedule,

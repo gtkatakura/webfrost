@@ -6,6 +6,7 @@ import {
   addUrl,
   createSnapshot,
   createTag,
+  deleteSnapshot,
   deleteTag,
   detectFormat,
   getDueSchedules,
@@ -366,6 +367,33 @@ switch (command) {
 
     console.error("Usage: webfrost tag <add|list|create|remove>");
     process.exit(1);
+    break;
+  }
+
+  case "delete": {
+    // webfrost delete <id>
+    const idArg = args[0];
+    if (!idArg) {
+      console.error("Usage: webfrost delete <id>");
+      process.exit(1);
+    }
+    const id = Number(idArg);
+    if (!Number.isInteger(id) || id <= 0) {
+      console.error("Invalid snapshot id");
+      process.exit(1);
+    }
+    const db = openDb(archiveDir);
+    try {
+      const deleted = await deleteSnapshot(db, id, archiveDir);
+      if (deleted) {
+        console.log(`Snapshot ${id} deleted.`);
+      } else {
+        console.error(`Snapshot ${id} not found.`);
+        process.exit(1);
+      }
+    } finally {
+      db.close();
+    }
     break;
   }
 
