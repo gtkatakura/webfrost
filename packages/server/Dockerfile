@@ -40,6 +40,13 @@ COPY packages/server/ packages/server/
 RUN bun run --filter '@webfrost/core' build
 RUN bun run --filter '@webfrost/server' build
 
+# Hoist workspace-local deps to root node_modules so the runtime image can
+# resolve them from dist/index.js. bun installs jsdom/playwright under
+# packages/core/node_modules (not root) because they are not root deps.
+RUN ln -sf "$(readlink -f packages/core/node_modules/jsdom)" node_modules/jsdom && \
+    mkdir -p node_modules/@mozilla && \
+    ln -sf "$(readlink -f packages/core/node_modules/@mozilla/readability)" node_modules/@mozilla/readability
+
 # Stage 3 — runtime image
 FROM oven/bun:1-slim
 WORKDIR /app
