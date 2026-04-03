@@ -47,6 +47,9 @@ WORKDIR /app
 # External deps (jsdom reads CSS from disk via __dirname at load time;
 # playwright is a runtime optional dep — both must be on disk, not bundled)
 COPY --from=server-builder /app/node_modules ./node_modules
+# jsdom and playwright are installed as workspace-local deps under packages/core;
+# bun symlinks them there (not in root node_modules), so copy the symlink tree too.
+COPY --from=server-builder /app/packages/core/node_modules ./packages/core/node_modules
 
 # Server bundle
 COPY --from=server-builder /app/packages/server/dist ./dist
