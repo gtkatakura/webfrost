@@ -1,6 +1,7 @@
 import type Database from "bun:sqlite";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { safeFetch } from "../ssrf-guard";
 
 /**
  * Produce a self-contained HTML file with external CSS and images inlined as
@@ -73,7 +74,7 @@ async function inlineCssLinks(input: string, baseUrl: string): Promise<string> {
       const url = resolveUrl(hrefMatch[1], baseUrl);
       if (!url) return { tag, replacement: tag };
       try {
-        const res = await fetch(url);
+        const res = await safeFetch(url);
         if (!res.ok) return { tag, replacement: tag };
         const css = await res.text();
         const rebased = await rebaseCssUrls(css, url);
@@ -110,7 +111,7 @@ async function inlineImages(input: string, baseUrl: string): Promise<string> {
         return { tag, src, dataUri: null };
       }
       try {
-        const res = await fetch(url);
+        const res = await safeFetch(url);
         if (!res.ok) return { tag, src, dataUri: null };
         const contentType = res.headers.get("content-type") ?? "image/png";
         const buf = await res.arrayBuffer();
@@ -156,7 +157,7 @@ async function rebaseCssUrls(css: string, cssFileUrl: string): Promise<string> {
       // Inline font files as base64 data URIs so they work in file:// context.
       if (isFontUrl(absoluteUrl)) {
         try {
-          const res = await fetch(absoluteUrl);
+          const res = await safeFetch(absoluteUrl);
           if (res.ok) {
             const contentType = res.headers.get("content-type") ?? guessFontMime(absoluteUrl);
             const buf = await res.arrayBuffer();

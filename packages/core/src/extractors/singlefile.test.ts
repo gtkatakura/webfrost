@@ -29,6 +29,8 @@ let testDir: string;
 let db: Database;
 
 beforeEach(() => {
+  // Allow localhost so in-process test servers pass the SSRF guard
+  process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
   testDir = join(tmpdir(), `singlefile-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   mkdirSync(testDir, { recursive: true });
   db = openDb(testDir);
@@ -36,6 +38,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  process.env.WEBFROST_ALLOW_PRIVATE_URLS = undefined;
   db.close();
   try {
     rmSync(testDir, { recursive: true, force: true });
