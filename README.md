@@ -1,6 +1,6 @@
 # WebFrost
 
-A self-hosted web archiving toolkit. Archive URLs to WARC, Readability JSON, and PDF with one command. One shared HTTP cache, one browser navigation per snapshot, durable open formats (files + SQLite), no lock-in.
+A self-hosted web archiving toolkit. Archive URLs to WARC, Readability JSON, PDF, full-page screenshots, DOM snapshots, and self-contained HTML with one command. One shared HTTP cache, one browser navigation per snapshot, durable open formats (files + SQLite), no lock-in.
 
 ---
 
@@ -65,8 +65,14 @@ See [docs/DEPLOY.md](docs/DEPLOY.md) for full deployment instructions, env vars,
 
 ```
 webfrost init                              Initialize a new archive at WEBFROST_DIR
-webfrost add <url>                         Archive a URL (WARC + Readability + PDF)
+webfrost add <url>                         Archive a URL (WARC + Readability + PDF + screenshot + DOM)
 webfrost list                              List all snapshots
+webfrost delete <id>                       Delete a snapshot and its archive files
+
+webfrost tag add <snapshot-id> <name>      Add a tag to a snapshot (creates tag if needed)
+webfrost tag list [<snapshot-id>]          List all tags, or tags on a specific snapshot
+webfrost tag create <name> [--color <hex>] Create a new tag
+webfrost tag remove <tag-id>              Delete a tag (removes from all snapshots)
 
 webfrost schedule add <url> --cron <expr>  Add a recurring archive schedule
 webfrost schedule list                     List all schedules
@@ -95,7 +101,8 @@ The server exposes a REST API alongside the React UI:
 | `POST` | `/api/snapshots` | Submit a URL for archiving (202 — async) |
 | `GET` | `/api/snapshots` | List all snapshots |
 | `GET` | `/api/snapshots/:id` | Get snapshot with archive results |
-| `GET` | `/api/snapshots/:id/archives/:extractor/download` | Download archive file (`html`, `warc`, `pdf`, `readability`) |
+| `DELETE` | `/api/snapshots/:id` | Delete a snapshot and its archive files |
+| `GET` | `/api/snapshots/:id/archives/:extractor/download` | Download archive file (`html`, `warc`, `pdf`, `readability`, `screenshot`, `dom-snapshot`, `singlefile`) |
 | `GET` | `/api/snapshots/:id/tags` | List tags on a snapshot |
 | `POST` | `/api/snapshots/:id/tags` | Add a tag to a snapshot |
 | `DELETE` | `/api/snapshots/:id/tags/:tagId` | Remove a tag from a snapshot |
@@ -133,10 +140,6 @@ WebFrost is under active development. See [ROADMAP.md](./ROADMAP.md) for the ful
 **Near-term highlights (P0/P1):**
 - API authentication (bearer tokens + session cookies)
 - Full-text search (SQLite FTS5)
-- Screenshot extractor (full-page PNG)
-- DOM snapshot extractor
-- SingleFile extractor (self-contained HTML)
-- Snapshot deletion
 - RSS feed auto-import
 - Media extraction via yt-dlp
 - Browser extension (Chrome/Firefox)
