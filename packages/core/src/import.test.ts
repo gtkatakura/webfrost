@@ -98,3 +98,113 @@ describe("parseUrls — netscape format", () => {
     expect(parseUrls("<html><body></body></html>", "netscape")).toEqual([]);
   });
 });
+
+const RSS2_FEED = `<?xml version="1.0"?>
+<rss version="2.0">
+  <channel>
+    <title>Example Feed</title>
+    <item>
+      <title>Article One</title>
+      <link>https://example.com/article-1</link>
+    </item>
+    <item>
+      <title>Article Two</title>
+      <link>https://example.com/article-2</link>
+    </item>
+    <item>
+      <title>No link item</title>
+    </item>
+    <item>
+      <title>FTP link — should be skipped</title>
+      <link>ftp://example.com/file</link>
+    </item>
+  </channel>
+</rss>`;
+
+const ATOM_FEED = `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Atom Feed</title>
+  <entry>
+    <title>Post One</title>
+    <link href="https://atom.example.com/post-1" rel="alternate"/>
+  </entry>
+  <entry>
+    <title>Post Two</title>
+    <link href="https://atom.example.com/post-2"/>
+  </entry>
+</feed>`;
+
+describe("detectFormat — RSS/Atom", () => {
+  test("detects .rss extension", () => {
+    expect(detectFormat("feed.rss", "")).toBe("rss");
+  });
+
+  test("detects .atom extension", () => {
+    expect(detectFormat("feed.atom", "")).toBe("rss");
+  });
+
+  test("detects .xml with RSS content", () => {
+    expect(detectFormat("feed.xml", RSS2_FEED)).toBe("rss");
+  });
+
+  test("detects RSS content without extension (content-based)", () => {
+    expect(detectFormat("unknown", RSS2_FEED)).toBe("rss");
+  });
+
+  test("detects Atom content via xmlns", () => {
+    expect(detectFormat("feed.xml", ATOM_FEED)).toBe("rss");
+  });
+
+  test("does not misidentify plain text as rss", () => {
+    expect(detectFormat("urls.txt", "https://example.com\nhttps://other.com")).toBe("text");
+  });
+});
+
+describe("parseUrls — rss format (RSS 2.0)", () => {
+  test("extracts item link URLs", () => {
+    const urls = parseUrls(RSS2_FEED, "rss");
+    expect(urls).toContain("https://example.com/article-1");
+    expect(urls).toContain("https://example.com/article-2");
+  });
+
+  test("skips items with no link", () => {
+    const urls = parseUrls(RSS2_FEED, "rss");
+    expect(urls).toHaveLength(2);
+  });
+
+  test("skips non-http/https links", () => {
+    const urls = parseUrls(RSS2_FEED, "rss");
+    expect(urls.some((u) => u.startsWith("ftp:"))).toBe(false);
+  });
+
+  test("deduplicates repeated URLs", () => {
+    const feed =
+      "<rss><channel><item><link>https://dup.com/a</link></item><item><link>https://dup.com/a</link></item></channel></rss>";
+    const urls = parseUrls(feed, "rss");
+    expect(urls.filter((u) => u === "https://dup.com/a")).toHaveLength(1);
+  });
+
+  test("returns empty array for empty feed", () => {
+    expect(parseUrls("<rss><channel></channel></rss>", "rss")).toEqual([]);
+  });
+});
+
+describe("parseUrls — rss format (Atom)", () => {
+  test("extracts entry link hrefs", () => {
+    const urls = parseUrls(ATOM_FEED, "rss");
+    expect(urls).toContain("https://atom.example.com/post-1");
+    expect(urls).toContain("https://atom.example.com/post-2");
+  });
+
+  test("prefers rel=alternate links", () => {
+    const feed = `<feed xmlns="http://www.w3.org/2005/Atom">
+      <entry>
+        <link href="https://example.com/self" rel="self"/>
+        <link href="https://example.com/article" rel="alternate"/>
+      </entry>
+    </feed>`;
+    const urls = parseUrls(feed, "rss");
+    expect(urls).toContain("https://example.com/article");
+    expect(urls).not.toContain("https://example.com/self");
+  });
+});

@@ -1,6 +1,7 @@
 // @webfrost/cli entry point
 import { readFileSync } from "node:fs";
 import {
+  addRssFeedSchedule,
   addSchedule,
   addTagToSnapshot,
   addUrl,
@@ -11,9 +12,11 @@ import {
   deleteSnapshot,
   deleteTag,
   detectFormat,
+  fetchRssFeedUrls,
   getDueSchedules,
   getSnapshot,
   getTag,
+  isUrlArchived,
   listApiKeys,
   listSchedules,
   listSnapshotTags,
@@ -78,12 +81,19 @@ switch (command) {
 
     if (sub === "add") {
       // webfrost schedule add <url> --cron <expr>
-      const urlArg = args[1];
+      // webfrost schedule add --rss <feed-url> --cron <expr>
+      const rssIdx = args.indexOf("--rss");
+      const isRss = rssIdx !== -1;
+      const urlArg = isRss ? args[rssIdx + 1] : args[1];
       const cronIdx = args.indexOf("--cron");
       const cronExpr = cronIdx !== -1 ? args[cronIdx + 1] : undefined;
 
       if (!urlArg || !cronExpr) {
-        console.error("Usage: webfrost schedule add <url> --cron <expr>");
+        if (isRss) {
+          console.error("Usage: webfrost schedule add --rss <feed-url> --cron <expr>");
+        } else {
+          console.error("Usage: webfrost schedule add <url> --cron <expr>");
+        }
         process.exit(1);
       }
 
@@ -101,8 +111,11 @@ switch (command) {
 
       const db = openDb(archiveDir);
       try {
-        const id = addSchedule(db, urlArg, cronExpr);
-        console.log(`Schedule ${id} created: ${urlArg} @ ${cronExpr}`);
+        const id = isRss
+          ? addRssFeedSchedule(db, urlArg, cronExpr)
+          : addSchedule(db, urlArg, cronExpr);
+        const label = isRss ? "RSS feed schedule" : "Schedule";
+        console.log(`${label} ${id} created: ${urlArg} @ ${cronExpr}`);
       } finally {
         db.close();
       }
@@ -118,7 +131,10 @@ switch (command) {
         }
         for (const s of schedules) {
           const last = s.last_run_at ?? "never";
-          console.log(`${s.id}\t${s.cron}\t${s.url}\tlast:${last}\tnext:${s.next_run_at}`);
+          const kindLabel = s.kind === "rss_feed" ? "[rss]" : "[url]";
+          console.log(
+            `${s.id}\t${kindLabel}\t${s.cron}\t${s.url}\tlast:${last}\tnext:${s.next_run_at}`,
+          );
         }
       } finally {
         db.close();
@@ -169,17 +185,42 @@ switch (command) {
         }
 
         for (const schedule of due) {
-          console.log(`[worker] Running schedule ${schedule.id}: ${schedule.url}`);
-          const db2 = openDb(archiveDir);
-          try {
-            const snapshotId = createSnapshot(db2, schedule.url);
-            await runPipeline(db2, snapshotId, schedule.url, archiveDir);
-            markScheduleRun(db2, schedule.id, schedule.cron);
-            console.log(`[worker] Schedule ${schedule.id} done (snapshot ${snapshotId})`);
-          } catch (err) {
-            console.error(`[worker] Schedule ${schedule.id} failed:`, err);
-          } finally {
-            db2.close();
+          if (schedule.kind === "rss_feed") {
+            console.log(`[worker] Running RSS feed schedule ${schedule.id}: ${schedule.url}`);
+            const db2 = openDb(archiveDir);
+            try {
+              const feedUrls = await fetchRssFeedUrls(schedule.url);
+              let queued = 0;
+              for (const url of feedUrls) {
+                if (isUrlArchived(db2, url)) continue;
+                const snapshotId = createSnapshot(db2, url);
+                runPipeline(db2, snapshotId, url, archiveDir).catch((err: unknown) => {
+                  console.error(`[worker] pipeline error for ${url}:`, err);
+                });
+                queued++;
+              }
+              markScheduleRun(db2, schedule.id, schedule.cron);
+              console.log(
+                `[worker] RSS feed schedule ${schedule.id} done (${feedUrls.length} items, ${queued} new)`,
+              );
+            } catch (err) {
+              console.error(`[worker] RSS feed schedule ${schedule.id} failed:`, err);
+            } finally {
+              db2.close();
+            }
+          } else {
+            console.log(`[worker] Running schedule ${schedule.id}: ${schedule.url}`);
+            const db2 = openDb(archiveDir);
+            try {
+              const snapshotId = createSnapshot(db2, schedule.url);
+              await runPipeline(db2, snapshotId, schedule.url, archiveDir);
+              markScheduleRun(db2, schedule.id, schedule.cron);
+              console.log(`[worker] Schedule ${schedule.id} done (snapshot ${snapshotId})`);
+            } catch (err) {
+              console.error(`[worker] Schedule ${schedule.id} failed:`, err);
+            } finally {
+              db2.close();
+            }
           }
         }
       }
@@ -195,32 +236,78 @@ switch (command) {
   }
 
   case "import": {
-    const filePath = args[0];
-    if (!filePath) {
-      console.error("Usage: webfrost import <file>");
+    // webfrost import [--format=<fmt>] <url-or-file>
+    const formatFlagIdx = args.findIndex((a) => a.startsWith("--format="));
+    const formatOverride = formatFlagIdx !== -1 ? args[formatFlagIdx]?.split("=")[1] : undefined;
+    const positional = args.filter((_, i) => i !== formatFlagIdx);
+    const source = positional[0];
+
+    if (!source) {
+      console.error("Usage: webfrost import [--format=<fmt>] <url-or-file>");
       process.exit(1);
     }
 
+    // Determine if source is a URL or a file path
     let content: string;
+    let filename: string;
+    let isSourceUrl = false;
     try {
-      content = readFileSync(filePath, "utf8");
+      const parsed = new URL(source);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        isSourceUrl = true;
+      }
     } catch {
-      console.error(`Cannot read file: ${filePath}`);
-      process.exit(1);
+      // not a URL
     }
 
-    const filename = filePath.split("/").pop() ?? filePath;
-    const format = detectFormat(filename, content);
+    if (isSourceUrl) {
+      // Fetch from network (CLI context — user controls this machine)
+      let response: Response;
+      try {
+        response = await fetch(source);
+      } catch (err) {
+        console.error(
+          `Cannot fetch URL: ${source}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        process.exit(1);
+      }
+      if (!response.ok) {
+        console.error(`Cannot fetch URL: ${source}: HTTP ${response.status}`);
+        process.exit(1);
+      }
+      content = await response.text();
+      filename = new URL(source).pathname.split("/").pop() ?? source;
+    } else {
+      try {
+        content = readFileSync(source, "utf8");
+      } catch {
+        console.error(`Cannot read file: ${source}`);
+        process.exit(1);
+      }
+      filename = source.split("/").pop() ?? source;
+    }
+
+    const VALID_FORMATS = ["rss", "opml", "netscape", "text"] as const;
+    const format = VALID_FORMATS.includes(formatOverride as (typeof VALID_FORMATS)[number])
+      ? (formatOverride as (typeof VALID_FORMATS)[number])
+      : detectFormat(filename, content);
     const urls = parseUrls(content, format);
+    // For RSS imports, deduplicate against already-archived URLs
+    const deduplicate = format === "rss";
 
     const total = urls.length;
     let queued = 0;
+    let skipped = 0;
     let failed = 0;
 
     console.log(`Detected format: ${format}. Found ${total} URL(s).`);
 
     const db = openDb(archiveDir);
     for (const url of urls) {
+      if (deduplicate && isUrlArchived(db, url)) {
+        skipped++;
+        continue;
+      }
       try {
         const snapshotId = createSnapshot(db, url);
         // Fire-and-forget pipeline (don't await to keep progress flowing)
@@ -229,18 +316,20 @@ switch (command) {
         });
         queued++;
         process.stdout.write(
-          `\rProgress: ${queued + failed}/${total} (queued: ${queued}, failed: ${failed})`,
+          `\rProgress: ${queued + failed + skipped}/${total} (queued: ${queued}, skipped: ${skipped}, failed: ${failed})`,
         );
       } catch {
         failed++;
         process.stdout.write(
-          `\rProgress: ${queued + failed}/${total} (queued: ${queued}, failed: ${failed})`,
+          `\rProgress: ${queued + failed + skipped}/${total} (queued: ${queued}, skipped: ${skipped}, failed: ${failed})`,
         );
       }
     }
     db.close();
 
-    console.log(`\nImport complete: total=${total}, queued=${queued}, failed=${failed}`);
+    console.log(
+      `\nImport complete: total=${total}, queued=${queued}, skipped=${skipped}, failed=${failed}`,
+    );
     break;
   }
 

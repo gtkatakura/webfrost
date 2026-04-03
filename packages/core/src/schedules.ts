@@ -5,34 +5,45 @@ export interface Schedule {
   id: number;
   url: string;
   cron: string;
+  /** "url" = archive this URL on each run; "rss_feed" = fetch feed and archive new article URLs. */
+  kind: string;
   created_at: string;
   last_run_at: string | null;
   next_run_at: string;
 }
 
+const SCHEDULE_COLS =
+  "id, url, cron, COALESCE(kind, 'url') AS kind, created_at, last_run_at, next_run_at";
+
 /** Add a new recurring schedule. Returns the new schedule id. */
-export function addSchedule(db: Database, url: string, cron: string): number {
+export function addSchedule(
+  db: Database,
+  url: string,
+  cron: string,
+  kind: "url" | "rss_feed" = "url",
+): number {
   // Validate cron and compute first next_run_at
   const nextRun = nextCronDate(cron, new Date());
   const nextRunIso = nextRun.toISOString().replace("T", " ").slice(0, 19);
 
   const row = db
-    .query<{ id: number }, [string, string, string]>(
-      "INSERT INTO schedules (url, cron, next_run_at) VALUES (?, ?, ?) RETURNING id",
+    .query<{ id: number }, [string, string, string, string]>(
+      "INSERT INTO schedules (url, cron, next_run_at, kind) VALUES (?, ?, ?, ?) RETURNING id",
     )
-    .get(url, cron, nextRunIso);
+    .get(url, cron, nextRunIso, kind);
 
   if (!row) throw new Error("Failed to insert schedule");
   return row.id;
 }
 
+/** Add a new RSS feed schedule. Shorthand for addSchedule with kind='rss_feed'. */
+export function addRssFeedSchedule(db: Database, feedUrl: string, cron: string): number {
+  return addSchedule(db, feedUrl, cron, "rss_feed");
+}
+
 /** List all schedules ordered by creation time. */
 export function listSchedules(db: Database): Schedule[] {
-  return db
-    .query<Schedule, []>(
-      "SELECT id, url, cron, created_at, last_run_at, next_run_at FROM schedules ORDER BY id",
-    )
-    .all();
+  return db.query<Schedule, []>(`SELECT ${SCHEDULE_COLS} FROM schedules ORDER BY id`).all();
 }
 
 /** Remove a schedule by id. Returns true if a row was deleted. */
@@ -45,9 +56,7 @@ export function removeSchedule(db: Database, id: number): boolean {
 export function getDueSchedules(db: Database): Schedule[] {
   const now = new Date().toISOString().replace("T", " ").slice(0, 19);
   return db
-    .query<Schedule, [string]>(
-      "SELECT id, url, cron, created_at, last_run_at, next_run_at FROM schedules WHERE next_run_at <= ?",
-    )
+    .query<Schedule, [string]>(`SELECT ${SCHEDULE_COLS} FROM schedules WHERE next_run_at <= ?`)
     .all(now);
 }
 

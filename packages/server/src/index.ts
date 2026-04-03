@@ -1,6 +1,7 @@
 import { staticPlugin } from "@elysiajs/static";
 import { Elysia } from "elysia";
 import { authPlugin, authRouter } from "./routes/auth";
+import { importRouter } from "./routes/import";
 import { schedulesRouter } from "./routes/schedules";
 import { snapshotsRouter } from "./routes/snapshots";
 import { snapshotTagsRouter, tagsRouter } from "./routes/tags";
@@ -32,7 +33,8 @@ export const app = new Elysia()
       .use(snapshotsRouter)
       .use(snapshotTagsRouter)
       .use(schedulesRouter)
-      .use(tagsRouter),
+      .use(tagsRouter)
+      .use(importRouter),
   );
 
 if (import.meta.main) {

@@ -17,12 +17,15 @@ export { FetchCache } from "./fetch-cache";
 export type { CachedResponse } from "./fetch-cache";
 export { detectFormat, parseUrls } from "./import";
 export type { ImportFormat } from "./import";
+export { fetchRssFeedUrls, isUrlArchived } from "./rss";
+export { safeFetch } from "./ssrf-guard";
 export { listSnapshots, listSnapshotsWithExtractors } from "./list";
 export type { Snapshot, SnapshotWithExtractors } from "./list";
 export { addUrl, createSnapshot, runPipeline } from "./pipeline";
 export { deleteSnapshot, getSnapshot } from "./snapshot";
 export type { SnapshotDetail } from "./snapshot";
 export {
+  addRssFeedSchedule,
   addSchedule,
   listSchedules,
   removeSchedule,

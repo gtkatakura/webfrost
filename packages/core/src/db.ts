@@ -67,5 +67,13 @@ export function openDb(dir: string): Database {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+
+  // Idempotent migration: add 'kind' to schedules (distinguishes url vs rss_feed schedules).
+  try {
+    db.exec("ALTER TABLE schedules ADD COLUMN kind TEXT NOT NULL DEFAULT 'url'");
+  } catch {
+    // Column already exists — safe to ignore.
+  }
+
   return db;
 }
