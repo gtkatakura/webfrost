@@ -15,9 +15,9 @@ export function SnapshotListRow({
 }) {
   const ts = new Date(snapshot.createdAt).toLocaleString();
   return (
-    <li className="border border-gray-200 rounded-md overflow-hidden flex items-stretch">
+    <li className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden flex items-stretch">
       {onToggle && (
-        <label className="flex items-center px-3 bg-white border-r border-gray-200 cursor-pointer">
+        <label className="flex items-center px-3 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 cursor-pointer">
           <input
             type="checkbox"
             checked={selected ?? false}
@@ -29,7 +29,7 @@ export function SnapshotListRow({
       )}
       <Link
         to={`/snapshots/${snapshot.id}`}
-        className="flex flex-1 justify-between items-start py-3 px-4 bg-white gap-4 text-inherit no-underline hover:no-underline"
+        className="flex flex-1 justify-between items-start py-3 px-4 bg-white dark:bg-gray-800 gap-4 text-inherit no-underline hover:no-underline"
       >
         <div className="shrink min-w-0">
           <span className="text-primary break-all text-sm block">{snapshot.url}</span>

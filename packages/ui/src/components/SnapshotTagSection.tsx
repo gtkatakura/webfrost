@@ -1,6 +1,7 @@
 import { WebFrostError } from "@webfrost/sdk";
 import type { Tag } from "@webfrost/sdk";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { useClient } from "../context";
 import { TagChip } from "./TagChip";
 
@@ -8,7 +9,6 @@ export function SnapshotTagSection({ snapshotId }: { snapshotId: number }) {
   const client = useClient();
   const [snapshotTags, setSnapshotTags] = useState<Tag[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([client.listSnapshotTags(snapshotId), client.listTags()])
@@ -17,16 +17,18 @@ export function SnapshotTagSection({ snapshotId }: { snapshotId: number }) {
         setAllTags(all);
       })
       .catch((e: unknown) => {
-        setError(e instanceof WebFrostError ? e.message : String(e));
+        toast.error(e instanceof WebFrostError ? e.message : String(e));
       });
   }, [snapshotId, client]);
 
   async function handleRemove(tagId: number) {
+    // Optimistic update
     setSnapshotTags((prev) => prev.filter((t) => t.id !== tagId));
     try {
       await client.removeTagFromSnapshot(snapshotId, tagId);
     } catch (e: unknown) {
-      setError(e instanceof WebFrostError ? e.message : String(e));
+      toast.error(e instanceof WebFrostError ? e.message : String(e));
+      // Revert on error
       const st = await client.listSnapshotTags(snapshotId);
       setSnapshotTags(st);
     }
@@ -35,11 +37,13 @@ export function SnapshotTagSection({ snapshotId }: { snapshotId: number }) {
   async function handleAdd(tagId: number) {
     const tag = allTags.find((t) => t.id === tagId);
     if (!tag) return;
+    // Optimistic update
     setSnapshotTags((prev) => [...prev, tag]);
     try {
       await client.addTagToSnapshot(snapshotId, tagId);
     } catch (e: unknown) {
-      setError(e instanceof WebFrostError ? e.message : String(e));
+      toast.error(e instanceof WebFrostError ? e.message : String(e));
+      // Revert on error
       const st = await client.listSnapshotTags(snapshotId);
       setSnapshotTags(st);
     }
@@ -49,11 +53,10 @@ export function SnapshotTagSection({ snapshotId }: { snapshotId: number }) {
 
   return (
     <div className="mb-7">
-      <h2 className="text-[0.95rem] font-semibold mb-3 text-gray-900">Tags</h2>
-      {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
+      <h2 className="text-[0.95rem] font-semibold mb-3 text-gray-900 dark:text-gray-100">Tags</h2>
       <div className="flex flex-wrap items-center gap-1.5 mb-3">
         {snapshotTags.length === 0 && (
-          <span className="text-gray-400 text-sm">No tags assigned.</span>
+          <span className="text-gray-400 dark:text-gray-500 text-sm">No tags assigned.</span>
         )}
         {snapshotTags.map((tag) => (
           <TagChip key={tag.id} tag={tag} onRemove={() => handleRemove(tag.id)} />
@@ -61,7 +64,7 @@ export function SnapshotTagSection({ snapshotId }: { snapshotId: number }) {
       </div>
       {availableTags.length > 0 && (
         <select
-          className="border border-gray-300 rounded-md text-sm py-1 px-2 bg-white text-gray-700 cursor-pointer"
+          className="border border-gray-300 dark:border-gray-600 rounded-md text-sm py-1 px-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 cursor-pointer"
           value=""
           onChange={(e) => {
             const id = Number(e.target.value);

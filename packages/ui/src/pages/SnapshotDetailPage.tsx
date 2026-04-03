@@ -2,6 +2,7 @@ import { WebFrostError } from "@webfrost/sdk";
 import type { SnapshotDetail } from "@webfrost/sdk";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
 import {
   ArchiveResultSection,
   ErrorBanner,
@@ -28,9 +29,10 @@ export function SnapshotDetailPage() {
     setDeleting(true);
     try {
       await client.deleteSnapshot(Number(id));
+      toast.success("Snapshot deleted");
       navigate("/");
     } catch (e) {
-      setError(e instanceof WebFrostError ? e.message : String(e));
+      toast.error(e instanceof WebFrostError ? e.message : String(e));
       setDeleting(false);
     }
   }
@@ -72,21 +74,23 @@ export function SnapshotDetailPage() {
 
       {detail && (
         <>
-          <h1 className="text-[1.1rem] font-bold mb-5 text-gray-900 break-all leading-snug">
+          <h1 className="text-[1.1rem] font-bold mb-5 text-gray-900 dark:text-gray-100 break-all leading-snug">
             <a href={detail.url} target="_blank" rel="noreferrer">
               {detail.url}
             </a>
           </h1>
 
-          <div className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-1.5 text-sm mb-7 bg-white border border-gray-200 rounded-md py-3 px-4">
-            <span className="text-gray-500">ID</span>
-            <span>{detail.id}</span>
-            <span className="text-gray-500">Status</span>
+          <div className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-1.5 text-sm mb-7 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md py-3 px-4">
+            <span className="text-gray-500 dark:text-gray-400">ID</span>
+            <span className="text-gray-900 dark:text-gray-100">{detail.id}</span>
+            <span className="text-gray-500 dark:text-gray-400">Status</span>
             <span>
               <StatusBadge status={detail.status} />
             </span>
-            <span className="text-gray-500">Created</span>
-            <span>{new Date(detail.createdAt).toLocaleString()}</span>
+            <span className="text-gray-500 dark:text-gray-400">Created</span>
+            <span className="text-gray-900 dark:text-gray-100">
+              {new Date(detail.createdAt).toLocaleString()}
+            </span>
           </div>
 
           <div className="mb-7">
@@ -94,7 +98,7 @@ export function SnapshotDetailPage() {
               type="button"
               onClick={handleDelete}
               disabled={deleting}
-              className={`bg-red-100 border border-red-300 text-red-700 text-sm rounded-md py-1.5 px-3.5 ${
+              className={`bg-red-100 dark:bg-red-900/20 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-400 text-sm rounded-md py-1.5 px-3.5 ${
                 deleting ? "cursor-not-allowed opacity-60" : "cursor-pointer"
               }`}
             >
@@ -104,10 +108,17 @@ export function SnapshotDetailPage() {
 
           <SnapshotTagSection snapshotId={detail.id} />
 
-          <h2 className="text-[0.95rem] font-semibold mb-3 text-gray-900">Archive Results</h2>
+          <h2 className="text-[0.95rem] font-semibold mb-3 text-gray-900 dark:text-gray-100">
+            Archive Results
+          </h2>
 
           {detail.archiveResults.length === 0 ? (
-            <p className="text-gray-400">No extractor results yet.</p>
+            <div className="text-center py-8">
+              <p className="text-2xl mb-2">⏳</p>
+              <p className="text-gray-400 dark:text-gray-500 text-sm">
+                No extractor results yet. Check back soon.
+              </p>
+            </div>
           ) : (
             detail.archiveResults.map((r) => (
               <ArchiveResultSection key={r.id} result={r} snapshotId={detail.id} />

@@ -1,7 +1,7 @@
 import { WebFrostError } from "@webfrost/sdk";
 import type { Schedule } from "@webfrost/sdk";
 import { useCallback, useEffect, useState } from "react";
-import { ErrorBanner } from "../components";
+import { toast } from "sonner";
 import { useClient } from "../context";
 
 const PRESETS = [
@@ -30,24 +30,23 @@ function formatDate(val: string | null): string {
   return new Date(val).toLocaleString();
 }
 
-const inputCls = "py-2 px-3 border border-gray-300 rounded text-sm";
+const inputCls =
+  "py-2 px-3 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100";
 
 export function SchedulesPage() {
   const client = useClient();
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [url, setUrl] = useState("");
   const [cron, setCron] = useState("");
   const [creating, setCreating] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     try {
       const data = await client.listSchedules();
       setSchedules(data);
     } catch (e) {
-      setError(e instanceof WebFrostError ? e.message : String(e));
+      toast.error(e instanceof WebFrostError ? e.message : String(e));
     } finally {
       setLoading(false);
     }
@@ -61,14 +60,14 @@ export function SchedulesPage() {
     e.preventDefault();
     if (!url.trim() || !cron.trim()) return;
     setCreating(true);
-    setFormError(null);
     try {
       const created = await client.createSchedule(url.trim(), cron.trim());
       setSchedules((prev) => [...prev, created]);
       setUrl("");
       setCron("");
+      toast.success("Schedule created");
     } catch (e) {
-      setFormError(e instanceof WebFrostError ? e.message : String(e));
+      toast.error(e instanceof WebFrostError ? e.message : String(e));
     } finally {
       setCreating(false);
     }
@@ -76,23 +75,21 @@ export function SchedulesPage() {
 
   async function handleDelete(id: number) {
     if (!window.confirm("Delete this schedule?")) return;
-    setFormError(null);
     try {
       await client.deleteSchedule(id);
       setSchedules((prev) => prev.filter((s) => s.id !== id));
+      toast.success("Schedule deleted");
     } catch (e) {
-      setFormError(e instanceof WebFrostError ? e.message : String(e));
+      toast.error(e instanceof WebFrostError ? e.message : String(e));
     }
   }
 
-  const displayError = error ?? formError;
-
   return (
     <main className="max-w-[900px] mx-auto py-8 px-4">
-      <h1 className="text-2xl font-bold mb-6 text-gray-900">Schedules</h1>
+      <h1 className="text-2xl font-bold mb-6 text-gray-900 dark:text-gray-100">Schedules</h1>
 
       <form onSubmit={handleCreate} className="flex flex-wrap gap-2 mb-6 items-end">
-        <label className="flex flex-col gap-1 flex-1 min-w-[200px] text-xs text-gray-500 font-medium">
+        <label className="flex flex-col gap-1 flex-1 min-w-[200px] text-xs text-gray-500 dark:text-gray-400 font-medium">
           URL
           <input
             type="url"
@@ -103,7 +100,7 @@ export function SchedulesPage() {
             className={inputCls}
           />
         </label>
-        <label className="flex flex-col gap-1 text-xs text-gray-500 font-medium">
+        <label className="flex flex-col gap-1 text-xs text-gray-500 dark:text-gray-400 font-medium">
           Preset
           <select
             className={inputCls}
@@ -119,7 +116,7 @@ export function SchedulesPage() {
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-xs text-gray-500 font-medium">
+        <label className="flex flex-col gap-1 text-xs text-gray-500 dark:text-gray-400 font-medium">
           Cron expression
           <input
             type="text"
@@ -141,17 +138,21 @@ export function SchedulesPage() {
         </button>
       </form>
 
-      {displayError && <ErrorBanner message={displayError} />}
-
       {loading ? (
-        <p className="text-gray-400">Loading…</p>
+        <p className="text-gray-400 dark:text-gray-500">Loading…</p>
       ) : schedules.length === 0 ? (
-        <p className="text-gray-400">No schedules yet. Add one above.</p>
+        <div className="text-center mt-12">
+          <p className="text-4xl mb-3">🗓️</p>
+          <p className="text-gray-500 dark:text-gray-400 font-medium">No schedules yet</p>
+          <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">
+            Add a schedule above to automatically archive URLs on a recurring basis.
+          </p>
+        </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm border-collapse">
             <thead>
-              <tr className="text-left text-gray-500 border-b border-gray-200">
+              <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
                 <th className="py-2 pr-4 font-medium">URL</th>
                 <th className="py-2 pr-4 font-medium">Schedule</th>
                 <th className="py-2 pr-4 font-medium">Last run</th>
@@ -162,7 +163,10 @@ export function SchedulesPage() {
             </thead>
             <tbody>
               {schedules.map((s) => (
-                <tr key={s.id} className="border-b border-gray-100 hover:bg-gray-50">
+                <tr
+                  key={s.id}
+                  className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                >
                   <td className="py-2.5 pr-4 max-w-[240px] truncate">
                     <a
                       href={s.url}
@@ -174,15 +178,23 @@ export function SchedulesPage() {
                       {s.url}
                     </a>
                   </td>
-                  <td className="py-2.5 pr-4 text-gray-700">{describeCron(s.cron)}</td>
-                  <td className="py-2.5 pr-4 text-gray-500">{formatDate(s.lastRunAt)}</td>
-                  <td className="py-2.5 pr-4 text-gray-500">{formatDate(s.nextRunAt)}</td>
-                  <td className="py-2.5 pr-4 text-gray-500">{formatDate(s.createdAt)}</td>
+                  <td className="py-2.5 pr-4 text-gray-700 dark:text-gray-300">
+                    {describeCron(s.cron)}
+                  </td>
+                  <td className="py-2.5 pr-4 text-gray-500 dark:text-gray-400">
+                    {formatDate(s.lastRunAt)}
+                  </td>
+                  <td className="py-2.5 pr-4 text-gray-500 dark:text-gray-400">
+                    {formatDate(s.nextRunAt)}
+                  </td>
+                  <td className="py-2.5 pr-4 text-gray-500 dark:text-gray-400">
+                    {formatDate(s.createdAt)}
+                  </td>
                   <td className="py-2.5">
                     <button
                       type="button"
                       onClick={() => handleDelete(s.id)}
-                      className="bg-transparent border border-red-300 text-red-700 rounded cursor-pointer py-1 px-2.5 text-xs"
+                      className="bg-transparent border border-red-300 dark:border-red-700 text-red-700 dark:text-red-400 rounded cursor-pointer py-1 px-2.5 text-xs hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                     >
                       Delete
                     </button>

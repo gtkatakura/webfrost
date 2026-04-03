@@ -1,12 +1,12 @@
 import { WebFrostError } from "@webfrost/sdk";
 import { useState } from "react";
+import { toast } from "sonner";
 import { useClient } from "../context";
 
 export function useBulkSnapshots(visibleIds: number[], refetch: () => Promise<void>) {
   const client = useClient();
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [status, setStatus] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   function toggle(id: number) {
     setSelectedIds((prev) => {
@@ -32,18 +32,22 @@ export function useBulkSnapshots(visibleIds: number[], refetch: () => Promise<vo
   async function bulkDelete() {
     const ids = [...selectedIds];
     if (!window.confirm(`Delete ${ids.length} snapshot(s)? This cannot be undone.`)) return;
-    setError(null);
     let done = 0;
+    const toastId = toast.loading(`Deleting 1/${ids.length}…`);
     try {
       for (const id of ids) {
         setStatus(`Deleting ${done + 1}/${ids.length}…`);
         await client.deleteSnapshot(id);
         done++;
+        if (done < ids.length) {
+          toast.loading(`Deleting ${done + 1}/${ids.length}…`, { id: toastId });
+        }
       }
       clearSelection();
       await refetch();
+      toast.success(`Deleted ${ids.length} snapshot(s)`, { id: toastId });
     } catch (e) {
-      setError(e instanceof WebFrostError ? e.message : String(e));
+      toast.error(e instanceof WebFrostError ? e.message : String(e), { id: toastId });
     } finally {
       setStatus(null);
     }
@@ -51,18 +55,22 @@ export function useBulkSnapshots(visibleIds: number[], refetch: () => Promise<vo
 
   async function bulkTag(tagId: number) {
     const ids = [...selectedIds];
-    setError(null);
     let done = 0;
+    const toastId = toast.loading(`Tagging 1/${ids.length}…`);
     try {
       for (const id of ids) {
         setStatus(`Tagging ${done + 1}/${ids.length}…`);
         await client.addTagToSnapshot(id, tagId);
         done++;
+        if (done < ids.length) {
+          toast.loading(`Tagging ${done + 1}/${ids.length}…`, { id: toastId });
+        }
       }
       clearSelection();
       await refetch();
+      toast.success(`Tagged ${ids.length} snapshot(s)`, { id: toastId });
     } catch (e) {
-      setError(e instanceof WebFrostError ? e.message : String(e));
+      toast.error(e instanceof WebFrostError ? e.message : String(e), { id: toastId });
     } finally {
       setStatus(null);
     }
@@ -71,8 +79,6 @@ export function useBulkSnapshots(visibleIds: number[], refetch: () => Promise<vo
   return {
     selectedIds,
     status,
-    error,
-    setError,
     toggle,
     toggleAll,
     clearSelection,

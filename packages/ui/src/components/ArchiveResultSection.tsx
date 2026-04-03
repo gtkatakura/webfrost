@@ -25,19 +25,21 @@ function ReadabilityResult({
     // leave as empty
   }
   return (
-    <div className="border border-gray-200 rounded-md p-4 mb-3">
+    <div className="border border-gray-200 dark:border-gray-700 rounded-md p-4 mb-3">
       <div className="mb-2">
         <ExtractorBadge extractor="readability" hasContent={true} />
       </div>
       {parsed.title && <p className="m-0 mb-1 font-semibold text-[0.95rem]">{parsed.title}</p>}
-      {parsed.byline && <p className="m-0 mb-1 text-gray-500 text-[0.85rem]">{parsed.byline}</p>}
+      {parsed.byline && (
+        <p className="m-0 mb-1 text-gray-500 dark:text-gray-400 text-[0.85rem]">{parsed.byline}</p>
+      )}
       {parsed.excerpt && (
-        <p className="m-0 mb-3 text-gray-700 text-sm">
+        <p className="m-0 mb-3 text-gray-700 dark:text-gray-300 text-sm">
           <em>{parsed.excerpt}</em>
         </p>
       )}
       {parsed.textContent && (
-        <pre className="bg-gray-100 p-3 rounded text-[0.8rem] overflow-x-auto whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto m-0 mb-2">
+        <pre className="bg-gray-100 dark:bg-gray-900 p-3 rounded text-[0.8rem] overflow-x-auto whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto m-0 mb-2">
           {parsed.textContent.slice(0, 500)}
           {parsed.textContent.length > 500 ? "…" : ""}
         </pre>
@@ -51,7 +53,7 @@ function ReadabilityResult({
 
 function ScreenshotResult({ downloadUrl }: { downloadUrl: string }) {
   return (
-    <div className="border border-gray-200 rounded-md p-4 mb-3">
+    <div className="border border-gray-200 dark:border-gray-700 rounded-md p-4 mb-3">
       <div className="mb-2">
         <ExtractorBadge extractor="screenshot" hasContent={true} />
       </div>
@@ -88,7 +90,7 @@ function SandboxedHtmlResult({
   }
 
   return (
-    <div className="border border-gray-200 rounded-md p-4 mb-3">
+    <div className="border border-gray-200 dark:border-gray-700 rounded-md p-4 mb-3">
       <div className="mb-3 flex items-center gap-3">
         <ExtractorBadge extractor={extractor} hasContent={true} />
         <a href={downloadUrl} className="text-sm">
@@ -105,7 +107,7 @@ function SandboxedHtmlResult({
         )}
       </div>
       {showRaw && rawHtml !== null ? (
-        <pre className="bg-gray-100 p-3 rounded text-[0.75rem] overflow-x-auto whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto m-0">
+        <pre className="bg-gray-100 dark:bg-gray-900 p-3 rounded text-[0.75rem] overflow-x-auto whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto m-0">
           {rawHtml}
         </pre>
       ) : (
@@ -155,14 +157,14 @@ export function ArchiveResultSection({
   const label = labels[result.extractor] ?? result.extractor;
 
   return (
-    <div className="border border-gray-200 rounded-md py-3 px-4 mb-3 flex items-center gap-3">
+    <div className="border border-gray-200 dark:border-gray-700 rounded-md py-3 px-4 mb-3 flex items-center gap-3">
       <ExtractorBadge extractor={result.extractor} hasContent={result.content !== null} />
       {result.content ? (
         <a href={downloadUrl} className="text-sm">
           Download {label}
         </a>
       ) : (
-        <span className="text-sm text-gray-400">No output</span>
+        <span className="text-sm text-gray-400 dark:text-gray-500">No output</span>
       )}
     </div>
   );

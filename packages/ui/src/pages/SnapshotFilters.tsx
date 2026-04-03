@@ -2,7 +2,8 @@ import type { Tag } from "@webfrost/sdk";
 import { TagChip } from "../components";
 
 const KNOWN_EXTRACTORS = ["warc", "readability", "pdf"] as const;
-const inputCls = "py-2 px-3 border border-gray-300 rounded text-sm";
+const inputCls =
+  "py-2 px-3 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100";
 
 interface SnapshotFiltersProps {
   ftsQuery: string;
@@ -53,7 +54,7 @@ export function SnapshotFilters({
           className={`w-full ${inputCls}`}
         />
       )}
-      <div className="flex gap-2 flex-wrap items-center text-[0.8rem] text-gray-500">
+      <div className="flex gap-2 flex-wrap items-center text-[0.8rem] text-gray-500 dark:text-gray-400">
         <label className="flex items-center gap-1">
           From:
           <input
@@ -85,7 +86,7 @@ export function SnapshotFilters({
         ))}
       </div>
       {allTags.length > 0 && (
-        <div className="flex gap-1.5 flex-wrap items-center text-[0.8rem] text-gray-500">
+        <div className="flex gap-1.5 flex-wrap items-center text-[0.8rem] text-gray-500 dark:text-gray-400">
           <span>Tag:</span>
           {allTags.map((tag) => (
             <label key={tag.id} className="flex items-center gap-0.5 cursor-pointer">
