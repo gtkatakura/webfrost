@@ -81,7 +81,7 @@ describe("ListPage — empty state", () => {
     const client = mockClient({ listSnapshots: () => Promise.resolve(snapshotPage([])) });
     renderApp(client);
 
-    const msg = await screen.findByText("No snapshots yet. Archive a URL above.");
+    const msg = await screen.findByText("No snapshots yet");
     expect(msg).toBeTruthy();
   });
 });
@@ -177,7 +177,7 @@ describe("ListPage — search / filter", () => {
     const searchInput = screen.getByPlaceholderText("Filter by URL\u2026");
     fireEvent.change(searchInput, { target: { value: "zzz-no-match" } });
 
-    expect(screen.getByText("No snapshots match your filters.")).toBeTruthy();
+    expect(screen.getByText("No snapshots match your filters")).toBeTruthy();
   });
 
   test("filters by extractor checkbox", async () => {
@@ -190,7 +190,7 @@ describe("ListPage — search / filter", () => {
 
     await screen.findByText("https://with-warc.com");
 
-    const warcCheckbox = screen.getByRole("checkbox", { name: /warc/ });
+    const warcCheckbox = screen.getByLabelText(/^warc$/);
     fireEvent.click(warcCheckbox);
 
     expect(screen.getByText("https://with-warc.com")).toBeTruthy();
@@ -240,7 +240,7 @@ describe("DetailPage — renders results", () => {
     renderApp(client, "/snapshots/8");
 
     await screen.findByRole("link", { name: /empty\.com/ });
-    expect(screen.getByText("No extractor results yet.")).toBeTruthy();
+    expect(screen.getByText("No extractor results yet. Check back soon.")).toBeTruthy();
   });
 
   test("renders readability result with title and excerpt", async () => {
