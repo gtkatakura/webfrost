@@ -1,7 +1,6 @@
 import { WebFrostError } from "@webfrost/sdk";
 import type { ImportResult } from "@webfrost/sdk";
 import { useRef, useState } from "react";
-import { ErrorBanner } from "../components";
 import { useClient } from "../context";
 
 type ImportType = "rss" | "opml" | "netscape" | "text";
@@ -13,7 +12,9 @@ const IMPORT_TYPES: { id: ImportType; label: string }[] = [
   { id: "text", label: "Plain Text URLs" },
 ];
 
-const inputCls = "w-full py-2 px-3 border border-gray-300 rounded text-sm";
+const inputCls =
+  "w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500";
+const labelCls = "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1";
 
 export function ImportPage() {
   const client = useClient();
@@ -63,7 +64,7 @@ export function ImportPage() {
 
   return (
     <main className="max-w-[760px] mx-auto py-8 px-4">
-      <h1 className="text-2xl font-bold mb-6 text-gray-900">Import URLs</h1>
+      <h1 className="text-2xl font-bold mb-6 text-gray-900 dark:text-gray-100">Import URLs</h1>
 
       <div className="flex gap-2 mb-6 flex-wrap">
         {IMPORT_TYPES.map(({ id, label }) => (
@@ -78,7 +79,7 @@ export function ImportPage() {
             className={`py-1.5 px-4 rounded border text-sm font-medium cursor-pointer transition-colors ${
               importType === id
                 ? "bg-primary text-white border-primary"
-                : "bg-white text-gray-700 border-gray-300 hover:border-primary"
+                : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-primary"
             }`}
           >
             {label}
@@ -89,7 +90,7 @@ export function ImportPage() {
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         {importType === "rss" && (
           <div>
-            <label htmlFor="rss-url" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="rss-url" className={labelCls}>
               Feed URL
             </label>
             <input
@@ -106,7 +107,7 @@ export function ImportPage() {
 
         {(importType === "opml" || importType === "netscape") && (
           <div>
-            <label htmlFor="file-upload" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="file-upload" className={labelCls}>
               {importType === "opml" ? "OPML File" : "Bookmarks HTML File"}
             </label>
             <input
@@ -115,14 +116,14 @@ export function ImportPage() {
               type="file"
               accept={importType === "opml" ? ".opml,.xml" : ".html,.htm"}
               required
-              className="w-full text-sm text-gray-700 file:mr-3 file:py-1.5 file:px-4 file:rounded file:border file:border-gray-300 file:text-sm file:bg-white file:cursor-pointer"
+              className="w-full text-sm text-gray-700 dark:text-gray-300 file:mr-3 file:py-1.5 file:px-4 file:rounded file:border file:border-gray-300 dark:file:border-gray-600 file:text-sm file:bg-white dark:file:bg-gray-800 file:cursor-pointer file:text-gray-700 dark:file:text-gray-300"
             />
           </div>
         )}
 
         {importType === "text" && (
           <div>
-            <label htmlFor="text-urls" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="text-urls" className={labelCls}>
               URLs (one per line)
             </label>
             <textarea
@@ -137,10 +138,14 @@ export function ImportPage() {
           </div>
         )}
 
-        {error && <ErrorBanner message={error} />}
+        {error && (
+          <p className="text-red-700 dark:text-red-400 bg-red-100 dark:bg-red-900/20 py-2.5 px-3.5 rounded text-sm">
+            {error}
+          </p>
+        )}
 
         {result && (
-          <div className="rounded border border-green-300 bg-green-50 p-4 text-sm text-green-800">
+          <div className="rounded border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 p-4 text-sm text-green-800 dark:text-green-300">
             <p className="font-semibold mb-1">Import complete</p>
             <ul className="list-none p-0 m-0 flex flex-col gap-0.5">
               <li>Queued: {result.queued}</li>

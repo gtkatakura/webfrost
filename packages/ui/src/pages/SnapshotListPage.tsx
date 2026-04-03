@@ -1,20 +1,16 @@
 import { WebFrostError } from "@webfrost/sdk";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  BulkActionBar,
-  ErrorBanner,
-  Pagination,
-  SkeletonRow,
-  SnapshotListRow,
-} from "../components";
+import { toast } from "sonner";
+import { BulkActionBar, Pagination, SkeletonRow, SnapshotListRow } from "../components";
 import { useClient } from "../context";
 import { useBulkSnapshots, useSearch, useSnapshots, useTags } from "../hooks";
 import { FtsResults } from "./FtsResults";
 import { SnapshotFilters } from "./SnapshotFilters";
 
 const PAGE_SIZE = 20;
-const inputCls = "py-2 px-3 border border-gray-300 rounded text-sm";
+const inputCls =
+  "py-2 px-3 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500";
 
 export function SnapshotListPage() {
   const client = useClient();
@@ -29,7 +25,6 @@ export function SnapshotListPage() {
 
   const [url, setUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
   const [ftsQuery, setFtsQuery] = useState("");
@@ -44,15 +39,15 @@ export function SnapshotListPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
-    setFormError(null);
     setError(null);
     try {
       await client.createSnapshot(url);
       setUrl("");
       setPage(1);
       await refetch();
+      toast.success("Snapshot queued successfully");
     } catch (e) {
-      setFormError(e instanceof WebFrostError ? e.message : String(e));
+      toast.error(e instanceof WebFrostError ? e.message : String(e));
     } finally {
       setSubmitting(false);
     }
@@ -110,12 +105,17 @@ export function SnapshotListPage() {
     refetch,
   );
 
-  const error = snapshotsError ?? formError ?? bulk.error;
+  useEffect(() => {
+    if (snapshotsError) {
+      toast.error(snapshotsError);
+      setError(null);
+    }
+  }, [snapshotsError, setError]);
 
   return (
     <main className="max-w-[760px] mx-auto py-8 px-4">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 m-0">WebFrost</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 m-0">WebFrost</h1>
         <Link to="/tags" className="text-sm">
           Manage Tags
         </Link>
@@ -140,8 +140,6 @@ export function SnapshotListPage() {
           {submitting ? "Archiving…" : "Archive"}
         </button>
       </form>
-
-      {error && <ErrorBanner message={error} />}
 
       <SnapshotFilters
         ftsQuery={ftsQuery}
@@ -181,15 +179,31 @@ export function SnapshotListPage() {
           ))}
         </ul>
       ) : !ftsQuery.trim() && filtered.length === 0 ? (
-        <p className="text-gray-400 text-center mt-12">
-          {snapshots.length === 0
-            ? "No snapshots yet. Archive a URL above."
-            : "No snapshots match your filters."}
-        </p>
+        <div className="text-center mt-12">
+          {snapshots.length === 0 ? (
+            <>
+              <p className="text-4xl mb-3">📸</p>
+              <p className="text-gray-500 dark:text-gray-400 font-medium">No snapshots yet</p>
+              <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">
+                Enter a URL above to archive your first page.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-4xl mb-3">🔍</p>
+              <p className="text-gray-500 dark:text-gray-400 font-medium">
+                No snapshots match your filters
+              </p>
+              <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">
+                Try adjusting the search or filter criteria.
+              </p>
+            </>
+          )}
+        </div>
       ) : !ftsQuery.trim() ? (
         <>
           {pageItems.length > 0 && (
-            <label className="flex items-center gap-2 text-sm text-gray-500 mb-2 cursor-pointer">
+            <label className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={bulk.allSelected}

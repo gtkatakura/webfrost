@@ -179,14 +179,26 @@ test("@phase-a pagination: UI controls appear and navigate between pages", async
   page,
   request,
 }) => {
-  // Seed 21 snapshots so totalPages = Math.ceil(21/20) = 2.
+  // Fetch the current snapshot count before seeding so we can compute the
+  // expected total pages even when prior tests left rows in the shared DB.
+  const beforeResp = await request.get("http://localhost:3000/api/snapshots?page=1&limit=1");
+  const beforeBody = await beforeResp.json();
+  const existingCount: number = beforeBody.total ?? 0;
+
+  // Seed enough snapshots to guarantee at least 2 pages of 20.
+  // We need (existingCount + seeded) > 20, so we add 21 to be safe.
+  const SEED = 21;
+  const PAGE_SIZE = 20;
   await Promise.all(
-    Array.from({ length: 21 }, (_, i) =>
+    Array.from({ length: SEED }, (_, i) =>
       request.post("http://localhost:3000/api/snapshots", {
-        data: { url: `https://pagination-ui-${i}.example.com` },
+        data: { url: `https://pagination-ui-${Date.now()}-${i}.example.com` },
       }),
     ),
   );
+
+  const totalCount = existingCount + SEED;
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
   await page.goto("/#/snapshots");
 
@@ -199,15 +211,15 @@ test("@phase-a pagination: UI controls appear and navigate between pages", async
   await expect(nextBtn).toBeVisible();
   await expect(prevBtn).toBeVisible();
 
-  // Page indicator shows "1 / 2".
-  await expect(page.getByText("1 / 2")).toBeVisible();
+  // Page indicator shows "1 / <totalPages>".
+  await expect(page.getByText(`1 / ${totalPages}`)).toBeVisible();
 
   // Record the first item on page 1 so we can verify page 2 is different.
   const firstItemPage1 = await page.locator("li").first().textContent();
 
   // Navigate to page 2.
   await nextBtn.click();
-  await expect(page.getByText("2 / 2")).toBeVisible();
+  await expect(page.getByText(`2 / ${totalPages}`)).toBeVisible();
 
   // At least one item is visible on page 2.
   await expect(page.locator("li").first()).toBeVisible();
@@ -216,6 +228,6 @@ test("@phase-a pagination: UI controls appear and navigate between pages", async
 
   // Navigate back to page 1.
   await prevBtn.click();
-  await expect(page.getByText("1 / 2")).toBeVisible();
+  await expect(page.getByText(`1 / ${totalPages}`)).toBeVisible();
   await expect(page.locator("li").first()).toBeVisible();
 });
