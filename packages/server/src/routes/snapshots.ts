@@ -13,7 +13,7 @@ function getWebfrostDir(): string {
   return process.env.WEBFROST_DIR ?? join(homedir(), ".webfrost");
 }
 
-const ALLOWED_EXTRACTORS = new Set(["html", "warc", "pdf", "readability"]);
+const ALLOWED_EXTRACTORS = new Set(["html", "warc", "pdf", "readability", "screenshot"]);
 
 function getDb() {
   return openDb(getWebfrostDir());

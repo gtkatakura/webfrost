@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { htmlExtractor } from "./extractors/html";
 import { pdfExtractor } from "./extractors/pdf";
 import { readabilityExtractor } from "./extractors/readability";
+import { screenshotExtractor } from "./extractors/screenshot";
 import { warcExtractor } from "./extractors/warc";
 import { FetchCache } from "./fetch-cache";
 
@@ -89,6 +90,7 @@ export async function runPipeline(
       warcExtractor(db, snapshotId, url, headers, status, statusText, html, snapshotDir),
       readabilityExtractor(db, snapshotId, url, html),
       page ? pdfExtractor(db, snapshotId, snapshotDir, page) : Promise.resolve(),
+      page ? screenshotExtractor(db, snapshotId, snapshotDir, page) : Promise.resolve(),
     ]);
   } finally {
     await browser?.close();
