@@ -3,6 +3,7 @@ import type {
   ImportOptions,
   ImportResult,
   ListSnapshotsOptions,
+  Schedule,
   SearchResult,
   Snapshot,
   SnapshotCreated,
@@ -251,6 +252,35 @@ export class WebFrostClient {
     const res = await this.request(`${this.baseUrl}/snapshots/${snapshotId}/tags/${tagId}`, {
       method: "DELETE",
     });
+    if (res.status === 404) return false;
+    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    return true;
+  }
+
+  /** List all scheduled archive jobs. */
+  async listSchedules(): Promise<Schedule[]> {
+    const res = await this.request(`${this.baseUrl}/schedules`);
+    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    return res.json() as Promise<Schedule[]>;
+  }
+
+  /** Create a new scheduled archive job. Throws WebFrostError on invalid url or cron. */
+  async createSchedule(url: string, cron: string): Promise<Schedule> {
+    const res = await this.request(`${this.baseUrl}/schedules`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, cron }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
+      throw new WebFrostError(res.status, body.error);
+    }
+    return res.json() as Promise<Schedule>;
+  }
+
+  /** Delete a schedule by id. Returns true if deleted, false if not found. */
+  async deleteSchedule(id: number): Promise<boolean> {
+    const res = await this.request(`${this.baseUrl}/schedules/${id}`, { method: "DELETE" });
     if (res.status === 404) return false;
     if (!res.ok) throw new WebFrostError(res.status, res.statusText);
     return true;

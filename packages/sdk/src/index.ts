@@ -4,6 +4,7 @@ export type {
   ImportOptions,
   ImportResult,
   ListSnapshotsOptions,
+  Schedule,
   SearchResult,
   Snapshot,
   SnapshotCreated,

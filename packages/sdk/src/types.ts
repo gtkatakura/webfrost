@@ -78,6 +78,16 @@ export interface ImportOptions {
   format?: "rss" | "opml" | "netscape" | "text";
 }
 
+/** Scheduled archive job */
+export interface Schedule {
+  id: number;
+  url: string;
+  cron: string;
+  createdAt: string;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+}
+
 /** Single result from GET /snapshots?q=term */
 export interface SearchResult {
   id: number;
