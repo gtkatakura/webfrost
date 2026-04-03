@@ -73,6 +73,7 @@ describe("WebFrostClient.listSnapshots", () => {
         status: "done",
         createdAt: "2024-01-01T00:00:00.000Z",
         extractors: ["warc"],
+        tags: [],
       },
       {
         id: 2,
@@ -80,6 +81,7 @@ describe("WebFrostClient.listSnapshots", () => {
         status: "pending",
         createdAt: "2024-01-02T00:00:00.000Z",
         extractors: [],
+        tags: [],
       },
     ];
     fetchSpy.mockResolvedValueOnce(jsonResponse(raw));
@@ -122,6 +124,7 @@ describe("WebFrostClient.getSnapshot", () => {
       status: "done",
       createdAt: "2024-01-01T00:00:00.000Z",
       extractors: ["warc"],
+      tags: [],
       archiveResults: [
         { id: 10, extractor: "warc", content: "data", createdAt: "2024-01-01T00:01:00.000Z" },
       ],

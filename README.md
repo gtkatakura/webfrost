@@ -92,13 +92,19 @@ The server exposes a REST API alongside the React UI:
 | Method | Route | Description |
 |--------|-------|-------------|
 | `GET` | `/health` | Health check |
-| `POST` | `/api/snapshots` | Submit a URL for archiving |
+| `POST` | `/api/snapshots` | Submit a URL for archiving (202 — async) |
 | `GET` | `/api/snapshots` | List all snapshots |
 | `GET` | `/api/snapshots/:id` | Get snapshot with archive results |
-| `GET` | `/api/snapshots/:id/archives/:extractor/download` | Download archive file (`warc`, `pdf`, `readability`) |
-| `POST` | `/api/schedules` | Add a recurring schedule |
+| `GET` | `/api/snapshots/:id/archives/:extractor/download` | Download archive file (`html`, `warc`, `pdf`, `readability`) |
+| `GET` | `/api/snapshots/:id/tags` | List tags on a snapshot |
+| `POST` | `/api/snapshots/:id/tags` | Add a tag to a snapshot |
+| `DELETE` | `/api/snapshots/:id/tags/:tagId` | Remove a tag from a snapshot |
+| `POST` | `/api/schedules` | Add a recurring archive schedule |
 | `GET` | `/api/schedules` | List all schedules |
 | `DELETE` | `/api/schedules/:id` | Remove a schedule |
+| `GET` | `/api/tags` | List all tags |
+| `POST` | `/api/tags` | Create a tag |
+| `DELETE` | `/api/tags/:id` | Delete a tag |
 
 ---
 
@@ -114,6 +120,8 @@ bun run typecheck    # TypeScript type checking
 bun run bench        # Benchmarks
 ```
 
+Benchmark results and methodology: [BENCHMARKS.md](BENCHMARKS.md)
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) if it exists, or open an issue with questions.
 
 ---
@@ -123,14 +131,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) if it exists, or open an issue with quest
 WebFrost is under active development. See [ROADMAP.md](./ROADMAP.md) for the full feature roadmap and ArchiveBox comparison.
 
 **Near-term highlights (P0/P1):**
-- Full-text search (FTS5 + Sonic backends)
-- Screenshot extractor (PNG)
+- API authentication (bearer tokens + session cookies)
+- Full-text search (SQLite FTS5)
+- Screenshot extractor (full-page PNG)
+- DOM snapshot extractor
 - SingleFile extractor (self-contained HTML)
-- Media extraction via yt-dlp
+- Snapshot deletion
 - RSS feed auto-import
+- Media extraction via yt-dlp
 - Browser extension (Chrome/Firefox)
-- Tag-based organization
-- API authentication (bearer tokens)
 - S3/remote storage backend
 
 ---
