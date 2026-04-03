@@ -1,5 +1,7 @@
 import type {
   ArchiveResult,
+  ImportOptions,
+  ImportResult,
   ListSnapshotsOptions,
   SearchResult,
   Snapshot,
@@ -252,5 +254,22 @@ export class WebFrostClient {
     if (res.status === 404) return false;
     if (!res.ok) throw new WebFrostError(res.status, res.statusText);
     return true;
+  }
+
+  /**
+   * Import URLs from a feed URL or raw content.
+   * Returns counts of queued and skipped URLs plus the detected format.
+   */
+  async importUrls(options: ImportOptions): Promise<ImportResult> {
+    const res = await this.request(`${this.baseUrl}/import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(options),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
+      throw new WebFrostError(res.status, body.error);
+    }
+    return res.json() as Promise<ImportResult>;
   }
 }

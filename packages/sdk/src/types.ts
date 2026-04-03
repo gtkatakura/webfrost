@@ -60,6 +60,24 @@ export interface SnapshotPage {
   limit: number;
 }
 
+/** Response from POST /import (202 Accepted) */
+export interface ImportResult {
+  queued: number;
+  skipped: number;
+  total: number;
+  format: "rss" | "opml" | "netscape" | "text";
+}
+
+/** Options for POST /import */
+export interface ImportOptions {
+  /** URL of a feed/file to fetch and parse */
+  url?: string;
+  /** Raw text content to parse (alternative to url) */
+  content?: string;
+  /** Format hint; auto-detected if omitted */
+  format?: "rss" | "opml" | "netscape" | "text";
+}
+
 /** Single result from GET /snapshots?q=term */
 export interface SearchResult {
   id: number;
