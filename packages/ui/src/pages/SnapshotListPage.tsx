@@ -1,9 +1,15 @@
 import { WebFrostError } from "@webfrost/sdk";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { ErrorBanner, Pagination, SkeletonRow, SnapshotListRow } from "../components";
+import {
+  BulkActionBar,
+  ErrorBanner,
+  Pagination,
+  SkeletonRow,
+  SnapshotListRow,
+} from "../components";
 import { useClient } from "../context";
-import { useSearch, useSnapshots, useTags } from "../hooks";
+import { useBulkSnapshots, useSearch, useSnapshots, useTags } from "../hooks";
 import { FtsResults } from "./FtsResults";
 import { SnapshotFilters } from "./SnapshotFilters";
 
@@ -34,8 +40,6 @@ export function SnapshotListPage() {
   const [dateTo, setDateTo] = useState("");
   const [reqExtractors, setReqExtractors] = useState<Set<string>>(new Set());
   const [reqTags, setReqTags] = useState<Set<number>>(new Set());
-
-  const error = snapshotsError ?? formError;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -100,6 +104,13 @@ export function SnapshotListPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const pageItems = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const bulk = useBulkSnapshots(
+    pageItems.map((s) => s.id),
+    refetch,
+  );
+
+  const error = snapshotsError ?? formError ?? bulk.error;
 
   return (
     <main className="max-w-[760px] mx-auto py-8 px-4">
@@ -177,9 +188,25 @@ export function SnapshotListPage() {
         </p>
       ) : !ftsQuery.trim() ? (
         <>
+          {pageItems.length > 0 && (
+            <label className="flex items-center gap-2 text-sm text-gray-500 mb-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={bulk.allSelected}
+                onChange={bulk.toggleAll}
+                className="cursor-pointer"
+              />
+              Select all
+            </label>
+          )}
           <ul className="list-none p-0 flex flex-col gap-3">
             {pageItems.map((s) => (
-              <SnapshotListRow key={s.id} snapshot={s} />
+              <SnapshotListRow
+                key={s.id}
+                snapshot={s}
+                selected={bulk.selectedIds.has(s.id)}
+                onToggle={bulk.toggle}
+              />
             ))}
           </ul>
 
@@ -191,6 +218,16 @@ export function SnapshotListPage() {
           />
         </>
       ) : null}
+
+      {bulk.someSelected && (
+        <BulkActionBar
+          count={bulk.selectedIds.size}
+          status={bulk.status}
+          allTags={allTags}
+          onDelete={bulk.bulkDelete}
+          onTag={bulk.bulkTag}
+        />
+      )}
     </main>
   );
 }

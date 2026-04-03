@@ -1,4 +1,5 @@
 export { ArchiveResultSection } from "./ArchiveResultSection";
+export { BulkActionBar } from "./BulkActionBar";
 export { ErrorBanner } from "./ErrorBanner";
 export { ExtractorBadge } from "./ExtractorBadge";
 export { Pagination } from "./Pagination";
