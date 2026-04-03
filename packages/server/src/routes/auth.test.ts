@@ -1,0 +1,255 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+let testDir: string;
+
+beforeEach(() => {
+  testDir = join(
+    tmpdir(),
+    `webfrost-auth-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
+  mkdirSync(testDir, { recursive: true });
+  process.env.WEBFROST_DIR = testDir;
+  process.env.AUTH_DISABLED = "true";
+});
+
+afterEach(() => {
+  process.env.WEBFROST_DIR = undefined;
+  process.env.AUTH_DISABLED = undefined;
+  process.env.SESSION_SECRET = undefined;
+  try {
+    rmSync(testDir, { recursive: true, force: true });
+  } catch {
+    // best-effort
+  }
+});
+
+async function getApp() {
+  const { authRouter } = await import("./auth");
+  const { Elysia } = await import("elysia");
+  return new Elysia().use(authRouter);
+}
+
+async function getAppWithPlugin() {
+  const { authRouter, authPlugin } = await import("./auth");
+  const { Elysia } = await import("elysia");
+  return new Elysia()
+    .use(authPlugin)
+    .use(authRouter)
+    .get("/protected", () => ({ ok: true }));
+}
+
+// ---------------------------------------------------------------------------
+// POST /auth/login
+// ---------------------------------------------------------------------------
+
+describe("POST /auth/login", () => {
+  test("returns 401 for non-existent user", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+    process.env.SESSION_SECRET = "test-secret-32-chars-long-enough!!";
+    process.env.AUTH_DISABLED = undefined;
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request("http://localhost/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "admin", password: "wrong" }),
+      }),
+    );
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid credentials");
+  });
+
+  test("returns 200 and sets session cookie for valid credentials", async () => {
+    const { openDb, createAdminUser } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    await createAdminUser(db, "admin", "password123");
+    db.close();
+    process.env.SESSION_SECRET = "test-secret-32-chars-long-enough!!";
+    process.env.AUTH_DISABLED = undefined;
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request("http://localhost/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "admin", password: "password123" }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean };
+    expect(body.ok).toBe(true);
+    // Session cookie should be set
+    const setCookie = res.headers.get("set-cookie");
+    expect(setCookie).toBeTruthy();
+    expect(setCookie).toContain("session=");
+  });
+
+  test("returns 422 for missing password field", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request("http://localhost/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "admin" }),
+      }),
+    );
+    expect(res.status).toBe(422);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /auth/logout
+// ---------------------------------------------------------------------------
+
+describe("POST /auth/logout", () => {
+  test("returns 200 and clears session cookie", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await app.handle(new Request("http://localhost/auth/logout", { method: "POST" }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean };
+    expect(body.ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /auth/me
+// ---------------------------------------------------------------------------
+
+describe("GET /auth/me", () => {
+  test("returns admin username when AUTH_DISABLED=true", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+    // AUTH_DISABLED is already set in beforeEach
+
+    const app = await getApp();
+    const res = await app.handle(new Request("http://localhost/auth/me"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { username: string };
+    expect(body.username).toBe("admin");
+  });
+
+  test("returns username from valid session cookie", async () => {
+    const { openDb, createAdminUser } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    await createAdminUser(db, "admin", "password123");
+    db.close();
+    process.env.SESSION_SECRET = "test-secret-32-chars-long-enough!!";
+    process.env.AUTH_DISABLED = undefined;
+
+    // Login first to get a session cookie
+    const loginApp = await getApp();
+    const loginRes = await loginApp.handle(
+      new Request("http://localhost/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "admin", password: "password123" }),
+      }),
+    );
+    const setCookie = loginRes.headers.get("set-cookie") ?? "";
+    const sessionMatch = setCookie.match(/session=([^;]+)/);
+    const sessionToken = sessionMatch?.[1] ?? "";
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request("http://localhost/auth/me", {
+        headers: { cookie: `session=${sessionToken}` },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { username: string };
+    expect(body.username).toBe("admin");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// authPlugin — API key validation and unauthorized access rejection
+// ---------------------------------------------------------------------------
+
+describe("authPlugin — API key validation", () => {
+  test("rejects request with no auth (401)", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+    process.env.SESSION_SECRET = "test-secret-32-chars-long-enough!!";
+    process.env.AUTH_DISABLED = undefined;
+
+    const app = await getAppWithPlugin();
+    const res = await app.handle(new Request("http://localhost/protected"));
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("unauthorized");
+  });
+
+  test("allows request with valid API key Bearer token", async () => {
+    const { openDb, createApiKey } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    const { rawKey } = createApiKey(db, "test-key");
+    db.close();
+    process.env.SESSION_SECRET = "test-secret-32-chars-long-enough!!";
+    process.env.AUTH_DISABLED = undefined;
+
+    const app = await getAppWithPlugin();
+    const res = await app.handle(
+      new Request("http://localhost/protected", {
+        headers: { authorization: `Bearer ${rawKey}` },
+      }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  test("rejects request with invalid Bearer token (401)", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+    process.env.SESSION_SECRET = "test-secret-32-chars-long-enough!!";
+    process.env.AUTH_DISABLED = undefined;
+
+    const app = await getAppWithPlugin();
+    const res = await app.handle(
+      new Request("http://localhost/protected", {
+        headers: { authorization: "Bearer invalid-key-xyz" },
+      }),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  test("bypasses auth when AUTH_DISABLED=true", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+    // AUTH_DISABLED already set to "true" in beforeEach
+
+    const app = await getAppWithPlugin();
+    const res = await app.handle(new Request("http://localhost/protected"));
+    expect(res.status).toBe(200);
+  });
+
+  test("login endpoint is accessible without auth", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+    process.env.SESSION_SECRET = "test-secret-32-chars-long-enough!!";
+    process.env.AUTH_DISABLED = undefined;
+
+    const app = await getAppWithPlugin();
+    const res = await app.handle(
+      new Request("http://localhost/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "nobody", password: "nopass" }),
+      }),
+    );
+    // Should reach the handler (401 from bad creds), not be blocked by middleware
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid credentials");
+  });
+});
