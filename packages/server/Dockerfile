@@ -40,9 +40,13 @@ COPY packages/server/ packages/server/
 RUN bun run --filter '@webfrost/core' build
 RUN bun run --filter '@webfrost/server' build
 
-# Stage 3 — minimal runtime image
+# Stage 3 — runtime image
 FROM oven/bun:1-slim
 WORKDIR /app
+
+# External deps (jsdom reads CSS from disk via __dirname at load time;
+# playwright is a runtime optional dep — both must be on disk, not bundled)
+COPY --from=server-builder /app/node_modules ./node_modules
 
 # Server bundle
 COPY --from=server-builder /app/packages/server/dist ./dist
