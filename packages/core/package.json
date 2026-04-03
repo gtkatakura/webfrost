@@ -5,7 +5,7 @@
   "module": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target bun --external playwright",
+    "build": "bun build src/index.ts --outdir dist --target bun --external playwright --external jsdom",
     "test": "bun test",
     "benchmarks": "bun run src/extractors/readability.bench.ts && bun run src/extractors/warc.bench.ts"
   },
