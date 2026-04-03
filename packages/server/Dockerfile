@@ -13,9 +13,10 @@ COPY packages/ui/package.json packages/ui/
 # Install deps (skip prepare/lefthook which requires git)
 RUN bun install --frozen-lockfile --ignore-scripts
 
-# Copy UI + SDK source and build
+# Copy SDK + UI source; build SDK first (Vite needs the compiled JS, not TS source)
 COPY packages/sdk/ packages/sdk/
 COPY packages/ui/ packages/ui/
+RUN bun run --filter '@webfrost/sdk' build
 RUN bun run --filter '@webfrost/ui' build
 
 # Stage 2 — build the Elysia server
