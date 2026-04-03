@@ -97,17 +97,33 @@ describe("POST /snapshots", () => {
 // GET /snapshots
 // ---------------------------------------------------------------------------
 
+interface SnapshotPage {
+  items: Array<{
+    id: number;
+    url: string;
+    status: string;
+    createdAt: string;
+    extractors: string[];
+    tags: unknown[];
+  }>;
+  total: number;
+  page: number;
+  limit: number;
+}
+
 describe("GET /snapshots", () => {
-  test("returns empty array when no snapshots exist", async () => {
+  test("returns empty paginated result when no snapshots exist", async () => {
     const { openDb } = await import("@webfrost/core");
     openDb(testDir).close();
 
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots"));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as unknown[];
-    expect(Array.isArray(body)).toBe(true);
-    expect(body).toHaveLength(0);
+    const body = (await res.json()) as SnapshotPage;
+    expect(body.items).toHaveLength(0);
+    expect(body.total).toBe(0);
+    expect(body.page).toBe(1);
+    expect(body.limit).toBe(20);
   });
 
   test("returns snapshot list after adding a snapshot", async () => {
@@ -119,20 +135,15 @@ describe("GET /snapshots", () => {
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots"));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as Array<{
-      id: number;
-      url: string;
-      status: string;
-      createdAt: string;
-      extractors: string[];
-    }>;
-    expect(body).toHaveLength(1);
-    expect(body[0]?.url).toBe("https://example.com");
-    expect(body[0]).toHaveProperty("id");
-    expect(body[0]).toHaveProperty("status");
-    expect(body[0]).toHaveProperty("createdAt");
-    expect(Array.isArray(body[0]?.extractors)).toBe(true);
-    expect(body[0]?.extractors).toHaveLength(0);
+    const body = (await res.json()) as SnapshotPage;
+    expect(body.items).toHaveLength(1);
+    expect(body.total).toBe(1);
+    expect(body.items[0]?.url).toBe("https://example.com");
+    expect(body.items[0]).toHaveProperty("id");
+    expect(body.items[0]).toHaveProperty("status");
+    expect(body.items[0]).toHaveProperty("createdAt");
+    expect(Array.isArray(body.items[0]?.extractors)).toBe(true);
+    expect(body.items[0]?.extractors).toHaveLength(0);
   });
 
   test("returns extractors list when archive results exist", async () => {
@@ -149,8 +160,41 @@ describe("GET /snapshots", () => {
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots"));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as Array<{ extractors: string[] }>;
-    expect(body[0]?.extractors).toContain("readability");
+    const body = (await res.json()) as SnapshotPage;
+    expect(body.items[0]?.extractors).toContain("readability");
+  });
+
+  test("paginates snapshot list with page and limit params", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    createSnapshot(db, "https://first.com");
+    createSnapshot(db, "https://second.com");
+    createSnapshot(db, "https://third.com");
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(new Request("http://localhost/snapshots?page=2&limit=1"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SnapshotPage;
+    expect(body.items).toHaveLength(1);
+    expect(body.total).toBe(3);
+    expect(body.page).toBe(2);
+    expect(body.limit).toBe(1);
+    expect(body.items[0]?.url).toBe("https://second.com");
+  });
+
+  test("returns empty items for out-of-range page", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    createSnapshot(db, "https://example.com");
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(new Request("http://localhost/snapshots?page=99&limit=20"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SnapshotPage;
+    expect(body.items).toHaveLength(0);
+    expect(body.total).toBe(1);
   });
 });
 
@@ -276,17 +320,26 @@ describe("GET /snapshots/:id/archives/:extractor/download — security", () => {
 // GET /snapshots?q= (FTS5 search)
 // ---------------------------------------------------------------------------
 
+interface SearchPage {
+  items: Array<{ id: number; url: string; snippet: string; rank: number }>;
+  total: number;
+  page: number;
+  limit: number;
+}
+
 describe("GET /snapshots?q=", () => {
-  test("returns empty array when nothing is indexed", async () => {
+  test("returns empty paginated result when nothing is indexed", async () => {
     const { openDb } = await import("@webfrost/core");
     openDb(testDir).close();
 
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots?q=anything"));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as unknown[];
-    expect(Array.isArray(body)).toBe(true);
-    expect(body).toHaveLength(0);
+    const body = (await res.json()) as SearchPage;
+    expect(body.items).toHaveLength(0);
+    expect(body.total).toBe(0);
+    expect(body.page).toBe(1);
+    expect(body.limit).toBe(20);
   });
 
   test("returns ranked results with snippet for indexed snapshot", async () => {
@@ -306,20 +359,16 @@ describe("GET /snapshots?q=", () => {
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots?q=SQLite"));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as Array<{
-      id: number;
-      url: string;
-      snippet: string;
-      rank: number;
-    }>;
-    expect(body.length).toBeGreaterThan(0);
-    expect(body[0]?.id).toBe(1);
-    expect(body[0]?.url).toBe("https://example.com");
-    expect(typeof body[0]?.snippet).toBe("string");
-    expect(typeof body[0]?.rank).toBe("number");
+    const body = (await res.json()) as SearchPage;
+    expect(body.items.length).toBeGreaterThan(0);
+    expect(body.total).toBeGreaterThan(0);
+    expect(body.items[0]?.id).toBe(1);
+    expect(body.items[0]?.url).toBe("https://example.com");
+    expect(typeof body.items[0]?.snippet).toBe("string");
+    expect(typeof body.items[0]?.rank).toBe("number");
   });
 
-  test("returns empty array for blank query (falls through to list)", async () => {
+  test("returns empty items for blank query (falls through to list)", async () => {
     const { openDb } = await import("@webfrost/core");
     openDb(testDir).close();
 
@@ -327,8 +376,8 @@ describe("GET /snapshots?q=", () => {
     // Empty q param is treated as missing — returns list, not search
     const res = await app.handle(new Request("http://localhost/snapshots?q="));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as unknown[];
-    expect(Array.isArray(body)).toBe(true);
+    const body = (await res.json()) as SnapshotPage;
+    expect(Array.isArray(body.items)).toBe(true);
   });
 
   test("does not throw on invalid FTS query expression", async () => {
@@ -340,9 +389,30 @@ describe("GET /snapshots?q=", () => {
       new Request(`http://localhost/snapshots?q=${encodeURIComponent('"unclosed')}`),
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as unknown[];
-    expect(Array.isArray(body)).toBe(true);
-    expect(body).toHaveLength(0);
+    const body = (await res.json()) as SearchPage;
+    expect(body.items).toHaveLength(0);
+    expect(body.total).toBe(0);
+  });
+
+  test("paginates search results with page and limit params", async () => {
+    const { openDb, indexSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    db.query("INSERT INTO snapshots (url, status) VALUES ('https://a.com', 'done')").run();
+    db.query("INSERT INTO snapshots (url, status) VALUES ('https://b.com', 'done')").run();
+    indexSnapshot(db, 1, "https://a.com", "Archiving Guide Part One", "archive content", "");
+    indexSnapshot(db, 2, "https://b.com", "Archiving Guide Part Two", "archive content", "");
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request("http://localhost/snapshots?q=archive&page=1&limit=1"),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SearchPage;
+    expect(body.items).toHaveLength(1);
+    expect(body.total).toBe(2);
+    expect(body.page).toBe(1);
+    expect(body.limit).toBe(1);
   });
 });
 
@@ -423,7 +493,7 @@ describe("DELETE /snapshots/:id", () => {
     const db2 = openDb(testDir);
     const results = searchSnapshots(db2, "ZZZ");
     db2.close();
-    expect(results).toHaveLength(0);
+    expect(results.items).toHaveLength(0);
   });
 });
 

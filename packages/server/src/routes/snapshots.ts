@@ -4,7 +4,7 @@ import {
   createSnapshot,
   deleteSnapshot,
   getSnapshot,
-  listSnapshotsWithExtractors,
+  listSnapshotsWithExtractorsPaginated,
   openDb,
   runPipeline,
   searchSnapshots,
@@ -88,30 +88,56 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       const db = getDb();
       try {
         const q = query.q?.trim();
+        const page = Math.max(1, Number(query.page) || 1);
+        const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+
         if (q) {
-          // FTS5 ranked search — returns results with snippet
-          const results = searchSnapshots(db, q);
-          return results.map((r) => ({ id: r.id, url: r.url, snippet: r.snippet, rank: r.rank }));
+          // FTS5 ranked search — returns paginated results with snippet
+          const result = searchSnapshots(db, q, limit, page);
+          return {
+            items: result.items.map((r) => ({
+              id: r.id,
+              url: r.url,
+              snippet: r.snippet,
+              rank: r.rank,
+            })),
+            total: result.total,
+            page: result.page,
+            limit: result.limit,
+          };
         }
-        return listSnapshotsWithExtractors(db).map((s) => ({
-          id: s.id,
-          url: s.url,
-          status: s.status,
-          createdAt: s.created_at,
-          extractors: s.extractors,
-          tags: s.tags.map((t) => ({
-            id: t.id,
-            name: t.name,
-            slug: t.slug,
-            color: t.color,
-            createdAt: t.created_at,
+
+        const result = listSnapshotsWithExtractorsPaginated(db, page, limit);
+        return {
+          items: result.items.map((s) => ({
+            id: s.id,
+            url: s.url,
+            status: s.status,
+            createdAt: s.created_at,
+            extractors: s.extractors,
+            tags: s.tags.map((tag) => ({
+              id: tag.id,
+              name: tag.name,
+              slug: tag.slug,
+              color: tag.color,
+              createdAt: tag.created_at,
+            })),
           })),
-        }));
+          total: result.total,
+          page: result.page,
+          limit: result.limit,
+        };
       } finally {
         db.close();
       }
     },
-    { query: t.Object({ q: t.Optional(t.String()) }) },
+    {
+      query: t.Object({
+        q: t.Optional(t.String()),
+        page: t.Optional(t.String()),
+        limit: t.Optional(t.String()),
+      }),
+    },
   )
   .get(
     "/:id",

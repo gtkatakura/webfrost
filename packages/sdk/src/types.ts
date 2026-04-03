@@ -46,6 +46,20 @@ export interface WebFrostClientOptions {
   apiKey?: string;
 }
 
+export interface ListSnapshotsOptions {
+  /** Page number (1-indexed). Defaults to 1. */
+  page?: number;
+  /** Items per page (1–100). Defaults to 20. */
+  limit?: number;
+}
+
+export interface SnapshotPage {
+  items: Snapshot[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 /** Single result from GET /snapshots?q=term */
 export interface SearchResult {
   id: number;

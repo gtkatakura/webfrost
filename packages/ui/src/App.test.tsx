@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { Snapshot, SnapshotCreated, SnapshotDetail, WebFrostClient } from "@webfrost/sdk";
+import type {
+  Snapshot,
+  SnapshotCreated,
+  SnapshotDetail,
+  SnapshotPage,
+  WebFrostClient,
+} from "@webfrost/sdk";
 import { MemoryRouter } from "react-router-dom";
 import App from "./App";
 
@@ -12,13 +18,17 @@ afterEach(() => {
 // Mock client factory
 // ---------------------------------------------------------------------------
 
+function snapshotPage(items: Snapshot[]): SnapshotPage {
+  return { items, total: items.length, page: 1, limit: 20 };
+}
+
 function mockClient(overrides: {
-  listSnapshots?: () => Promise<Snapshot[]>;
+  listSnapshots?: () => Promise<SnapshotPage>;
   createSnapshot?: (url: string) => Promise<SnapshotCreated>;
   getSnapshot?: (id: number) => Promise<SnapshotDetail | null>;
 }): WebFrostClient {
   return {
-    listSnapshots: () => Promise.resolve([]),
+    listSnapshots: () => Promise.resolve(snapshotPage([])),
     createSnapshot: (url: string) => Promise.resolve({ id: 1, url, status: "pending" }),
     getSnapshot: () => Promise.resolve(null),
     listTags: () => Promise.resolve([]),
@@ -65,7 +75,7 @@ function renderApp(client: WebFrostClient, initialPath = "/") {
 
 describe("ListPage — empty state", () => {
   test("shows empty state message when no snapshots", async () => {
-    const client = mockClient({ listSnapshots: () => Promise.resolve([]) });
+    const client = mockClient({ listSnapshots: () => Promise.resolve(snapshotPage([])) });
     renderApp(client);
 
     const msg = await screen.findByText("No snapshots yet. Archive a URL above.");
@@ -80,7 +90,7 @@ describe("ListPage — data renders", () => {
       makeSnapshot({ id: 2, url: "https://beta.org", status: "pending" }),
       makeSnapshot({ id: 3, url: "https://gamma.io", extractors: ["warc"] }),
     ];
-    const client = mockClient({ listSnapshots: () => Promise.resolve(snapshots) });
+    const client = mockClient({ listSnapshots: () => Promise.resolve(snapshotPage(snapshots)) });
     renderApp(client);
 
     await screen.findByText("https://alpha.com");
@@ -93,7 +103,7 @@ describe("ListPage — data renders", () => {
       makeSnapshot({ id: 1, url: "https://done.com", status: "done" }),
       makeSnapshot({ id: 2, url: "https://pending.com", status: "pending" }),
     ];
-    const client = mockClient({ listSnapshots: () => Promise.resolve(snapshots) });
+    const client = mockClient({ listSnapshots: () => Promise.resolve(snapshotPage(snapshots)) });
     renderApp(client);
 
     await screen.findByText("https://done.com");
@@ -103,7 +113,8 @@ describe("ListPage — data renders", () => {
 
   test("rows link to detail view", async () => {
     const client = mockClient({
-      listSnapshots: () => Promise.resolve([makeSnapshot({ id: 42, url: "https://example.com" })]),
+      listSnapshots: () =>
+        Promise.resolve(snapshotPage([makeSnapshot({ id: 42, url: "https://example.com" })])),
     });
     renderApp(client);
 
@@ -123,7 +134,7 @@ describe("ListPage — search / filter", () => {
       makeSnapshot({ id: 1, url: "https://alpha.com" }),
       makeSnapshot({ id: 2, url: "https://beta.org" }),
     ];
-    const client = mockClient({ listSnapshots: () => Promise.resolve(snapshots) });
+    const client = mockClient({ listSnapshots: () => Promise.resolve(snapshotPage(snapshots)) });
     renderApp(client);
 
     await screen.findByText("https://alpha.com");
@@ -140,7 +151,7 @@ describe("ListPage — search / filter", () => {
       makeSnapshot({ id: 1, url: "https://alpha.com" }),
       makeSnapshot({ id: 2, url: "https://beta.org" }),
     ];
-    const client = mockClient({ listSnapshots: () => Promise.resolve(snapshots) });
+    const client = mockClient({ listSnapshots: () => Promise.resolve(snapshotPage(snapshots)) });
     renderApp(client);
 
     await screen.findByText("https://alpha.com");
@@ -155,7 +166,7 @@ describe("ListPage — search / filter", () => {
 
   test("shows no-match message when filter returns no results", async () => {
     const snapshots = [makeSnapshot({ id: 1, url: "https://alpha.com" })];
-    const client = mockClient({ listSnapshots: () => Promise.resolve(snapshots) });
+    const client = mockClient({ listSnapshots: () => Promise.resolve(snapshotPage(snapshots)) });
     renderApp(client);
 
     await screen.findByText("https://alpha.com");
@@ -171,7 +182,7 @@ describe("ListPage — search / filter", () => {
       makeSnapshot({ id: 1, url: "https://with-warc.com", extractors: ["warc"] }),
       makeSnapshot({ id: 2, url: "https://no-warc.com", extractors: [] }),
     ];
-    const client = mockClient({ listSnapshots: () => Promise.resolve(snapshots) });
+    const client = mockClient({ listSnapshots: () => Promise.resolve(snapshotPage(snapshots)) });
     renderApp(client);
 
     await screen.findByText("https://with-warc.com");

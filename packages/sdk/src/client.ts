@@ -1,9 +1,11 @@
 import type {
   ArchiveResult,
+  ListSnapshotsOptions,
   SearchResult,
   Snapshot,
   SnapshotCreated,
   SnapshotDetail,
+  SnapshotPage,
   Tag,
   WebFrostClientOptions,
 } from "./types";
@@ -122,17 +124,33 @@ export class WebFrostClient {
   }
 
   /**
-   * List all snapshots.
+   * List snapshots with optional pagination.
+   * Returns a paginated result with items, total count, and pagination metadata.
    */
-  async listSnapshots(): Promise<Snapshot[]> {
-    const res = await this.request(`${this.baseUrl}/snapshots`);
+  async listSnapshots(options?: ListSnapshotsOptions): Promise<SnapshotPage> {
+    const params = new URLSearchParams();
+    if (options?.page !== undefined) params.set("page", String(options.page));
+    if (options?.limit !== undefined) params.set("limit", String(options.limit));
+    const qs = params.size > 0 ? `?${params.toString()}` : "";
+
+    const res = await this.request(`${this.baseUrl}/snapshots${qs}`);
 
     if (!res.ok) {
       throw new WebFrostError(res.status, res.statusText);
     }
 
-    const raw = (await res.json()) as RawSnapshot[];
-    return raw.map(toSnapshot);
+    const raw = (await res.json()) as {
+      items: RawSnapshot[];
+      total: number;
+      page: number;
+      limit: number;
+    };
+    return {
+      items: raw.items.map(toSnapshot),
+      total: raw.total,
+      page: raw.page,
+      limit: raw.limit,
+    };
   }
 
   /**

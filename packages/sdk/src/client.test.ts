@@ -64,8 +64,8 @@ describe("WebFrostClient.createSnapshot", () => {
 });
 
 describe("WebFrostClient.listSnapshots", () => {
-  test("returns array of snapshots", async () => {
-    const raw = [
+  test("returns paginated result", async () => {
+    const rawItems = [
       {
         id: 1,
         url: "https://a.com",
@@ -83,13 +83,25 @@ describe("WebFrostClient.listSnapshots", () => {
         tags: [],
       },
     ];
-    fetchSpy.mockResolvedValueOnce(jsonResponse(raw));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ items: rawItems, total: 2, page: 1, limit: 20 }));
 
     const client = new WebFrostClient({ baseUrl: BASE });
     const result = await client.listSnapshots();
 
-    expect(result).toEqual(raw);
+    expect(result.items).toEqual(rawItems);
+    expect(result.total).toBe(2);
+    expect(result.page).toBe(1);
+    expect(result.limit).toBe(20);
     expect((fetchSpy.mock.calls[0] as unknown[])[0]).toBe(`${BASE}/snapshots`);
+  });
+
+  test("passes page and limit as query params", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ items: [], total: 0, page: 2, limit: 5 }));
+
+    const client = new WebFrostClient({ baseUrl: BASE });
+    await client.listSnapshots({ page: 2, limit: 5 });
+
+    expect((fetchSpy.mock.calls[0] as unknown[])[0]).toBe(`${BASE}/snapshots?page=2&limit=5`);
   });
 
   test("throws WebFrostError on non-200", async () => {
