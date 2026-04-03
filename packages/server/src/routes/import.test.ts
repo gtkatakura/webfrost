@@ -1,0 +1,267 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+let testDir: string;
+
+beforeEach(() => {
+  testDir = join(
+    tmpdir(),
+    `webfrost-import-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
+  mkdirSync(testDir, { recursive: true });
+  process.env.WEBFROST_DIR = testDir;
+  process.env.AUTH_DISABLED = "true";
+});
+
+afterEach(() => {
+  process.env.WEBFROST_DIR = undefined;
+  process.env.AUTH_DISABLED = undefined;
+  try {
+    rmSync(testDir, { recursive: true, force: true });
+  } catch {
+    // best-effort cleanup
+  }
+});
+
+async function getApp() {
+  const { importRouter } = await import("./import");
+  const { Elysia } = await import("elysia");
+  return new Elysia().use(importRouter);
+}
+
+function post(app: Awaited<ReturnType<typeof getApp>>, body: unknown) {
+  return app.handle(
+    new Request("http://localhost/import", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+describe("POST /import — validation", () => {
+  test("returns 400 when neither url nor content is provided", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await post(app, {});
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("either url or content is required");
+  });
+
+  test("returns 400 for completely empty body", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request("http://localhost/import", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "null",
+      }),
+    );
+    // Elysia validation rejects non-object body → 400
+    expect(res.status).toBe(400);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Text format (content)
+// ---------------------------------------------------------------------------
+
+describe("POST /import — text format via content", () => {
+  test("returns 202 with queued count for plain URL list", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await post(app, {
+      content: "https://example.com\nhttps://other.com\n",
+      format: "text",
+    });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as {
+      queued: number;
+      skipped: number;
+      total: number;
+      format: string;
+    };
+    expect(body.format).toBe("text");
+    expect(body.total).toBe(2);
+    expect(body.queued).toBe(2);
+    expect(body.skipped).toBe(0);
+  });
+
+  test("skips comment lines and blank lines", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await post(app, {
+      content: "# comment\n\nhttps://example.com\n",
+      format: "text",
+    });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { total: number };
+    expect(body.total).toBe(1);
+  });
+
+  test("returns 202 with total=0 for content with no valid URLs", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await post(app, { content: "not-a-url\nftp://skip.me\n", format: "text" });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { total: number; queued: number };
+    expect(body.total).toBe(0);
+    expect(body.queued).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RSS format (content)
+// ---------------------------------------------------------------------------
+
+const RSS2_FEED = `<?xml version="1.0"?>
+<rss version="2.0">
+  <channel>
+    <title>Test Feed</title>
+    <item><title>Article One</title><link>https://example.com/article-1</link></item>
+    <item><title>Article Two</title><link>https://example.com/article-2</link></item>
+  </channel>
+</rss>`;
+
+const ATOM_FEED = `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Atom Feed</title>
+  <entry><title>Post One</title><link href="https://atom.example.com/post-1" rel="alternate"/></entry>
+  <entry><title>Post Two</title><link href="https://atom.example.com/post-2"/></entry>
+</feed>`;
+
+describe("POST /import — RSS 2.0 format via content", () => {
+  test("parses RSS 2.0 feed and queues article URLs", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await post(app, { content: RSS2_FEED, format: "rss" });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as {
+      queued: number;
+      skipped: number;
+      total: number;
+      format: string;
+    };
+    expect(body.format).toBe("rss");
+    expect(body.total).toBe(2);
+    expect(body.queued).toBe(2);
+    expect(body.skipped).toBe(0);
+  });
+
+  test("deduplicates already-archived URLs in RSS content import", async () => {
+    const { openDb } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    db.exec("INSERT INTO snapshots (url, status) VALUES ('https://example.com/article-1', 'done')");
+    db.close();
+
+    const app = await getApp();
+    const res = await post(app, { content: RSS2_FEED, format: "rss" });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { queued: number; skipped: number; total: number };
+    expect(body.total).toBe(2);
+    expect(body.skipped).toBe(1);
+    expect(body.queued).toBe(1);
+  });
+});
+
+describe("POST /import — Atom format via content", () => {
+  test("parses Atom feed and queues article URLs", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await post(app, { content: ATOM_FEED, format: "rss" });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { queued: number; total: number; format: string };
+    expect(body.format).toBe("rss");
+    expect(body.total).toBe(2);
+    expect(body.queued).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Auto-detection via content
+// ---------------------------------------------------------------------------
+
+describe("POST /import — format auto-detection", () => {
+  test("auto-detects RSS 2.0 content when no format hint given", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await post(app, { content: RSS2_FEED });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { format: string; total: number };
+    expect(body.format).toBe("rss");
+    expect(body.total).toBe(2);
+  });
+
+  test("auto-detects Atom content when no format hint given", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await post(app, { content: ATOM_FEED });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { format: string; total: number };
+    expect(body.format).toBe("rss");
+    expect(body.total).toBe(2);
+  });
+
+  test("auto-detects text format for plain URL list with no format hint", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await post(app, { content: "https://example.com\nhttps://other.com" });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { format: string };
+    expect(body.format).toBe("text");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// OPML format (content)
+// ---------------------------------------------------------------------------
+
+describe("POST /import — OPML format via content", () => {
+  const OPML = `<?xml version="1.0"?>
+<opml version="2.0">
+  <body>
+    <outline type="rss" text="Example Feed" xmlUrl="https://example.com/feed.rss"/>
+    <outline type="rss" text="Other Feed" xmlUrl="https://other.com/atom.xml"/>
+  </body>
+</opml>`;
+
+  test("extracts xmlUrl entries from OPML", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await post(app, { content: OPML, format: "opml" });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { total: number; format: string };
+    expect(body.format).toBe("opml");
+    expect(body.total).toBe(2);
+  });
+});
