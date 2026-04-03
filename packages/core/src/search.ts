@@ -1,4 +1,5 @@
 import type Database from "bun:sqlite";
+import type { PaginatedResult } from "./list";
 
 export interface SearchResult {
   id: number;
@@ -62,13 +63,18 @@ export function rebuildIndex(db: Database): void {
 
 /**
  * Full-text search across URL, title, extracted text, and tags.
- * Returns up to `limit` results ranked by relevance, with a plain-text snippet.
+ * Returns paginated results ranked by relevance, with a plain-text snippet.
  *
  * FTS5 MATCH syntax is supported (e.g. "phrase query", term*, col:term).
- * Returns empty array on invalid query expressions.
+ * Returns empty result on invalid query expressions.
  */
-export function searchSnapshots(db: Database, query: string, limit = 20): SearchResult[] {
-  if (!query.trim()) return [];
+export function searchSnapshots(
+  db: Database,
+  query: string,
+  limit = 20,
+  page = 1,
+): PaginatedResult<SearchResult> {
+  if (!query.trim()) return { items: [], total: 0, page, limit };
 
   interface FtsRow {
     id: number;
@@ -77,9 +83,11 @@ export function searchSnapshots(db: Database, query: string, limit = 20): Search
     rank: number;
   }
 
+  const offset = (page - 1) * limit;
+
   try {
-    return db
-      .query<FtsRow, [string, number]>(
+    const items = db
+      .query<FtsRow, [string, number, number]>(
         `SELECT
            snapshots_fts.rowid AS id,
            snapshots_fts.url AS url,
@@ -88,12 +96,21 @@ export function searchSnapshots(db: Database, query: string, limit = 20): Search
          FROM snapshots_fts
          WHERE snapshots_fts MATCH ?
          ORDER BY rank
-         LIMIT ?`,
+         LIMIT ? OFFSET ?`,
       )
-      .all(query, limit);
+      .all(query, limit, offset);
+
+    const countRow = db
+      .query<{ total: number }, [string]>(
+        "SELECT COUNT(*) AS total FROM snapshots_fts WHERE snapshots_fts MATCH ?",
+      )
+      .get(query);
+    const total = countRow?.total ?? 0;
+
+    return { items, total, page, limit };
   } catch {
     // Invalid FTS query expression — return no results instead of throwing
-    return [];
+    return { items: [], total: 0, page, limit };
   }
 }
 

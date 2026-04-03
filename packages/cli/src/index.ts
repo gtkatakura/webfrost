@@ -583,10 +583,10 @@ switch (command) {
     const db = openDb(archiveDir);
     try {
       const results = searchSnapshots(db, query);
-      if (results.length === 0) {
+      if (results.items.length === 0) {
         console.log("No results.");
       }
-      for (const r of results) {
+      for (const r of results.items) {
         console.log(`${r.id}\t${r.url}`);
         if (r.snippet) {
           console.log(`  ${r.snippet.replace(/<\/?mark>/g, "")}`);

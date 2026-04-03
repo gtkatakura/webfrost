@@ -9,10 +9,12 @@
     "benchmarks": "echo 'no benchmarks'"
   },
   "dependencies": {
+    "@tailwindcss/vite": "^4.2.2",
     "@webfrost/sdk": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.30.0"
+    "react-router-dom": "^6.30.0",
+    "tailwindcss": "^4.2.2"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.8.9",

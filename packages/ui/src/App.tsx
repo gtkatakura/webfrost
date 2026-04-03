@@ -15,54 +15,15 @@ function useClient(): WebFrostClient {
 
 const PAGE_SIZE = 20;
 
-const GLOBAL_CSS = `
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: #f8fafc; font-family: system-ui, -apple-system, sans-serif; }
-  a { color: #0070f3; text-decoration: none; }
-  a:hover { text-decoration: underline; }
-`;
-
 // ---------------------------------------------------------------------------
 // Shared small components
 // ---------------------------------------------------------------------------
 
 function SkeletonRow() {
   return (
-    <li
-      style={{
-        padding: "0.75rem 1rem",
-        border: "1px solid #e5e7eb",
-        borderRadius: 6,
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        gap: "1rem",
-      }}
-    >
-      <span
-        style={{
-          display: "inline-block",
-          width: "60%",
-          height: "1rem",
-          background: "#e5e7eb",
-          borderRadius: 4,
-          animation: "pulse 1.4s ease-in-out infinite",
-        }}
-      />
-      <span
-        style={{
-          display: "inline-block",
-          width: "10%",
-          height: "1rem",
-          background: "#e5e7eb",
-          borderRadius: 4,
-          animation: "pulse 1.4s ease-in-out infinite",
-        }}
-      />
+    <li className="py-3 px-4 border border-gray-200 rounded-md flex justify-between items-center gap-4">
+      <span className="inline-block w-3/5 h-4 bg-gray-200 rounded animate-pulse" />
+      <span className="inline-block w-[10%] h-4 bg-gray-200 rounded animate-pulse" />
     </li>
   );
 }
@@ -71,16 +32,9 @@ function ExtractorBadge({ extractor, hasContent }: { extractor: string; hasConte
   return (
     <span
       title={extractor}
-      style={{
-        display: "inline-block",
-        padding: "0.15rem 0.4rem",
-        borderRadius: 3,
-        fontSize: "0.7rem",
-        fontWeight: 600,
-        background: hasContent ? "#d1fae5" : "#fee2e2",
-        color: hasContent ? "#065f46" : "#991b1b",
-        marginRight: "0.25rem",
-      }}
+      className={`inline-block py-0.5 px-1.5 rounded-sm text-[0.7rem] font-semibold mr-1 ${
+        hasContent ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"
+      }`}
     >
       {extractor}
     </span>
@@ -90,14 +44,9 @@ function ExtractorBadge({ extractor, hasContent }: { extractor: string; hasConte
 function StatusBadge({ status }: { status: string }) {
   return (
     <span
-      style={{
-        fontSize: "0.75rem",
-        padding: "0.15rem 0.5rem",
-        borderRadius: 12,
-        background: status === "done" ? "#d1fae5" : "#fef3c7",
-        color: status === "done" ? "#065f46" : "#92400e",
-        fontWeight: 600,
-      }}
+      className={`text-xs py-0.5 px-2 rounded-full font-semibold ${
+        status === "done" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+      }`}
     >
       {status}
     </span>
@@ -124,18 +73,8 @@ function TagChip({
   }
   return (
     <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "0.2rem",
-        padding: "0.1rem 0.45rem",
-        borderRadius: 12,
-        fontSize: "0.7rem",
-        fontWeight: 600,
-        background: bg,
-        color: textColor,
-        marginRight: "0.2rem",
-      }}
+      className="inline-flex items-center gap-0.5 py-0.5 px-[0.45rem] rounded-full text-[0.7rem] font-semibold mr-0.5"
+      style={{ background: bg, color: textColor }}
     >
       {tag.name}
       {onRemove && (
@@ -146,15 +85,8 @@ function TagChip({
             e.stopPropagation();
             onRemove();
           }}
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            color: textColor,
-            padding: 0,
-            lineHeight: 1,
-            fontSize: "0.75rem",
-          }}
+          className="bg-transparent border-0 cursor-pointer p-0 leading-none text-[0.75rem]"
+          style={{ color: textColor }}
           aria-label={`Remove tag ${tag.name}`}
         >
           ×
@@ -165,20 +97,7 @@ function TagChip({
 }
 
 function ErrorBanner({ message }: { message: string }) {
-  return (
-    <p
-      style={{
-        color: "#b91c1c",
-        background: "#fee2e2",
-        padding: "0.6rem 0.9rem",
-        borderRadius: 4,
-        marginBottom: "1rem",
-        fontSize: "0.875rem",
-      }}
-    >
-      {message}
-    </p>
-  );
+  return <p className="text-red-700 bg-red-100 py-2.5 px-3.5 rounded mb-4 text-sm">{message}</p>;
 }
 
 // ---------------------------------------------------------------------------
@@ -188,50 +107,24 @@ function ErrorBanner({ message }: { message: string }) {
 function SnapshotListRow({ snapshot }: { snapshot: Snapshot }) {
   const ts = new Date(snapshot.createdAt).toLocaleString();
   return (
-    <li style={{ border: "1px solid #e5e7eb", borderRadius: 6, overflow: "hidden" }}>
+    <li className="border border-gray-200 rounded-md overflow-hidden">
       <Link
         to={`/snapshots/${snapshot.id}`}
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          padding: "0.75rem 1rem",
-          background: "white",
-          gap: "1rem",
-          color: "inherit",
-          textDecoration: "none",
-        }}
+        className="flex justify-between items-start py-3 px-4 bg-white gap-4 text-inherit no-underline hover:no-underline"
       >
-        <div style={{ flexShrink: 1, minWidth: 0 }}>
-          <span
-            style={{
-              color: "#0070f3",
-              wordBreak: "break-all",
-              fontSize: "0.875rem",
-              display: "block",
-            }}
-          >
-            {snapshot.url}
-          </span>
+        <div className="shrink min-w-0">
+          <span className="text-primary break-all text-sm block">{snapshot.url}</span>
           {snapshot.tags.length > 0 && (
-            <div style={{ marginTop: "0.3rem" }}>
+            <div className="mt-1">
               {snapshot.tags.map((tag) => (
                 <TagChip key={tag.id} tag={tag} />
               ))}
             </div>
           )}
         </div>
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "flex-end",
-            gap: "0.25rem",
-            flexShrink: 0,
-          }}
-        >
+        <div className="flex flex-col items-end gap-1 shrink-0">
           <StatusBadge status={snapshot.status} />
-          <span style={{ fontSize: "0.7rem", color: "#9ca3af" }}>{ts}</span>
+          <span className="text-[0.7rem] text-gray-400">{ts}</span>
           {snapshot.extractors.length > 0 && (
             <div>
               {snapshot.extractors.map((ext) => (
@@ -246,6 +139,8 @@ function SnapshotListRow({ snapshot }: { snapshot: Snapshot }) {
 }
 
 const KNOWN_EXTRACTORS = ["warc", "readability", "pdf"] as const;
+
+const inputCls = "py-2 px-3 border border-gray-300 rounded text-sm";
 
 function ListPage() {
   const client = useClient();
@@ -370,55 +265,31 @@ function ListPage() {
   const safePage = Math.min(page, totalPages);
   const pageItems = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-  const inputStyle = {
-    padding: "0.5rem 0.75rem",
-    border: "1px solid #d1d5db",
-    borderRadius: 4,
-    fontSize: "0.875rem",
-  };
-
   return (
-    <main style={{ maxWidth: 760, margin: "0 auto", padding: "2rem 1rem" }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "1.5rem",
-        }}
-      >
-        <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#111", margin: 0 }}>WebFrost</h1>
-        <Link to="/tags" style={{ fontSize: "0.875rem" }}>
+    <main className="max-w-[760px] mx-auto py-8 px-4">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-gray-900 m-0">WebFrost</h1>
+        <Link to="/tags" className="text-sm">
           Manage Tags
         </Link>
       </div>
 
       {/* Archive URL form */}
-      <form
-        onSubmit={handleSubmit}
-        style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem" }}
-      >
+      <form onSubmit={handleSubmit} className="flex gap-2 mb-6">
         <input
           type="url"
           placeholder="https://example.com"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           required
-          style={{ flex: 1, ...inputStyle }}
+          className={`flex-1 ${inputCls}`}
         />
         <button
           type="submit"
           disabled={submitting}
-          style={{
-            padding: "0.5rem 1.2rem",
-            background: "#0070f3",
-            color: "#fff",
-            border: "none",
-            borderRadius: 4,
-            cursor: submitting ? "not-allowed" : "pointer",
-            fontWeight: 600,
-            opacity: submitting ? 0.7 : 1,
-          }}
+          className={`py-2 px-5 bg-primary text-white border-0 rounded font-semibold ${
+            submitting ? "cursor-not-allowed opacity-70" : "cursor-pointer"
+          }`}
         >
           {submitting ? "Archiving…" : "Archive"}
         </button>
@@ -428,14 +299,7 @@ function ListPage() {
       {error && <ErrorBanner message={error} />}
 
       {/* Search and filter controls */}
-      <div
-        style={{
-          marginBottom: "1rem",
-          display: "flex",
-          flexDirection: "column",
-          gap: "0.5rem",
-        }}
-      >
+      <div className="mb-4 flex flex-col gap-2">
         <input
           type="search"
           placeholder="Full-text search (title, content, tags)…"
@@ -444,7 +308,7 @@ function ListPage() {
             setFtsQuery(e.target.value);
             setPage(1);
           }}
-          style={{ ...inputStyle, width: "100%" }}
+          className={`w-full ${inputCls}`}
         />
         {!ftsQuery && (
           <input
@@ -455,20 +319,11 @@ function ListPage() {
               setSearch(e.target.value);
               setPage(1);
             }}
-            style={{ ...inputStyle, width: "100%" }}
+            className={`w-full ${inputCls}`}
           />
         )}
-        <div
-          style={{
-            display: "flex",
-            gap: "0.5rem",
-            flexWrap: "wrap",
-            alignItems: "center",
-            fontSize: "0.8rem",
-            color: "#6b7280",
-          }}
-        >
-          <label style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+        <div className="flex gap-2 flex-wrap items-center text-[0.8rem] text-gray-500">
+          <label className="flex items-center gap-1">
             From:
             <input
               type="date"
@@ -477,10 +332,10 @@ function ListPage() {
                 setDateFrom(e.target.value);
                 setPage(1);
               }}
-              style={inputStyle}
+              className={inputCls}
             />
           </label>
-          <label style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+          <label className="flex items-center gap-1">
             To:
             <input
               type="date"
@@ -489,15 +344,12 @@ function ListPage() {
                 setDateTo(e.target.value);
                 setPage(1);
               }}
-              style={inputStyle}
+              className={inputCls}
             />
           </label>
-          <span style={{ marginLeft: "0.25rem" }}>Has:</span>
+          <span className="ml-1">Has:</span>
           {KNOWN_EXTRACTORS.map((ext) => (
-            <label
-              key={ext}
-              style={{ display: "flex", alignItems: "center", gap: "0.2rem", cursor: "pointer" }}
-            >
+            <label key={ext} className="flex items-center gap-0.5 cursor-pointer">
               <input
                 type="checkbox"
                 checked={reqExtractors.has(ext)}
@@ -508,22 +360,10 @@ function ListPage() {
           ))}
         </div>
         {allTags.length > 0 && (
-          <div
-            style={{
-              display: "flex",
-              gap: "0.4rem",
-              flexWrap: "wrap",
-              alignItems: "center",
-              fontSize: "0.8rem",
-              color: "#6b7280",
-            }}
-          >
+          <div className="flex gap-1.5 flex-wrap items-center text-[0.8rem] text-gray-500">
             <span>Tag:</span>
             {allTags.map((tag) => (
-              <label
-                key={tag.id}
-                style={{ display: "flex", alignItems: "center", gap: "0.2rem", cursor: "pointer" }}
-              >
+              <label key={tag.id} className="flex items-center gap-0.5 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={reqTags.has(tag.id)}
@@ -538,37 +378,21 @@ function ListPage() {
 
       {/* FTS search results */}
       {ftsQuery.trim() && (
-        <div style={{ marginBottom: "1rem" }}>
+        <div className="mb-4">
           {ftsLoading ? (
-            <p style={{ color: "#9ca3af" }}>Searching…</p>
+            <p className="text-gray-400">Searching…</p>
           ) : ftsResults.length === 0 ? (
-            <p style={{ color: "#9ca3af" }}>No results for "{ftsQuery}".</p>
+            <p className="text-gray-400">No results for "{ftsQuery}".</p>
           ) : (
-            <ul
-              style={{
-                listStyle: "none",
-                padding: 0,
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.75rem",
-              }}
-            >
+            <ul className="list-none p-0 flex flex-col gap-3">
               {ftsResults.map((r) => (
-                <li
-                  key={r.id}
-                  style={{
-                    background: "white",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: 8,
-                    padding: "0.75rem 1rem",
-                  }}
-                >
-                  <Link to={`/snapshots/${r.id}`} style={{ fontWeight: 600 }}>
+                <li key={r.id} className="bg-white border border-gray-200 rounded-lg py-3 px-4">
+                  <Link to={`/snapshots/${r.id}`} className="font-semibold">
                     {r.url}
                   </Link>
                   {r.snippet && (
                     <p
-                      style={{ margin: "0.4rem 0 0", fontSize: "0.8rem", color: "#6b7280" }}
+                      className="mt-1.5 text-[0.8rem] text-gray-500 m-0"
                       // biome-ignore lint/security/noDangerouslySetInnerHtml: controlled server snippet
                       dangerouslySetInnerHTML={{ __html: r.snippet }}
                     />
@@ -582,37 +406,21 @@ function ListPage() {
 
       {/* Snapshot list (hidden when FTS is active) */}
       {!ftsQuery.trim() && initialLoading ? (
-        <ul
-          style={{
-            listStyle: "none",
-            padding: 0,
-            display: "flex",
-            flexDirection: "column",
-            gap: "0.75rem",
-          }}
-        >
+        <ul className="list-none p-0 flex flex-col gap-3">
           {Array.from({ length: 5 }).map((_, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: skeleton placeholders have no identity
             <SkeletonRow key={i} />
           ))}
         </ul>
       ) : !ftsQuery.trim() && filtered.length === 0 ? (
-        <p style={{ color: "#9ca3af", textAlign: "center", marginTop: "3rem" }}>
+        <p className="text-gray-400 text-center mt-12">
           {snapshots.length === 0
             ? "No snapshots yet. Archive a URL above."
             : "No snapshots match your filters."}
         </p>
       ) : !ftsQuery.trim() ? (
         <>
-          <ul
-            style={{
-              listStyle: "none",
-              padding: 0,
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.75rem",
-            }}
-          >
+          <ul className="list-none p-0 flex flex-col gap-3">
             {pageItems.map((s) => (
               <SnapshotListRow key={s.id} snapshot={s} />
             ))}
@@ -620,45 +428,27 @@ function ListPage() {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "center",
-                gap: "0.5rem",
-                marginTop: "1.5rem",
-                alignItems: "center",
-              }}
-            >
+            <div className="flex justify-center gap-2 mt-6 items-center">
               <button
                 type="button"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={safePage === 1}
-                style={{
-                  padding: "0.35rem 0.75rem",
-                  border: "1px solid #d1d5db",
-                  borderRadius: 4,
-                  background: "white",
-                  cursor: safePage === 1 ? "not-allowed" : "pointer",
-                  opacity: safePage === 1 ? 0.4 : 1,
-                }}
+                className={`py-1.5 px-3 border border-gray-300 rounded bg-white ${
+                  safePage === 1 ? "cursor-not-allowed opacity-40" : "cursor-pointer"
+                }`}
               >
                 ‹ Prev
               </button>
-              <span style={{ fontSize: "0.875rem", color: "#6b7280" }}>
+              <span className="text-sm text-gray-500">
                 {safePage} / {totalPages}
               </span>
               <button
                 type="button"
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={safePage === totalPages}
-                style={{
-                  padding: "0.35rem 0.75rem",
-                  border: "1px solid #d1d5db",
-                  borderRadius: 4,
-                  background: "white",
-                  cursor: safePage === totalPages ? "not-allowed" : "pointer",
-                  opacity: safePage === totalPages ? 0.4 : 1,
-                }}
+                className={`py-1.5 px-3 border border-gray-300 rounded bg-white ${
+                  safePage === totalPages ? "cursor-not-allowed opacity-40" : "cursor-pointer"
+                }`}
               >
                 Next ›
               </button>
@@ -698,52 +488,24 @@ function ArchiveResultSection({
       // leave as empty
     }
     return (
-      <div
-        style={{
-          border: "1px solid #e5e7eb",
-          borderRadius: 6,
-          padding: "1rem",
-          marginBottom: "0.75rem",
-        }}
-      >
-        <div style={{ marginBottom: "0.5rem" }}>
+      <div className="border border-gray-200 rounded-md p-4 mb-3">
+        <div className="mb-2">
           <ExtractorBadge extractor="readability" hasContent={true} />
         </div>
-        {parsed.title && (
-          <p style={{ margin: "0 0 0.25rem", fontWeight: 600, fontSize: "0.95rem" }}>
-            {parsed.title}
-          </p>
-        )}
-        {parsed.byline && (
-          <p style={{ margin: "0 0 0.25rem", color: "#6b7280", fontSize: "0.85rem" }}>
-            {parsed.byline}
-          </p>
-        )}
+        {parsed.title && <p className="m-0 mb-1 font-semibold text-[0.95rem]">{parsed.title}</p>}
+        {parsed.byline && <p className="m-0 mb-1 text-gray-500 text-[0.85rem]">{parsed.byline}</p>}
         {parsed.excerpt && (
-          <p style={{ margin: "0 0 0.75rem", color: "#374151", fontSize: "0.875rem" }}>
+          <p className="m-0 mb-3 text-gray-700 text-sm">
             <em>{parsed.excerpt}</em>
           </p>
         )}
         {parsed.textContent && (
-          <pre
-            style={{
-              background: "#f3f4f6",
-              padding: "0.75rem",
-              borderRadius: 4,
-              fontSize: "0.8rem",
-              overflowX: "auto",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              maxHeight: 200,
-              overflowY: "auto",
-              margin: "0 0 0.5rem",
-            }}
-          >
+          <pre className="bg-gray-100 p-3 rounded text-[0.8rem] overflow-x-auto whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto m-0 mb-2">
             {parsed.textContent.slice(0, 500)}
             {parsed.textContent.length > 500 ? "…" : ""}
           </pre>
         )}
-        <a href={downloadUrl} style={{ fontSize: "0.8rem" }}>
+        <a href={downloadUrl} className="text-[0.8rem]">
           Download JSON
         </a>
       </div>
@@ -755,24 +517,14 @@ function ArchiveResultSection({
   const label = labels[result.extractor] ?? result.extractor;
 
   return (
-    <div
-      style={{
-        border: "1px solid #e5e7eb",
-        borderRadius: 6,
-        padding: "0.75rem 1rem",
-        marginBottom: "0.75rem",
-        display: "flex",
-        alignItems: "center",
-        gap: "0.75rem",
-      }}
-    >
+    <div className="border border-gray-200 rounded-md py-3 px-4 mb-3 flex items-center gap-3">
       <ExtractorBadge extractor={result.extractor} hasContent={result.content !== null} />
       {result.content ? (
-        <a href={downloadUrl} style={{ fontSize: "0.875rem" }}>
+        <a href={downloadUrl} className="text-sm">
           Download {label}
         </a>
       ) : (
-        <span style={{ fontSize: "0.875rem", color: "#9ca3af" }}>No output</span>
+        <span className="text-sm text-gray-400">No output</span>
       )}
     </div>
   );
@@ -817,36 +569,17 @@ function DetailPage() {
   }, [id, client]);
 
   return (
-    <main style={{ maxWidth: 760, margin: "0 auto", padding: "2rem 1rem" }}>
+    <main className="max-w-[760px] mx-auto py-8 px-4">
       <button
         type="button"
         onClick={() => navigate(-1)}
-        style={{
-          background: "none",
-          border: "none",
-          color: "#0070f3",
-          cursor: "pointer",
-          fontSize: "0.875rem",
-          padding: 0,
-          marginBottom: "1.5rem",
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "0.25rem",
-        }}
+        className="bg-transparent border-0 text-primary cursor-pointer text-sm p-0 mb-6 inline-flex items-center gap-1"
       >
         ← Back
       </button>
 
       {loading && (
-        <ul
-          style={{
-            listStyle: "none",
-            padding: 0,
-            display: "flex",
-            flexDirection: "column",
-            gap: "0.75rem",
-          }}
-        >
+        <ul className="list-none p-0 flex flex-col gap-3">
           {Array.from({ length: 3 }).map((_, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: skeleton placeholders have no identity
             <SkeletonRow key={i} />
@@ -858,78 +591,41 @@ function DetailPage() {
 
       {detail && (
         <>
-          <h1
-            style={{
-              fontSize: "1.1rem",
-              fontWeight: 700,
-              marginBottom: "1.25rem",
-              color: "#111",
-              wordBreak: "break-all",
-              lineHeight: 1.4,
-            }}
-          >
+          <h1 className="text-[1.1rem] font-bold mb-5 text-gray-900 break-all leading-snug">
             <a href={detail.url} target="_blank" rel="noreferrer">
               {detail.url}
             </a>
           </h1>
 
           {/* Metadata grid */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "auto 1fr",
-              gap: "0.4rem 1.25rem",
-              fontSize: "0.875rem",
-              marginBottom: "1.75rem",
-              background: "white",
-              border: "1px solid #e5e7eb",
-              borderRadius: 6,
-              padding: "0.75rem 1rem",
-            }}
-          >
-            <span style={{ color: "#6b7280" }}>ID</span>
+          <div className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-1.5 text-sm mb-7 bg-white border border-gray-200 rounded-md py-3 px-4">
+            <span className="text-gray-500">ID</span>
             <span>{detail.id}</span>
-            <span style={{ color: "#6b7280" }}>Status</span>
+            <span className="text-gray-500">Status</span>
             <span>
               <StatusBadge status={detail.status} />
             </span>
-            <span style={{ color: "#6b7280" }}>Created</span>
+            <span className="text-gray-500">Created</span>
             <span>{new Date(detail.createdAt).toLocaleString()}</span>
           </div>
 
-          <div style={{ marginBottom: "1.75rem" }}>
+          <div className="mb-7">
             <button
               type="button"
               onClick={handleDelete}
               disabled={deleting}
-              style={{
-                background: "#fee2e2",
-                border: "1px solid #fca5a5",
-                color: "#b91c1c",
-                cursor: deleting ? "not-allowed" : "pointer",
-                fontSize: "0.875rem",
-                borderRadius: 6,
-                padding: "0.4rem 0.875rem",
-                opacity: deleting ? 0.6 : 1,
-              }}
+              className={`bg-red-100 border border-red-300 text-red-700 text-sm rounded-md py-1.5 px-3.5 ${
+                deleting ? "cursor-not-allowed opacity-60" : "cursor-pointer"
+              }`}
             >
               {deleting ? "Deleting…" : "Delete snapshot"}
             </button>
           </div>
 
-          <h2
-            style={{
-              fontSize: "0.95rem",
-              fontWeight: 600,
-              marginBottom: "0.75rem",
-              color: "#111",
-            }}
-          >
-            Archive Results
-          </h2>
+          <h2 className="text-[0.95rem] font-semibold mb-3 text-gray-900">Archive Results</h2>
 
           {detail.archiveResults.length === 0 ? (
-            <p style={{ color: "#9ca3af" }}>No extractor results yet.</p>
+            <p className="text-gray-400">No extractor results yet.</p>
           ) : (
             detail.archiveResults.map((r) => (
               <ArchiveResultSection key={r.id} result={r} snapshotId={detail.id} />
@@ -996,81 +692,42 @@ function TagsPage() {
     }
   }
 
-  const inputStyle = {
-    padding: "0.5rem 0.75rem",
-    border: "1px solid #d1d5db",
-    borderRadius: 4,
-    fontSize: "0.875rem",
-  };
-
   return (
-    <main style={{ maxWidth: 760, margin: "0 auto", padding: "2rem 1rem" }}>
+    <main className="max-w-[760px] mx-auto py-8 px-4">
       <button
         type="button"
         onClick={() => navigate(-1)}
-        style={{
-          background: "none",
-          border: "none",
-          color: "#0070f3",
-          cursor: "pointer",
-          fontSize: "0.875rem",
-          padding: 0,
-          marginBottom: "1.5rem",
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "0.25rem",
-        }}
+        className="bg-transparent border-0 text-primary cursor-pointer text-sm p-0 mb-6 inline-flex items-center gap-1"
       >
         ← Back
       </button>
 
-      <h1 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "1.5rem", color: "#111" }}>
-        Tags
-      </h1>
+      <h1 className="text-2xl font-bold mb-6 text-gray-900">Tags</h1>
 
-      <form
-        onSubmit={handleCreate}
-        style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem", alignItems: "center" }}
-      >
+      <form onSubmit={handleCreate} className="flex gap-2 mb-6 items-center">
         <input
           type="text"
           placeholder="New tag name"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           required
-          style={{ flex: 1, ...inputStyle }}
+          className={`flex-1 ${inputCls}`}
         />
-        <label
-          style={{ display: "flex", alignItems: "center", gap: "0.35rem", fontSize: "0.875rem" }}
-        >
+        <label className="flex items-center gap-1.5 text-sm">
           Color
           <input
             type="color"
             value={newColor}
             onChange={(e) => setNewColor(e.target.value)}
-            style={{
-              width: 36,
-              height: 32,
-              padding: 2,
-              border: "1px solid #d1d5db",
-              borderRadius: 4,
-              cursor: "pointer",
-            }}
+            className="w-9 h-8 p-0.5 border border-gray-300 rounded cursor-pointer"
           />
         </label>
         <button
           type="submit"
           disabled={creating}
-          style={{
-            padding: "0.5rem 1.2rem",
-            background: "#0070f3",
-            color: "#fff",
-            border: "none",
-            borderRadius: 4,
-            cursor: creating ? "not-allowed" : "pointer",
-            fontWeight: 600,
-            opacity: creating ? 0.7 : 1,
-          }}
+          className={`py-2 px-5 bg-primary text-white border-0 rounded font-semibold ${
+            creating ? "cursor-not-allowed opacity-70" : "cursor-pointer"
+          }`}
         >
           {creating ? "Creating…" : "Create"}
         </button>
@@ -1079,45 +736,21 @@ function TagsPage() {
       {error && <ErrorBanner message={error} />}
 
       {loading ? (
-        <p style={{ color: "#9ca3af" }}>Loading…</p>
+        <p className="text-gray-400">Loading…</p>
       ) : tags.length === 0 ? (
-        <p style={{ color: "#9ca3af" }}>No tags yet. Create one above.</p>
+        <p className="text-gray-400">No tags yet. Create one above.</p>
       ) : (
-        <ul
-          style={{
-            listStyle: "none",
-            padding: 0,
-            display: "flex",
-            flexDirection: "column",
-            gap: "0.5rem",
-          }}
-        >
+        <ul className="list-none p-0 flex flex-col gap-2">
           {tags.map((tag) => (
             <li
               key={tag.id}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "0.6rem 1rem",
-                border: "1px solid #e5e7eb",
-                borderRadius: 6,
-                background: "white",
-              }}
+              className="flex justify-between items-center py-2.5 px-4 border border-gray-200 rounded-md bg-white"
             >
               <TagChip tag={tag} />
               <button
                 type="button"
                 onClick={() => handleDelete(tag.id)}
-                style={{
-                  background: "none",
-                  border: "1px solid #fca5a5",
-                  color: "#b91c1c",
-                  borderRadius: 4,
-                  cursor: "pointer",
-                  padding: "0.25rem 0.6rem",
-                  fontSize: "0.75rem",
-                }}
+                className="bg-transparent border border-red-300 text-red-700 rounded cursor-pointer py-1 px-2.5 text-xs"
               >
                 Delete
               </button>
@@ -1136,7 +769,6 @@ function TagsPage() {
 export default function App({ client = defaultClient }: { client?: WebFrostClient }) {
   return (
     <ClientContext.Provider value={client}>
-      <style>{GLOBAL_CSS}</style>
       <Routes>
         <Route path="/" element={<ListPage />} />
         <Route path="/snapshots/:id" element={<DetailPage />} />

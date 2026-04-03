@@ -27,15 +27,17 @@ afterEach(() => {
 });
 
 describe("indexSnapshot / searchSnapshots", () => {
-  test("returns empty array when index is empty", () => {
-    const results = searchSnapshots(db, "anything");
-    expect(results).toHaveLength(0);
+  test("returns empty result when index is empty", () => {
+    const result = searchSnapshots(db, "anything");
+    expect(result.items).toHaveLength(0);
+    expect(result.total).toBe(0);
   });
 
-  test("returns empty array for blank query", () => {
+  test("returns empty result for blank query", () => {
     indexSnapshot(db, 1, "https://example.com", "Example Title", "some text", "");
-    const results = searchSnapshots(db, "   ");
-    expect(results).toHaveLength(0);
+    const result = searchSnapshots(db, "   ");
+    expect(result.items).toHaveLength(0);
+    expect(result.total).toBe(0);
   });
 
   test("finds indexed snapshot by title", () => {
@@ -48,10 +50,11 @@ describe("indexSnapshot / searchSnapshots", () => {
       "",
     );
 
-    const results = searchSnapshots(db, "SQLite");
-    expect(results.length).toBeGreaterThan(0);
-    expect(results[0]?.id).toBe(1);
-    expect(results[0]?.url).toBe("https://example.com");
+    const result = searchSnapshots(db, "SQLite");
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.items[0]?.id).toBe(1);
+    expect(result.items[0]?.url).toBe("https://example.com");
+    expect(result.total).toBeGreaterThan(0);
   });
 
   test("finds snapshot by text content", () => {
@@ -64,40 +67,57 @@ describe("indexSnapshot / searchSnapshots", () => {
       "",
     );
 
-    const results = searchSnapshots(db, "archiving tool");
-    expect(results.length).toBeGreaterThan(0);
-    expect(results[0]?.id).toBe(2);
+    const result = searchSnapshots(db, "archiving tool");
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.items[0]?.id).toBe(2);
   });
 
   test("finds snapshot by tag", () => {
     indexSnapshot(db, 1, "https://example.com", "Some Page", "", "technology opensource");
 
-    const results = searchSnapshots(db, "opensource");
-    expect(results.length).toBeGreaterThan(0);
-    expect(results[0]?.id).toBe(1);
+    const result = searchSnapshots(db, "opensource");
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.items[0]?.id).toBe(1);
   });
 
   test("returns no results for unindexed term", () => {
     indexSnapshot(db, 1, "https://example.com", "Hello World", "some text here", "");
-    const results = searchSnapshots(db, "xyzzy_not_in_index");
-    expect(results).toHaveLength(0);
+    const result = searchSnapshots(db, "xyzzy_not_in_index");
+    expect(result.items).toHaveLength(0);
+    expect(result.total).toBe(0);
   });
 
-  test("returns empty array for invalid FTS query (no throw)", () => {
+  test("returns empty result for invalid FTS query (no throw)", () => {
     indexSnapshot(db, 1, "https://example.com", "Test", "test content", "");
     // Unmatched quote is an invalid FTS5 expression
-    const results = searchSnapshots(db, '"unclosed');
-    expect(results).toHaveLength(0);
+    const result = searchSnapshots(db, '"unclosed');
+    expect(result.items).toHaveLength(0);
+  });
+
+  test("paginates search results", () => {
+    indexSnapshot(db, 1, "https://example.com", "Page One", "archiving content page", "");
+    indexSnapshot(db, 2, "https://test.org/article", "Page Two", "archiving content page", "");
+
+    const page1 = searchSnapshots(db, "archiving", 1, 1);
+    expect(page1.items).toHaveLength(1);
+    expect(page1.total).toBe(2);
+    expect(page1.page).toBe(1);
+    expect(page1.limit).toBe(1);
+
+    const page2 = searchSnapshots(db, "archiving", 1, 2);
+    expect(page2.items).toHaveLength(1);
+    expect(page2.total).toBe(2);
+    expect(page2.page).toBe(2);
   });
 });
 
 describe("removeFromIndex", () => {
   test("removes snapshot from search results", () => {
     indexSnapshot(db, 1, "https://example.com", "Unique Title XYZ", "unique content", "");
-    expect(searchSnapshots(db, "XYZ")).toHaveLength(1);
+    expect(searchSnapshots(db, "XYZ").items).toHaveLength(1);
 
     removeFromIndex(db, 1);
-    expect(searchSnapshots(db, "XYZ")).toHaveLength(0);
+    expect(searchSnapshots(db, "XYZ").items).toHaveLength(0);
   });
 });
 
@@ -113,8 +133,8 @@ describe("rebuildIndex", () => {
 
     rebuildIndex(db);
 
-    const results = searchSnapshots(db, "archiving");
-    expect(results.length).toBeGreaterThan(0);
-    expect(results[0]?.id).toBe(1);
+    const result = searchSnapshots(db, "archiving");
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.items[0]?.id).toBe(1);
   });
 });
