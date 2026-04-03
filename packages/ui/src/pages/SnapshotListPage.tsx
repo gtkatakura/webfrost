@@ -1,48 +1,14 @@
 import { WebFrostError } from "@webfrost/sdk";
-import type { Snapshot } from "@webfrost/sdk";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { ErrorBanner, ExtractorBadge, SkeletonRow, StatusBadge, TagChip } from "../components";
+import { ErrorBanner, Pagination, SkeletonRow, SnapshotListRow } from "../components";
 import { useClient } from "../context";
 import { useSearch, useSnapshots, useTags } from "../hooks";
+import { FtsResults } from "./FtsResults";
+import { SnapshotFilters } from "./SnapshotFilters";
 
 const PAGE_SIZE = 20;
-const KNOWN_EXTRACTORS = ["warc", "readability", "pdf"] as const;
 const inputCls = "py-2 px-3 border border-gray-300 rounded text-sm";
-
-function SnapshotListRow({ snapshot }: { snapshot: Snapshot }) {
-  const ts = new Date(snapshot.createdAt).toLocaleString();
-  return (
-    <li className="border border-gray-200 rounded-md overflow-hidden">
-      <Link
-        to={`/snapshots/${snapshot.id}`}
-        className="flex justify-between items-start py-3 px-4 bg-white gap-4 text-inherit no-underline hover:no-underline"
-      >
-        <div className="shrink min-w-0">
-          <span className="text-primary break-all text-sm block">{snapshot.url}</span>
-          {snapshot.tags.length > 0 && (
-            <div className="mt-1">
-              {snapshot.tags.map((tag) => (
-                <TagChip key={tag.id} tag={tag} />
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="flex flex-col items-end gap-1 shrink-0">
-          <StatusBadge status={snapshot.status} />
-          <span className="text-[0.7rem] text-gray-400">{ts}</span>
-          {snapshot.extractors.length > 0 && (
-            <div>
-              {snapshot.extractors.map((ext) => (
-                <ExtractorBadge key={ext} extractor={ext} hasContent={true} />
-              ))}
-            </div>
-          )}
-        </div>
-      </Link>
-    </li>
-  );
-}
 
 export function SnapshotListPage() {
   const client = useClient();
@@ -166,109 +132,35 @@ export function SnapshotListPage() {
 
       {error && <ErrorBanner message={error} />}
 
-      <div className="mb-4 flex flex-col gap-2">
-        <input
-          type="search"
-          placeholder="Full-text search (title, content, tags)…"
-          value={ftsQuery}
-          onChange={(e) => {
-            setFtsQuery(e.target.value);
-            setPage(1);
-          }}
-          className={`w-full ${inputCls}`}
-        />
-        {!ftsQuery && (
-          <input
-            type="text"
-            placeholder="Filter by URL…"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            className={`w-full ${inputCls}`}
-          />
-        )}
-        <div className="flex gap-2 flex-wrap items-center text-[0.8rem] text-gray-500">
-          <label className="flex items-center gap-1">
-            From:
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => {
-                setDateFrom(e.target.value);
-                setPage(1);
-              }}
-              className={inputCls}
-            />
-          </label>
-          <label className="flex items-center gap-1">
-            To:
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => {
-                setDateTo(e.target.value);
-                setPage(1);
-              }}
-              className={inputCls}
-            />
-          </label>
-          <span className="ml-1">Has:</span>
-          {KNOWN_EXTRACTORS.map((ext) => (
-            <label key={ext} className="flex items-center gap-0.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={reqExtractors.has(ext)}
-                onChange={() => toggleExtractor(ext)}
-              />
-              {ext}
-            </label>
-          ))}
-        </div>
-        {allTags.length > 0 && (
-          <div className="flex gap-1.5 flex-wrap items-center text-[0.8rem] text-gray-500">
-            <span>Tag:</span>
-            {allTags.map((tag) => (
-              <label key={tag.id} className="flex items-center gap-0.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={reqTags.has(tag.id)}
-                  onChange={() => toggleTag(tag.id)}
-                />
-                <TagChip tag={tag} />
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
+      <SnapshotFilters
+        ftsQuery={ftsQuery}
+        search={search}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        reqExtractors={reqExtractors}
+        reqTags={reqTags}
+        allTags={allTags}
+        onFtsQueryChange={(v) => {
+          setFtsQuery(v);
+          setPage(1);
+        }}
+        onSearchChange={(v) => {
+          setSearch(v);
+          setPage(1);
+        }}
+        onDateFromChange={(v) => {
+          setDateFrom(v);
+          setPage(1);
+        }}
+        onDateToChange={(v) => {
+          setDateTo(v);
+          setPage(1);
+        }}
+        onToggleExtractor={toggleExtractor}
+        onToggleTag={toggleTag}
+      />
 
-      {ftsQuery.trim() && (
-        <div className="mb-4">
-          {ftsLoading ? (
-            <p className="text-gray-400">Searching…</p>
-          ) : ftsResults.length === 0 ? (
-            <p className="text-gray-400">No results for "{ftsQuery}".</p>
-          ) : (
-            <ul className="list-none p-0 flex flex-col gap-3">
-              {ftsResults.map((r) => (
-                <li key={r.id} className="bg-white border border-gray-200 rounded-lg py-3 px-4">
-                  <Link to={`/snapshots/${r.id}`} className="font-semibold">
-                    {r.url}
-                  </Link>
-                  {r.snippet && (
-                    <p
-                      className="mt-1.5 text-[0.8rem] text-gray-500 m-0"
-                      // biome-ignore lint/security/noDangerouslySetInnerHtml: controlled server snippet
-                      dangerouslySetInnerHTML={{ __html: r.snippet }}
-                    />
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
+      {ftsQuery.trim() && <FtsResults query={ftsQuery} results={ftsResults} loading={ftsLoading} />}
 
       {!ftsQuery.trim() && initialLoading ? (
         <ul className="list-none p-0 flex flex-col gap-3">
@@ -291,33 +183,12 @@ export function SnapshotListPage() {
             ))}
           </ul>
 
-          {totalPages > 1 && (
-            <div className="flex justify-center gap-2 mt-6 items-center">
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={safePage === 1}
-                className={`py-1.5 px-3 border border-gray-300 rounded bg-white ${
-                  safePage === 1 ? "cursor-not-allowed opacity-40" : "cursor-pointer"
-                }`}
-              >
-                ‹ Prev
-              </button>
-              <span className="text-sm text-gray-500">
-                {safePage} / {totalPages}
-              </span>
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={safePage === totalPages}
-                className={`py-1.5 px-3 border border-gray-300 rounded bg-white ${
-                  safePage === totalPages ? "cursor-not-allowed opacity-40" : "cursor-pointer"
-                }`}
-              >
-                Next ›
-              </button>
-            </div>
-          )}
+          <Pagination
+            page={safePage}
+            totalPages={totalPages}
+            onPrev={() => setPage((p) => Math.max(1, p - 1))}
+            onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+          />
         </>
       ) : null}
     </main>
