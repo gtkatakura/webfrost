@@ -29,7 +29,11 @@ Or run the server with UI:
 
 ```bash
 mkdir -p ./data
-WEBFROST_DIR=./data bun run packages/server/src/index.ts
+# Generate a session secret (required for auth)
+export SESSION_SECRET=$(openssl rand -hex 32)
+WEBFROST_DIR=./data SESSION_SECRET=$SESSION_SECRET bun run packages/server/src/index.ts
+# Create your admin user (first time only)
+WEBFROST_DIR=./data bun run packages/cli/src/index.ts admin create --username admin --password <your-password>
 # Open http://localhost:3000
 ```
 
@@ -68,6 +72,7 @@ webfrost init                              Initialize a new archive at WEBFROST_
 webfrost add <url>                         Archive a URL (WARC + Readability + PDF + screenshot + DOM)
 webfrost list                              List all snapshots
 webfrost delete <id>                       Delete a snapshot and its archive files
+webfrost search <query>                    Full-text search across archived content
 
 webfrost tag add <snapshot-id> <name>      Add a tag to a snapshot (creates tag if needed)
 webfrost tag list [<snapshot-id>]          List all tags, or tags on a specific snapshot
@@ -81,25 +86,38 @@ webfrost schedule worker                   Run a background worker that polls an
 
 webfrost import <file>                     Bulk import URLs from a plain-text, OPML, or
                                            Netscape bookmark HTML file
+
+webfrost admin create --username <n> --password <p>   Create admin user + default API key (run once)
+webfrost admin key create --name <label>               Create an additional API key
+webfrost admin key list                                List active API keys
+webfrost admin key revoke <id>                         Revoke an API key
 ```
 
-**Environment variable:**
+**Environment variables:**
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `WEBFROST_DIR` | `.` (CLI) / `~/.webfrost` (server) | Directory for the SQLite database and archive files |
+| `SESSION_SECRET` | — | Required for the server. Random string ≥ 32 chars. |
+| `AUTH_DISABLED` | `false` | Set to `true` to skip auth in dev. Never use in production. |
+
+See [docs/DEPLOY.md](docs/DEPLOY.md) for the full auth setup walkthrough.
 
 ---
 
 ## API
 
-The server exposes a REST API alongside the React UI:
+The server exposes a REST API alongside the React UI. All `/api/*` routes require authentication (Bearer token or session cookie) except `POST /api/auth/login`.
 
 | Method | Route | Description |
 |--------|-------|-------------|
-| `GET` | `/health` | Health check |
+| `GET` | `/health` | Health check (unauthenticated) |
+| `POST` | `/api/auth/login` | Log in with `{username, password}` — sets session cookie |
+| `POST` | `/api/auth/logout` | Clear session cookie |
+| `GET` | `/api/auth/me` | Returns current authenticated username |
 | `POST` | `/api/snapshots` | Submit a URL for archiving (202 — async) |
 | `GET` | `/api/snapshots` | List all snapshots |
+| `GET` | `/api/snapshots?q=<term>` | Full-text search — returns ranked results with snippets |
 | `GET` | `/api/snapshots/:id` | Get snapshot with archive results |
 | `DELETE` | `/api/snapshots/:id` | Delete a snapshot and its archive files |
 | `GET` | `/api/snapshots/:id/archives/:extractor/download` | Download archive file (`html`, `warc`, `pdf`, `readability`, `screenshot`, `dom-snapshot`, `singlefile`) |
@@ -112,6 +130,21 @@ The server exposes a REST API alongside the React UI:
 | `GET` | `/api/tags` | List all tags |
 | `POST` | `/api/tags` | Create a tag |
 | `DELETE` | `/api/tags/:id` | Delete a tag |
+
+**Search example:**
+
+```bash
+# CLI
+webfrost search "climate change policy"
+
+# HTTP API
+curl -H "Authorization: Bearer <key>" \
+  "http://localhost:3000/api/snapshots?q=climate+change"
+
+# SDK
+const results = await client.searchSnapshots("climate change");
+// [{ id, url, snippet: "...climate <mark>change</mark>...", rank }]
+```
 
 ---
 
@@ -137,10 +170,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) if it exists, or open an issue with quest
 
 WebFrost is under active development. See [ROADMAP.md](./ROADMAP.md) for the full feature roadmap and ArchiveBox comparison.
 
-**Near-term highlights (P0/P1):**
+**Shipped in 0.1.0:**
 - API authentication (bearer tokens + session cookies)
 - Full-text search (SQLite FTS5)
 - RSS feed auto-import
+- Tags and snapshot deletion
+
+**Coming next:**
 - Media extraction via yt-dlp
 - Browser extension (Chrome/Firefox)
 - S3/remote storage backend

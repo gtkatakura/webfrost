@@ -103,6 +103,8 @@ docker run -d \
 |----------|---------|-------------|
 | `PORT` | `3000` | HTTP port the server listens on |
 | `WEBFROST_DIR` | `~/.webfrost` | Directory for SQLite database and archive files |
+| `SESSION_SECRET` | — | **Required.** Random string ≥ 32 chars. Signs session cookies. Generate with `openssl rand -hex 32`. |
+| `AUTH_DISABLED` | `false` | Set to `true` to bypass all auth checks. Dev/testing only — never in production. |
 | `GITHUB_REPOSITORY` | `your-org/webfrost` | Used by `docker-compose.prod.yml` to construct the image name (`ghcr.io/$GITHUB_REPOSITORY/server`) |
 | `IMAGE_TAG` | `latest` | Docker image tag to pull — set to a version like `v0.1.0` to pin a release |
 
@@ -127,14 +129,121 @@ See `.env.example` at the repo root for a template. Never commit `.env` to versi
 | Route | Description |
 |-------|-------------|
 | `GET /` | React UI (served as static files) |
-| `GET /health` | Health check — returns `{"status":"ok"}` |
+| `GET /health` | Health check — returns `{"status":"ok"}` (unauthenticated) |
+| `POST /api/auth/login` | Log in with username + password — sets session cookie |
+| `POST /api/auth/logout` | Clear session cookie |
+| `GET /api/auth/me` | Returns current authenticated username |
 | `POST /api/snapshots` | Submit a URL for archiving |
-| `GET /api/snapshots` | List all snapshots |
+| `GET /api/snapshots` | List all snapshots (supports `?q=` for full-text search) |
 | `GET /api/snapshots/:id` | Get snapshot detail |
-| `GET /api/snapshots/:id/archives/:extractor/download` | Download raw archive file (extractor: `warc`, `pdf`, `readability`) |
+| `DELETE /api/snapshots/:id` | Delete a snapshot and its archive files |
+| `GET /api/snapshots/:id/archives/:extractor/download` | Download raw archive file (extractor: `warc`, `pdf`, `readability`, `html`, `screenshot`, `dom-snapshot`, `singlefile`) |
 | `POST /api/schedules` | Create a recurring archive schedule |
 | `GET /api/schedules` | List all schedules |
 | `DELETE /api/schedules/:id` | Remove a schedule |
+| `GET /api/tags` | List all tags |
+| `POST /api/tags` | Create a tag |
+| `DELETE /api/tags/:id` | Delete a tag |
+| `GET /api/snapshots/:id/tags` | List tags on a snapshot |
+| `POST /api/snapshots/:id/tags` | Add a tag to a snapshot |
+| `DELETE /api/snapshots/:id/tags/:tagId` | Remove a tag from a snapshot |
+
+---
+
+## Auth Setup
+
+WebFrost uses API key (Bearer token) and session cookie authentication. All `/api/*` routes require authentication except `POST /api/auth/login`.
+
+### 1. Generate a session secret
+
+```bash
+openssl rand -hex 32
+```
+
+Set this as `SESSION_SECRET` in your environment or `.env` file.
+
+### 2. Create the admin user
+
+Use the `webfrost admin create` CLI command. This creates the admin user and generates a default API key in one step.
+
+```bash
+# With the CLI installed globally
+webfrost admin create --username admin --password <your-password>
+
+# Or from the repo directly
+WEBFROST_DIR=/data bun run packages/cli/src/index.ts admin create --username admin --password <your-password>
+```
+
+Output:
+
+```
+Admin user "admin" created.
+Default API key (save this — shown once):
+  ID:  <uuid>
+  Key: <64-char hex key>
+```
+
+**Save the key immediately.** The raw key is shown once and is never stored.
+
+### 3. Use the API key
+
+Include it as a Bearer token on every API request:
+
+```bash
+curl -H "Authorization: Bearer <your-api-key>" http://localhost:3000/api/snapshots
+```
+
+With the SDK:
+
+```ts
+import { WebFrostClient } from "@webfrost/sdk";
+
+const client = new WebFrostClient({
+  baseUrl: "http://localhost:3000",
+  apiKey: process.env.WEBFROST_API_KEY,
+});
+
+const snapshots = await client.listSnapshots();
+```
+
+### 4. Session login (browser / UI)
+
+The React UI authenticates via session cookie. You can also use the login endpoint directly:
+
+```bash
+curl -c cookies.txt -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"<your-password>"}'
+
+# Use the session cookie for subsequent requests
+curl -b cookies.txt http://localhost:3000/api/snapshots
+```
+
+### 5. Manage API keys
+
+```bash
+# Create an additional named key
+webfrost admin key create --name ci-deploy
+
+# With optional expiry (ISO 8601 date)
+webfrost admin key create --name ci-deploy --expires 2026-12-31T23:59:59Z
+
+# List active keys (shows ID, name, expiry, last used)
+webfrost admin key list
+
+# Revoke a key by ID
+webfrost admin key revoke <id>
+```
+
+### Dev mode (auth disabled)
+
+For local development, set `AUTH_DISABLED=true` to bypass all auth checks:
+
+```bash
+AUTH_DISABLED=true WEBFROST_DIR=./data bun run packages/server/src/index.ts
+```
+
+> Never set `AUTH_DISABLED=true` in production.
 
 ---
 
