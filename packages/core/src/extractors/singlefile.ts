@@ -9,10 +9,10 @@ import { join } from "node:path";
  * ADR: single-file-cli is a Node CLI tool (~50 MB of transitive deps) and
  * would conflict with the zero-dependency goal for @webfrost/core. Instead we
  * implement a focused inliner: CSS <link> tags are fetched and replaced with
- * inline <style> blocks; <img src> pointing at external HTTP URLs are replaced
- * with data URIs. Other asset types (fonts in @font-face, background images in
- * inline style attributes) are left as-is — this covers the common case for
- * article archiving without adding heavyweight dependencies.
+ * inline <style> blocks; relative url() references inside that CSS are rebased
+ * to absolute URLs (and font files are additionally inlined as base64 data
+ * URIs); <img src> pointing at external HTTP URLs are replaced with data URIs.
+ * Background images in inline style attributes are left as-is.
  *
  * The page must already have called page.goto() before this extractor runs.
  */
@@ -76,7 +76,8 @@ async function inlineCssLinks(input: string, baseUrl: string): Promise<string> {
         const res = await fetch(url);
         if (!res.ok) return { tag, replacement: tag };
         const css = await res.text();
-        return { tag, replacement: `<style>${css}</style>` };
+        const rebased = await rebaseCssUrls(css, url);
+        return { tag, replacement: `<style>${rebased}</style>` };
       } catch {
         return { tag, replacement: tag };
       }
@@ -128,6 +129,70 @@ async function inlineImages(input: string, baseUrl: string): Promise<string> {
     }
   }
   return result;
+}
+
+/**
+ * Rebase all url() references in a CSS string to absolute URLs resolved
+ * against the URL of the CSS file itself. Font files (.woff, .woff2, .ttf,
+ * .otf, .eot) are additionally fetched and inlined as base64 data URIs so
+ * they survive when the HTML file is opened locally (file:// context).
+ */
+async function rebaseCssUrls(css: string, cssFileUrl: string): Promise<string> {
+  // Matches: url('...'), url("..."), url(...)
+  const urlRe = /url\(\s*(['"]?)([^'"\)]+)\1\s*\)/gi;
+  const matches = [...css.matchAll(urlRe)];
+  if (matches.length === 0) return css;
+
+  const replacements = await Promise.all(
+    matches.map(async (m) => {
+      const full = m[0] as string;
+      const quote = (m[1] as string | undefined) ?? "";
+      const href = ((m[2] as string | undefined) ?? "").trim();
+      if (!href || href.startsWith("data:")) return { full, replacement: full };
+
+      const absoluteUrl = resolveUrl(href, cssFileUrl);
+      if (!absoluteUrl) return { full, replacement: full };
+
+      // Inline font files as base64 data URIs so they work in file:// context.
+      if (isFontUrl(absoluteUrl)) {
+        try {
+          const res = await fetch(absoluteUrl);
+          if (res.ok) {
+            const contentType = res.headers.get("content-type") ?? guessFontMime(absoluteUrl);
+            const buf = await res.arrayBuffer();
+            const b64 = Buffer.from(buf).toString("base64");
+            const dataUri = `data:${contentType};base64,${b64}`;
+            return { full, replacement: `url(${quote}${dataUri}${quote})` };
+          }
+        } catch {
+          // Fall through: rebase to absolute URL at minimum.
+        }
+      }
+
+      return { full, replacement: `url(${quote}${absoluteUrl}${quote})` };
+    }),
+  );
+
+  let result = css;
+  for (const { full, replacement } of replacements) {
+    if (full !== replacement) {
+      result = result.replace(full, replacement);
+    }
+  }
+  return result;
+}
+
+function isFontUrl(url: string): boolean {
+  return /\.(woff2?|ttf|otf|eot)(\?.*)?$/i.test(url);
+}
+
+function guessFontMime(url: string): string {
+  if (/\.woff2(\?|$)/i.test(url)) return "font/woff2";
+  if (/\.woff(\?|$)/i.test(url)) return "font/woff";
+  if (/\.ttf(\?|$)/i.test(url)) return "font/ttf";
+  if (/\.otf(\?|$)/i.test(url)) return "font/otf";
+  if (/\.eot(\?|$)/i.test(url)) return "application/vnd.ms-fontobject";
+  return "font/woff2";
 }
 
 function resolveUrl(href: string, base: string): string | null {
