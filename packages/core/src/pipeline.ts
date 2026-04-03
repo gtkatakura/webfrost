@@ -1,10 +1,12 @@
 import type Database from "bun:sqlite";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { domSnapshotExtractor } from "./extractors/dom-snapshot";
 import { htmlExtractor } from "./extractors/html";
 import { pdfExtractor } from "./extractors/pdf";
 import { readabilityExtractor } from "./extractors/readability";
 import { screenshotExtractor } from "./extractors/screenshot";
+import { singleFileExtractor } from "./extractors/singlefile";
 import { warcExtractor } from "./extractors/warc";
 import { FetchCache } from "./fetch-cache";
 
@@ -91,6 +93,8 @@ export async function runPipeline(
       readabilityExtractor(db, snapshotId, url, html),
       page ? pdfExtractor(db, snapshotId, snapshotDir, page) : Promise.resolve(),
       page ? screenshotExtractor(db, snapshotId, snapshotDir, page) : Promise.resolve(),
+      page ? domSnapshotExtractor(db, snapshotId, snapshotDir, page) : Promise.resolve(),
+      page ? singleFileExtractor(db, snapshotId, snapshotDir, page) : Promise.resolve(),
     ]);
   } finally {
     await browser?.close();
