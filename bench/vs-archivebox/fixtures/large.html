@@ -1,0 +1,998 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web Archiving in 2026: The Definitive Technical Reference</title>
+    <style>
+      :root {
+      --color-0: hsl(0, 60%, 50%);
+      --color-1: hsl(13, 60%, 50%);
+      --color-2: hsl(26, 60%, 50%);
+      --color-3: hsl(39, 60%, 50%);
+      --color-4: hsl(52, 60%, 50%);
+      --color-5: hsl(65, 60%, 50%);
+      --color-6: hsl(78, 60%, 50%);
+      --color-7: hsl(91, 60%, 50%);
+      --color-8: hsl(104, 60%, 50%);
+      --color-9: hsl(117, 60%, 50%);
+      --color-10: hsl(130, 60%, 50%);
+      --color-11: hsl(143, 60%, 50%);
+      --color-12: hsl(156, 60%, 50%);
+      --color-13: hsl(169, 60%, 50%);
+      --color-14: hsl(182, 60%, 50%);
+      --color-15: hsl(195, 60%, 50%);
+      --color-16: hsl(208, 60%, 50%);
+      --color-17: hsl(221, 60%, 50%);
+      --color-18: hsl(234, 60%, 50%);
+      --color-19: hsl(247, 60%, 50%);
+      --color-20: hsl(260, 60%, 50%);
+      --color-21: hsl(273, 60%, 50%);
+      --color-22: hsl(286, 60%, 50%);
+      --color-23: hsl(299, 60%, 50%);
+      --color-24: hsl(312, 60%, 50%);
+      --color-25: hsl(325, 60%, 50%);
+      --color-26: hsl(338, 60%, 50%);
+      --color-27: hsl(351, 60%, 50%);
+      --color-28: hsl(4, 60%, 50%);
+      --color-29: hsl(17, 60%, 50%);
+      --color-30: hsl(30, 60%, 50%);
+      --color-31: hsl(43, 60%, 50%);
+      --color-32: hsl(56, 60%, 50%);
+      --color-33: hsl(69, 60%, 50%);
+      --color-34: hsl(82, 60%, 50%);
+      --color-35: hsl(95, 60%, 50%);
+      --color-36: hsl(108, 60%, 50%);
+      --color-37: hsl(121, 60%, 50%);
+      --color-38: hsl(134, 60%, 50%);
+      --color-39: hsl(147, 60%, 50%);
+      --color-40: hsl(160, 60%, 50%);
+      --color-41: hsl(173, 60%, 50%);
+      --color-42: hsl(186, 60%, 50%);
+      --color-43: hsl(199, 60%, 50%);
+      --color-44: hsl(212, 60%, 50%);
+      --color-45: hsl(225, 60%, 50%);
+      --color-46: hsl(238, 60%, 50%);
+      --color-47: hsl(251, 60%, 50%);
+      --color-48: hsl(264, 60%, 50%);
+      --color-49: hsl(277, 60%, 50%);
+      --color-50: hsl(290, 60%, 50%);
+      --color-51: hsl(303, 60%, 50%);
+      --color-52: hsl(316, 60%, 50%);
+      --color-53: hsl(329, 60%, 50%);
+      --color-54: hsl(342, 60%, 50%);
+      --color-55: hsl(355, 60%, 50%);
+      --color-56: hsl(8, 60%, 50%);
+      --color-57: hsl(21, 60%, 50%);
+      --color-58: hsl(34, 60%, 50%);
+      --color-59: hsl(47, 60%, 50%);
+      --color-60: hsl(60, 60%, 50%);
+      --color-61: hsl(73, 60%, 50%);
+      --color-62: hsl(86, 60%, 50%);
+      --color-63: hsl(99, 60%, 50%);
+      --color-64: hsl(112, 60%, 50%);
+      --color-65: hsl(125, 60%, 50%);
+      --color-66: hsl(138, 60%, 50%);
+      --color-67: hsl(151, 60%, 50%);
+      --color-68: hsl(164, 60%, 50%);
+      --color-69: hsl(177, 60%, 50%);
+      --color-70: hsl(190, 60%, 50%);
+      --color-71: hsl(203, 60%, 50%);
+      --color-72: hsl(216, 60%, 50%);
+      --color-73: hsl(229, 60%, 50%);
+      --color-74: hsl(242, 60%, 50%);
+      --color-75: hsl(255, 60%, 50%);
+      --color-76: hsl(268, 60%, 50%);
+      --color-77: hsl(281, 60%, 50%);
+      --color-78: hsl(294, 60%, 50%);
+      --color-79: hsl(307, 60%, 50%);
+      --color-80: hsl(320, 60%, 50%);
+      --color-81: hsl(333, 60%, 50%);
+      --color-82: hsl(346, 60%, 50%);
+      --color-83: hsl(359, 60%, 50%);
+      --color-84: hsl(12, 60%, 50%);
+      --color-85: hsl(25, 60%, 50%);
+      --color-86: hsl(38, 60%, 50%);
+      --color-87: hsl(51, 60%, 50%);
+      --color-88: hsl(64, 60%, 50%);
+      --color-89: hsl(77, 60%, 50%);
+      --color-90: hsl(90, 60%, 50%);
+      --color-91: hsl(103, 60%, 50%);
+      --color-92: hsl(116, 60%, 50%);
+      --color-93: hsl(129, 60%, 50%);
+      --color-94: hsl(142, 60%, 50%);
+      --color-95: hsl(155, 60%, 50%);
+      --color-96: hsl(168, 60%, 50%);
+      --color-97: hsl(181, 60%, 50%);
+      --color-98: hsl(194, 60%, 50%);
+      --color-99: hsl(207, 60%, 50%);
+      }
+      .section-0 { --local: var(--color-0); }
+      .section-1 { --local: var(--color-1); }
+      .section-2 { --local: var(--color-2); }
+      .section-3 { --local: var(--color-3); }
+      .section-4 { --local: var(--color-4); }
+      .section-5 { --local: var(--color-5); }
+      .section-6 { --local: var(--color-6); }
+      .section-7 { --local: var(--color-7); }
+      .section-8 { --local: var(--color-8); }
+      .section-9 { --local: var(--color-9); }
+      .section-10 { --local: var(--color-10); }
+      .section-11 { --local: var(--color-11); }
+      .section-12 { --local: var(--color-12); }
+      .section-13 { --local: var(--color-13); }
+      .section-14 { --local: var(--color-14); }
+      .section-15 { --local: var(--color-15); }
+      .section-16 { --local: var(--color-16); }
+      .section-17 { --local: var(--color-17); }
+      .section-18 { --local: var(--color-18); }
+      .section-19 { --local: var(--color-19); }
+      .section-20 { --local: var(--color-20); }
+      .section-21 { --local: var(--color-21); }
+      .section-22 { --local: var(--color-22); }
+      .section-23 { --local: var(--color-23); }
+      .section-24 { --local: var(--color-24); }
+      .section-25 { --local: var(--color-25); }
+      .section-26 { --local: var(--color-26); }
+      .section-27 { --local: var(--color-27); }
+      .section-28 { --local: var(--color-28); }
+      .section-29 { --local: var(--color-29); }
+      .section-30 { --local: var(--color-30); }
+      .section-31 { --local: var(--color-31); }
+      .section-32 { --local: var(--color-32); }
+      .section-33 { --local: var(--color-33); }
+      .section-34 { --local: var(--color-34); }
+      .section-35 { --local: var(--color-35); }
+      .section-36 { --local: var(--color-36); }
+      .section-37 { --local: var(--color-37); }
+      .section-38 { --local: var(--color-38); }
+      .section-39 { --local: var(--color-39); }
+      .section-40 { --local: var(--color-40); }
+      .section-41 { --local: var(--color-41); }
+      .section-42 { --local: var(--color-42); }
+      .section-43 { --local: var(--color-43); }
+      .section-44 { --local: var(--color-44); }
+      .section-45 { --local: var(--color-45); }
+      .section-46 { --local: var(--color-46); }
+      .section-47 { --local: var(--color-47); }
+      .section-48 { --local: var(--color-48); }
+      .section-49 { --local: var(--color-49); }
+      .section-50 { --local: var(--color-50); }
+      .section-51 { --local: var(--color-51); }
+      .section-52 { --local: var(--color-52); }
+      .section-53 { --local: var(--color-53); }
+      .section-54 { --local: var(--color-54); }
+      .section-55 { --local: var(--color-55); }
+      .section-56 { --local: var(--color-56); }
+      .section-57 { --local: var(--color-57); }
+      .section-58 { --local: var(--color-58); }
+      .section-59 { --local: var(--color-59); }
+      .section-60 { --local: var(--color-60); }
+      .section-61 { --local: var(--color-61); }
+      .section-62 { --local: var(--color-62); }
+      .section-63 { --local: var(--color-63); }
+      .section-64 { --local: var(--color-64); }
+      .section-65 { --local: var(--color-65); }
+      .section-66 { --local: var(--color-66); }
+      .section-67 { --local: var(--color-67); }
+      .section-68 { --local: var(--color-68); }
+      .section-69 { --local: var(--color-69); }
+      .section-70 { --local: var(--color-70); }
+      .section-71 { --local: var(--color-71); }
+      .section-72 { --local: var(--color-72); }
+      .section-73 { --local: var(--color-73); }
+      .section-74 { --local: var(--color-74); }
+      .section-75 { --local: var(--color-75); }
+      .section-76 { --local: var(--color-76); }
+      .section-77 { --local: var(--color-77); }
+      .section-78 { --local: var(--color-78); }
+      .section-79 { --local: var(--color-79); }
+      .section-80 { --local: var(--color-80); }
+      .section-81 { --local: var(--color-81); }
+      .section-82 { --local: var(--color-82); }
+      .section-83 { --local: var(--color-83); }
+      .section-84 { --local: var(--color-84); }
+      .section-85 { --local: var(--color-85); }
+      .section-86 { --local: var(--color-86); }
+      .section-87 { --local: var(--color-87); }
+      .section-88 { --local: var(--color-88); }
+      .section-89 { --local: var(--color-89); }
+      .section-90 { --local: var(--color-90); }
+      .section-91 { --local: var(--color-91); }
+      .section-92 { --local: var(--color-92); }
+      .section-93 { --local: var(--color-93); }
+      .section-94 { --local: var(--color-94); }
+      .section-95 { --local: var(--color-95); }
+      .section-96 { --local: var(--color-96); }
+      .section-97 { --local: var(--color-97); }
+      .section-98 { --local: var(--color-98); }
+      .section-99 { --local: var(--color-99); }
+      .section-100 { --local: var(--color-0); }
+      .section-101 { --local: var(--color-1); }
+      .section-102 { --local: var(--color-2); }
+      .section-103 { --local: var(--color-3); }
+      .section-104 { --local: var(--color-4); }
+      .section-105 { --local: var(--color-5); }
+      .section-106 { --local: var(--color-6); }
+      .section-107 { --local: var(--color-7); }
+      .section-108 { --local: var(--color-8); }
+      .section-109 { --local: var(--color-9); }
+      .section-110 { --local: var(--color-10); }
+      .section-111 { --local: var(--color-11); }
+      .section-112 { --local: var(--color-12); }
+      .section-113 { --local: var(--color-13); }
+      .section-114 { --local: var(--color-14); }
+      .section-115 { --local: var(--color-15); }
+      .section-116 { --local: var(--color-16); }
+      .section-117 { --local: var(--color-17); }
+      .section-118 { --local: var(--color-18); }
+      .section-119 { --local: var(--color-19); }
+      .section-120 { --local: var(--color-20); }
+      .section-121 { --local: var(--color-21); }
+      .section-122 { --local: var(--color-22); }
+      .section-123 { --local: var(--color-23); }
+      .section-124 { --local: var(--color-24); }
+      .section-125 { --local: var(--color-25); }
+      .section-126 { --local: var(--color-26); }
+      .section-127 { --local: var(--color-27); }
+      .section-128 { --local: var(--color-28); }
+      .section-129 { --local: var(--color-29); }
+      .section-130 { --local: var(--color-30); }
+      .section-131 { --local: var(--color-31); }
+      .section-132 { --local: var(--color-32); }
+      .section-133 { --local: var(--color-33); }
+      .section-134 { --local: var(--color-34); }
+      .section-135 { --local: var(--color-35); }
+      .section-136 { --local: var(--color-36); }
+      .section-137 { --local: var(--color-37); }
+      .section-138 { --local: var(--color-38); }
+      .section-139 { --local: var(--color-39); }
+      .section-140 { --local: var(--color-40); }
+      .section-141 { --local: var(--color-41); }
+      .section-142 { --local: var(--color-42); }
+      .section-143 { --local: var(--color-43); }
+      .section-144 { --local: var(--color-44); }
+      .section-145 { --local: var(--color-45); }
+      .section-146 { --local: var(--color-46); }
+      .section-147 { --local: var(--color-47); }
+      .section-148 { --local: var(--color-48); }
+      .section-149 { --local: var(--color-49); }
+      .section-150 { --local: var(--color-50); }
+      .section-151 { --local: var(--color-51); }
+      .section-152 { --local: var(--color-52); }
+      .section-153 { --local: var(--color-53); }
+      .section-154 { --local: var(--color-54); }
+      .section-155 { --local: var(--color-55); }
+      .section-156 { --local: var(--color-56); }
+      .section-157 { --local: var(--color-57); }
+      .section-158 { --local: var(--color-58); }
+      .section-159 { --local: var(--color-59); }
+      .section-160 { --local: var(--color-60); }
+      .section-161 { --local: var(--color-61); }
+      .section-162 { --local: var(--color-62); }
+      .section-163 { --local: var(--color-63); }
+      .section-164 { --local: var(--color-64); }
+      .section-165 { --local: var(--color-65); }
+      .section-166 { --local: var(--color-66); }
+      .section-167 { --local: var(--color-67); }
+      .section-168 { --local: var(--color-68); }
+      .section-169 { --local: var(--color-69); }
+      .section-170 { --local: var(--color-70); }
+      .section-171 { --local: var(--color-71); }
+      .section-172 { --local: var(--color-72); }
+      .section-173 { --local: var(--color-73); }
+      .section-174 { --local: var(--color-74); }
+      .section-175 { --local: var(--color-75); }
+      .section-176 { --local: var(--color-76); }
+      .section-177 { --local: var(--color-77); }
+      .section-178 { --local: var(--color-78); }
+      .section-179 { --local: var(--color-79); }
+      .section-180 { --local: var(--color-80); }
+      .section-181 { --local: var(--color-81); }
+      .section-182 { --local: var(--color-82); }
+      .section-183 { --local: var(--color-83); }
+      .section-184 { --local: var(--color-84); }
+      .section-185 { --local: var(--color-85); }
+      .section-186 { --local: var(--color-86); }
+      .section-187 { --local: var(--color-87); }
+      .section-188 { --local: var(--color-88); }
+      .section-189 { --local: var(--color-89); }
+      .section-190 { --local: var(--color-90); }
+      .section-191 { --local: var(--color-91); }
+      .section-192 { --local: var(--color-92); }
+      .section-193 { --local: var(--color-93); }
+      .section-194 { --local: var(--color-94); }
+      .section-195 { --local: var(--color-95); }
+      .section-196 { --local: var(--color-96); }
+      .section-197 { --local: var(--color-97); }
+      .section-198 { --local: var(--color-98); }
+      .section-199 { --local: var(--color-99); }
+      body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a1a; line-height: 1.8; }
+      h1 { font-size: 2.2rem; line-height: 1.2; margin-bottom: 0.5rem; }
+      h2 { font-size: 1.4rem; margin-top: 3rem; border-bottom: 1px solid #e0e0e0; padding-bottom: 0.4rem; }
+      h3 { font-size: 1.1rem; margin-top: 1.5rem; color: #333; }
+      .meta { color: #666; font-size: 0.9rem; margin-bottom: 2.5rem; }
+      p { margin: 1.1rem 0; }
+      .callout { background: #f5f5f5; border-radius: 6px; padding: 1rem 1.5rem; margin: 1.5rem 0; }
+      table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-size: 0.9rem; }
+      th { background: #f0f0f0; text-align: left; padding: 0.5rem 0.75rem; border: 1px solid #ddd; }
+      td { padding: 0.5rem 0.75rem; border: 1px solid #ddd; }
+      code { background: #f0f0f0; padding: 0.1em 0.35em; border-radius: 3px; font-size: 0.9em; }
+      pre { background: #f8f8f8; border: 1px solid #e0e0e0; border-radius: 4px; padding: 1rem; overflow-x: auto; }
+    </style>
+  </head>
+  <body>
+    <script>
+    const SECTION_DATA = [
+      { id: 0, title: "Section 0", active: false, visited: false, score: 0.00 },
+      { id: 1, title: "Section 1", active: false, visited: false, score: 3.14 },
+      { id: 2, title: "Section 2", active: false, visited: false, score: 6.28 },
+      { id: 3, title: "Section 3", active: false, visited: false, score: 9.42 },
+      { id: 4, title: "Section 4", active: false, visited: false, score: 12.56 },
+      { id: 5, title: "Section 5", active: false, visited: false, score: 15.70 },
+      { id: 6, title: "Section 6", active: false, visited: false, score: 18.84 },
+      { id: 7, title: "Section 7", active: false, visited: false, score: 21.98 },
+      { id: 8, title: "Section 8", active: false, visited: false, score: 25.12 },
+      { id: 9, title: "Section 9", active: false, visited: false, score: 28.26 },
+      { id: 10, title: "Section 10", active: false, visited: false, score: 31.40 },
+      { id: 11, title: "Section 11", active: false, visited: false, score: 34.54 },
+      { id: 12, title: "Section 12", active: false, visited: false, score: 37.68 },
+      { id: 13, title: "Section 13", active: false, visited: false, score: 40.82 },
+      { id: 14, title: "Section 14", active: false, visited: false, score: 43.96 },
+      { id: 15, title: "Section 15", active: false, visited: false, score: 47.10 },
+      { id: 16, title: "Section 16", active: false, visited: false, score: 50.24 },
+      { id: 17, title: "Section 17", active: false, visited: false, score: 53.38 },
+      { id: 18, title: "Section 18", active: false, visited: false, score: 56.52 },
+      { id: 19, title: "Section 19", active: false, visited: false, score: 59.66 },
+      { id: 20, title: "Section 20", active: false, visited: false, score: 62.80 },
+      { id: 21, title: "Section 21", active: false, visited: false, score: 65.94 },
+      { id: 22, title: "Section 22", active: false, visited: false, score: 69.08 },
+      { id: 23, title: "Section 23", active: false, visited: false, score: 72.22 },
+      { id: 24, title: "Section 24", active: false, visited: false, score: 75.36 },
+      { id: 25, title: "Section 25", active: false, visited: false, score: 78.50 },
+      { id: 26, title: "Section 26", active: false, visited: false, score: 81.64 },
+      { id: 27, title: "Section 27", active: false, visited: false, score: 84.78 },
+      { id: 28, title: "Section 28", active: false, visited: false, score: 87.92 },
+      { id: 29, title: "Section 29", active: false, visited: false, score: 91.06 },
+      { id: 30, title: "Section 30", active: false, visited: false, score: 94.20 },
+      { id: 31, title: "Section 31", active: false, visited: false, score: 97.34 },
+      { id: 32, title: "Section 32", active: false, visited: false, score: 100.48 },
+      { id: 33, title: "Section 33", active: false, visited: false, score: 103.62 },
+      { id: 34, title: "Section 34", active: false, visited: false, score: 106.76 },
+      { id: 35, title: "Section 35", active: false, visited: false, score: 109.90 },
+      { id: 36, title: "Section 36", active: false, visited: false, score: 113.04 },
+      { id: 37, title: "Section 37", active: false, visited: false, score: 116.18 },
+      { id: 38, title: "Section 38", active: false, visited: false, score: 119.32 },
+      { id: 39, title: "Section 39", active: false, visited: false, score: 122.46 },
+      { id: 40, title: "Section 40", active: false, visited: false, score: 125.60 },
+      { id: 41, title: "Section 41", active: false, visited: false, score: 128.74 },
+      { id: 42, title: "Section 42", active: false, visited: false, score: 131.88 },
+      { id: 43, title: "Section 43", active: false, visited: false, score: 135.02 },
+      { id: 44, title: "Section 44", active: false, visited: false, score: 138.16 },
+      { id: 45, title: "Section 45", active: false, visited: false, score: 141.30 },
+      { id: 46, title: "Section 46", active: false, visited: false, score: 144.44 },
+      { id: 47, title: "Section 47", active: false, visited: false, score: 147.58 },
+      { id: 48, title: "Section 48", active: false, visited: false, score: 150.72 },
+      { id: 49, title: "Section 49", active: false, visited: false, score: 153.86 },
+      { id: 50, title: "Section 50", active: false, visited: false, score: 157.00 },
+      { id: 51, title: "Section 51", active: false, visited: false, score: 160.14 },
+      { id: 52, title: "Section 52", active: false, visited: false, score: 163.28 },
+      { id: 53, title: "Section 53", active: false, visited: false, score: 166.42 },
+      { id: 54, title: "Section 54", active: false, visited: false, score: 169.56 },
+      { id: 55, title: "Section 55", active: false, visited: false, score: 172.70 },
+      { id: 56, title: "Section 56", active: false, visited: false, score: 175.84 },
+      { id: 57, title: "Section 57", active: false, visited: false, score: 178.98 },
+      { id: 58, title: "Section 58", active: false, visited: false, score: 182.12 },
+      { id: 59, title: "Section 59", active: false, visited: false, score: 185.26 },
+      { id: 60, title: "Section 60", active: false, visited: false, score: 188.40 },
+      { id: 61, title: "Section 61", active: false, visited: false, score: 191.54 },
+      { id: 62, title: "Section 62", active: false, visited: false, score: 194.68 },
+      { id: 63, title: "Section 63", active: false, visited: false, score: 197.82 },
+      { id: 64, title: "Section 64", active: false, visited: false, score: 200.96 },
+      { id: 65, title: "Section 65", active: false, visited: false, score: 204.10 },
+      { id: 66, title: "Section 66", active: false, visited: false, score: 207.24 },
+      { id: 67, title: "Section 67", active: false, visited: false, score: 210.38 },
+      { id: 68, title: "Section 68", active: false, visited: false, score: 213.52 },
+      { id: 69, title: "Section 69", active: false, visited: false, score: 216.66 },
+      { id: 70, title: "Section 70", active: false, visited: false, score: 219.80 },
+      { id: 71, title: "Section 71", active: false, visited: false, score: 222.94 },
+      { id: 72, title: "Section 72", active: false, visited: false, score: 226.08 },
+      { id: 73, title: "Section 73", active: false, visited: false, score: 229.22 },
+      { id: 74, title: "Section 74", active: false, visited: false, score: 232.36 },
+      { id: 75, title: "Section 75", active: false, visited: false, score: 235.50 },
+      { id: 76, title: "Section 76", active: false, visited: false, score: 238.64 },
+      { id: 77, title: "Section 77", active: false, visited: false, score: 241.78 },
+      { id: 78, title: "Section 78", active: false, visited: false, score: 244.92 },
+      { id: 79, title: "Section 79", active: false, visited: false, score: 248.06 },
+      { id: 80, title: "Section 80", active: false, visited: false, score: 251.20 },
+      { id: 81, title: "Section 81", active: false, visited: false, score: 254.34 },
+      { id: 82, title: "Section 82", active: false, visited: false, score: 257.48 },
+      { id: 83, title: "Section 83", active: false, visited: false, score: 260.62 },
+      { id: 84, title: "Section 84", active: false, visited: false, score: 263.76 },
+      { id: 85, title: "Section 85", active: false, visited: false, score: 266.90 },
+      { id: 86, title: "Section 86", active: false, visited: false, score: 270.04 },
+      { id: 87, title: "Section 87", active: false, visited: false, score: 273.18 },
+      { id: 88, title: "Section 88", active: false, visited: false, score: 276.32 },
+      { id: 89, title: "Section 89", active: false, visited: false, score: 279.46 },
+      { id: 90, title: "Section 90", active: false, visited: false, score: 282.60 },
+      { id: 91, title: "Section 91", active: false, visited: false, score: 285.74 },
+      { id: 92, title: "Section 92", active: false, visited: false, score: 288.88 },
+      { id: 93, title: "Section 93", active: false, visited: false, score: 292.02 },
+      { id: 94, title: "Section 94", active: false, visited: false, score: 295.16 },
+      { id: 95, title: "Section 95", active: false, visited: false, score: 298.30 },
+      { id: 96, title: "Section 96", active: false, visited: false, score: 301.44 },
+      { id: 97, title: "Section 97", active: false, visited: false, score: 304.58 },
+      { id: 98, title: "Section 98", active: false, visited: false, score: 307.72 },
+      { id: 99, title: "Section 99", active: false, visited: false, score: 310.86 },
+      { id: 100, title: "Section 100", active: false, visited: false, score: 314.00 },
+      { id: 101, title: "Section 101", active: false, visited: false, score: 317.14 },
+      { id: 102, title: "Section 102", active: false, visited: false, score: 320.28 },
+      { id: 103, title: "Section 103", active: false, visited: false, score: 323.42 },
+      { id: 104, title: "Section 104", active: false, visited: false, score: 326.56 },
+      { id: 105, title: "Section 105", active: false, visited: false, score: 329.70 },
+      { id: 106, title: "Section 106", active: false, visited: false, score: 332.84 },
+      { id: 107, title: "Section 107", active: false, visited: false, score: 335.98 },
+      { id: 108, title: "Section 108", active: false, visited: false, score: 339.12 },
+      { id: 109, title: "Section 109", active: false, visited: false, score: 342.26 },
+      { id: 110, title: "Section 110", active: false, visited: false, score: 345.40 },
+      { id: 111, title: "Section 111", active: false, visited: false, score: 348.54 },
+      { id: 112, title: "Section 112", active: false, visited: false, score: 351.68 },
+      { id: 113, title: "Section 113", active: false, visited: false, score: 354.82 },
+      { id: 114, title: "Section 114", active: false, visited: false, score: 357.96 },
+      { id: 115, title: "Section 115", active: false, visited: false, score: 361.10 },
+      { id: 116, title: "Section 116", active: false, visited: false, score: 364.24 },
+      { id: 117, title: "Section 117", active: false, visited: false, score: 367.38 },
+      { id: 118, title: "Section 118", active: false, visited: false, score: 370.52 },
+      { id: 119, title: "Section 119", active: false, visited: false, score: 373.66 },
+      { id: 120, title: "Section 120", active: false, visited: false, score: 376.80 },
+      { id: 121, title: "Section 121", active: false, visited: false, score: 379.94 },
+      { id: 122, title: "Section 122", active: false, visited: false, score: 383.08 },
+      { id: 123, title: "Section 123", active: false, visited: false, score: 386.22 },
+      { id: 124, title: "Section 124", active: false, visited: false, score: 389.36 },
+      { id: 125, title: "Section 125", active: false, visited: false, score: 392.50 },
+      { id: 126, title: "Section 126", active: false, visited: false, score: 395.64 },
+      { id: 127, title: "Section 127", active: false, visited: false, score: 398.78 },
+      { id: 128, title: "Section 128", active: false, visited: false, score: 401.92 },
+      { id: 129, title: "Section 129", active: false, visited: false, score: 405.06 },
+      { id: 130, title: "Section 130", active: false, visited: false, score: 408.20 },
+      { id: 131, title: "Section 131", active: false, visited: false, score: 411.34 },
+      { id: 132, title: "Section 132", active: false, visited: false, score: 414.48 },
+      { id: 133, title: "Section 133", active: false, visited: false, score: 417.62 },
+      { id: 134, title: "Section 134", active: false, visited: false, score: 420.76 },
+      { id: 135, title: "Section 135", active: false, visited: false, score: 423.90 },
+      { id: 136, title: "Section 136", active: false, visited: false, score: 427.04 },
+      { id: 137, title: "Section 137", active: false, visited: false, score: 430.18 },
+      { id: 138, title: "Section 138", active: false, visited: false, score: 433.32 },
+      { id: 139, title: "Section 139", active: false, visited: false, score: 436.46 },
+      { id: 140, title: "Section 140", active: false, visited: false, score: 439.60 },
+      { id: 141, title: "Section 141", active: false, visited: false, score: 442.74 },
+      { id: 142, title: "Section 142", active: false, visited: false, score: 445.88 },
+      { id: 143, title: "Section 143", active: false, visited: false, score: 449.02 },
+      { id: 144, title: "Section 144", active: false, visited: false, score: 452.16 },
+      { id: 145, title: "Section 145", active: false, visited: false, score: 455.30 },
+      { id: 146, title: "Section 146", active: false, visited: false, score: 458.44 },
+      { id: 147, title: "Section 147", active: false, visited: false, score: 461.58 },
+      { id: 148, title: "Section 148", active: false, visited: false, score: 464.72 },
+      { id: 149, title: "Section 149", active: false, visited: false, score: 467.86 },
+      { id: 150, title: "Section 150", active: false, visited: false, score: 471.00 },
+      { id: 151, title: "Section 151", active: false, visited: false, score: 474.14 },
+      { id: 152, title: "Section 152", active: false, visited: false, score: 477.28 },
+      { id: 153, title: "Section 153", active: false, visited: false, score: 480.42 },
+      { id: 154, title: "Section 154", active: false, visited: false, score: 483.56 },
+      { id: 155, title: "Section 155", active: false, visited: false, score: 486.70 },
+      { id: 156, title: "Section 156", active: false, visited: false, score: 489.84 },
+      { id: 157, title: "Section 157", active: false, visited: false, score: 492.98 },
+      { id: 158, title: "Section 158", active: false, visited: false, score: 496.12 },
+      { id: 159, title: "Section 159", active: false, visited: false, score: 499.26 },
+      { id: 160, title: "Section 160", active: false, visited: false, score: 502.40 },
+      { id: 161, title: "Section 161", active: false, visited: false, score: 505.54 },
+      { id: 162, title: "Section 162", active: false, visited: false, score: 508.68 },
+      { id: 163, title: "Section 163", active: false, visited: false, score: 511.82 },
+      { id: 164, title: "Section 164", active: false, visited: false, score: 514.96 },
+      { id: 165, title: "Section 165", active: false, visited: false, score: 518.10 },
+      { id: 166, title: "Section 166", active: false, visited: false, score: 521.24 },
+      { id: 167, title: "Section 167", active: false, visited: false, score: 524.38 },
+      { id: 168, title: "Section 168", active: false, visited: false, score: 527.52 },
+      { id: 169, title: "Section 169", active: false, visited: false, score: 530.66 },
+      { id: 170, title: "Section 170", active: false, visited: false, score: 533.80 },
+      { id: 171, title: "Section 171", active: false, visited: false, score: 536.94 },
+      { id: 172, title: "Section 172", active: false, visited: false, score: 540.08 },
+      { id: 173, title: "Section 173", active: false, visited: false, score: 543.22 },
+      { id: 174, title: "Section 174", active: false, visited: false, score: 546.36 },
+      { id: 175, title: "Section 175", active: false, visited: false, score: 549.50 },
+      { id: 176, title: "Section 176", active: false, visited: false, score: 552.64 },
+      { id: 177, title: "Section 177", active: false, visited: false, score: 555.78 },
+      { id: 178, title: "Section 178", active: false, visited: false, score: 558.92 },
+      { id: 179, title: "Section 179", active: false, visited: false, score: 562.06 },
+      { id: 180, title: "Section 180", active: false, visited: false, score: 565.20 },
+      { id: 181, title: "Section 181", active: false, visited: false, score: 568.34 },
+      { id: 182, title: "Section 182", active: false, visited: false, score: 571.48 },
+      { id: 183, title: "Section 183", active: false, visited: false, score: 574.62 },
+      { id: 184, title: "Section 184", active: false, visited: false, score: 577.76 },
+      { id: 185, title: "Section 185", active: false, visited: false, score: 580.90 },
+      { id: 186, title: "Section 186", active: false, visited: false, score: 584.04 },
+      { id: 187, title: "Section 187", active: false, visited: false, score: 587.18 },
+      { id: 188, title: "Section 188", active: false, visited: false, score: 590.32 },
+      { id: 189, title: "Section 189", active: false, visited: false, score: 593.46 },
+      { id: 190, title: "Section 190", active: false, visited: false, score: 596.60 },
+      { id: 191, title: "Section 191", active: false, visited: false, score: 599.74 },
+      { id: 192, title: "Section 192", active: false, visited: false, score: 602.88 },
+      { id: 193, title: "Section 193", active: false, visited: false, score: 606.02 },
+      { id: 194, title: "Section 194", active: false, visited: false, score: 609.16 },
+      { id: 195, title: "Section 195", active: false, visited: false, score: 612.30 },
+      { id: 196, title: "Section 196", active: false, visited: false, score: 615.44 },
+      { id: 197, title: "Section 197", active: false, visited: false, score: 618.58 },
+      { id: 198, title: "Section 198", active: false, visited: false, score: 621.72 },
+      { id: 199, title: "Section 199", active: false, visited: false, score: 624.86 },
+      { id: 200, title: "Section 200", active: false, visited: false, score: 628.00 },
+      { id: 201, title: "Section 201", active: false, visited: false, score: 631.14 },
+      { id: 202, title: "Section 202", active: false, visited: false, score: 634.28 },
+      { id: 203, title: "Section 203", active: false, visited: false, score: 637.42 },
+      { id: 204, title: "Section 204", active: false, visited: false, score: 640.56 },
+      { id: 205, title: "Section 205", active: false, visited: false, score: 643.70 },
+      { id: 206, title: "Section 206", active: false, visited: false, score: 646.84 },
+      { id: 207, title: "Section 207", active: false, visited: false, score: 649.98 },
+      { id: 208, title: "Section 208", active: false, visited: false, score: 653.12 },
+      { id: 209, title: "Section 209", active: false, visited: false, score: 656.26 },
+      { id: 210, title: "Section 210", active: false, visited: false, score: 659.40 },
+      { id: 211, title: "Section 211", active: false, visited: false, score: 662.54 },
+      { id: 212, title: "Section 212", active: false, visited: false, score: 665.68 },
+      { id: 213, title: "Section 213", active: false, visited: false, score: 668.82 },
+      { id: 214, title: "Section 214", active: false, visited: false, score: 671.96 },
+      { id: 215, title: "Section 215", active: false, visited: false, score: 675.10 },
+      { id: 216, title: "Section 216", active: false, visited: false, score: 678.24 },
+      { id: 217, title: "Section 217", active: false, visited: false, score: 681.38 },
+      { id: 218, title: "Section 218", active: false, visited: false, score: 684.52 },
+      { id: 219, title: "Section 219", active: false, visited: false, score: 687.66 },
+      { id: 220, title: "Section 220", active: false, visited: false, score: 690.80 },
+      { id: 221, title: "Section 221", active: false, visited: false, score: 693.94 },
+      { id: 222, title: "Section 222", active: false, visited: false, score: 697.08 },
+      { id: 223, title: "Section 223", active: false, visited: false, score: 700.22 },
+      { id: 224, title: "Section 224", active: false, visited: false, score: 703.36 },
+      { id: 225, title: "Section 225", active: false, visited: false, score: 706.50 },
+      { id: 226, title: "Section 226", active: false, visited: false, score: 709.64 },
+      { id: 227, title: "Section 227", active: false, visited: false, score: 712.78 },
+      { id: 228, title: "Section 228", active: false, visited: false, score: 715.92 },
+      { id: 229, title: "Section 229", active: false, visited: false, score: 719.06 },
+      { id: 230, title: "Section 230", active: false, visited: false, score: 722.20 },
+      { id: 231, title: "Section 231", active: false, visited: false, score: 725.34 },
+      { id: 232, title: "Section 232", active: false, visited: false, score: 728.48 },
+      { id: 233, title: "Section 233", active: false, visited: false, score: 731.62 },
+      { id: 234, title: "Section 234", active: false, visited: false, score: 734.76 },
+      { id: 235, title: "Section 235", active: false, visited: false, score: 737.90 },
+      { id: 236, title: "Section 236", active: false, visited: false, score: 741.04 },
+      { id: 237, title: "Section 237", active: false, visited: false, score: 744.18 },
+      { id: 238, title: "Section 238", active: false, visited: false, score: 747.32 },
+      { id: 239, title: "Section 239", active: false, visited: false, score: 750.46 },
+      { id: 240, title: "Section 240", active: false, visited: false, score: 753.60 },
+      { id: 241, title: "Section 241", active: false, visited: false, score: 756.74 },
+      { id: 242, title: "Section 242", active: false, visited: false, score: 759.88 },
+      { id: 243, title: "Section 243", active: false, visited: false, score: 763.02 },
+      { id: 244, title: "Section 244", active: false, visited: false, score: 766.16 },
+      { id: 245, title: "Section 245", active: false, visited: false, score: 769.30 },
+      { id: 246, title: "Section 246", active: false, visited: false, score: 772.44 },
+      { id: 247, title: "Section 247", active: false, visited: false, score: 775.58 },
+      { id: 248, title: "Section 248", active: false, visited: false, score: 778.72 },
+      { id: 249, title: "Section 249", active: false, visited: false, score: 781.86 },
+      { id: 250, title: "Section 250", active: false, visited: false, score: 785.00 },
+      { id: 251, title: "Section 251", active: false, visited: false, score: 788.14 },
+      { id: 252, title: "Section 252", active: false, visited: false, score: 791.28 },
+      { id: 253, title: "Section 253", active: false, visited: false, score: 794.42 },
+      { id: 254, title: "Section 254", active: false, visited: false, score: 797.56 },
+      { id: 255, title: "Section 255", active: false, visited: false, score: 800.70 },
+      { id: 256, title: "Section 256", active: false, visited: false, score: 803.84 },
+      { id: 257, title: "Section 257", active: false, visited: false, score: 806.98 },
+      { id: 258, title: "Section 258", active: false, visited: false, score: 810.12 },
+      { id: 259, title: "Section 259", active: false, visited: false, score: 813.26 },
+      { id: 260, title: "Section 260", active: false, visited: false, score: 816.40 },
+      { id: 261, title: "Section 261", active: false, visited: false, score: 819.54 },
+      { id: 262, title: "Section 262", active: false, visited: false, score: 822.68 },
+      { id: 263, title: "Section 263", active: false, visited: false, score: 825.82 },
+      { id: 264, title: "Section 264", active: false, visited: false, score: 828.96 },
+      { id: 265, title: "Section 265", active: false, visited: false, score: 832.10 },
+      { id: 266, title: "Section 266", active: false, visited: false, score: 835.24 },
+      { id: 267, title: "Section 267", active: false, visited: false, score: 838.38 },
+      { id: 268, title: "Section 268", active: false, visited: false, score: 841.52 },
+      { id: 269, title: "Section 269", active: false, visited: false, score: 844.66 },
+      { id: 270, title: "Section 270", active: false, visited: false, score: 847.80 },
+      { id: 271, title: "Section 271", active: false, visited: false, score: 850.94 },
+      { id: 272, title: "Section 272", active: false, visited: false, score: 854.08 },
+      { id: 273, title: "Section 273", active: false, visited: false, score: 857.22 },
+      { id: 274, title: "Section 274", active: false, visited: false, score: 860.36 },
+      { id: 275, title: "Section 275", active: false, visited: false, score: 863.50 },
+      { id: 276, title: "Section 276", active: false, visited: false, score: 866.64 },
+      { id: 277, title: "Section 277", active: false, visited: false, score: 869.78 },
+      { id: 278, title: "Section 278", active: false, visited: false, score: 872.92 },
+      { id: 279, title: "Section 279", active: false, visited: false, score: 876.06 },
+      { id: 280, title: "Section 280", active: false, visited: false, score: 879.20 },
+      { id: 281, title: "Section 281", active: false, visited: false, score: 882.34 },
+      { id: 282, title: "Section 282", active: false, visited: false, score: 885.48 },
+      { id: 283, title: "Section 283", active: false, visited: false, score: 888.62 },
+      { id: 284, title: "Section 284", active: false, visited: false, score: 891.76 },
+      { id: 285, title: "Section 285", active: false, visited: false, score: 894.90 },
+      { id: 286, title: "Section 286", active: false, visited: false, score: 898.04 },
+      { id: 287, title: "Section 287", active: false, visited: false, score: 901.18 },
+      { id: 288, title: "Section 288", active: false, visited: false, score: 904.32 },
+      { id: 289, title: "Section 289", active: false, visited: false, score: 907.46 },
+      { id: 290, title: "Section 290", active: false, visited: false, score: 910.60 },
+      { id: 291, title: "Section 291", active: false, visited: false, score: 913.74 },
+      { id: 292, title: "Section 292", active: false, visited: false, score: 916.88 },
+      { id: 293, title: "Section 293", active: false, visited: false, score: 920.02 },
+      { id: 294, title: "Section 294", active: false, visited: false, score: 923.16 },
+      { id: 295, title: "Section 295", active: false, visited: false, score: 926.30 },
+      { id: 296, title: "Section 296", active: false, visited: false, score: 929.44 },
+      { id: 297, title: "Section 297", active: false, visited: false, score: 932.58 },
+      { id: 298, title: "Section 298", active: false, visited: false, score: 935.72 },
+      { id: 299, title: "Section 299", active: false, visited: false, score: 938.86 }
+    ];
+    function initSections() {
+      SECTION_DATA.forEach(function(s) {
+        s.active = false;
+        s.score = Math.sqrt(s.id + 1);
+      });
+    }
+    function trackVisibility() {
+      if (!window.IntersectionObserver) return;
+      const observer = new IntersectionObserver(function(entries) {
+        entries.forEach(function(e) { if (e.isIntersecting) e.target.dataset.seen = '1'; });
+      });
+      document.querySelectorAll('h2').forEach(function(el) { observer.observe(el); });
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+      initSections();
+      trackVisibility();
+    });
+</script>
+    <article>
+      <h1>Web Archiving in 2026: The Definitive Technical Reference</h1>
+      <p class="meta">By the WebFrost Research Team · April 1, 2026 · 45 min read</p>
+
+      <p>This reference document covers the complete landscape of web archiving technology as it stands in 2026, with detailed treatment of self-hosted solutions, performance analysis, security implications, and long-term sustainability considerations. It is intended as a practitioner guide for teams evaluating or operating web archiving infrastructure at scale.</p>
+      <h2>The Scale of Link Rot</h2>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <h2>Headless Browsers and Dynamic Content</h2>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <h2>Storage Efficiency and Deduplication</h2>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <div class="callout">
+        <p><strong>Key takeaway:</strong> Storage Efficiency and Deduplication remains one of the most actively evolving areas of web archiving practice. The recommendations in this section should be revisited annually as tooling and standards continue to mature.</p>
+      </div>
+      <h2>The WARC Format Standard</h2>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <h2>Architecture and Throughput</h2>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <pre><code>// Example configuration fragment
+const config_4 = {
+  section: "architecture_and_throughput",
+  enabled: true,
+  priority: 4,
+  options: { timeout: 2500, retries: 2 }
+};</code></pre>
+      <h2>Metadata Preservation</h2>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <div class="callout">
+        <p><strong>Key takeaway:</strong> Metadata Preservation remains one of the most actively evolving areas of web archiving practice. The recommendations in this section should be revisited annually as tooling and standards continue to mature.</p>
+      </div>
+      <h2>Scheduled Re-archiving</h2>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <h2>Security Considerations</h2>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <h2>The Open-Source Landscape</h2>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <div class="callout">
+        <p><strong>Key takeaway:</strong> The Open-Source Landscape remains one of the most actively evolving areas of web archiving practice. The recommendations in this section should be revisited annually as tooling and standards continue to mature.</p>
+      </div>
+      <h2>Containerisation</h2>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <pre><code>// Example configuration fragment
+const config_9 = {
+  section: "containerisation",
+  enabled: true,
+  priority: 9,
+  options: { timeout: 5000, retries: 1 }
+};</code></pre>
+      <h2>Performance Benchmarking</h2>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <h2>Long-Term Sustainability</h2>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <div class="callout">
+        <p><strong>Key takeaway:</strong> Long-Term Sustainability remains one of the most actively evolving areas of web archiving practice. The recommendations in this section should be revisited annually as tooling and standards continue to mature.</p>
+      </div>
+      <h2>Interoperability and Standards</h2>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <h2>Machine Learning Applications</h2>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <h2>Deployment Economics</h2>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <div class="callout">
+        <p><strong>Key takeaway:</strong> Deployment Economics remains one of the most actively evolving areas of web archiving practice. The recommendations in this section should be revisited annually as tooling and standards continue to mature.</p>
+      </div>
+      <pre><code>// Example configuration fragment
+const config_14 = {
+  section: "deployment_economics",
+  enabled: true,
+  priority: 4,
+  options: { timeout: 7500, retries: 3 }
+};</code></pre>
+      <h2>Monitoring and Alerting</h2>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <h2>Backup Strategies</h2>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <h2>Access Control Models</h2>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <div class="callout">
+        <p><strong>Key takeaway:</strong> Access Control Models remains one of the most actively evolving areas of web archiving practice. The recommendations in this section should be revisited annually as tooling and standards continue to mature.</p>
+      </div>
+      <h2>API Design Patterns</h2>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <h2>Feed Import and Scheduling</h2>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <pre><code>// Example configuration fragment
+const config_19 = {
+  section: "feed_import_and_scheduling",
+  enabled: true,
+  priority: 9,
+  options: { timeout: 10000, retries: 2 }
+};</code></pre>
+      <h2>Export and Portability</h2>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <div class="callout">
+        <p><strong>Key takeaway:</strong> Export and Portability remains one of the most actively evolving areas of web archiving practice. The recommendations in this section should be revisited annually as tooling and standards continue to mature.</p>
+      </div>
+      <h2>Observability and Logging</h2>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <h2>Capacity Planning</h2>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <h2>Disaster Recovery</h2>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <div class="callout">
+        <p><strong>Key takeaway:</strong> Disaster Recovery remains one of the most actively evolving areas of web archiving practice. The recommendations in this section should be revisited annually as tooling and standards continue to mature.</p>
+      </div>
+      <h2>Community and Governance</h2>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+      <p>The open-source landscape for web archiving has matured considerably in recent years. Several projects have reached production-ready status with documented upgrade paths, active maintainer communities, and responsive issue trackers. Evaluating tool longevity requires examining contribution velocity, the diversity of the contributor base, and whether the project has a clear governance model that outlasts any single maintainer.</p>
+      <p>Containerisation has dramatically lowered the barrier to self-hosted deployment. A well-crafted Docker image that bundles all dependencies, including Chromium and its system libraries, eliminates the most painful aspect of running headless browser tools on production servers. Reproducible builds with pinned base image digests ensure that an archive set up today can be reliably reproduced on new hardware years later.</p>
+      <pre><code>// Example configuration fragment
+const config_24 = {
+  section: "community_and_governance",
+  enabled: true,
+  priority: 4,
+  options: { timeout: 12500, retries: 1 }
+};</code></pre>
+      <h2>The Path Forward</h2>
+      <p>Performance benchmarking of archiving tools is more nuanced than benchmarking stateless compute pipelines. The dominant cost is typically network I/O and browser rendering time, not CPU cycles. A benchmark that uses loopback HTTP servers misses the latency characteristics that dominate real-world workloads. Meaningful comparisons require a controlled network environment with realistic latency injection and a diverse corpus of representative URLs.</p>
+      <p>Long-term sustainability of a self-hosted archive depends on more than the initial deployment. Operational factors including backup discipline, dependency update cadence, storage capacity planning, and the availability of documentation for restoration procedures are equally important. Tools that store data in open, well-documented formats dramatically reduce the recovery burden when hardware fails or software needs to be replaced.</p>
+      <p>Researchers at the Internet Archive have documented a significant acceleration in link rot over the past five years, with studies suggesting that nearly one-third of all URLs referenced in academic literature become inaccessible within 24 months of publication. This trend has prompted a wave of interest in self-hosted archiving solutions that remove dependency on third-party infrastructure and give organisations full control over their preservation workflows.</p>
+      <p>The technical challenges of web archiving have evolved considerably since the early days of simple HTML mirroring. Modern web applications rely heavily on JavaScript rendering, dynamic content loading, service workers, and authentication flows that traditional HTTP crawlers cannot handle without a full browser engine. Tools that incorporate headless Chromium have become the de facto standard for capturing accurate representations of contemporary web pages, though they introduce significant operational complexity.</p>
+      <p>Storage efficiency remains a critical concern for self-hosted deployments running on consumer hardware. A naive archiving strategy that captures every asset on every re-archive can exhaust disk quotas surprisingly quickly, particularly for sites that serve large media files or regenerate unique URLs on each request. Deduplication at the content level, combined with smart change detection, can reduce storage growth by 60-80% for typical workloads while maintaining complete capture fidelity.</p>
+      <p>The WARC format has emerged as the most widely supported interchange format for web archives, owing to its adoption by the Library of Congress and the Internet Archive. Its self-describing record structure makes it suitable for both streaming writes during capture and random-access reads during replay. Compression support, built-in checksums, and a rich metadata header format make WARC a sound long-term bet for archival storage, even as web technologies continue to evolve.</p>
+      <p>Network architecture plays an outsized role in archiving throughput. Tools that establish a single browser context per target URL, share an HTTP cache across all extractors for the same page, and pipeline multiple extractor stages in parallel can achieve significantly higher throughput than naive sequential implementations. The difference between well-architected and naive tools can easily be a 3-5x throughput multiplier on real-world URL corpora.</p>
+      <p>The question of metadata preservation is often underweighted in comparisons of archiving tools. Capturing the rendered HTML and a screenshot is necessary but not sufficient for a complete archival record: timestamps, HTTP response headers, redirect chains, TLS certificate information, and the original request context all carry forensic value that is lost if only the final rendered state is stored. Tools that produce rich WARC records with full header capture preserve this provenance automatically.</p>
+      <p>Scheduled re-archiving is one area where self-hosted tools consistently outperform browser extensions and one-shot services. The ability to configure per-site re-archive intervals and diff captures to detect meaningful changes transforms an archiver from a snapshot tool into an ongoing monitoring system capable of detecting content mutations, link addition or removal, and outright page deletion in near-real-time.</p>
+      <p>Security considerations for self-hosted archivers deserve more attention than they typically receive in the popular press. An archiving service that accepts arbitrary URLs and fetches them on behalf of users is a potential SSRF vector: a malicious URL could cause the server to probe internal network resources, exfiltrate credentials, or trigger side effects via webhook-style endpoints. Robust implementations validate URLs against allowlists, reject private and link-local IP ranges, and run browser processes in sandboxed namespaces.</p>
+    </article>
+  </body>
+</html>

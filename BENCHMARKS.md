@@ -110,6 +110,56 @@ All benchmarks run in-process or against a local loopback server. No external ne
 
 ---
 
+## WebFrost vs ArchiveBox — Head-to-Head Comparison
+
+**Status:** Harness implemented; results pending first Docker run.
+
+**Script:** `bench/vs-archivebox/run.ts`
+
+**Method:** Docker Compose environment (`bench/vs-archivebox/docker-compose.yml`) runs WebFrost
+(built from local Dockerfile) and ArchiveBox 0.7.3 side-by-side. A fixture nginx server
+serves three static HTML test pages at known sizes. The runner submits URLs to each system
+and waits for completion, measuring wall time, peak CPU/memory (via `docker stats`), and
+disk growth (via `du -sk /data`).
+
+**Test pages:**
+
+| Page | Size | Description |
+|------|------|-------------|
+| small.html | ~5 KB | Static blog post, minimal JS |
+| medium.html | ~53 KB | News-style article, rich text |
+| large.html | ~167 KB | Heavy page with inline CSS/JS |
+
+**Scenarios:** single URL (small, medium, large), batch 10, batch 50, batch 100 URLs.
+
+**Running the harness:**
+
+```bash
+# Start the Docker environment (first time builds WebFrost image — may take a few minutes)
+docker compose -f bench/vs-archivebox/docker-compose.yml up -d --wait
+
+# Run all scenarios (WebFrost + ArchiveBox)
+bun bench/vs-archivebox/run.ts
+
+# WebFrost only (no Docker required for ArchiveBox)
+bun bench/vs-archivebox/run.ts --skip-archivebox
+
+# Custom endpoints
+bun bench/vs-archivebox/run.ts \
+  --webfrost-url http://localhost:18081 \
+  --archivebox-url http://localhost:18082 \
+  --fixture-url http://localhost:18080 \
+  --output bench/vs-archivebox/results/$(date +%Y%m%d).json
+
+# Tear down
+docker compose -f bench/vs-archivebox/docker-compose.yml down -v
+```
+
+Results are written to `bench/vs-archivebox/results/latest.json` (gitignored) and a
+human-readable BENCHMARKS.md section is printed to stdout for copy-paste into this file.
+
+---
+
 ## Regression Policy
 
 - Any PR that regresses a metric by more than **10%** should include an explanation in the PR description.

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The Case for Local-First Web Archiving</title>
+    <style>
+      body {
+        font-family: Georgia, "Times New Roman", serif;
+        max-width: 680px;
+        margin: 3rem auto;
+        padding: 0 1.5rem;
+        color: #222;
+        line-height: 1.7;
+      }
+      h1 { font-size: 2rem; margin-bottom: 0.25rem; }
+      h2 { font-size: 1.4rem; margin-top: 2.5rem; }
+      .meta { color: #666; font-size: 0.9rem; margin-bottom: 2rem; }
+      p { margin: 1.2rem 0; }
+      blockquote {
+        border-left: 3px solid #ccc;
+        margin: 1.5rem 0;
+        padding: 0.5rem 1rem;
+        color: #555;
+        font-style: italic;
+      }
+      ul { line-height: 1.8; }
+    </style>
+  </head>
+  <body>
+    <article>
+      <h1>The Case for Local-First Web Archiving</h1>
+      <p class="meta">Published April 1, 2026 · 6 min read</p>
+
+      <p>
+        The web forgets. Studies estimate that roughly 25% of links shared on social media
+        become unreachable within a year. Academic papers cite URLs that no longer resolve.
+        News articles disappear behind paywalls or vanish entirely when publishers fold.
+        The ephemeral nature of the web is not a bug — it is an architectural reality that
+        anyone who relies on the internet for research, journalism, or personal memory
+        must reckon with sooner or later.
+      </p>
+
+      <p>
+        Cloud-based archiving services offer one answer: deposit your bookmarks with a
+        third-party provider and trust them to keep the copies available indefinitely.
+        The Wayback Machine, Pinboard, and a dozen smaller services have played this role
+        for years. This works until it doesn't. Services shut down, change their pricing
+        models, or simply lose your data in a migration gone wrong. Even the best-intentioned
+        non-profits operate under resource constraints that no single user can predict.
+      </p>
+
+      <blockquote>
+        "A tool you do not control is a service you are merely borrowing."
+      </blockquote>
+
+      <h2>The Local-First Argument</h2>
+
+      <p>
+        Local-first archiving flips the model. You run the software on hardware you own.
+        Your archive lives in open formats — plain files and a SQLite database — that any
+        tool can read decades from now. There are no API rate limits, no monthly fees, and
+        no risk of a startup pivoting away from storage. The data is yours in the truest
+        sense: it sits on a disk you can physically hold.
+      </p>
+
+      <p>
+        The trade-offs are real. You are responsible for backups. You need a machine with
+        enough disk space and a stable power supply. Setting up a Playwright-capable server
+        takes more effort than clicking "install" in an app store. For casual users, a
+        managed service remains the path of least resistance. But for researchers,
+        journalists, lawyers, and anyone who takes the long view on information preservation,
+        the self-hosted model is the only one that offers genuine permanence.
+      </p>
+
+      <h2>What to Look For in a Self-Hosted Archiver</h2>
+
+      <ul>
+        <li><strong>Open storage formats</strong> — WARC, PDF, and SQLite over proprietary databases</li>
+        <li><strong>Reproducible builds</strong> — Docker-based deployment with pinned dependency versions</li>
+        <li><strong>Full-page capture</strong> — JavaScript-rendered pages, not just static HTML</li>
+        <li><strong>Incremental scheduling</strong> — pull feeds and re-archive on a cron, not just one-shot</li>
+        <li><strong>Low operational overhead</strong> — single binary or container, no separate queue service</li>
+      </ul>
+
+      <h2>The Performance Question</h2>
+
+      <p>
+        Modern open-source tools have narrowed the usability gap considerably. What once
+        required a dedicated server team can now be deployed with a single Docker command.
+        The remaining friction is mostly performance: how quickly can the tool archive a
+        backlog of thousands of URLs without saturating a home server's network interface?
+      </p>
+
+      <p>
+        Shared HTTP caching, a single browser context per snapshot, and parallelisable
+        pipeline stages are the key levers. A well-engineered archiver should be able to
+        process a typical news article — including full-page screenshot and WARC capture —
+        in under three seconds on commodity hardware. That is the benchmark worth aiming for.
+      </p>
+
+      <p>
+        The barrier is lower than ever, and the case for crossing it has never been stronger.
+        Your future self — or your future researcher — will thank you for the copies you
+        made today.
+      </p>
+    </article>
+  </body>
+</html>

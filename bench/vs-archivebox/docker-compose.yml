@@ -1,0 +1,87 @@
+# WebFrost vs ArchiveBox benchmark environment.
+#
+# Usage:
+#   docker compose -f bench/vs-archivebox/docker-compose.yml up -d
+#   bun bench/vs-archivebox/run.ts
+#   docker compose -f bench/vs-archivebox/docker-compose.yml down -v
+#
+# Services:
+#   fixtures  — nginx serving the static test pages on port 18080
+#   webfrost  — WebFrost server built from the local Dockerfile on port 18081
+#   archivebox — ArchiveBox 0.7 on port 18082
+#
+# All three services share the `bench_net` bridge so containers can reach
+# the fixture server as http://fixtures/.
+
+services:
+  fixtures:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./fixtures:/usr/share/nginx/html:ro
+    ports:
+      - "18080:80"
+    networks:
+      - bench_net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/small.html"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+
+  webfrost:
+    build:
+      context: ../..
+      dockerfile: packages/server/Dockerfile
+    ports:
+      - "18081:3000"
+    environment:
+      PORT: "3000"
+      WEBFROST_DIR: /data
+    volumes:
+      - webfrost_data:/data
+    networks:
+      - bench_net
+    depends_on:
+      fixtures:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  archivebox:
+    image: archivebox/archivebox:0.7.3
+    ports:
+      - "18082:8000"
+    volumes:
+      - archivebox_data:/data
+    networks:
+      - bench_net
+    depends_on:
+      fixtures:
+        condition: service_healthy
+    # Disable SSL validation so the runner can archive HTTP fixture URLs.
+    # init on first boot, then start the dev server for health-check pings.
+    command: >
+      sh -c "archivebox init --setup 2>/dev/null || true &&
+             archivebox server 0.0.0.0:8000 --noreload"
+    environment:
+      ALLOWED_HOSTS: "*"
+      PUBLIC_INDEX: "True"
+      PUBLIC_SNAPSHOTS: "True"
+      CHECK_SSL_VALIDITY: "False"
+      SAVE_SCREENSHOT: "False"
+      SAVE_PDF: "False"
+      SAVE_TITLE: "True"
+      SAVE_FAVICON: "True"
+      SAVE_WARC: "True"
+      SAVE_WGET: "True"
+
+volumes:
+  webfrost_data:
+  archivebox_data:
+
+networks:
+  bench_net:
+    driver: bridge
