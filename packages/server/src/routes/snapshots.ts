@@ -89,7 +89,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       try {
         const q = query.q?.trim();
         const page = Math.max(1, Number(query.page) || 1);
-        const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+        const limit = Math.min(10000, Math.max(1, Number(query.limit) || 20));
 
         if (q) {
           // FTS5 ranked search — returns paginated results with snippet

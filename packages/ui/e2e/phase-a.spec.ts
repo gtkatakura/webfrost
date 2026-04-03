@@ -175,12 +175,47 @@ test("@phase-a pagination: server API returns correct pages", async ({ request }
   }
 });
 
-test.skip("@phase-a pagination: UI controls appear and navigate between pages", async ({
+test("@phase-a pagination: UI controls appear and navigate between pages", async ({
   page,
   request,
 }) => {
-  // TODO: unblock when the UI is updated to pass page/limit to useSnapshots()
-  // so that client-side pagination can reflect the full archive size.
-  // Bug: useSnapshots() fetches page 1 with default limit 20; SnapshotListPage
-  // client-side totalPages = Math.ceil(20/20) = 1 and controls never render.
+  // Seed 21 snapshots so totalPages = Math.ceil(21/20) = 2.
+  await Promise.all(
+    Array.from({ length: 21 }, (_, i) =>
+      request.post("http://localhost:3000/api/snapshots", {
+        data: { url: `https://pagination-ui-${i}.example.com` },
+      }),
+    ),
+  );
+
+  await page.goto("/#/snapshots");
+
+  // Wait until the list renders (skeleton gone, at least one row visible).
+  await expect(page.locator("li").first()).toBeVisible({ timeout: 10000 });
+
+  // Pagination controls must appear since totalPages > 1.
+  const nextBtn = page.getByRole("button", { name: /Next/i });
+  const prevBtn = page.getByRole("button", { name: /Prev/i });
+  await expect(nextBtn).toBeVisible();
+  await expect(prevBtn).toBeVisible();
+
+  // Page indicator shows "1 / 2".
+  await expect(page.getByText("1 / 2")).toBeVisible();
+
+  // Record the first item on page 1 so we can verify page 2 is different.
+  const firstItemPage1 = await page.locator("li").first().textContent();
+
+  // Navigate to page 2.
+  await nextBtn.click();
+  await expect(page.getByText("2 / 2")).toBeVisible();
+
+  // At least one item is visible on page 2.
+  await expect(page.locator("li").first()).toBeVisible();
+  const firstItemPage2 = await page.locator("li").first().textContent();
+  expect(firstItemPage2).not.toBe(firstItemPage1);
+
+  // Navigate back to page 1.
+  await prevBtn.click();
+  await expect(page.getByText("1 / 2")).toBeVisible();
+  await expect(page.locator("li").first()).toBeVisible();
 });

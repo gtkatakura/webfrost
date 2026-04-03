@@ -11,7 +11,7 @@ export function useSnapshots() {
 
   const refetch = useCallback(async () => {
     try {
-      const result = await client.listSnapshots();
+      const result = await client.listSnapshots({ limit: 10000 });
       setSnapshots(result.items);
     } catch (e) {
       setError(e instanceof WebFrostError ? e.message : String(e));
