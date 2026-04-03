@@ -1,3 +1,4 @@
+export { ArchiveResultSection } from "./ArchiveResultSection";
 export { ErrorBanner } from "./ErrorBanner";
 export { ExtractorBadge } from "./ExtractorBadge";
 export { Pagination } from "./Pagination";
