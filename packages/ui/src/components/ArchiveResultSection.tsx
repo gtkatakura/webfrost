@@ -111,7 +111,6 @@ function SandboxedHtmlResult({
       ) : (
         <iframe
           src={downloadUrl}
-          // biome-ignore lint/security/noDangerouslySetInnerHtmlWithChildren: intentional sandboxed preview
           sandbox=""
           title={`${extractor} preview`}
           className="w-full border border-gray-200 rounded"
