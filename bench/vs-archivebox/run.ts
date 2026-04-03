@@ -27,7 +27,7 @@
  *   failureCount — number of URLs that failed or timed out
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 // ---------------------------------------------------------------------------
@@ -583,8 +583,16 @@ async function main(): Promise<void> {
   console.log(`Results written to: ${opts.outputPath}`);
 
   // Print BENCHMARKS.md section to stdout for copy-paste
+  const markdownSection = generateMarkdownSection(run);
   console.log("\n--- BENCHMARKS.md section ---\n");
-  console.log(generateMarkdownSection(run));
+  console.log(markdownSection);
+
+  // Write to GitHub Actions Step Summary when running in CI
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (summaryPath) {
+    appendFileSync(summaryPath, `${markdownSection}\n`);
+    console.log("Results written to GITHUB_STEP_SUMMARY.");
+  }
 }
 
 await main();

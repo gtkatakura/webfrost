@@ -1,0 +1,57 @@
+name: Benchmark vs ArchiveBox
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bench:
+    name: WebFrost vs ArchiveBox
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Start benchmark services
+        run: docker compose -f bench/vs-archivebox/docker-compose.yml up -d --wait
+        timeout-minutes: 10
+
+      - name: Run benchmark
+        run: bun bench/vs-archivebox/run.ts
+        timeout-minutes: 20
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vs-archivebox-results-${{ github.sha }}
+          path: bench/vs-archivebox/results/
+          if-no-files-found: ignore
+          retention-days: 90
+
+      - name: Stop services
+        if: always()
+        run: docker compose -f bench/vs-archivebox/docker-compose.yml down -v
