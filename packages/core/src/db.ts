@@ -4,6 +4,7 @@ import { join } from "node:path";
 export function openDb(dir: string): Database {
   const db = new Database(join(dir, "archive.db"));
   db.exec("PRAGMA journal_mode = WAL;");
+  db.exec("PRAGMA foreign_keys = ON;");
   db.exec(`
     CREATE TABLE IF NOT EXISTS snapshots (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

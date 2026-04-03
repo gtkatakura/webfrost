@@ -99,6 +99,8 @@ describe("init", () => {
     expect(tables).toContain("snapshots");
     expect(tables).toContain("archive_results");
     expect(tables).toContain("job_queue");
+    expect(tables).toContain("tags");
+    expect(tables).toContain("snapshot_tags");
 
     db.close();
   });
@@ -299,5 +301,149 @@ describe("list", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5. tag commands
+// ---------------------------------------------------------------------------
+
+describe("tag", () => {
+  test("tag create adds a tag and tag list shows it", async () => {
+    await runCli(["init"], testDir);
+
+    const create = await runCli(["tag", "create", "News"], testDir);
+    expect(create.exitCode).toBe(0);
+    expect(create.stdout).toContain("news");
+
+    const list = await runCli(["tag", "list"], testDir);
+    expect(list.exitCode).toBe(0);
+    expect(list.stdout).toContain("News");
+  });
+
+  test("tag create with --color stores the color", async () => {
+    await runCli(["init"], testDir);
+
+    const create = await runCli(["tag", "create", "Urgent", "--color", "#ff0000"], testDir);
+    expect(create.exitCode).toBe(0);
+
+    const db = openDb(testDir);
+    const row = db
+      .query<{ color: string | null }, [string]>("SELECT color FROM tags WHERE slug = ?")
+      .get("urgent");
+    expect(row?.color).toBe("#ff0000");
+    db.close();
+  });
+
+  test("tag add attaches a tag to a snapshot and tag list <id> shows it", async () => {
+    await runCli(["init"], testDir);
+
+    const server = startMockServer(
+      () =>
+        new Response("<html><body>tag-test</body></html>", {
+          headers: { "content-type": "text/html" },
+        }),
+    );
+
+    try {
+      const url = `http://localhost:${server.port}/tagged`;
+      await runCli(["add", url], testDir);
+
+      const db = openDb(testDir);
+      const snapshot = db
+        .query<{ id: number }, [string]>("SELECT id FROM snapshots WHERE url = ? LIMIT 1")
+        .get(url);
+      expect(snapshot).not.toBeNull();
+      const snapshotId = snapshot?.id ?? 0;
+      db.close();
+
+      const add = await runCli(["tag", "add", String(snapshotId), "Finance"], testDir);
+      expect(add.exitCode).toBe(0);
+      expect(add.stdout).toContain("Finance");
+
+      const list = await runCli(["tag", "list", String(snapshotId)], testDir);
+      expect(list.exitCode).toBe(0);
+      expect(list.stdout).toContain("Finance");
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("tag remove deletes a tag globally", async () => {
+    await runCli(["init"], testDir);
+
+    await runCli(["tag", "create", "Temporary"], testDir);
+
+    const db = openDb(testDir);
+    const row = db
+      .query<{ id: number }, [string]>("SELECT id FROM tags WHERE slug = ?")
+      .get("temporary");
+    expect(row).not.toBeNull();
+    const tagId = row?.id ?? 0;
+    db.close();
+
+    const remove = await runCli(["tag", "remove", String(tagId)], testDir);
+    expect(remove.exitCode).toBe(0);
+    expect(remove.stdout).toContain("Temporary");
+
+    const db2 = openDb(testDir);
+    const gone = db2
+      .query<{ id: number }, [string]>("SELECT id FROM tags WHERE slug = ?")
+      .get("temporary");
+    expect(gone).toBeNull();
+    db2.close();
+  });
+
+  test("deleting a tag cascades and removes snapshot_tags entries", async () => {
+    await runCli(["init"], testDir);
+
+    const server = startMockServer(
+      () =>
+        new Response("<html><body>cascade</body></html>", {
+          headers: { "content-type": "text/html" },
+        }),
+    );
+
+    try {
+      const url = `http://localhost:${server.port}/cascade`;
+      await runCli(["add", url], testDir);
+
+      const db = openDb(testDir);
+      const snapshot = db
+        .query<{ id: number }, [string]>("SELECT id FROM snapshots WHERE url = ? LIMIT 1")
+        .get(url);
+      const snapshotId = snapshot?.id ?? 0;
+      db.close();
+
+      await runCli(["tag", "add", String(snapshotId), "CascadeTag"], testDir);
+
+      const db2 = openDb(testDir);
+      const tag = db2
+        .query<{ id: number }, [string]>("SELECT id FROM tags WHERE slug = ?")
+        .get("cascadetag");
+      expect(tag).not.toBeNull();
+      const tagId = tag?.id ?? 0;
+
+      const beforeRemove = db2
+        .query<{ n: number }, [number, number]>(
+          "SELECT COUNT(*) as n FROM snapshot_tags WHERE snapshot_id = ? AND tag_id = ?",
+        )
+        .get(snapshotId, tagId);
+      expect(beforeRemove?.n).toBe(1);
+      db2.close();
+
+      await runCli(["tag", "remove", String(tagId)], testDir);
+
+      const db3 = openDb(testDir);
+      const afterRemove = db3
+        .query<{ n: number }, [number, number]>(
+          "SELECT COUNT(*) as n FROM snapshot_tags WHERE snapshot_id = ? AND tag_id = ?",
+        )
+        .get(snapshotId, tagId);
+      expect(afterRemove?.n).toBe(0);
+      db3.close();
+    } finally {
+      server.stop(true);
+    }
   });
 });
