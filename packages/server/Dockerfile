@@ -10,8 +10,8 @@ COPY packages/sdk/package.json packages/sdk/
 COPY packages/server/package.json packages/server/
 COPY packages/ui/package.json packages/ui/
 
-# Install deps
-RUN bun install --frozen-lockfile
+# Install deps (skip prepare/lefthook which requires git)
+RUN bun install --frozen-lockfile --ignore-scripts
 
 # Copy UI + SDK source and build
 COPY packages/sdk/ packages/sdk/
@@ -30,8 +30,8 @@ COPY packages/sdk/package.json packages/sdk/
 COPY packages/server/package.json packages/server/
 COPY packages/ui/package.json packages/ui/
 
-# Install deps
-RUN bun install --frozen-lockfile
+# Install deps (skip prepare/lefthook which requires git)
+RUN bun install --frozen-lockfile --ignore-scripts
 
 # Copy source and build
 COPY packages/core/ packages/core/
