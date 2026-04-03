@@ -2,12 +2,15 @@
 FROM oven/bun:1 AS ui-builder
 WORKDIR /app
 
-# Copy workspace manifests for layer caching
+# Copy all workspace manifests so bun can resolve the full lockfile
 COPY package.json bun.lock ./
-COPY packages/ui/package.json packages/ui/
+COPY packages/cli/package.json packages/cli/
+COPY packages/core/package.json packages/core/
 COPY packages/sdk/package.json packages/sdk/
+COPY packages/server/package.json packages/server/
+COPY packages/ui/package.json packages/ui/
 
-# Install UI + SDK deps
+# Install deps
 RUN bun install --frozen-lockfile
 
 # Copy UI + SDK source and build
@@ -19,12 +22,15 @@ RUN bun run --filter '@webfrost/ui' build
 FROM oven/bun:1 AS server-builder
 WORKDIR /app
 
-# Copy workspace manifests for layer caching
+# Copy all workspace manifests so bun can resolve the full lockfile
 COPY package.json bun.lock ./
+COPY packages/cli/package.json packages/cli/
 COPY packages/core/package.json packages/core/
+COPY packages/sdk/package.json packages/sdk/
 COPY packages/server/package.json packages/server/
+COPY packages/ui/package.json packages/ui/
 
-# Install server + core deps
+# Install deps
 RUN bun install --frozen-lockfile
 
 # Copy source and build
