@@ -37,6 +37,7 @@ services:
     environment:
       PORT: "3000"
       WEBFROST_DIR: /data
+      AUTH_DISABLED: "true"
     volumes:
       - webfrost_data:/data
     networks:
