@@ -32,6 +32,9 @@ function mockClient(overrides: {
     createSnapshot: (url: string) => Promise.resolve({ id: 1, url, status: "pending" }),
     getSnapshot: () => Promise.resolve(null),
     listTags: () => Promise.resolve([]),
+    listSnapshotTags: () => Promise.resolve([]),
+    addTagToSnapshot: () => Promise.resolve(),
+    removeTagFromSnapshot: () => Promise.resolve(),
     ...overrides,
   } as unknown as WebFrostClient;
 }
