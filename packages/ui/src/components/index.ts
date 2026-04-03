@@ -4,4 +4,5 @@ export { Pagination } from "./Pagination";
 export { SkeletonRow } from "./SkeletonRow";
 export { SnapshotListRow } from "./SnapshotListRow";
 export { StatusBadge } from "./StatusBadge";
+export { SnapshotTagSection } from "./SnapshotTagSection";
 export { TagChip } from "./TagChip";

@@ -2,7 +2,13 @@ import { WebFrostError } from "@webfrost/sdk";
 import type { SnapshotDetail } from "@webfrost/sdk";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ErrorBanner, ExtractorBadge, SkeletonRow, StatusBadge } from "../components";
+import {
+  ErrorBanner,
+  ExtractorBadge,
+  SkeletonRow,
+  SnapshotTagSection,
+  StatusBadge,
+} from "../components";
 import { useClient } from "../context";
 
 interface ReadabilityContent {
@@ -160,6 +166,8 @@ export function SnapshotDetailPage() {
               {deleting ? "Deleting…" : "Delete snapshot"}
             </button>
           </div>
+
+          <SnapshotTagSection snapshotId={detail.id} />
 
           <h2 className="text-[0.95rem] font-semibold mb-3 text-gray-900">Archive Results</h2>
 
