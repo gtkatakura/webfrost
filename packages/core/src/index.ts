@@ -18,3 +18,14 @@ export {
 } from "./schedules";
 export type { Schedule } from "./schedules";
 export { nextCronDate, parseCron } from "./cron";
+export {
+  addTagToSnapshot,
+  createTag,
+  deleteTag,
+  getTag,
+  listSnapshotTags,
+  listTags,
+  removeTagFromSnapshot,
+  slugify,
+} from "./tags";
+export type { Tag } from "./tags";

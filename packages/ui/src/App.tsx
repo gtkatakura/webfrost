@@ -1,5 +1,5 @@
 import { WebFrostClient, WebFrostError } from "@webfrost/sdk";
-import type { Snapshot, SnapshotDetail } from "@webfrost/sdk";
+import type { Snapshot, SnapshotDetail, Tag } from "@webfrost/sdk";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { Link, Route, Routes, useNavigate, useParams } from "react-router-dom";
 
@@ -104,6 +104,66 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function TagChip({
+  tag,
+  onRemove,
+}: {
+  tag: Tag;
+  onRemove?: () => void;
+}) {
+  const bg = tag.color ?? "#e5e7eb";
+  // Compute a contrasting text color based on luminance
+  const hex = bg.replace("#", "");
+  let textColor = "#111";
+  if (hex.length === 6) {
+    const r = Number.parseInt(hex.slice(0, 2), 16);
+    const g = Number.parseInt(hex.slice(2, 4), 16);
+    const b = Number.parseInt(hex.slice(4, 6), 16);
+    const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    textColor = lum > 0.55 ? "#111" : "#fff";
+  }
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "0.2rem",
+        padding: "0.1rem 0.45rem",
+        borderRadius: 12,
+        fontSize: "0.7rem",
+        fontWeight: 600,
+        background: bg,
+        color: textColor,
+        marginRight: "0.2rem",
+      }}
+    >
+      {tag.name}
+      {onRemove && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onRemove();
+          }}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: textColor,
+            padding: 0,
+            lineHeight: 1,
+            fontSize: "0.75rem",
+          }}
+          aria-label={`Remove tag ${tag.name}`}
+        >
+          ×
+        </button>
+      )}
+    </span>
+  );
+}
+
 function ErrorBanner({ message }: { message: string }) {
   return (
     <p
@@ -142,11 +202,25 @@ function SnapshotListRow({ snapshot }: { snapshot: Snapshot }) {
           textDecoration: "none",
         }}
       >
-        <span
-          style={{ color: "#0070f3", wordBreak: "break-all", flexShrink: 1, fontSize: "0.875rem" }}
-        >
-          {snapshot.url}
-        </span>
+        <div style={{ flexShrink: 1, minWidth: 0 }}>
+          <span
+            style={{
+              color: "#0070f3",
+              wordBreak: "break-all",
+              fontSize: "0.875rem",
+              display: "block",
+            }}
+          >
+            {snapshot.url}
+          </span>
+          {snapshot.tags.length > 0 && (
+            <div style={{ marginTop: "0.3rem" }}>
+              {snapshot.tags.map((tag) => (
+                <TagChip key={tag.id} tag={tag} />
+              ))}
+            </div>
+          )}
+        </div>
         <div
           style={{
             display: "flex",
@@ -176,6 +250,7 @@ const KNOWN_EXTRACTORS = ["warc", "readability", "pdf"] as const;
 function ListPage() {
   const client = useClient();
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
   const [url, setUrl] = useState("");
   const [initialLoading, setInitialLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -187,11 +262,13 @@ function ListPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [reqExtractors, setReqExtractors] = useState<Set<string>>(new Set());
+  const [reqTags, setReqTags] = useState<Set<number>>(new Set());
 
   const fetchSnapshots = useCallback(async () => {
     try {
-      const data = await client.listSnapshots();
+      const [data, tags] = await Promise.all([client.listSnapshots(), client.listTags()]);
       setSnapshots(data);
+      setAllTags(tags);
     } catch (e) {
       setError(e instanceof WebFrostError ? e.message : String(e));
     } finally {
@@ -229,6 +306,16 @@ function ListPage() {
     setPage(1);
   }
 
+  function toggleTag(tagId: number) {
+    setReqTags((prev) => {
+      const next = new Set(prev);
+      if (next.has(tagId)) next.delete(tagId);
+      else next.add(tagId);
+      return next;
+    });
+    setPage(1);
+  }
+
   // Apply filters
   const filtered = snapshots.filter((s) => {
     if (search && !s.url.toLowerCase().includes(search.toLowerCase())) return false;
@@ -242,6 +329,12 @@ function ListPage() {
       const extSet = new Set(s.extractors);
       for (const req of reqExtractors) {
         if (!extSet.has(req)) return false;
+      }
+    }
+    if (reqTags.size > 0) {
+      const snapshotTagIds = new Set(s.tags.map((t) => t.id));
+      for (const req of reqTags) {
+        if (!snapshotTagIds.has(req)) return false;
       }
     }
     return true;
@@ -260,9 +353,19 @@ function ListPage() {
 
   return (
     <main style={{ maxWidth: 760, margin: "0 auto", padding: "2rem 1rem" }}>
-      <h1 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "1.5rem", color: "#111" }}>
-        WebFrost
-      </h1>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "1.5rem",
+        }}
+      >
+        <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#111", margin: 0 }}>WebFrost</h1>
+        <Link to="/tags" style={{ fontSize: "0.875rem" }}>
+          Manage Tags
+        </Link>
+      </div>
 
       {/* Archive URL form */}
       <form
@@ -366,6 +469,33 @@ function ListPage() {
             </label>
           ))}
         </div>
+        {allTags.length > 0 && (
+          <div
+            style={{
+              display: "flex",
+              gap: "0.4rem",
+              flexWrap: "wrap",
+              alignItems: "center",
+              fontSize: "0.8rem",
+              color: "#6b7280",
+            }}
+          >
+            <span>Tag:</span>
+            {allTags.map((tag) => (
+              <label
+                key={tag.id}
+                style={{ display: "flex", alignItems: "center", gap: "0.2rem", cursor: "pointer" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={reqTags.has(tag.id)}
+                  onChange={() => toggleTag(tag.id)}
+                />
+                <TagChip tag={tag} />
+              </label>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Snapshot list */}
@@ -694,6 +824,194 @@ function DetailPage() {
 }
 
 // ---------------------------------------------------------------------------
+// Tags management page
+// ---------------------------------------------------------------------------
+
+function TagsPage() {
+  const client = useClient();
+  const navigate = useNavigate();
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [newName, setNewName] = useState("");
+  const [newColor, setNewColor] = useState("#6b7280");
+  const [creating, setCreating] = useState(false);
+
+  const fetchTags = useCallback(async () => {
+    try {
+      const data = await client.listTags();
+      setTags(data);
+    } catch (e) {
+      setError(e instanceof WebFrostError ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [client]);
+
+  useEffect(() => {
+    fetchTags();
+  }, [fetchTags]);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newName.trim()) return;
+    setCreating(true);
+    setError(null);
+    try {
+      await client.createTag(newName.trim(), newColor);
+      setNewName("");
+      await fetchTags();
+    } catch (e) {
+      setError(e instanceof WebFrostError ? e.message : String(e));
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleDelete(tagId: number) {
+    setError(null);
+    try {
+      await client.deleteTag(tagId);
+      setTags((prev) => prev.filter((t) => t.id !== tagId));
+    } catch (e) {
+      setError(e instanceof WebFrostError ? e.message : String(e));
+    }
+  }
+
+  const inputStyle = {
+    padding: "0.5rem 0.75rem",
+    border: "1px solid #d1d5db",
+    borderRadius: 4,
+    fontSize: "0.875rem",
+  };
+
+  return (
+    <main style={{ maxWidth: 760, margin: "0 auto", padding: "2rem 1rem" }}>
+      <button
+        type="button"
+        onClick={() => navigate(-1)}
+        style={{
+          background: "none",
+          border: "none",
+          color: "#0070f3",
+          cursor: "pointer",
+          fontSize: "0.875rem",
+          padding: 0,
+          marginBottom: "1.5rem",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "0.25rem",
+        }}
+      >
+        ← Back
+      </button>
+
+      <h1 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "1.5rem", color: "#111" }}>
+        Tags
+      </h1>
+
+      <form
+        onSubmit={handleCreate}
+        style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem", alignItems: "center" }}
+      >
+        <input
+          type="text"
+          placeholder="New tag name"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          required
+          style={{ flex: 1, ...inputStyle }}
+        />
+        <label
+          style={{ display: "flex", alignItems: "center", gap: "0.35rem", fontSize: "0.875rem" }}
+        >
+          Color
+          <input
+            type="color"
+            value={newColor}
+            onChange={(e) => setNewColor(e.target.value)}
+            style={{
+              width: 36,
+              height: 32,
+              padding: 2,
+              border: "1px solid #d1d5db",
+              borderRadius: 4,
+              cursor: "pointer",
+            }}
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={creating}
+          style={{
+            padding: "0.5rem 1.2rem",
+            background: "#0070f3",
+            color: "#fff",
+            border: "none",
+            borderRadius: 4,
+            cursor: creating ? "not-allowed" : "pointer",
+            fontWeight: 600,
+            opacity: creating ? 0.7 : 1,
+          }}
+        >
+          {creating ? "Creating…" : "Create"}
+        </button>
+      </form>
+
+      {error && <ErrorBanner message={error} />}
+
+      {loading ? (
+        <p style={{ color: "#9ca3af" }}>Loading…</p>
+      ) : tags.length === 0 ? (
+        <p style={{ color: "#9ca3af" }}>No tags yet. Create one above.</p>
+      ) : (
+        <ul
+          style={{
+            listStyle: "none",
+            padding: 0,
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.5rem",
+          }}
+        >
+          {tags.map((tag) => (
+            <li
+              key={tag.id}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "0.6rem 1rem",
+                border: "1px solid #e5e7eb",
+                borderRadius: 6,
+                background: "white",
+              }}
+            >
+              <TagChip tag={tag} />
+              <button
+                type="button"
+                onClick={() => handleDelete(tag.id)}
+                style={{
+                  background: "none",
+                  border: "1px solid #fca5a5",
+                  color: "#b91c1c",
+                  borderRadius: 4,
+                  cursor: "pointer",
+                  padding: "0.25rem 0.6rem",
+                  fontSize: "0.75rem",
+                }}
+              >
+                Delete
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </main>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // App — router
 // ---------------------------------------------------------------------------
 
@@ -704,6 +1022,7 @@ export default function App({ client = defaultClient }: { client?: WebFrostClien
       <Routes>
         <Route path="/" element={<ListPage />} />
         <Route path="/snapshots/:id" element={<DetailPage />} />
+        <Route path="/tags" element={<TagsPage />} />
       </Routes>
     </ClientContext.Provider>
   );

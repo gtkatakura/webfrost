@@ -21,6 +21,7 @@ function mockClient(overrides: {
     listSnapshots: () => Promise.resolve([]),
     createSnapshot: (url: string) => Promise.resolve({ id: 1, url, status: "pending" }),
     getSnapshot: () => Promise.resolve(null),
+    listTags: () => Promise.resolve([]),
     ...overrides,
   } as unknown as WebFrostClient;
 }
@@ -32,6 +33,7 @@ function makeSnapshot(overrides: Partial<Snapshot> = {}): Snapshot {
     status: "done",
     createdAt: "2024-01-15T10:00:00.000Z",
     extractors: [],
+    tags: [],
     ...overrides,
   };
 }
@@ -43,6 +45,7 @@ function makeDetail(overrides: Partial<SnapshotDetail> = {}): SnapshotDetail {
     status: "done",
     createdAt: "2024-01-15T10:00:00.000Z",
     extractors: [],
+    tags: [],
     archiveResults: [],
     ...overrides,
   };

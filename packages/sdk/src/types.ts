@@ -5,6 +5,15 @@ export interface SnapshotCreated {
   status: string;
 }
 
+/** Tag attached to a snapshot */
+export interface Tag {
+  id: number;
+  name: string;
+  slug: string;
+  color: string | null;
+  createdAt: string;
+}
+
 /** Single snapshot from GET /snapshots list */
 export interface Snapshot {
   id: number;
@@ -13,6 +22,8 @@ export interface Snapshot {
   createdAt: string;
   /** Extractor names that have produced results for this snapshot (e.g. ["warc", "readability"]) */
   extractors: string[];
+  /** Tags attached to this snapshot */
+  tags: Tag[];
 }
 
 /** Archive result extracted by a single extractor */

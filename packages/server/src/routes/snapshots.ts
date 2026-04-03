@@ -81,6 +81,13 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
         status: s.status,
         createdAt: s.created_at,
         extractors: s.extractors,
+        tags: s.tags.map((t) => ({
+          id: t.id,
+          name: t.name,
+          slug: t.slug,
+          color: t.color,
+          createdAt: t.created_at,
+        })),
       }));
     } finally {
       db.close();

@@ -2,12 +2,19 @@
 import { readFileSync } from "node:fs";
 import {
   addSchedule,
+  addTagToSnapshot,
   addUrl,
   createSnapshot,
+  createTag,
+  deleteTag,
   detectFormat,
   getDueSchedules,
+  getSnapshot,
+  getTag,
   listSchedules,
+  listSnapshotTags,
   listSnapshots,
+  listTags,
   markScheduleRun,
   openDb,
   parseUrls,
@@ -227,6 +234,138 @@ switch (command) {
     db.close();
 
     console.log(`\nImport complete: total=${total}, queued=${queued}, failed=${failed}`);
+    break;
+  }
+
+  case "tag": {
+    const sub = args[0];
+
+    if (sub === "add") {
+      // webfrost tag add <snapshot-id> <tag-name>
+      const snapshotIdArg = args[1];
+      const tagName = args[2];
+      if (!snapshotIdArg || !tagName) {
+        console.error("Usage: webfrost tag add <snapshot-id> <tag-name>");
+        process.exit(1);
+      }
+      const snapshotId = Number(snapshotIdArg);
+      if (!Number.isInteger(snapshotId) || snapshotId <= 0) {
+        console.error("Invalid snapshot id");
+        process.exit(1);
+      }
+      const db = openDb(archiveDir);
+      try {
+        const snapshot = getSnapshot(db, snapshotId);
+        if (!snapshot) {
+          console.error(`Snapshot ${snapshotId} not found.`);
+          process.exit(1);
+        }
+        // Find existing tag by name or create it
+        const existing = listTags(db).find((t) => t.name === tagName);
+        const tag = existing ?? createTag(db, tagName);
+        addTagToSnapshot(db, snapshotId, tag.id);
+        console.log(`Tag "${tag.name}" added to snapshot ${snapshotId}.`);
+      } finally {
+        db.close();
+      }
+      break;
+    }
+
+    if (sub === "list") {
+      // webfrost tag list [<snapshot-id>]
+      const snapshotIdArg = args[1];
+      const db = openDb(archiveDir);
+      try {
+        if (snapshotIdArg !== undefined) {
+          const snapshotId = Number(snapshotIdArg);
+          if (!Number.isInteger(snapshotId) || snapshotId <= 0) {
+            console.error("Invalid snapshot id");
+            process.exit(1);
+          }
+          const snapshot = getSnapshot(db, snapshotId);
+          if (!snapshot) {
+            console.error(`Snapshot ${snapshotId} not found.`);
+            process.exit(1);
+          }
+          const tags = listSnapshotTags(db, snapshotId);
+          if (tags.length === 0) {
+            console.log("No tags on this snapshot.");
+          }
+          for (const t of tags) {
+            const color = t.color ?? "-";
+            console.log(`${t.id}\t${t.slug}\t${t.name}\t${color}`);
+          }
+        } else {
+          const tags = listTags(db);
+          if (tags.length === 0) {
+            console.log("No tags.");
+          }
+          for (const t of tags) {
+            const color = t.color ?? "-";
+            console.log(`${t.id}\t${t.slug}\t${t.name}\t${color}`);
+          }
+        }
+      } finally {
+        db.close();
+      }
+      break;
+    }
+
+    if (sub === "create") {
+      // webfrost tag create <name> [--color <hex>]
+      const tagName = args[1];
+      if (!tagName) {
+        console.error("Usage: webfrost tag create <name> [--color <hex>]");
+        process.exit(1);
+      }
+      const colorIdx = args.indexOf("--color");
+      const color = colorIdx !== -1 ? args[colorIdx + 1] : undefined;
+      const db = openDb(archiveDir);
+      try {
+        const tag = createTag(db, tagName, color);
+        console.log(`Tag created: ${tag.id}\t${tag.slug}\t${tag.name}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("UNIQUE") || msg.includes("unique")) {
+          console.error(`Tag "${tagName}" already exists.`);
+          process.exit(1);
+        }
+        throw err;
+      } finally {
+        db.close();
+      }
+      break;
+    }
+
+    // webfrost tag remove <tag-id> -- removes tag from all snapshots and deletes it
+    if (sub === "remove") {
+      const tagIdArg = args[1];
+      if (!tagIdArg) {
+        console.error("Usage: webfrost tag remove <tag-id>");
+        process.exit(1);
+      }
+      const tagId = Number(tagIdArg);
+      if (!Number.isInteger(tagId) || tagId <= 0) {
+        console.error("Invalid tag id");
+        process.exit(1);
+      }
+      const db = openDb(archiveDir);
+      try {
+        const tag = getTag(db, tagId);
+        if (!tag) {
+          console.error(`Tag ${tagId} not found.`);
+          process.exit(1);
+        }
+        deleteTag(db, tagId);
+        console.log(`Tag "${tag.name}" removed.`);
+      } finally {
+        db.close();
+      }
+      break;
+    }
+
+    console.error("Usage: webfrost tag <add|list|create|remove>");
+    process.exit(1);
     break;
   }
 

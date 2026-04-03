@@ -4,5 +4,6 @@ export type {
   Snapshot,
   SnapshotCreated,
   SnapshotDetail,
+  Tag,
   WebFrostClientOptions,
 } from "./types";
