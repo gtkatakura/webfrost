@@ -7,6 +7,8 @@ import type {
   MeResult,
   Schedule,
   SearchResult,
+  SetupResult,
+  SetupStatusResult,
   Snapshot,
   SnapshotCreated,
   SnapshotDetail,
@@ -104,6 +106,27 @@ export class WebFrostClient {
     const headers = new Headers(init?.headers);
     if (this.apiKey) headers.set("Authorization", `Bearer ${this.apiKey}`);
     return fetch(url, { ...init, headers });
+  }
+
+  /** Check whether first-run setup is needed (no admin user exists). */
+  async getSetupStatus(): Promise<SetupStatusResult> {
+    const res = await this.request(`${this.baseUrl}/setup/status`);
+    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    return res.json() as Promise<SetupStatusResult>;
+  }
+
+  /** Complete first-run setup: create admin user and generate first API key. Sets a session cookie. */
+  async completeSetup(username: string, password: string): Promise<SetupResult> {
+    const res = await this.request(`${this.baseUrl}/setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
+      throw new WebFrostError(res.status, body.error);
+    }
+    return res.json() as Promise<SetupResult>;
   }
 
   /** Log in with username and password. Sets a session cookie on the browser. */

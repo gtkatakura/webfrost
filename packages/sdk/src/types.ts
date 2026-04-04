@@ -98,6 +98,16 @@ export interface MeResult {
   username: string | null;
 }
 
+/** Response from GET /setup/status */
+export interface SetupStatusResult {
+  needsSetup: boolean;
+}
+
+/** Response from POST /setup */
+export interface SetupResult {
+  apiKey: string;
+}
+
 /** Single result from GET /snapshots?q=term */
 export interface SearchResult {
   id: number;

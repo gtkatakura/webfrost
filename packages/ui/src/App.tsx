@@ -9,15 +9,25 @@ import { ImportPage } from "./pages/ImportPage";
 import { LoginPage } from "./pages/LoginPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SchedulesPage } from "./pages/SchedulesPage";
+import { SetupPage } from "./pages/SetupPage";
 import { SnapshotDetailPage } from "./pages/SnapshotDetailPage";
 import { SnapshotListPage } from "./pages/SnapshotListPage";
 import { TagsPage } from "./pages/TagsPage";
 
 function AppRoutes() {
-  const { ready, isAuthenticated } = useAuth();
+  const { ready, needsSetup, isAuthenticated } = useAuth();
 
   // Wait for session check before rendering routes to avoid flash
   if (!ready) return null;
+
+  if (needsSetup) {
+    return (
+      <Routes>
+        <Route path="/setup" element={<SetupPage />} />
+        <Route path="*" element={<Navigate to="/setup" replace />} />
+      </Routes>
+    );
+  }
 
   return (
     <Routes>

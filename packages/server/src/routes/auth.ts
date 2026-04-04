@@ -47,9 +47,15 @@ export function authPlugin(app: Elysia) {
   }
 
   return app.onBeforeHandle(({ request, set }) => {
-    // Login endpoint is public — allow unauthenticated access
+    // Public endpoints — allow unauthenticated access
     const url = new URL(request.url);
     if (url.pathname.endsWith("/auth/login") && request.method === "POST") return;
+    if (url.pathname.endsWith("/setup/status") && request.method === "GET") return;
+    if (
+      (url.pathname.endsWith("/setup") || url.pathname.endsWith("/setup/")) &&
+      request.method === "POST"
+    )
+      return;
     const authHeader = request.headers.get("authorization");
     if (authHeader?.startsWith("Bearer ")) {
       const rawKey = authHeader.slice(7);
