@@ -148,6 +148,7 @@ describe("WebFrostClient.getSnapshot", () => {
       title: null,
       excerpt: null,
       screenshotUrl: null,
+      extractorMeta: {},
     });
     expect((fetchSpy.mock.calls[0] as unknown[])[0]).toBe(`${BASE}/snapshots/1`);
   });

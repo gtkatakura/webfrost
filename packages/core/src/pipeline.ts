@@ -108,40 +108,68 @@ export async function runPipeline(
     page = undefined;
   }
 
-  const extractorNames = [
-    "html",
-    "warc",
-    "readability",
-    "pdf",
-    "screenshot",
-    "dom-snapshot",
-    "singlefile",
-    "media",
-  ] as const;
+  // Wrap a promise to always resolve with settled result + elapsed ms
+  function runTimed(
+    name: string,
+    p: Promise<unknown>,
+  ): Promise<{ name: string; durationMs: number; error: string | null }> {
+    const t0 = Date.now();
+    return p.then(
+      () => ({ name, durationMs: Date.now() - t0, error: null }),
+      (reason: unknown) => ({
+        name,
+        durationMs: Date.now() - t0,
+        error: reason instanceof Error ? reason.message : String(reason),
+      }),
+    );
+  }
+
+  const extractorTasks = [
+    runTimed("html", Promise.resolve(htmlExtractor(db, snapshotId, html))),
+    runTimed(
+      "warc",
+      warcExtractor(db, snapshotId, url, headers, status, statusText, html, snapshotDir),
+    ),
+    runTimed("readability", Promise.resolve(readabilityExtractor(db, snapshotId, url, html))),
+    ...(page
+      ? [
+          runTimed("pdf", pdfExtractor(db, snapshotId, snapshotDir, page)),
+          runTimed("screenshot", screenshotExtractor(db, snapshotId, snapshotDir, page)),
+          runTimed("dom-snapshot", domSnapshotExtractor(db, snapshotId, snapshotDir, page)),
+          runTimed("singlefile", singleFileExtractor(db, snapshotId, snapshotDir, page)),
+        ]
+      : []),
+    runTimed(
+      "media",
+      mediaExtractor(db, snapshotId, snapshotDir, url, { ...(logger ? { logger } : {}) }),
+    ),
+  ];
 
   try {
     // Run all extractors in parallel — partial failure is non-fatal
     // media extractor runs independently of Playwright (no page needed)
-    const results = await Promise.allSettled([
-      htmlExtractor(db, snapshotId, html),
-      warcExtractor(db, snapshotId, url, headers, status, statusText, html, snapshotDir),
-      readabilityExtractor(db, snapshotId, url, html),
-      page ? pdfExtractor(db, snapshotId, snapshotDir, page) : Promise.resolve(),
-      page ? screenshotExtractor(db, snapshotId, snapshotDir, page) : Promise.resolve(),
-      page ? domSnapshotExtractor(db, snapshotId, snapshotDir, page) : Promise.resolve(),
-      page ? singleFileExtractor(db, snapshotId, snapshotDir, page) : Promise.resolve(),
-      mediaExtractor(db, snapshotId, snapshotDir, url, { ...(logger ? { logger } : {}) }),
-    ]);
-    results.forEach((result, i) => {
-      const name = extractorNames[i] ?? `extractor-${i}`;
-      if (result.status === "rejected") {
-        logger?.warn(
-          `extractor ${name} failed snapshot=${snapshotId}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
-        );
+    const results = await Promise.all(extractorTasks);
+    for (const { name, durationMs, error } of results) {
+      if (error !== null) {
+        logger?.warn(`extractor ${name} failed snapshot=${snapshotId}: ${error}`);
+        try {
+          db.query<null, [number, string, string, number]>(
+            "INSERT INTO archive_results (snapshot_id, extractor, error, duration_ms) VALUES (?, ?, ?, ?)",
+          ).run(snapshotId, name, error, durationMs);
+        } catch {
+          // best effort — DB may be closed or unavailable
+        }
       } else {
-        logger?.debug(`extractor ${name} ok snapshot=${snapshotId}`);
+        logger?.debug(`extractor ${name} ok snapshot=${snapshotId} durationMs=${durationMs}`);
+        try {
+          db.query<null, [number, number, string]>(
+            "UPDATE archive_results SET duration_ms = ? WHERE id = (SELECT id FROM archive_results WHERE snapshot_id = ? AND extractor = ? AND duration_ms IS NULL ORDER BY id DESC LIMIT 1)",
+          ).run(durationMs, snapshotId, name);
+        } catch {
+          // best effort
+        }
       }
-    });
+    }
   } finally {
     await browser?.close();
   }

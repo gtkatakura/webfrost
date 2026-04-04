@@ -70,6 +70,15 @@ interface RawSnapshotDetail {
   title?: string | null;
   excerpt?: string | null;
   screenshotUrl?: string | null;
+  extractorMeta?: Record<
+    string,
+    {
+      status: "success" | "failed";
+      durationMs: number | null;
+      fileSizeBytes: number | null;
+      error?: string;
+    }
+  >;
 }
 
 function toTag(r: RawTag): Tag {
@@ -106,6 +115,7 @@ function toSnapshotDetail(raw: RawSnapshotDetail): SnapshotDetail {
     title: raw.title ?? null,
     excerpt: raw.excerpt ?? null,
     screenshotUrl: raw.screenshotUrl ?? null,
+    extractorMeta: raw.extractorMeta ?? {},
   };
 }
 
