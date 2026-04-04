@@ -66,7 +66,7 @@ See [docs/DEPLOY.md](docs/DEPLOY.md) for full deployment instructions, env vars,
 
 - **[Bun](https://bun.sh) v1.x** — package manager and runtime
 - **Chromium** — required for PDF, screenshot, DOM snapshot, and SingleFile extractors
-- **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** — optional; required for media extraction (video/audio)
+- **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** — optional; required for media extraction (video/audio). Install via `brew install yt-dlp` or `pip install yt-dlp`
 - **SQLite** — bundled with Bun, no installation needed
 
 ---
@@ -444,7 +444,7 @@ The server exposes a REST API alongside the React UI. All `/api/*` routes requir
 | `GET` | `/api/snapshots?q=<term>` | Full-text search — returns ranked results with snippets |
 | `GET` | `/api/snapshots/:id` | Get snapshot with archive results |
 | `DELETE` | `/api/snapshots/:id` | Delete a snapshot and its archive files |
-| `GET` | `/api/snapshots/:id/archives/:extractor/download` | Download archive file (`html`, `warc`, `pdf`, `readability`, `screenshot`, `dom-snapshot`, `singlefile`) |
+| `GET` | `/api/snapshots/:id/archives/:extractor/download` | Download archive file (`html`, `warc`, `pdf`, `readability`, `screenshot`, `dom-snapshot`, `singlefile`, `media`, `media-metadata`) |
 | `GET` | `/api/snapshots/:id/tags` | List tags on a snapshot |
 | `POST` | `/api/snapshots/:id/tags` | Add a tag to a snapshot |
 | `DELETE` | `/api/snapshots/:id/tags/:tagId` | Remove a tag from a snapshot |

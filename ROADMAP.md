@@ -147,7 +147,6 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 
 | Feature | Why it matters | Complexity | AB has it |
 |---------|----------------|------------|-----------|
-| **Media extraction** (yt-dlp) | Video/audio preservation; YouTube links rot | M | ✅ |
 | **Browser extension** (Chrome + Firefox) | One-click archiving from browser; major UX unlock | L | ✅ |
 | **S3/object storage backend** | Scale archive beyond local disk; cloud-native deployments | L | ✅ |
 | **Webhook notifications** | Automation pipelines and integrations | S | ✅ |
