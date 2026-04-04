@@ -49,7 +49,7 @@ export async function mediaExtractor(
     detectResult = await spawner(["--simulate", "--quiet", url]);
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      logger?.warn("[media] yt-dlp not found — skipping media extraction");
+      logger?.info("[media] yt-dlp not found — skipping media extraction");
       return;
     }
     throw err;
@@ -92,7 +92,7 @@ export async function mediaExtractor(
     ]);
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      logger?.warn("[media] yt-dlp not found — skipping media download");
+      logger?.info("[media] yt-dlp not found — skipping media download");
       return;
     }
     throw err;
