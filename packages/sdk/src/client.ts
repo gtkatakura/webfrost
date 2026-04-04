@@ -2,6 +2,7 @@ import type {
   ApiKey,
   ApiKeyCreated,
   ArchiveResult,
+  DashboardStats,
   ImportOptions,
   ImportResult,
   ListSnapshotsOptions,
@@ -338,6 +339,13 @@ export class WebFrostClient {
     if (res.status === 404) return false;
     if (!res.ok) throw new WebFrostError(res.status, res.statusText);
     return true;
+  }
+
+  /** Get dashboard stats: snapshot count, storage usage, success rate, schedule count, failed today. */
+  async getStats(): Promise<DashboardStats> {
+    const res = await this.request(`${this.baseUrl}/stats`);
+    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    return res.json() as Promise<DashboardStats>;
   }
 
   /** Get server info: version, storage path, and total snapshot count. */

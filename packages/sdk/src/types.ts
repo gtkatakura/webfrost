@@ -108,6 +108,16 @@ export interface SetupResult {
   apiKey: string;
 }
 
+/** Response from GET /stats */
+export interface DashboardStats {
+  snapshotCount: number;
+  storageBytes: number;
+  storageByExtractor: Record<string, number>;
+  successRate: number;
+  activeScheduleCount: number;
+  failedToday: number;
+}
+
 /** Response from GET /settings/info */
 export interface ServerInfo {
   version: string;

@@ -3,6 +3,7 @@ export type {
   ApiKey,
   ApiKeyCreated,
   ArchiveResult,
+  DashboardStats,
   ImportOptions,
   ImportResult,
   ListSnapshotsOptions,

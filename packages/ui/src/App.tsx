@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from "./context/auth";
 import { ThemeProvider } from "./context/theme";
 import { Layout } from "./layouts/Layout";
 import { ApiKeysPage } from "./pages/ApiKeysPage";
+import { DashboardPage } from "./pages/DashboardPage";
 import { ImportPage } from "./pages/ImportPage";
 import { LoginPage } from "./pages/LoginPage";
 import { SchedulesPage } from "./pages/SchedulesPage";
@@ -39,7 +40,7 @@ function AppRoutes() {
       {isAuthenticated ? (
         <>
           <Route element={<Layout />}>
-            <Route index element={<SnapshotListPage />} />
+            <Route index element={<DashboardPage />} />
             <Route path="snapshots" element={<SnapshotListPage />} />
             <Route path="snapshots/:id" element={<SnapshotDetailPage />} />
             <Route path="tags" element={<TagsPage />} />
