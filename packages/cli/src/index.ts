@@ -36,6 +36,103 @@ const archiveDir = process.env.WEBFROST_DIR ?? process.cwd();
 const command = process.argv[2];
 const args = process.argv.slice(3);
 
+// Read version from package.json
+const { version } = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url).pathname, "utf8"),
+) as { version: string };
+
+function printHelp(): void {
+  console.log(`webfrost v${version} — self-hosted web archiving toolkit
+
+Usage: webfrost <command> [options]
+
+Commands:
+  init                        Initialize a new archive in the current directory
+  add <url>                   Archive a URL
+  list                        List all snapshots
+  delete <id>                 Delete a snapshot by ID
+  search <query>              Full-text search across archived content
+  search:rebuild              Rebuild the full-text search index
+
+  schedule add <url> --cron <expr>               Schedule a URL for periodic archiving
+  schedule add --rss <feed-url> --cron <expr>    Schedule an RSS feed for periodic archiving
+  schedule list                                  List all schedules
+  schedule remove <id>                           Remove a schedule by ID
+  schedule worker                                Start the schedule polling worker
+
+  import [--format=<fmt>] <url-or-file>          Bulk import URLs from a file or URL
+                                                 Formats: rss, opml, netscape, text
+
+  tag add <snapshot-id> <name>                   Tag a snapshot
+  tag list [<snapshot-id>]                       List all tags (or tags on a snapshot)
+  tag create <name> [--color <hex>]              Create a new tag
+  tag remove <tag-id>                            Delete a tag
+
+  admin create --username <name> --password <pass>    Create an admin user
+  admin key create --name <label> [--expires <date>]  Create an API key
+  admin key list                                      List all API keys
+  admin key revoke <id>                               Revoke an API key
+
+Flags:
+  --help, -h      Show help
+  --version, -v   Show version
+
+Environment:
+  WEBFROST_DIR    Archive directory (default: current working directory)
+
+Examples:
+  webfrost init
+  webfrost add https://example.com
+  webfrost search "web archiving"
+  webfrost schedule add https://example.com --cron "0 * * * *"
+`);
+}
+
+function printScheduleHelp(): void {
+  console.log(`Usage: webfrost schedule <subcommand> [options]
+
+Subcommands:
+  add <url> --cron <expr>               Schedule a URL for periodic archiving
+  add --rss <feed-url> --cron <expr>    Schedule an RSS feed for periodic archiving
+  list                                  List all schedules
+  remove <id>                           Remove a schedule by ID
+  worker                                Start the schedule polling worker (polls every 30s)
+`);
+}
+
+function printTagHelp(): void {
+  console.log(`Usage: webfrost tag <subcommand> [options]
+
+Subcommands:
+  add <snapshot-id> <name>         Tag a snapshot
+  list [<snapshot-id>]             List all tags, or tags on a specific snapshot
+  create <name> [--color <hex>]    Create a new tag
+  remove <tag-id>                  Delete a tag and remove it from all snapshots
+`);
+}
+
+function printAdminHelp(): void {
+  console.log(`Usage: webfrost admin <subcommand> [options]
+
+Subcommands:
+  create --username <name> --password <pass>    Create an admin user
+  key create --name <label> [--expires <date>]  Create an API key
+  key list                                      List all active API keys
+  key revoke <id>                               Revoke an API key
+`);
+}
+
+// Handle top-level flags before dispatching
+if (command === "--help" || command === "-h" || command === undefined) {
+  printHelp();
+  process.exit(0);
+}
+
+if (command === "--version" || command === "-v") {
+  console.log(`webfrost v${version}`);
+  process.exit(0);
+}
+
 switch (command) {
   case "init": {
     openDb(archiveDir).close();
@@ -78,6 +175,11 @@ switch (command) {
 
   case "schedule": {
     const sub = args[0];
+
+    if (sub === "--help" || sub === "-h") {
+      printScheduleHelp();
+      process.exit(0);
+    }
 
     if (sub === "add") {
       // webfrost schedule add <url> --cron <expr>
@@ -336,6 +438,11 @@ switch (command) {
   case "tag": {
     const sub = args[0];
 
+    if (sub === "--help" || sub === "-h") {
+      printTagHelp();
+      process.exit(0);
+    }
+
     if (sub === "add") {
       // webfrost tag add <snapshot-id> <tag-name>
       const snapshotIdArg = args[1];
@@ -467,6 +574,11 @@ switch (command) {
 
   case "admin": {
     const sub = args[0];
+
+    if (sub === "--help" || sub === "-h") {
+      printAdminHelp();
+      process.exit(0);
+    }
 
     if (sub === "create") {
       // webfrost admin create --username <name> --password <pass>
@@ -639,6 +751,7 @@ switch (command) {
 
   default: {
     console.error(`Unknown command: ${String(command)}`);
+    console.error(`Run "webfrost --help" for usage.`);
     process.exit(1);
   }
 }

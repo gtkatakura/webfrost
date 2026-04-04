@@ -16,13 +16,13 @@ bun install
 
 # Create the data directory and initialize the archive
 mkdir -p ./data
-WEBFROST_DIR=./data bun run packages/cli/src/index.ts init
+WEBFROST_DIR=./data bun run webfrost init
 
 # Archive a URL
-WEBFROST_DIR=./data bun run packages/cli/src/index.ts add https://example.com
+WEBFROST_DIR=./data bun run webfrost add https://example.com
 
 # List snapshots
-WEBFROST_DIR=./data bun run packages/cli/src/index.ts list
+WEBFROST_DIR=./data bun run webfrost list
 ```
 
 Or run the server with UI:
@@ -33,7 +33,7 @@ mkdir -p ./data
 export SESSION_SECRET=$(openssl rand -hex 32)
 WEBFROST_DIR=./data SESSION_SECRET=$SESSION_SECRET bun run packages/server/src/index.ts
 # Create your admin user (first time only)
-WEBFROST_DIR=./data bun run packages/cli/src/index.ts admin create --username admin --password <your-password>
+WEBFROST_DIR=./data bun run webfrost admin create --username admin --password <your-password>
 # Open http://localhost:3000
 ```
 
@@ -373,6 +373,10 @@ curl -X POST http://localhost:3000/api/import \
 ## CLI commands
 
 ```
+webfrost --help, -h                        Show help and list all commands
+webfrost --version, -v                     Show CLI version
+webfrost <command> --help                  Show help for a specific command (e.g. webfrost tag --help)
+
 webfrost init                              Initialize a new archive at WEBFROST_DIR
 webfrost add <url>                         Archive a URL (WARC + Readability + PDF + screenshot + DOM + SingleFile)
 webfrost list                              List all snapshots
@@ -473,6 +477,14 @@ bun run lint         # Biome linting
 bun run format       # Format code
 bun run typecheck    # TypeScript type checking
 bun run bench        # Benchmarks
+```
+
+**Running the CLI during development** (no rebuild needed — Bun runs TypeScript directly):
+
+```bash
+# Use the root package.json shortcut
+WEBFROST_DIR=./data bun run webfrost add https://example.com
+WEBFROST_DIR=./data bun run webfrost --help
 ```
 
 Benchmark results and methodology: [BENCHMARKS.md](BENCHMARKS.md)

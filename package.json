@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "workspaces": ["packages/*"],
   "scripts": {
+    "webfrost": "bun run packages/cli/src/index.ts",
     "build": "bun run --filter '*' build",
     "test": "bun run --filter '*' test",
     "bench": "bun run --filter '*' benchmarks && bun bench/page-load.ts && bun bench/fetch-cache.bench.ts && bun bench/playwright-navigation.bench.ts && bun bench/cli-add.bench.ts",
