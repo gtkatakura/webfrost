@@ -4,6 +4,7 @@ import { rateLimiterPlugin } from "./middleware/rateLimiter";
 import { authPlugin, authRouter } from "./routes/auth";
 import { importRouter } from "./routes/import";
 import { schedulesRouter } from "./routes/schedules";
+import { settingsRouter } from "./routes/settings";
 import { setupRouter } from "./routes/setup";
 import { snapshotsRouter } from "./routes/snapshots";
 import { snapshotTagsRouter, tagsRouter } from "./routes/tags";
@@ -39,7 +40,8 @@ export const app = new Elysia()
       .use(snapshotTagsRouter)
       .use(schedulesRouter)
       .use(tagsRouter)
-      .use(importRouter),
+      .use(importRouter)
+      .use(settingsRouter),
   );
 
 if (import.meta.main) {

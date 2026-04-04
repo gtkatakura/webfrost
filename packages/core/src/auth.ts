@@ -131,6 +131,20 @@ export function listApiKeys(db: Database): ApiKey[] {
     }));
 }
 
+export async function updateAdminPassword(
+  db: Database,
+  username: string,
+  newPassword: string,
+): Promise<void> {
+  const hash = await hashPassword(newPassword);
+  const result = db
+    .query<null, [string, string]>("UPDATE admin_users SET password_hash = ? WHERE username = ?")
+    .run(hash, username);
+  if ((result as unknown as { changes: number }).changes === 0) {
+    throw new Error("User not found");
+  }
+}
+
 export function revokeApiKey(db: Database, id: string): boolean {
   const result = db
     .query<null, [string]>(

@@ -8,6 +8,7 @@ export {
   hasAdminUser,
   listApiKeys,
   revokeApiKey,
+  updateAdminPassword,
   validateAdminCredentials,
   validateApiKey,
   verifySessionToken,

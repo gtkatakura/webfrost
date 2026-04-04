@@ -108,6 +108,13 @@ export interface SetupResult {
   apiKey: string;
 }
 
+/** Response from GET /settings/info */
+export interface ServerInfo {
+  version: string;
+  storagePath: string;
+  snapshotCount: number;
+}
+
 /** Single result from GET /snapshots?q=term */
 export interface SearchResult {
   id: number;

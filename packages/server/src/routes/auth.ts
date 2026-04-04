@@ -2,7 +2,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   createSessionToken,
+  getAdminUsername,
   openDb,
+  updateAdminPassword,
   validateAdminCredentials,
   validateApiKey,
   verifySessionToken,
@@ -155,4 +157,36 @@ export const authRouter = new Elysia({ prefix: "/auth" })
     }
     // API key auth — username not available from key alone
     return { username: null };
-  });
+  })
+  .post(
+    "/change-password",
+    async ({ body, set }) => {
+      const { currentPassword, newPassword } = body;
+
+      if (newPassword.length < 8) {
+        set.status = 400;
+        return { error: "New password must be at least 8 characters" };
+      }
+
+      const db = getDb();
+      try {
+        const username = getAdminUsername(db);
+        if (!username) {
+          set.status = 404;
+          return { error: "No admin user found" };
+        }
+
+        const valid = await validateAdminCredentials(db, username, currentPassword);
+        if (!valid) {
+          set.status = 401;
+          return { error: "Current password is incorrect" };
+        }
+
+        await updateAdminPassword(db, username, newPassword);
+        return { ok: true };
+      } finally {
+        db.close();
+      }
+    },
+    { body: t.Object({ currentPassword: t.String(), newPassword: t.String() }) },
+  );

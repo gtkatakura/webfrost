@@ -8,6 +8,7 @@ export type {
   MeResult,
   Schedule,
   SearchResult,
+  ServerInfo,
   Snapshot,
   SnapshotCreated,
   SnapshotDetail,

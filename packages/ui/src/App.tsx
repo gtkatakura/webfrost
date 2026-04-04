@@ -9,6 +9,7 @@ import { ImportPage } from "./pages/ImportPage";
 import { LoginPage } from "./pages/LoginPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SchedulesPage } from "./pages/SchedulesPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { SetupPage } from "./pages/SetupPage";
 import { SnapshotDetailPage } from "./pages/SnapshotDetailPage";
 import { SnapshotListPage } from "./pages/SnapshotListPage";
@@ -43,7 +44,8 @@ function AppRoutes() {
           <Route path="tags" element={<TagsPage />} />
           <Route path="schedules" element={<SchedulesPage />} />
           <Route path="import" element={<ImportPage />} />
-          <Route path="settings" element={<PlaceholderPage title="Settings" />} />
+          <Route path="settings" element={<SettingsPage />} />
+          <Route path="settings/api-keys" element={<PlaceholderPage title="API Keys" />} />
         </Route>
       ) : (
         <Route path="*" element={<Navigate to="/login" replace />} />

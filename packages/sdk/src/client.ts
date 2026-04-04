@@ -7,6 +7,7 @@ import type {
   MeResult,
   Schedule,
   SearchResult,
+  ServerInfo,
   SetupResult,
   SetupStatusResult,
   Snapshot,
@@ -335,6 +336,26 @@ export class WebFrostClient {
     if (res.status === 404) return false;
     if (!res.ok) throw new WebFrostError(res.status, res.statusText);
     return true;
+  }
+
+  /** Get server info: version, storage path, and total snapshot count. */
+  async getServerInfo(): Promise<ServerInfo> {
+    const res = await this.request(`${this.baseUrl}/settings/info`);
+    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    return res.json() as Promise<ServerInfo>;
+  }
+
+  /** Change the admin account password. Throws WebFrostError on invalid current password. */
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    const res = await this.request(`${this.baseUrl}/auth/change-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
+      throw new WebFrostError(res.status, body.error);
+    }
   }
 
   /**
