@@ -86,7 +86,7 @@ function makeDetail(overrides: Partial<SnapshotDetail> = {}): SnapshotDetail {
   };
 }
 
-function renderApp(client: WebFrostClient, initialPath = "/snapshots") {
+function renderApp(client: WebFrostClient, initialPath = "/") {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <App client={client} />
