@@ -66,14 +66,14 @@ function Skeleton({ className }: { className?: string }) {
 }
 
 function SnapshotStatusBadge({ status }: { status: string }) {
-  if (status === "complete")
+  if (status === "done")
     return (
       <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 shrink-0">
         <CircleCheckBig size={10} />
         done
       </span>
     );
-  if (status === "error")
+  if (status === "failed")
     return (
       <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 shrink-0">
         <CircleX size={10} />

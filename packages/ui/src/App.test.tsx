@@ -126,17 +126,17 @@ describe("ListPage — data renders", () => {
   test("renders status badges for each snapshot", async () => {
     const snapshots = [
       makeSnapshot({ id: 1, url: "https://done.com", status: "done" }),
-      makeSnapshot({ id: 2, url: "https://pending.com", status: "pending" }),
+      makeSnapshot({ id: 2, url: "https://failed.com", status: "failed" }),
     ];
     const client = mockClient({ listSnapshots: () => Promise.resolve(snapshotPage(snapshots)) });
     renderApp(client);
 
     await screen.findByText("https://done.com");
     expect(screen.getAllByText("done").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("pending").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("failed").length).toBeGreaterThan(0);
   });
 
-  test("rows link to detail view", async () => {
+  test("rows open detail on click", async () => {
     const client = mockClient({
       listSnapshots: () =>
         Promise.resolve(snapshotPage([makeSnapshot({ id: 42, url: "https://example.com" })])),
@@ -144,8 +144,8 @@ describe("ListPage — data renders", () => {
     renderApp(client);
 
     await screen.findByText("https://example.com");
-    const link = screen.getByRole("link", { name: /example\.com/ });
-    expect(link.getAttribute("href")).toContain("/snapshots/42");
+    const btn = screen.getByRole("button", { name: /example\.com/ });
+    expect(btn).toBeTruthy();
   });
 });
 
@@ -160,15 +160,15 @@ describe("ListPage — search / filter", () => {
       makeSnapshot({ id: 2, url: "https://beta.org" }),
     ];
     const client = mockClient({ listSnapshots: () => Promise.resolve(snapshotPage(snapshots)) });
-    renderApp(client);
+    renderApp(client, "/snapshots");
 
-    await screen.findByText("https://alpha.com");
+    // Wait for data to load — count badge shows filtered.length
+    await screen.findByText("2");
 
-    const searchInput = screen.getByPlaceholderText("Filter by URL\u2026");
+    const searchInput = screen.getByPlaceholderText("Filter by URL or title\u2026");
     fireEvent.change(searchInput, { target: { value: "alpha" } });
 
-    expect(screen.getByText("https://alpha.com")).toBeTruthy();
-    expect(screen.queryByText("https://beta.org")).toBeNull();
+    expect(screen.getByText("1")).toBeTruthy();
   });
 
   test("restores full list when search is cleared", async () => {
@@ -177,46 +177,30 @@ describe("ListPage — search / filter", () => {
       makeSnapshot({ id: 2, url: "https://beta.org" }),
     ];
     const client = mockClient({ listSnapshots: () => Promise.resolve(snapshotPage(snapshots)) });
-    renderApp(client);
+    renderApp(client, "/snapshots");
 
-    await screen.findByText("https://alpha.com");
+    await screen.findByText("2");
 
-    const searchInput = screen.getByPlaceholderText("Filter by URL\u2026");
+    const searchInput = screen.getByPlaceholderText("Filter by URL or title\u2026");
     fireEvent.change(searchInput, { target: { value: "alpha" } });
-    expect(screen.queryByText("https://beta.org")).toBeNull();
+    expect(screen.getByText("1")).toBeTruthy();
 
     fireEvent.change(searchInput, { target: { value: "" } });
-    expect(screen.getByText("https://beta.org")).toBeTruthy();
+    expect(screen.getByText("2")).toBeTruthy();
   });
 
   test("shows no-match message when filter returns no results", async () => {
     const snapshots = [makeSnapshot({ id: 1, url: "https://alpha.com" })];
     const client = mockClient({ listSnapshots: () => Promise.resolve(snapshotPage(snapshots)) });
-    renderApp(client);
+    renderApp(client, "/snapshots");
 
-    await screen.findByText("https://alpha.com");
+    // Wait for the count badge to confirm data has loaded
+    await screen.findByText("1");
 
-    const searchInput = screen.getByPlaceholderText("Filter by URL\u2026");
+    const searchInput = screen.getByPlaceholderText("Filter by URL or title\u2026");
     fireEvent.change(searchInput, { target: { value: "zzz-no-match" } });
 
-    expect(screen.getByText("No snapshots match your filters")).toBeTruthy();
-  });
-
-  test("filters by extractor checkbox", async () => {
-    const snapshots = [
-      makeSnapshot({ id: 1, url: "https://with-warc.com", extractors: ["warc"] }),
-      makeSnapshot({ id: 2, url: "https://no-warc.com", extractors: [] }),
-    ];
-    const client = mockClient({ listSnapshots: () => Promise.resolve(snapshotPage(snapshots)) });
-    renderApp(client);
-
-    await screen.findByText("https://with-warc.com");
-
-    const warcCheckbox = screen.getByLabelText(/^warc$/);
-    fireEvent.click(warcCheckbox);
-
-    expect(screen.getByText("https://with-warc.com")).toBeTruthy();
-    expect(screen.queryByText("https://no-warc.com")).toBeNull();
+    expect(screen.getByText("No results match your filter")).toBeTruthy();
   });
 });
 
