@@ -11,16 +11,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci:
-    name: CI
+  install:
+    name: Install
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
@@ -35,14 +32,118 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Save node_modules cache
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: node-modules-${{ github.sha }}
+
+  lint:
+    name: Lint
+    needs: install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Restore node_modules cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: node-modules-${{ github.sha }}
+
+      - name: Install dependencies (cache miss fallback)
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
+
       - name: Lint
         run: bun run lint
+
+  typecheck:
+    name: Typecheck
+    needs: install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Restore node_modules cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: node-modules-${{ github.sha }}
+
+      - name: Install dependencies (cache miss fallback)
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
 
       - name: Typecheck
         run: bun run typecheck
 
+  unit-tests:
+    name: Unit Tests
+    needs: install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Restore node_modules cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: node-modules-${{ github.sha }}
+
+      - name: Install dependencies (cache miss fallback)
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
+
       - name: Test
         run: bun run test
+
+  e2e:
+    name: E2E Tests
+    needs: install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Restore node_modules cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: node-modules-${{ github.sha }}
+
+      - name: Install dependencies (cache miss fallback)
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
 
       - name: Cache Playwright browsers
         id: playwright-cache
@@ -55,18 +156,50 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: bunx playwright install --with-deps chromium
 
-      - name: Bench (subset on PR)
-        if: github.event_name == 'pull_request'
-        run: bun run bench
-        timeout-minutes: 5
-        continue-on-error: true
+      - name: Run E2E tests
+        run: bunx playwright test
+        working-directory: packages/ui
+        env:
+          CI: "true"
+          AUTH_DISABLED: "true"
 
-      - name: Bench (full suite on main)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Upload test traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces-${{ github.sha }}
+          path: packages/ui/test-results/
+          retention-days: 7
+
+  bench:
+    name: Benchmarks
+    needs: unit-tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Restore node_modules cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: node-modules-${{ github.sha }}
+
+      - name: Install dependencies (cache miss fallback)
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
+
+      - name: Bench
         run: bun run bench
 
       - name: Upload bench results
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: bench-results-${{ github.sha }}
