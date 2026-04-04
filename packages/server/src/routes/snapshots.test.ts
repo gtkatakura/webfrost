@@ -314,6 +314,175 @@ describe("GET /snapshots/:id/archives/:extractor/download — security", () => {
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("forbidden");
   });
+
+  test("returns 403 when screenshot path escapes snapshots directory", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    const id = createSnapshot(db, "https://example.com");
+    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
+      id,
+      "screenshot",
+      "/etc/passwd",
+    );
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request(`http://localhost/snapshots/${id}/archives/screenshot/download`),
+    );
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("forbidden");
+  });
+
+  test("returns 403 when dom-snapshot path escapes snapshots directory", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    const id = createSnapshot(db, "https://example.com");
+    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
+      id,
+      "dom-snapshot",
+      "/etc/hosts",
+    );
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request(`http://localhost/snapshots/${id}/archives/dom-snapshot/download`),
+    );
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("forbidden");
+  });
+
+  test("returns 403 when singlefile path escapes snapshots directory", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    const id = createSnapshot(db, "https://example.com");
+    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
+      id,
+      "singlefile",
+      "/etc/hostname",
+    );
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request(`http://localhost/snapshots/${id}/archives/singlefile/download`),
+    );
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("forbidden");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /snapshots/:id/archives/:extractor/download — file-based extractors
+// ---------------------------------------------------------------------------
+
+describe("GET /snapshots/:id/archives/:extractor/download — file extractors", () => {
+  test("returns screenshot PNG binary with correct headers", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const db = openDb(testDir);
+    const id = createSnapshot(db, "https://example.com/screenshot");
+    const snapshotsDir = join(testDir, "snapshots");
+    mkdirSync(snapshotsDir, { recursive: true });
+    const filePath = join(snapshotsDir, `${id}-screenshot.png`);
+    const pngBytes = new Uint8Array([137, 80, 78, 71]); // PNG magic bytes
+    writeFileSync(filePath, pngBytes);
+    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
+      id,
+      "screenshot",
+      filePath,
+    );
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request(`http://localhost/snapshots/${id}/archives/screenshot/download`),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("image/png");
+    expect(res.headers.get("content-disposition")).toContain("screenshot.png");
+  });
+
+  test("returns dom-snapshot HTML with correct headers", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const db = openDb(testDir);
+    const id = createSnapshot(db, "https://example.com/dom");
+    const snapshotsDir = join(testDir, "snapshots");
+    mkdirSync(snapshotsDir, { recursive: true });
+    const filePath = join(snapshotsDir, `${id}-dom.html`);
+    writeFileSync(filePath, "<html><body>hello</body></html>");
+    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
+      id,
+      "dom-snapshot",
+      filePath,
+    );
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request(`http://localhost/snapshots/${id}/archives/dom-snapshot/download`),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    expect(res.headers.get("content-disposition")).toContain("dom.html");
+  });
+
+  test("returns singlefile HTML with correct headers", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const db = openDb(testDir);
+    const id = createSnapshot(db, "https://example.com/single");
+    const snapshotsDir = join(testDir, "snapshots");
+    mkdirSync(snapshotsDir, { recursive: true });
+    const filePath = join(snapshotsDir, `${id}-singlefile.html`);
+    writeFileSync(filePath, "<!DOCTYPE html><html></html>");
+    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
+      id,
+      "singlefile",
+      filePath,
+    );
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request(`http://localhost/snapshots/${id}/archives/singlefile/download`),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    expect(res.headers.get("content-disposition")).toContain("singlefile.html");
+  });
+
+  test("returns 404 when screenshot file does not exist on disk", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const { mkdirSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const db = openDb(testDir);
+    const id = createSnapshot(db, "https://example.com/missing");
+    const snapshotsDir = join(testDir, "snapshots");
+    mkdirSync(snapshotsDir, { recursive: true });
+    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
+      id,
+      "screenshot",
+      join(snapshotsDir, "nonexistent.png"),
+    );
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request(`http://localhost/snapshots/${id}/archives/screenshot/download`),
+    );
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("file not found");
+  });
 });
 
 // ---------------------------------------------------------------------------

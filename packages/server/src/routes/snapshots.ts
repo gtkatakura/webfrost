@@ -244,10 +244,18 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
         });
       }
 
-      // WARC and PDF store a filesystem path — sandbox to the snapshots directory
-      const snapshotsDir = resolve(getWebfrostDir(), "snapshots");
+      // These extractors store a filesystem path — sandbox to the snapshots directory
+      const FILE_EXTRACTORS: Record<string, { contentType: string; filename: string }> = {
+        warc: { contentType: "application/warc", filename: "archive.warc" },
+        pdf: { contentType: "application/pdf", filename: "page.pdf" },
+        screenshot: { contentType: "image/png", filename: "screenshot.png" },
+        "dom-snapshot": { contentType: "text/html", filename: "dom.html" },
+        singlefile: { contentType: "text/html", filename: "singlefile.html" },
+      };
 
-      if (extractor === "warc") {
+      const fileExtractor = FILE_EXTRACTORS[extractor];
+      if (fileExtractor) {
+        const snapshotsDir = resolve(getWebfrostDir(), "snapshots");
         if (!resolve(content).startsWith(`${snapshotsDir}/`)) {
           return new Response(JSON.stringify({ error: "forbidden" }), {
             status: 403,
@@ -263,30 +271,8 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
         }
         return new Response(await file.bytes(), {
           headers: {
-            "Content-Type": "application/warc",
-            "Content-Disposition": 'attachment; filename="archive.warc"',
-          },
-        });
-      }
-
-      if (extractor === "pdf") {
-        if (!resolve(content).startsWith(`${snapshotsDir}/`)) {
-          return new Response(JSON.stringify({ error: "forbidden" }), {
-            status: 403,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-        const file = Bun.file(content);
-        if (!(await file.exists())) {
-          return new Response(JSON.stringify({ error: "file not found" }), {
-            status: 404,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-        return new Response(await file.bytes(), {
-          headers: {
-            "Content-Type": "application/pdf",
-            "Content-Disposition": 'attachment; filename="page.pdf"',
+            "Content-Type": fileExtractor.contentType,
+            "Content-Disposition": `attachment; filename="${fileExtractor.filename}"`,
           },
         });
       }
