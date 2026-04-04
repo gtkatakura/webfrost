@@ -19,6 +19,8 @@ export { FetchCache } from "./fetch-cache";
 export type { CachedResponse } from "./fetch-cache";
 export { detectFormat, parseUrls } from "./import";
 export type { ImportFormat } from "./import";
+export { listImports, recordImport } from "./import-history";
+export type { ImportRecord } from "./import-history";
 export { fetchRssFeedUrls, isUrlArchived } from "./rss";
 export { safeFetch } from "./ssrf-guard";
 export {

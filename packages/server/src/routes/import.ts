@@ -6,8 +6,10 @@ import {
   detectFormat,
   fetchRssFeedUrls,
   isUrlArchived,
+  listImports,
   openDb,
   parseUrls,
+  recordImport,
   runPipeline,
   safeFetch,
 } from "@webfrost/core";
@@ -104,6 +106,18 @@ export const importRouter = new Elysia({ prefix: "/import" })
         }
         if (urls.length > 0 || formatHint === "rss") {
           const { queued, skipped } = queueUrls(urls, true, webfrostDir);
+          const db = getDb();
+          try {
+            recordImport(db, {
+              id: crypto.randomUUID(),
+              source_url: sourceUrl ?? null,
+              format: "rss",
+              queued,
+              skipped,
+            });
+          } finally {
+            db.close();
+          }
           set.status = 202;
           return { queued, skipped, total: urls.length, format: "rss" };
         }
@@ -139,6 +153,19 @@ export const importRouter = new Elysia({ prefix: "/import" })
       const urls = parseUrls(rawContent, format);
       const { queued, skipped } = queueUrls(urls, format === "rss", webfrostDir);
 
+      const db = getDb();
+      try {
+        recordImport(db, {
+          id: crypto.randomUUID(),
+          source_url: sourceUrl ?? null,
+          format,
+          queued,
+          skipped,
+        });
+      } finally {
+        db.close();
+      }
+
       set.status = 202;
       return { queued, skipped, total: urls.length, format };
     },
@@ -150,3 +177,19 @@ export const importRouter = new Elysia({ prefix: "/import" })
       }),
     },
   );
+
+export const importsRouter = new Elysia({ prefix: "/imports" }).get("/", () => {
+  const db = getDb();
+  try {
+    return listImports(db).map((r) => ({
+      id: r.id,
+      sourceUrl: r.source_url,
+      format: r.format,
+      queued: r.queued,
+      skipped: r.skipped,
+      createdAt: r.created_at,
+    }));
+  } finally {
+    db.close();
+  }
+});

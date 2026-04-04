@@ -4,7 +4,7 @@ import { Elysia } from "elysia";
 import { logger } from "./logger";
 import { rateLimiterPlugin } from "./middleware/rateLimiter";
 import { authPlugin, authRouter } from "./routes/auth";
-import { importRouter } from "./routes/import";
+import { importRouter, importsRouter } from "./routes/import";
 import { schedulesRouter } from "./routes/schedules";
 import { settingsRouter } from "./routes/settings";
 import { setupRouter } from "./routes/setup";
@@ -111,6 +111,7 @@ export const app = new Elysia()
       .use(schedulesRouter)
       .use(tagsRouter)
       .use(importRouter)
+      .use(importsRouter)
       .use(settingsRouter)
       .use(statsRouter),
   )

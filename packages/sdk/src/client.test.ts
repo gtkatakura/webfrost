@@ -73,6 +73,9 @@ describe("WebFrostClient.listSnapshots", () => {
         createdAt: "2024-01-01T00:00:00.000Z",
         extractors: ["warc"],
         tags: [],
+        title: null,
+        excerpt: null,
+        screenshotUrl: null,
       },
       {
         id: 2,
@@ -81,6 +84,9 @@ describe("WebFrostClient.listSnapshots", () => {
         createdAt: "2024-01-02T00:00:00.000Z",
         extractors: [],
         tags: [],
+        title: null,
+        excerpt: null,
+        screenshotUrl: null,
       },
     ];
     fetchSpy.mockResolvedValueOnce(jsonResponse({ items: rawItems, total: 2, page: 1, limit: 20 }));
@@ -139,6 +145,9 @@ describe("WebFrostClient.getSnapshot", () => {
       archiveResults: [
         { id: 10, extractor: "warc", content: "data", createdAt: "2024-01-01T00:01:00.000Z" },
       ],
+      title: null,
+      excerpt: null,
+      screenshotUrl: null,
     });
     expect((fetchSpy.mock.calls[0] as unknown[])[0]).toBe(`${BASE}/snapshots/1`);
   });

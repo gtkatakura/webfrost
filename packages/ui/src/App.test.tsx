@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type {
+  DashboardStats,
   Snapshot,
   SnapshotCreated,
   SnapshotDetail,
@@ -22,10 +23,20 @@ function snapshotPage(items: Snapshot[]): SnapshotPage {
   return { items, total: items.length, page: 1, limit: 20 };
 }
 
+const defaultStats: DashboardStats = {
+  snapshotCount: 0,
+  storageBytes: 0,
+  storageByExtractor: {},
+  successRate: 100,
+  activeScheduleCount: 0,
+  failedToday: 0,
+};
+
 function mockClient(overrides: {
   listSnapshots?: () => Promise<SnapshotPage>;
   createSnapshot?: (url: string) => Promise<SnapshotCreated>;
   getSnapshot?: (id: number) => Promise<SnapshotDetail | null>;
+  getStats?: () => Promise<DashboardStats>;
 }): WebFrostClient {
   return {
     getSetupStatus: () => Promise.resolve({ needsSetup: false }),
@@ -35,6 +46,7 @@ function mockClient(overrides: {
     listSnapshots: () => Promise.resolve(snapshotPage([])),
     createSnapshot: (url: string) => Promise.resolve({ id: 1, url, status: "pending" }),
     getSnapshot: () => Promise.resolve(null),
+    getStats: () => Promise.resolve(defaultStats),
     listTags: () => Promise.resolve([]),
     listSnapshotTags: () => Promise.resolve([]),
     addTagToSnapshot: () => Promise.resolve(),
@@ -51,6 +63,9 @@ function makeSnapshot(overrides: Partial<Snapshot> = {}): Snapshot {
     createdAt: "2024-01-15T10:00:00.000Z",
     extractors: [],
     tags: [],
+    title: null,
+    excerpt: null,
+    screenshotUrl: null,
     ...overrides,
   };
 }
@@ -64,11 +79,14 @@ function makeDetail(overrides: Partial<SnapshotDetail> = {}): SnapshotDetail {
     extractors: [],
     tags: [],
     archiveResults: [],
+    title: null,
+    excerpt: null,
+    screenshotUrl: null,
     ...overrides,
   };
 }
 
-function renderApp(client: WebFrostClient, initialPath = "/") {
+function renderApp(client: WebFrostClient, initialPath = "/snapshots") {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <App client={client} />

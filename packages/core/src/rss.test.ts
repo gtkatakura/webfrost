@@ -1,46 +1,26 @@
-import Database from "bun:sqlite";
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { openDb } from "./db";
 import { isUrlArchived } from "./rss";
 import { addRssFeedSchedule, addSchedule, listSchedules } from "./schedules";
 
+let testDir: string;
+
+afterEach(() => {
+  if (testDir) {
+    try {
+      rmSync(testDir, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+});
+
 function makeDb() {
-  // In-memory SQLite database for testing
-  const db = new Database(":memory:");
-  db.exec("PRAGMA journal_mode = WAL;");
-  db.exec("PRAGMA foreign_keys = ON;");
-  // Create tables manually by going through openDb's init logic
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS snapshots (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      url TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE TABLE IF NOT EXISTS archive_results (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      snapshot_id INTEGER NOT NULL REFERENCES snapshots(id),
-      extractor TEXT NOT NULL,
-      content TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE TABLE IF NOT EXISTS job_queue (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      snapshot_id INTEGER NOT NULL REFERENCES snapshots(id),
-      status TEXT NOT NULL DEFAULT 'pending',
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE TABLE IF NOT EXISTS schedules (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      url TEXT NOT NULL,
-      cron TEXT NOT NULL,
-      kind TEXT NOT NULL DEFAULT 'url',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      last_run_at TEXT,
-      next_run_at TEXT NOT NULL
-    );
-  `);
-  return db;
+  testDir = mkdtempSync(join(tmpdir(), "rss-test-"));
+  return openDb(testDir);
 }
 
 describe("isUrlArchived", () => {

@@ -47,6 +47,9 @@ interface RawSnapshot {
   createdAt: string;
   extractors: string[];
   tags: RawTag[];
+  title: string | null;
+  excerpt: string | null;
+  screenshotUrl: string | null;
 }
 
 interface RawArchiveResult {
@@ -64,6 +67,9 @@ interface RawSnapshotDetail {
   extractors?: string[];
   tags?: RawTag[];
   archiveResults: RawArchiveResult[];
+  title?: string | null;
+  excerpt?: string | null;
+  screenshotUrl?: string | null;
 }
 
 function toTag(r: RawTag): Tag {
@@ -82,6 +88,9 @@ function toSnapshot(raw: RawSnapshot): Snapshot {
     createdAt: raw.createdAt,
     extractors: raw.extractors ?? [],
     tags: (raw.tags ?? []).map(toTag),
+    title: raw.title ?? null,
+    excerpt: raw.excerpt ?? null,
+    screenshotUrl: raw.screenshotUrl ?? null,
   };
 }
 
@@ -94,6 +103,9 @@ function toSnapshotDetail(raw: RawSnapshotDetail): SnapshotDetail {
     extractors: raw.extractors ?? [],
     tags: (raw.tags ?? []).map(toTag),
     archiveResults: raw.archiveResults.map(toArchiveResult),
+    title: raw.title ?? null,
+    excerpt: raw.excerpt ?? null,
+    screenshotUrl: raw.screenshotUrl ?? null,
   };
 }
 

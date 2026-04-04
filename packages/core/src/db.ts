@@ -66,6 +66,14 @@ export function openDb(dir: string): Database {
       revoked_at TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS imports (
+      id TEXT PRIMARY KEY,
+      source_url TEXT,
+      format TEXT NOT NULL,
+      queued INTEGER NOT NULL DEFAULT 0,
+      skipped INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // Idempotent migration: add 'kind' to schedules (distinguishes url vs rss_feed schedules).
