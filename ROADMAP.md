@@ -28,10 +28,10 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 | WARC 1.1 | ✅ | ✅ | — |
 | Readability (article extract) | ✅ | ✅ | — |
 | PDF snapshot | ✅ | ✅ | — |
-| Screenshot (PNG) | ✅ | ❌ | 🔴 P0 |
-| SingleFile (self-contained HTML) | ✅ | ❌ | 🔴 P0 |
+| Screenshot (PNG) | ✅ | ✅ | — |
+| SingleFile (self-contained HTML) | ✅ | ✅ | — |
+| DOM snapshot | ✅ | ✅ | — |
 | Media extraction (video/audio via yt-dlp) | ✅ | ❌ | 🟠 P1 |
-| DOM snapshot | ✅ | ❌ | 🟡 P2 |
 | Git repo clone | ✅ | ❌ | ⚪ P3 |
 | WACZ (Web Archive Collection Zipped) | ❌ | ❌ | ⚪ P3 |
 
@@ -45,7 +45,7 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 | OPML import | ✅ | ✅ | — |
 | HTTP API | ✅ | ✅ | — |
 | Cron-based scheduling | ✅ | ✅ | — |
-| RSS feed auto-import (subscribe + poll) | ✅ | ❌ | 🟠 P1 |
+| RSS feed auto-import (subscribe + poll) | ✅ | ✅ | — |
 | Browser extension (Chrome/Firefox) | ✅ | ❌ | 🟠 P1 |
 | Browser history import | ✅ | ❌ | 🟡 P2 |
 | Pocket export import | ✅ | ❌ | 🟡 P2 |
@@ -58,11 +58,11 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 | Feature | AB | WF | Priority |
 |---------|----|----|----------|
 | URL/metadata filtering | ✅ | ✅ (client-side) | — |
-| Full-text search (SQLite FTS5) | ✅ | ❌ | 🔴 P0 |
+| Full-text search (SQLite FTS5) | ✅ | ✅ | — |
+| Tag-based filtering | ✅ | ✅ | — |
 | Full-text search (Sonic backend) | ✅ | ❌ | 🟠 P1 |
-| Tag-based filtering | ✅ | ❌ | 🟠 P1 |
 | Date/time range filtering | ✅ | ❌ | 🟡 P2 |
-| Server-side pagination | partial | ❌ | 🟡 P2 |
+| Server-side pagination | partial | ✅ | — |
 
 ### Storage and Data
 
@@ -70,9 +70,9 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 |---------|----|----|----------|
 | SQLite + filesystem | ✅ | ✅ | — |
 | WAL mode for concurrent reads | ✅ | ✅ | — |
+| Snapshot deletion | ❌ | ✅ | — |
 | S3/object storage backend | ✅ | ❌ | 🟠 P1 |
 | Backblaze B2 / Cloudflare R2 | ✅ | ❌ | 🟠 P1 |
-| Snapshot deletion | ❌ | ❌ | 🔴 P0 |
 | Archive export (zip/tar) | partial | ❌ | 🟡 P2 |
 | NFS/SFTP remote filesystem | ✅ | ❌ | ⚪ P3 |
 
@@ -80,9 +80,9 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 
 | Feature | AB | WF | Priority |
 |---------|----|----|----------|
+| Bearer token API authentication | ✅ | ✅ | — |
+| Session/cookie auth | ✅ | ✅ | — |
 | Public read / private write | ✅ | ❌ | 🔴 P0 |
-| Bearer token API authentication | ✅ | ❌ | 🔴 P0 |
-| Session/cookie auth | ✅ | ❌ | 🟠 P1 |
 | Reverse proxy auth integration | ✅ | ✅ (by design) | — |
 | SAML / OAuth / OpenID | ✅ | ❌ | 🟡 P2 |
 | LDAP | ✅ (addon) | ❌ | ⚪ P3 |
@@ -94,11 +94,11 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 |---------|----|----|----------|
 | REST API for snapshots | ✅ | ✅ | — |
 | REST API for schedules | ✅ | ✅ | — |
+| SDK (programmatic use) | partial | ✅ | — |
 | Webhook notifications | ✅ | ❌ | 🟠 P1 |
 | OpenAPI / interactive docs | ✅ | ❌ | 🟠 P1 |
-| SDK (programmatic use) | partial | ✅ (core lib) | — |
 | Rate limiting (per-domain) | ❌ | ❌ | 🔴 P0 |
-| API pagination (server-side) | ✅ | ❌ | 🟡 P2 |
+| API pagination (server-side) | ✅ | ✅ | — |
 
 ### UI and UX
 
@@ -106,7 +106,7 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 |---------|----|----|----------|
 | Web UI (snapshot list + detail) | ✅ | ✅ | — |
 | CLI | ✅ | ✅ | — |
-| Tag management UI | ✅ | ❌ | 🟠 P1 |
+| Tag management UI | ✅ | ✅ | — |
 | Batch operations (delete/retag) | ✅ | ❌ | 🟡 P2 |
 | Desktop app | ✅ | ❌ | ⚪ P3 |
 | Dark mode | partial | ❌ | 🟡 P2 |
@@ -138,11 +138,6 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 
 | Feature | Why it matters | Complexity | AB has it |
 |---------|----------------|------------|-----------|
-| **Screenshot extractor** (PNG) | Visual proof of page state; most-requested archive format | S | ✅ |
-| **SingleFile extractor** | Self-contained offline HTML; works without a server | M | ✅ |
-| **Full-text search (FTS5)** | Snapshots are useless if you cannot find content | M | ✅ |
-| **Snapshot deletion** | Remove content on demand; GDPR/privacy compliance | S | partial |
-| **API bearer token auth** | Secure API access without reverse proxy dependency | S | ✅ |
 | **Public read / private write** | Expose UI safely without leaking write capability | S | ✅ |
 | **Per-domain rate limiting** | Polite crawling; prevents target server bans | S | partial |
 
@@ -151,13 +146,10 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 | Feature | Why it matters | Complexity | AB has it |
 |---------|----------------|------------|-----------|
 | **Media extraction** (yt-dlp) | Video/audio preservation; YouTube links rot | M | ✅ |
-| **RSS feed auto-import** | Subscribe to a feed, archive every new article automatically | M | ✅ |
 | **Browser extension** (Chrome + Firefox) | One-click archiving from browser; major UX unlock | L | ✅ |
-| **Tag system** | Organize and search snapshots by topic | M | ✅ |
 | **S3/object storage backend** | Scale archive beyond local disk; cloud-native deployments | L | ✅ |
 | **Webhook notifications** | Automation pipelines and integrations | S | ✅ |
 | **OpenAPI / Swagger docs** | Developer experience; SDK generation | S | ✅ |
-| **Session auth (web UI login)** | Lock down web UI without a third-party proxy | M | ✅ |
 | **Custom extractor SDK** | Community can add formats without forking | L | partial |
 | **Full-text search (Sonic backend)** | Scale FTS beyond SQLite; recommended for large archives | L | ✅ |
 | **npm/bun package publish** | `bun add @webfrost/core` should work; unlocks SDK adoption | S | N/A |
@@ -166,12 +158,10 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 
 | Feature | Why it matters | Complexity | AB has it |
 |---------|----------------|------------|-----------|
-| **DOM snapshot extractor** | Captures JS-rendered page state | M | ✅ |
 | **Browser history import** | Bulk-archive existing browsing history | S | ✅ |
 | **Pocket export import** | Common migration path from Pocket | S | ✅ |
 | **Pinboard export import** | Migration from Pinboard | S | ✅ |
 | **Date/time range filtering** | Search snapshots within a time window | S | ✅ |
-| **Server-side pagination** | Required for scale; client-side filtering won't hold | S | partial |
 | **Archive export (zip/tar)** | Portable data migration and backup | M | partial |
 | **Extractor timeouts** | Prevent hung Chromium from blocking pipelines | S | ✅ |
 | **Concurrent schedule dedup** | Prevent overlapping runs when interval < execution time | S | ✅ |
