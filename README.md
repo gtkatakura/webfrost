@@ -72,6 +72,8 @@ See [docs/DEPLOY.md](docs/DEPLOY.md) for full deployment instructions, env vars,
 
 The CLI is the fastest way to start archiving locally.
 
+> **Note:** The examples below use `webfrost` directly, which works after global install. During development from the repo, prefix commands with `bun run`: e.g. `WEBFROST_DIR=./data bun run webfrost add https://example.com`.
+
 **1. Initialize the archive:**
 
 ```bash
@@ -259,8 +261,8 @@ const snapshot = await client.createSnapshot("https://example.com");
 **4. List snapshots:**
 
 ```typescript
-const { snapshots, total } = await client.listSnapshots({ page: 1, limit: 20 });
-// [{ id, url, createdAt, archives: [...] }]
+const { items, total } = await client.listSnapshots({ page: 1, limit: 20 });
+// items: [{ id, url, createdAt, extractors: [...], tags: [...] }]
 ```
 
 **5. Search:**
@@ -327,7 +329,7 @@ curl -X POST http://localhost:3000/api/snapshots \
 ```bash
 curl http://localhost:3000/api/snapshots \
   -H "Authorization: Bearer wf_your_api_key_here"
-# { "snapshots": [...], "total": 42 }
+# { "items": [...], "total": 42, "page": 1, "limit": 20 }
 ```
 
 **4. Search:**
