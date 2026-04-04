@@ -250,6 +250,6 @@ test("@phase-c settings: settings page renders with expected sections", async ({
   await page.goto("/#/settings");
 
   await expect(page.getByRole("heading", { name: /settings/i })).toBeVisible();
-  // At minimum the settings page should have an API keys section.
-  await expect(page.getByText(/api key/i)).toBeVisible();
+  // At minimum the settings page should have an API keys section heading.
+  await expect(page.getByRole("heading", { name: /api key/i })).toBeVisible();
 });
