@@ -16,7 +16,17 @@ export default defineConfig({
   webServer: [
     {
       // Start the @webfrost/server API on port 3000 with a throwaway data dir.
-      // AUTH_DISABLED=true skips session-secret requirement in E2E/dev environments.
+      // AUTH_DISABLED=true skips session-secret requirement for Phase A/B tests.
+      //
+      // Phase C auth E2E tests (phase-c.spec.ts) require the server to run with
+      // auth enabled. When those tests are activated (after WEB-104 lands), this
+      // config must be updated to remove AUTH_DISABLED=true and set SESSION_SECRET:
+      //
+      //   command: `WEBFROST_DIR=${e2eDir} SESSION_SECRET=e2e-secret-for-testing-only bun run start`,
+      //
+      // A globalSetup file should also seed the admin user before tests run:
+      //   import { openDb, createAdminUser } from "@webfrost/core";
+      //   await createAdminUser(openDb(e2eDir), "admin", "password123");
       command: `WEBFROST_DIR=${e2eDir} AUTH_DISABLED=true bun run start`,
       cwd: join(__dirname, "../server"),
       port: 3000,

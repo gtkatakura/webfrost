@@ -169,20 +169,24 @@ export function validateApiKey(db: Database, rawKey: string): boolean {
 // Session tokens (signed with SESSION_SECRET via HMAC-SHA256)
 // ---------------------------------------------------------------------------
 
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
 /**
  * Create a signed session token encoding the username.
  * Format: `<base64url-payload>.<hex-signature>`
+ * Tokens expire after 7 days (exp claim).
  */
 export function createSessionToken(secret: string, username: string): string {
-  const payload = Buffer.from(JSON.stringify({ u: username, iat: Date.now() })).toString(
-    "base64url",
-  );
+  const now = Date.now();
+  const payload = Buffer.from(
+    JSON.stringify({ u: username, iat: now, exp: now + SESSION_TTL_MS }),
+  ).toString("base64url");
   const sig = createHmac("sha256", secret).update(payload).digest("hex");
   return `${payload}.${sig}`;
 }
 
 /**
- * Verify a session token. Returns the username if valid, null otherwise.
+ * Verify a session token. Returns the username if valid and not expired, null otherwise.
  */
 export function verifySessionToken(secret: string, token: string): string | null {
   const dot = token.lastIndexOf(".");
@@ -199,8 +203,10 @@ export function verifySessionToken(secret: string, token: string): string | null
     const data = JSON.parse(Buffer.from(payload, "base64url").toString()) as {
       u?: unknown;
       iat?: unknown;
+      exp?: unknown;
     };
     if (typeof data.u !== "string") return null;
+    if (typeof data.exp === "number" && Date.now() > data.exp) return null;
     return data.u;
   } catch {
     return null;

@@ -1,5 +1,6 @@
 import type Database from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { createHmac } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -184,5 +185,40 @@ describe("session tokens", () => {
 
   test("returns null for empty token", () => {
     expect(verifySessionToken(SECRET, "")).toBeNull();
+  });
+
+  test("returns null for expired token", () => {
+    // Manually craft a token with exp in the past
+    const payload = Buffer.from(
+      JSON.stringify({ u: "alice", iat: Date.now() - 10000, exp: Date.now() - 1000 }),
+    ).toString("base64url");
+    const sig = createHmac("sha256", SECRET).update(payload).digest("hex");
+    const token = `${payload}.${sig}`;
+    expect(verifySessionToken(SECRET, token)).toBeNull();
+  });
+
+  test("returns username for token with future exp", () => {
+    // Token with exp 1 hour from now
+    const payload = Buffer.from(
+      JSON.stringify({ u: "alice", iat: Date.now(), exp: Date.now() + 3_600_000 }),
+    ).toString("base64url");
+    const sig = createHmac("sha256", SECRET).update(payload).digest("hex");
+    const token = `${payload}.${sig}`;
+    expect(verifySessionToken(SECRET, token)).toBe("alice");
+  });
+
+  test("createSessionToken produces a token that expires ~7 days from now", () => {
+    const before = Date.now();
+    const token = createSessionToken(SECRET, "bob");
+    const after = Date.now();
+
+    const payload = token.split(".").at(0) ?? "";
+    const data = JSON.parse(Buffer.from(payload, "base64url").toString()) as {
+      exp: number;
+    };
+
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    expect(data.exp).toBeGreaterThanOrEqual(before + sevenDaysMs);
+    expect(data.exp).toBeLessThanOrEqual(after + sevenDaysMs);
   });
 });

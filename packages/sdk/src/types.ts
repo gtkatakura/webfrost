@@ -88,6 +88,16 @@ export interface Schedule {
   nextRunAt: string | null;
 }
 
+/** Response from POST /auth/login */
+export interface LoginResult {
+  ok: boolean;
+}
+
+/** Response from GET /auth/me */
+export interface MeResult {
+  username: string | null;
+}
+
 /** Single result from GET /snapshots?q=term */
 export interface SearchResult {
   id: number;

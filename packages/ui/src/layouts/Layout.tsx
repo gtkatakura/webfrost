@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
+import { toast } from "sonner";
+import { useAuth } from "../context/auth";
 import { useThemeContext } from "../context/theme";
 import { SHORTCUTS, useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 
@@ -73,8 +75,17 @@ function KeyboardShortcutsModal({ onClose }: { onClose: () => void }) {
 export function Layout() {
   const location = useLocation();
   const { theme, toggle } = useThemeContext();
+  const { logout, username } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+  async function handleLogout() {
+    try {
+      await logout();
+    } catch {
+      toast.error("Logout failed. Please try again.");
+    }
+  }
 
   useKeyboardShortcuts({ onToggleHelp: () => setShortcutsOpen((v) => !v) });
 
@@ -117,13 +128,27 @@ export function Layout() {
           {label}
         </Link>
       ))}
-      <button
-        type="button"
-        onClick={() => setShortcutsOpen(true)}
-        className="mt-auto px-2 py-1.5 rounded text-xs text-gray-500 hover:text-gray-300 bg-transparent border-0 cursor-pointer text-left transition-colors"
-      >
-        ? Shortcuts
-      </button>
+      <div className="mt-auto flex flex-col gap-1">
+        {username && (
+          <span className="px-2 py-1 text-xs text-gray-500 truncate" title={username}>
+            {username}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={() => setShortcutsOpen(true)}
+          className="px-2 py-1.5 rounded text-xs text-gray-500 hover:text-gray-300 bg-transparent border-0 cursor-pointer text-left transition-colors"
+        >
+          ? Shortcuts
+        </button>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="px-2 py-1.5 rounded text-xs text-gray-500 hover:text-red-400 bg-transparent border-0 cursor-pointer text-left transition-colors"
+        >
+          Sign out
+        </button>
+      </div>
     </>
   );
 

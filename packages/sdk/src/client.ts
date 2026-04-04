@@ -3,6 +3,8 @@ import type {
   ImportOptions,
   ImportResult,
   ListSnapshotsOptions,
+  LoginResult,
+  MeResult,
   Schedule,
   SearchResult,
   Snapshot,
@@ -102,6 +104,32 @@ export class WebFrostClient {
     const headers = new Headers(init?.headers);
     if (this.apiKey) headers.set("Authorization", `Bearer ${this.apiKey}`);
     return fetch(url, { ...init, headers });
+  }
+
+  /** Log in with username and password. Sets a session cookie on the browser. */
+  async login(username: string, password: string): Promise<LoginResult> {
+    const res = await this.request(`${this.baseUrl}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
+      throw new WebFrostError(res.status, body.error);
+    }
+    return res.json() as Promise<LoginResult>;
+  }
+
+  /** Log out, clearing the session cookie. */
+  async logout(): Promise<void> {
+    await this.request(`${this.baseUrl}/auth/logout`, { method: "POST" });
+  }
+
+  /** Get the currently authenticated user. Returns null username for API-key auth. */
+  async getMe(): Promise<MeResult> {
+    const res = await this.request(`${this.baseUrl}/auth/me`);
+    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    return res.json() as Promise<MeResult>;
   }
 
   /**
