@@ -416,6 +416,7 @@ webfrost admin key revoke <id>                         Revoke an API key
 | `WEBFROST_DIR` | `.` (CLI) / `~/.webfrost` (server) | Directory for the SQLite database and archive files |
 | `SESSION_SECRET` | — | Required for the server. Random string ≥ 32 chars. |
 | `AUTH_DISABLED` | `false` | Set to `true` to skip auth in dev. Never use in production. |
+| `WEBFROST_CONCURRENCY` | `3` | Max number of archive pipelines running in parallel (import, schedule worker, server). |
 
 See [docs/DEPLOY.md](docs/DEPLOY.md) for the full auth setup walkthrough.
 

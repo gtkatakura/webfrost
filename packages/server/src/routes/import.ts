@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
+  createConcurrencyLimiter,
   createSnapshot,
   detectFormat,
   fetchRssFeedUrls,
@@ -15,6 +16,9 @@ import { Elysia, t } from "elysia";
 function getWebfrostDir(): string {
   return process.env.WEBFROST_DIR ?? join(homedir(), ".webfrost");
 }
+
+// Shared limiter for all background pipeline runs — bounded by WEBFROST_CONCURRENCY (default: 3)
+const pipelineLimiter = createConcurrencyLimiter();
 
 function getDb() {
   return openDb(getWebfrostDir());
@@ -39,7 +43,7 @@ function queueUrls(
       }
       try {
         const snapshotId = createSnapshot(db, url);
-        runPipeline(db, snapshotId, url, webfrostDir).catch(() => {});
+        pipelineLimiter.run(() => runPipeline(db, snapshotId, url, webfrostDir)).catch(() => {});
         queued++;
       } catch {
         // skip URLs that fail to enqueue

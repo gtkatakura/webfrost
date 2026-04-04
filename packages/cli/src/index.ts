@@ -7,6 +7,7 @@ import {
   addUrl,
   createAdminUser,
   createApiKey,
+  createConcurrencyLimiter,
   createSnapshot,
   createTag,
   deleteSnapshot,
@@ -277,6 +278,8 @@ switch (command) {
         `Schedule worker started (polling every ${intervalMs / 1000}s). Press Ctrl+C to stop.`,
       );
 
+      const workerLimiter = createConcurrencyLimiter();
+
       async function runDue(): Promise<void> {
         const db = openDb(archiveDir);
         let due: ReturnType<typeof getDueSchedules>;
@@ -293,14 +296,20 @@ switch (command) {
             try {
               const feedUrls = await fetchRssFeedUrls(schedule.url);
               let queued = 0;
+              const rssPromises: Promise<void>[] = [];
               for (const url of feedUrls) {
                 if (isUrlArchived(db2, url)) continue;
                 const snapshotId = createSnapshot(db2, url);
-                runPipeline(db2, snapshotId, url, archiveDir).catch((err: unknown) => {
-                  console.error(`[worker] pipeline error for ${url}:`, err);
-                });
+                rssPromises.push(
+                  workerLimiter
+                    .run(() => runPipeline(db2, snapshotId, url, archiveDir))
+                    .catch((err: unknown) => {
+                      console.error(`[worker] pipeline error for ${url}:`, err);
+                    }),
+                );
                 queued++;
               }
+              await Promise.allSettled(rssPromises);
               markScheduleRun(db2, schedule.id, schedule.cron);
               console.log(
                 `[worker] RSS feed schedule ${schedule.id} done (${feedUrls.length} items, ${queued} new)`,
@@ -402,9 +411,13 @@ switch (command) {
     let skipped = 0;
     let failed = 0;
 
-    console.log(`Detected format: ${format}. Found ${total} URL(s).`);
+    const limiter = createConcurrencyLimiter();
+    console.log(
+      `Detected format: ${format}. Found ${total} URL(s). Concurrency: ${limiter.limit}.`,
+    );
 
     const db = openDb(archiveDir);
+    const pipelines: Promise<void>[] = [];
     for (const url of urls) {
       if (deduplicate && isUrlArchived(db, url)) {
         skipped++;
@@ -412,25 +425,33 @@ switch (command) {
       }
       try {
         const snapshotId = createSnapshot(db, url);
-        // Fire-and-forget pipeline (don't await to keep progress flowing)
-        runPipeline(db, snapshotId, url, archiveDir).catch((err: unknown) => {
-          console.error(`[import] pipeline error for ${url}:`, err);
-        });
         queued++;
         process.stdout.write(
-          `\rProgress: ${queued + failed + skipped}/${total} (queued: ${queued}, skipped: ${skipped}, failed: ${failed})`,
+          `\rEnqueued: ${queued + failed + skipped}/${total} (queued: ${queued}, skipped: ${skipped}, failed: ${failed})`,
+        );
+        pipelines.push(
+          limiter
+            .run(() => runPipeline(db, snapshotId, url, archiveDir))
+            .catch((err: unknown) => {
+              console.error(`\n[import] pipeline error for ${url}:`, err);
+            }),
         );
       } catch {
         failed++;
         process.stdout.write(
-          `\rProgress: ${queued + failed + skipped}/${total} (queued: ${queued}, skipped: ${skipped}, failed: ${failed})`,
+          `\rEnqueued: ${queued + failed + skipped}/${total} (queued: ${queued}, skipped: ${skipped}, failed: ${failed})`,
         );
       }
+    }
+
+    if (pipelines.length > 0) {
+      process.stdout.write("\nRunning pipelines...\n");
+      await Promise.allSettled(pipelines);
     }
     db.close();
 
     console.log(
-      `\nImport complete: total=${total}, queued=${queued}, skipped=${skipped}, failed=${failed}`,
+      `Import complete: total=${total}, done=${queued}, skipped=${skipped}, failed=${failed}`,
     );
     break;
   }

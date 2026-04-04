@@ -1,4 +1,5 @@
 // @webfrost/core — DB, pipeline, extractors
+export { ConcurrencyLimiter, createConcurrencyLimiter } from "./concurrency";
 export { openDb } from "./db";
 export {
   createAdminUser,

@@ -98,6 +98,7 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 | Webhook notifications | ✅ | ❌ | 🟠 P1 |
 | OpenAPI / interactive docs | ✅ | ❌ | 🟠 P1 |
 | Rate limiting (per-domain) | ❌ | ❌ | 🔴 P0 |
+| Concurrency limit for import/schedule pipelines (`WEBFROST_CONCURRENCY`) | ❌ | ✅ | — |
 | API pagination (server-side) | ✅ | ✅ | — |
 
 ### UI and UX
