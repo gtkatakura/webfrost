@@ -24,6 +24,12 @@ export interface Snapshot {
   extractors: string[];
   /** Tags attached to this snapshot */
   tags: Tag[];
+  /** Page title extracted via readability (null if unavailable) */
+  title: string | null;
+  /** Short excerpt from readability content (null if unavailable) */
+  excerpt: string | null;
+  /** URL to the screenshot archive if available, null otherwise */
+  screenshotUrl: string | null;
 }
 
 /** Archive result extracted by a single extractor */
