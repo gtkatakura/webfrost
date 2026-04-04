@@ -54,3 +54,5 @@ export {
 export type { Tag } from "./tags";
 export { indexSnapshot, rebuildIndex, removeFromIndex, searchSnapshots } from "./search";
 export type { SearchResult } from "./search";
+export { getStats } from "./stats";
+export type { Stats } from "./stats";

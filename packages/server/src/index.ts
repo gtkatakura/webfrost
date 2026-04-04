@@ -9,6 +9,7 @@ import { schedulesRouter } from "./routes/schedules";
 import { settingsRouter } from "./routes/settings";
 import { setupRouter } from "./routes/setup";
 import { snapshotsRouter } from "./routes/snapshots";
+import { statsRouter } from "./routes/stats";
 import { snapshotTagsRouter, tagsRouter } from "./routes/tags";
 
 const PORT = Number(process.env.PORT ?? "3000");
@@ -110,7 +111,8 @@ export const app = new Elysia()
       .use(schedulesRouter)
       .use(tagsRouter)
       .use(importRouter)
-      .use(settingsRouter),
+      .use(settingsRouter)
+      .use(statsRouter),
   )
   .get("/*", async ({ set, request }) => {
     const url = new URL(request.url);
