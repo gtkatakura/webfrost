@@ -130,7 +130,7 @@ export async function runPipeline(
       page ? screenshotExtractor(db, snapshotId, snapshotDir, page) : Promise.resolve(),
       page ? domSnapshotExtractor(db, snapshotId, snapshotDir, page) : Promise.resolve(),
       page ? singleFileExtractor(db, snapshotId, snapshotDir, page) : Promise.resolve(),
-      mediaExtractor(db, snapshotId, snapshotDir, url),
+      mediaExtractor(db, snapshotId, snapshotDir, url, { ...(logger ? { logger } : {}) }),
     ]);
     results.forEach((result, i) => {
       const name = extractorNames[i] ?? `extractor-${i}`;

@@ -1,6 +1,7 @@
 import type Database from "bun:sqlite";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import type { Logger } from "../pipeline";
 
 type SpawnResult = { exitCode: number | null; stdout: string; stderr: string };
 
@@ -34,10 +35,11 @@ export async function mediaExtractor(
   snapshotId: number,
   snapshotDir: string,
   url: string,
-  options?: { maxFileSize?: string; _spawner?: YtDlpSpawner },
+  options?: { maxFileSize?: string; _spawner?: YtDlpSpawner; logger?: Logger },
 ): Promise<void> {
   const maxFileSize = options?.maxFileSize ?? "500m";
   const spawner = options?._spawner ?? defaultSpawner;
+  const logger = options?.logger;
   const mediaDir = join(snapshotDir, "media");
   await mkdir(mediaDir, { recursive: true });
 
@@ -47,7 +49,7 @@ export async function mediaExtractor(
     detectResult = await spawner(["--simulate", "--quiet", url]);
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      console.warn("[media] yt-dlp not found — skipping media extraction");
+      logger?.warn("[media] yt-dlp not found — skipping media extraction");
       return;
     }
     throw err;
@@ -90,7 +92,7 @@ export async function mediaExtractor(
     ]);
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      console.warn("[media] yt-dlp not found — skipping media download");
+      logger?.warn("[media] yt-dlp not found — skipping media download");
       return;
     }
     throw err;

@@ -97,6 +97,10 @@ export function Pagination({
       >
         <ChevronRight size={16} />
       </button>
+
+      <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
+        {page} / {totalPages}
+      </span>
     </div>
   );
 }
