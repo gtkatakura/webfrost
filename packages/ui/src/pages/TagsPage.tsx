@@ -1,4 +1,5 @@
 import { WebFrostError } from "@webfrost/sdk";
+import { ArrowLeft, Tag } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -50,9 +51,9 @@ export function TagsPage() {
       <button
         type="button"
         onClick={() => navigate(-1)}
-        className="bg-transparent border-0 text-primary cursor-pointer text-sm p-0 mb-6 inline-flex items-center gap-1"
+        className="bg-transparent border-0 text-primary cursor-pointer text-sm p-0 mb-6 inline-flex items-center gap-1.5 hover:opacity-80 transition-opacity"
       >
-        ← Back
+        <ArrowLeft size={14} /> Back
       </button>
 
       <h1 className="text-2xl font-bold mb-6 text-gray-900 dark:text-gray-100">Tags</h1>
@@ -89,12 +90,16 @@ export function TagsPage() {
       {loading ? (
         <p className="text-gray-400 dark:text-gray-500">Loading…</p>
       ) : tags.length === 0 ? (
-        <div className="text-center mt-12">
-          <p className="text-4xl mb-3">🏷️</p>
-          <p className="text-gray-500 dark:text-gray-400 font-medium">No tags yet</p>
-          <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">
-            Create a tag above to organize your snapshots.
-          </p>
+        <div className="text-center mt-16 flex flex-col items-center gap-4">
+          <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+            <Tag size={28} className="text-gray-400 dark:text-gray-500" />
+          </div>
+          <div>
+            <p className="text-gray-700 dark:text-gray-300 font-semibold">No tags yet</p>
+            <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">
+              Create a tag above to organize your snapshots.
+            </p>
+          </div>
         </div>
       ) : (
         <ul className="list-none p-0 flex flex-col gap-2">

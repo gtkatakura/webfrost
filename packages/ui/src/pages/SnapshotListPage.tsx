@@ -1,4 +1,5 @@
 import { WebFrostError } from "@webfrost/sdk";
+import { Camera, SlidersHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -179,25 +180,41 @@ export function SnapshotListPage() {
           ))}
         </ul>
       ) : !ftsQuery.trim() && filtered.length === 0 ? (
-        <div className="text-center mt-12">
+        <div className="text-center mt-16 px-4">
           {snapshots.length === 0 ? (
-            <>
-              <p className="text-4xl mb-3">📸</p>
-              <p className="text-gray-500 dark:text-gray-400 font-medium">No snapshots yet</p>
-              <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">
-                Enter a URL above to archive your first page.
-              </p>
-            </>
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+                <Camera size={28} className="text-gray-400 dark:text-gray-500" />
+              </div>
+              <div>
+                <p className="text-gray-700 dark:text-gray-300 font-semibold text-base">
+                  No snapshots yet
+                </p>
+                <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">
+                  Enter a URL above to archive your first page.
+                </p>
+              </div>
+              <Link
+                to="/import"
+                className="inline-block px-4 py-2 text-sm font-medium rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors no-underline"
+              >
+                Or import from RSS / Bookmarks →
+              </Link>
+            </div>
           ) : (
-            <>
-              <p className="text-4xl mb-3">🔍</p>
-              <p className="text-gray-500 dark:text-gray-400 font-medium">
-                No snapshots match your filters
-              </p>
-              <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">
-                Try adjusting the search or filter criteria.
-              </p>
-            </>
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+                <SlidersHorizontal size={28} className="text-gray-400 dark:text-gray-500" />
+              </div>
+              <div>
+                <p className="text-gray-700 dark:text-gray-300 font-semibold text-base">
+                  No snapshots match your filters
+                </p>
+                <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">
+                  Try adjusting the search or filter criteria.
+                </p>
+              </div>
+            </div>
           )}
         </div>
       ) : !ftsQuery.trim() ? (
@@ -229,6 +246,7 @@ export function SnapshotListPage() {
             totalPages={totalPages}
             onPrev={() => setPage((p) => Math.max(1, p - 1))}
             onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+            onPage={setPage}
           />
         </>
       ) : null}

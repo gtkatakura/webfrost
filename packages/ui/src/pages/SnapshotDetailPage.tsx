@@ -1,5 +1,6 @@
 import { WebFrostError } from "@webfrost/sdk";
 import type { SnapshotDetail } from "@webfrost/sdk";
+import { ArrowLeft, Clock } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -56,9 +57,9 @@ export function SnapshotDetailPage() {
       <button
         type="button"
         onClick={() => navigate(-1)}
-        className="bg-transparent border-0 text-primary cursor-pointer text-sm p-0 mb-6 inline-flex items-center gap-1"
+        className="bg-transparent border-0 text-primary cursor-pointer text-sm p-0 mb-6 inline-flex items-center gap-1.5 hover:opacity-80 transition-opacity"
       >
-        ← Back
+        <ArrowLeft size={14} /> Back
       </button>
 
       {loading && (
@@ -88,7 +89,8 @@ export function SnapshotDetailPage() {
               <StatusBadge status={detail.status} />
             </span>
             <span className="text-gray-500 dark:text-gray-400">Created</span>
-            <span className="text-gray-900 dark:text-gray-100">
+            <span className="text-gray-900 dark:text-gray-100 flex items-center gap-1.5">
+              <Clock size={12} className="text-gray-400" />
               {new Date(detail.createdAt).toLocaleString()}
             </span>
           </div>
@@ -113,8 +115,7 @@ export function SnapshotDetailPage() {
           </h2>
 
           {detail.archiveResults.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-2xl mb-2">⏳</p>
+            <div className="text-center py-10 border border-dashed border-gray-200 dark:border-gray-700 rounded-lg">
               <p className="text-gray-400 dark:text-gray-500 text-sm">
                 No extractor results yet. Check back soon.
               </p>

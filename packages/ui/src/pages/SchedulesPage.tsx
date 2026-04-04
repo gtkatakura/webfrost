@@ -1,5 +1,6 @@
 import { WebFrostError } from "@webfrost/sdk";
 import type { Schedule } from "@webfrost/sdk";
+import { CalendarClock } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useClient } from "../context";
@@ -141,12 +142,16 @@ export function SchedulesPage() {
       {loading ? (
         <p className="text-gray-400 dark:text-gray-500">Loading…</p>
       ) : schedules.length === 0 ? (
-        <div className="text-center mt-12">
-          <p className="text-4xl mb-3">🗓️</p>
-          <p className="text-gray-500 dark:text-gray-400 font-medium">No schedules yet</p>
-          <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">
-            Add a schedule above to automatically archive URLs on a recurring basis.
-          </p>
+        <div className="text-center mt-16 flex flex-col items-center gap-4">
+          <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+            <CalendarClock size={28} className="text-gray-400 dark:text-gray-500" />
+          </div>
+          <div>
+            <p className="text-gray-700 dark:text-gray-300 font-semibold">No schedules yet</p>
+            <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">
+              Add a schedule above to automatically archive URLs on a recurring basis.
+            </p>
+          </div>
         </div>
       ) : (
         <div className="overflow-x-auto">

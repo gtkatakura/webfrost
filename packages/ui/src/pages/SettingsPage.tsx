@@ -1,4 +1,5 @@
 import { type ServerInfo, WebFrostError } from "@webfrost/sdk";
+import { Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -6,19 +7,35 @@ import { useClient } from "../context";
 import { useThemeContext } from "../context/theme";
 
 const inputCls =
-  "py-2 px-3 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 w-full";
+  "py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 w-full focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors";
 
 const labelCls = "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1";
+
+function SettingCard({
+  title,
+  description,
+  children,
+}: { title: string; description?: string; children: React.ReactNode }) {
+  return (
+    <section className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 shadow-sm">
+      <div className="mb-4">
+        <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">{title}</h2>
+        {description && (
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{description}</p>
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}
 
 export function SettingsPage() {
   const client = useClient();
   const { theme, toggle } = useThemeContext();
 
-  // Server info
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
   const [infoLoading, setInfoLoading] = useState(true);
 
-  // Change password form
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -56,142 +73,123 @@ export function SettingsPage() {
 
   return (
     <main className="max-w-[760px] mx-auto py-8 px-4">
-      <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-8">Settings</h1>
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-6">Settings</h1>
 
-      {/* API Keys */}
-      <section className="mb-10">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">API Keys</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
-          Manage API keys for programmatic access to WebFrost.
-        </p>
-        <Link
-          to="/settings/api-keys"
-          className="inline-block px-4 py-2 text-sm font-medium rounded bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors no-underline"
+      <div className="flex flex-col gap-5">
+        <SettingCard
+          title="API Keys"
+          description="Manage API keys for programmatic access to WebFrost."
         >
-          Manage API Keys →
-        </Link>
-      </section>
+          <Link
+            to="/settings/api-keys"
+            className="inline-block px-4 py-2 text-sm font-medium rounded-md bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors no-underline"
+          >
+            Manage API Keys →
+          </Link>
+        </SettingCard>
 
-      <hr className="border-gray-200 dark:border-gray-700 mb-10" />
+        <SettingCard title="Change Password" description="Update your admin account password.">
+          <form onSubmit={handleChangePassword} className="flex flex-col gap-4 max-w-sm">
+            <div>
+              <label htmlFor="current-password" className={labelCls}>
+                Current password
+              </label>
+              <input
+                id="current-password"
+                type="password"
+                required
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label htmlFor="new-password" className={labelCls}>
+                New password
+              </label>
+              <input
+                id="new-password"
+                type="password"
+                required
+                minLength={8}
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label htmlFor="confirm-password" className={labelCls}>
+                Confirm new password
+              </label>
+              <input
+                id="confirm-password"
+                type="password"
+                required
+                minLength={8}
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <button
+                type="submit"
+                disabled={changingPassword}
+                className="px-4 py-2 text-sm font-semibold rounded-md bg-primary text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border-0 cursor-pointer"
+              >
+                {changingPassword ? "Saving…" : "Change password"}
+              </button>
+            </div>
+          </form>
+        </SettingCard>
 
-      {/* Change Password */}
-      <section className="mb-10">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">
-          Change Password
-        </h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-          Update your admin account password.
-        </p>
-        <form onSubmit={handleChangePassword} className="flex flex-col gap-4 max-w-sm">
-          <div>
-            <label htmlFor="current-password" className={labelCls}>
-              Current password
-            </label>
-            <input
-              id="current-password"
-              type="password"
-              required
-              autoComplete="current-password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              className={inputCls}
-            />
-          </div>
-          <div>
-            <label htmlFor="new-password" className={labelCls}>
-              New password
-            </label>
-            <input
-              id="new-password"
-              type="password"
-              required
-              minLength={8}
-              autoComplete="new-password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              className={inputCls}
-            />
-          </div>
-          <div>
-            <label htmlFor="confirm-password" className={labelCls}>
-              Confirm new password
-            </label>
-            <input
-              id="confirm-password"
-              type="password"
-              required
-              minLength={8}
-              autoComplete="new-password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className={inputCls}
-            />
-          </div>
-          <div>
+        <SettingCard title="Appearance" description="Customize the look of WebFrost.">
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-700 dark:text-gray-300">Theme</span>
             <button
-              type="submit"
-              disabled={changingPassword}
-              className="px-4 py-2 text-sm font-medium rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border-0 cursor-pointer"
+              type="button"
+              onClick={toggle}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
             >
-              {changingPassword ? "Saving…" : "Change password"}
+              {theme === "dark" ? (
+                <>
+                  <Sun size={14} /> Switch to light
+                </>
+              ) : (
+                <>
+                  <Moon size={14} /> Switch to dark
+                </>
+              )}
             </button>
           </div>
-        </form>
-      </section>
+        </SettingCard>
 
-      <hr className="border-gray-200 dark:border-gray-700 mb-10" />
-
-      {/* Preferences */}
-      <section className="mb-10">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Preferences</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-          Customize the appearance of WebFrost.
-        </p>
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-gray-700 dark:text-gray-300">Theme</span>
-          <button
-            type="button"
-            onClick={toggle}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
-          >
-            {theme === "dark" ? "☀️ Switch to light" : "🌙 Switch to dark"}
-          </button>
-        </div>
-      </section>
-
-      <hr className="border-gray-200 dark:border-gray-700 mb-10" />
-
-      {/* Server Info */}
-      <section>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Server Info</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-          Information about this WebFrost instance.
-        </p>
-        {infoLoading ? (
-          <div className="text-sm text-gray-400 dark:text-gray-500">Loading…</div>
-        ) : serverInfo ? (
-          <dl className="flex flex-col gap-2">
-            <div className="flex gap-2 text-sm">
-              <dt className="text-gray-500 dark:text-gray-400 w-36 shrink-0">Version</dt>
-              <dd className="text-gray-900 dark:text-gray-100 font-mono">{serverInfo.version}</dd>
+        <SettingCard title="Server Info" description="Information about this WebFrost instance.">
+          {infoLoading ? (
+            <div className="text-sm text-gray-400 dark:text-gray-500">Loading…</div>
+          ) : serverInfo ? (
+            <dl className="flex flex-col gap-3">
+              {[
+                { label: "Version", value: serverInfo.version },
+                { label: "Storage path", value: serverInfo.storagePath },
+                { label: "Snapshots", value: String(serverInfo.snapshotCount) },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex gap-4 text-sm">
+                  <dt className="text-gray-500 dark:text-gray-400 w-32 shrink-0">{label}</dt>
+                  <dd className="text-gray-900 dark:text-gray-100 font-mono break-all">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <div className="text-sm text-gray-400 dark:text-gray-500">
+              Unable to load server info.
             </div>
-            <div className="flex gap-2 text-sm">
-              <dt className="text-gray-500 dark:text-gray-400 w-36 shrink-0">Storage path</dt>
-              <dd className="text-gray-900 dark:text-gray-100 font-mono break-all">
-                {serverInfo.storagePath}
-              </dd>
-            </div>
-            <div className="flex gap-2 text-sm">
-              <dt className="text-gray-500 dark:text-gray-400 w-36 shrink-0">Snapshots</dt>
-              <dd className="text-gray-900 dark:text-gray-100">{serverInfo.snapshotCount}</dd>
-            </div>
-          </dl>
-        ) : (
-          <div className="text-sm text-gray-400 dark:text-gray-500">
-            Unable to load server info.
-          </div>
-        )}
-      </section>
+          )}
+        </SettingCard>
+      </div>
     </main>
   );
 }
