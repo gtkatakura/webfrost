@@ -29,6 +29,8 @@ Or run the server with UI:
 
 ```bash
 mkdir -p ./data
+# Build the UI (required once, or after UI changes)
+bun run build
 # Generate a session secret (required for auth)
 export SESSION_SECRET=$(openssl rand -hex 32)
 WEBFROST_DIR=./data SESSION_SECRET=$SESSION_SECRET bun run packages/server/src/index.ts
@@ -182,10 +184,11 @@ WEBFROST_DIR=./data webfrost admin key revoke <key-id>
 
 The server adds a REST API, authentication, and a full React UI at `http://localhost:3000`.
 
-**1. Start the server:**
+**1. Build the UI and start the server:**
 
 ```bash
 mkdir -p ./data
+bun run build                  # Build UI assets (required once, or after UI changes)
 export SESSION_SECRET=$(openssl rand -hex 32)
 WEBFROST_DIR=./data SESSION_SECRET=$SESSION_SECRET bun run packages/server/src/index.ts
 # Server running at http://localhost:3000

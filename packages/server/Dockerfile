@@ -61,7 +61,7 @@ COPY --from=server-builder /app/packages/core/node_modules ./packages/core/node_
 # Server bundle
 COPY --from=server-builder /app/packages/server/dist ./dist
 
-# UI static assets served from ./public by @elysiajs/static
+# UI static assets served from ./public (fallback path for production)
 COPY --from=ui-builder /app/packages/ui/dist ./public
 
 EXPOSE 3000

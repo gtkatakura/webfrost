@@ -1,4 +1,5 @@
-import { staticPlugin } from "@elysiajs/static";
+import { existsSync } from "node:fs";
+import { extname, resolve } from "node:path";
 import { Elysia } from "elysia";
 import { rateLimiterPlugin } from "./middleware/rateLimiter";
 import { authPlugin, authRouter } from "./routes/auth";
@@ -11,12 +12,67 @@ import { snapshotTagsRouter, tagsRouter } from "./routes/tags";
 
 const PORT = Number(process.env.PORT ?? "3000");
 
+// Resolve UI assets: prefer packages/ui/dist (monorepo dev), fall back to ./public (Docker/production)
+const uiDistPath = resolve(import.meta.dir, "../../ui/dist");
+const fallbackPublicPath = resolve(process.cwd(), "public");
+const staticAssetsPath = existsSync(uiDistPath)
+  ? uiDistPath
+  : existsSync(fallbackPublicPath)
+    ? fallbackPublicPath
+    : null;
+
+if (!staticAssetsPath) {
+  console.warn(
+    "[server] No UI assets found. Run 'bun run build' to build the UI, or 'cd packages/ui && bun run build' for just the UI package.",
+  );
+}
+
+const MIME_TYPES: Record<string, string> = {
+  ".html": "text/html",
+  ".js": "application/javascript",
+  ".css": "text/css",
+  ".json": "application/json",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+};
+
 // Refuse to start if auth is enabled but SESSION_SECRET is not configured
 if (process.env.AUTH_DISABLED !== "true" && !process.env.SESSION_SECRET) {
   console.error(
     "[server] SESSION_SECRET env var is required. Set it to a random string of at least 32 characters, or set AUTH_DISABLED=true for development.",
   );
   process.exit(1);
+}
+
+/** Serve a static file from the UI assets directory. Returns null if not found. */
+async function serveStaticFile(pathname: string): Promise<Response | null> {
+  if (!staticAssetsPath) return null;
+
+  // Map URL path to file path
+  const filePath = resolve(
+    staticAssetsPath,
+    pathname.startsWith("/") ? pathname.slice(1) : pathname,
+  );
+
+  // Sandbox: must be within the assets directory
+  if (!filePath.startsWith(staticAssetsPath)) return null;
+
+  const file = Bun.file(filePath);
+  if (!(await file.exists())) return null;
+
+  const ext = extname(filePath);
+  const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
+  const cacheControl = pathname.startsWith("/assets/")
+    ? "public, max-age=31536000, immutable"
+    : "no-cache";
+
+  return new Response(file, {
+    headers: { "content-type": contentType, "cache-control": cacheControl },
+  });
 }
 
 export const app = new Elysia()
@@ -27,7 +83,6 @@ export const app = new Elysia()
     set.headers["x-frame-options"] = "DENY";
     set.headers["referrer-policy"] = "strict-origin-when-cross-origin";
   })
-  .use(staticPlugin({ assets: "public", prefix: "/" }))
   .get("/health", () => ({ status: "ok" }))
   .group("/api", (app) =>
     app
@@ -42,7 +97,28 @@ export const app = new Elysia()
       .use(tagsRouter)
       .use(importRouter)
       .use(settingsRouter),
-  );
+  )
+  .get("/*", async ({ set, request }) => {
+    const url = new URL(request.url);
+    // Try to serve the exact static file first (e.g. /assets/index-xxx.js)
+    const staticResp = await serveStaticFile(url.pathname);
+    if (staticResp) {
+      set.headers["content-type"] =
+        staticResp.headers.get("content-type") ?? "application/octet-stream";
+      set.headers["cache-control"] = staticResp.headers.get("cache-control") ?? "no-cache";
+      return staticResp;
+    }
+    // SPA fallback: serve index.html for all other routes
+    if (staticAssetsPath) {
+      const indexFile = Bun.file(resolve(staticAssetsPath, "index.html"));
+      if (await indexFile.exists()) {
+        set.headers["content-type"] = "text/html";
+        return indexFile;
+      }
+    }
+    set.status = 404;
+    return "Not Found";
+  });
 
 if (import.meta.main) {
   app.listen(PORT);
