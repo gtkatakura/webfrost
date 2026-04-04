@@ -1,21 +1,35 @@
-import type { ButtonHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, CSSProperties } from "react";
 
-type Variant = "primary" | "secondary" | "danger" | "ghost";
+type Variant = "primary" | "secondary" | "ghost" | "danger";
 type Size = "sm" | "md" | "lg";
 
-const variantCls: Record<Variant, string> = {
-  primary: "bg-primary text-white hover:opacity-90 border-transparent",
-  secondary:
-    "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 border-transparent",
-  danger: "bg-red-600 text-white hover:bg-red-700 border-transparent",
-  ghost:
-    "bg-transparent text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 border-gray-300 dark:border-gray-600",
+const variantStyles: Record<Variant, CSSProperties> = {
+  primary: {
+    background: "var(--accent)",
+    color: "var(--accent-fg)",
+    borderColor: "transparent",
+  },
+  secondary: {
+    background: "var(--bg-overlay)",
+    color: "var(--text-high)",
+    borderColor: "var(--border-default)",
+  },
+  ghost: {
+    background: "transparent",
+    color: "var(--text-mid)",
+    borderColor: "transparent",
+  },
+  danger: {
+    background: "var(--status-danger)",
+    color: "#ffffff",
+    borderColor: "transparent",
+  },
 };
 
 const sizeCls: Record<Size, string> = {
-  sm: "py-1 px-3 text-xs",
-  md: "py-2 px-4 text-sm",
-  lg: "py-2.5 px-6 text-base",
+  sm: "py-1 px-3 text-ui-xs",
+  md: "py-1.5 px-3.5 text-ui-sm",
+  lg: "py-2 px-5 text-ui-base",
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -27,6 +41,7 @@ export function Button({
   variant = "primary",
   size = "md",
   className = "",
+  style,
   disabled,
   children,
   ...props
@@ -35,10 +50,11 @@ export function Button({
     <button
       type="button"
       disabled={disabled}
-      className={`inline-flex items-center gap-1.5 font-semibold rounded border transition-colors cursor-pointer
-        ${variantCls[variant]} ${sizeCls[size]}
+      className={`inline-flex items-center gap-1.5 font-medium rounded border transition-colors cursor-pointer
+        ${sizeCls[size]}
         ${disabled ? "opacity-50 cursor-not-allowed" : ""}
         ${className}`}
+      style={{ ...variantStyles[variant], ...style }}
       {...props}
     >
       {children}
