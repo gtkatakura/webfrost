@@ -1,5 +1,6 @@
 import { staticPlugin } from "@elysiajs/static";
 import { Elysia } from "elysia";
+import { rateLimiterPlugin } from "./middleware/rateLimiter";
 import { authPlugin, authRouter } from "./routes/auth";
 import { importRouter } from "./routes/import";
 import { schedulesRouter } from "./routes/schedules";
@@ -29,6 +30,8 @@ export const app = new Elysia()
   .group("/api", (app) =>
     app
       .use(authPlugin)
+      // 300 req/min per IP for read (GET) endpoints across the entire API
+      .use(rateLimiterPlugin({ limit: 300, windowMs: 60_000, methods: ["GET", "HEAD"] }))
       .use(authRouter)
       .use(snapshotsRouter)
       .use(snapshotTagsRouter)

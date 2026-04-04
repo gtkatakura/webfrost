@@ -10,6 +10,7 @@ import {
   searchSnapshots,
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
+import { rateLimiterPlugin } from "../middleware/rateLimiter";
 
 function getWebfrostDir(): string {
   return process.env.WEBFROST_DIR ?? join(homedir(), ".webfrost");
@@ -30,6 +31,8 @@ function getDb() {
 }
 
 export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
+  // 60 req/min per IP for snapshot creation (write) to prevent pipeline abuse
+  .use(rateLimiterPlugin({ limit: 60, windowMs: 60_000, methods: ["POST"] }))
   .onError(({ code, set }) => {
     if (code === "VALIDATION") {
       set.status = 400;
