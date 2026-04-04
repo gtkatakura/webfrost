@@ -127,6 +127,121 @@ describe("GET /schedules", () => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /schedules/:id
+// ---------------------------------------------------------------------------
+
+describe("GET /schedules/:id", () => {
+  test("returns 404 for non-existent schedule", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+    const app = await getApp();
+    const res = await app.handle(new Request("http://localhost/schedules/9999"));
+    expect(res.status).toBe(404);
+  });
+
+  test("returns schedule with paused, lastStatus, consecutiveFailures fields", async () => {
+    const app = await getApp();
+    const createRes = await app.handle(
+      new Request("http://localhost/schedules", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com", cron: "*/5 * * * *" }),
+      }),
+    );
+    const { id } = (await createRes.json()) as { id: number };
+
+    const res = await app.handle(new Request(`http://localhost/schedules/${id}`));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      id: number;
+      paused: boolean;
+      lastStatus: string | null;
+      consecutiveFailures: number;
+    };
+    expect(body.id).toBe(id);
+    expect(body.paused).toBe(false);
+    expect(body.lastStatus).toBeNull();
+    expect(body.consecutiveFailures).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /schedules/:id
+// ---------------------------------------------------------------------------
+
+describe("PATCH /schedules/:id", () => {
+  test("returns 404 for non-existent schedule", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+    const app = await getApp();
+    const res = await app.handle(
+      new Request("http://localhost/schedules/9999", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ paused: true }),
+      }),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  test("pauses a schedule", async () => {
+    const app = await getApp();
+    const createRes = await app.handle(
+      new Request("http://localhost/schedules", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com", cron: "*/5 * * * *" }),
+      }),
+    );
+    const { id } = (await createRes.json()) as { id: number };
+
+    const patchRes = await app.handle(
+      new Request(`http://localhost/schedules/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ paused: true }),
+      }),
+    );
+    expect(patchRes.status).toBe(200);
+    const body = (await patchRes.json()) as { paused: boolean };
+    expect(body.paused).toBe(true);
+  });
+
+  test("resumes a paused schedule", async () => {
+    const app = await getApp();
+    const createRes = await app.handle(
+      new Request("http://localhost/schedules", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com", cron: "*/5 * * * *" }),
+      }),
+    );
+    const { id } = (await createRes.json()) as { id: number };
+
+    // Pause first
+    await app.handle(
+      new Request(`http://localhost/schedules/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ paused: true }),
+      }),
+    );
+
+    // Resume
+    const resumeRes = await app.handle(
+      new Request(`http://localhost/schedules/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ paused: false }),
+      }),
+    );
+    expect(resumeRes.status).toBe(200);
+    const body = (await resumeRes.json()) as { paused: boolean };
+    expect(body.paused).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // DELETE /schedules/:id
 // ---------------------------------------------------------------------------
 

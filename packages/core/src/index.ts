@@ -34,10 +34,13 @@ export type { SnapshotDetail } from "./snapshot";
 export {
   addRssFeedSchedule,
   addSchedule,
+  getSchedule,
   listSchedules,
   removeSchedule,
   getDueSchedules,
   markScheduleRun,
+  pauseSchedule,
+  updateScheduleStatus,
 } from "./schedules";
 export type { Schedule } from "./schedules";
 export { nextCronDate, parseCron } from "./cron";

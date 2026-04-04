@@ -7,9 +7,12 @@ import { openDb } from "./db";
 import {
   addSchedule,
   getDueSchedules,
+  getSchedule,
   listSchedules,
   markScheduleRun,
+  pauseSchedule,
   removeSchedule,
+  updateScheduleStatus,
 } from "./schedules";
 
 let testDir: string;
@@ -99,6 +102,83 @@ describe("getDueSchedules", () => {
     // next_run_at is set to next minute (future) by addSchedule
     const due = getDueSchedules(db);
     expect(due).toHaveLength(0);
+  });
+
+  test("does not return paused schedules", () => {
+    const id = addSchedule(db, "https://example.com", "* * * * *");
+    db.query(
+      "UPDATE schedules SET next_run_at = '2020-01-01 00:00:00', paused = 1 WHERE id = ?",
+    ).run(id);
+    expect(getDueSchedules(db)).toHaveLength(0);
+  });
+});
+
+describe("pauseSchedule", () => {
+  test("pauses a schedule and removes it from due", () => {
+    const id = addSchedule(db, "https://example.com", "* * * * *");
+    db.query("UPDATE schedules SET next_run_at = '2020-01-01 00:00:00' WHERE id = ?").run(id);
+    expect(pauseSchedule(db, id, true)).toBe(true);
+    expect(getDueSchedules(db)).toHaveLength(0);
+    expect(getSchedule(db, id)?.paused).toBe(1);
+  });
+
+  test("resumes a paused schedule", () => {
+    const id = addSchedule(db, "https://example.com", "* * * * *");
+    db.query(
+      "UPDATE schedules SET next_run_at = '2020-01-01 00:00:00', paused = 1 WHERE id = ?",
+    ).run(id);
+    pauseSchedule(db, id, false);
+    expect(getDueSchedules(db)).toHaveLength(1);
+    expect(getSchedule(db, id)?.paused).toBe(0);
+  });
+
+  test("returns false for non-existent id", () => {
+    expect(pauseSchedule(db, 9999, true)).toBe(false);
+  });
+});
+
+describe("updateScheduleStatus", () => {
+  test("sets last_status to success and resets consecutive_failures", () => {
+    const id = addSchedule(db, "https://example.com", "* * * * *");
+    db.query(
+      "UPDATE schedules SET consecutive_failures = 3, last_status = 'failed' WHERE id = ?",
+    ).run(id);
+    updateScheduleStatus(db, id, "success");
+    const s = getSchedule(db, id);
+    expect(s?.last_status).toBe("success");
+    expect(s?.consecutive_failures).toBe(0);
+  });
+
+  test("sets last_status to failed and increments consecutive_failures", () => {
+    const id = addSchedule(db, "https://example.com", "* * * * *");
+    updateScheduleStatus(db, id, "failed");
+    updateScheduleStatus(db, id, "failed");
+    const s = getSchedule(db, id);
+    expect(s?.last_status).toBe("failed");
+    expect(s?.consecutive_failures).toBe(2);
+  });
+
+  test("success after failures resets counter", () => {
+    const id = addSchedule(db, "https://example.com", "* * * * *");
+    updateScheduleStatus(db, id, "failed");
+    updateScheduleStatus(db, id, "failed");
+    updateScheduleStatus(db, id, "success");
+    const s = getSchedule(db, id);
+    expect(s?.consecutive_failures).toBe(0);
+  });
+});
+
+describe("getSchedule", () => {
+  test("returns null for non-existent id", () => {
+    expect(getSchedule(db, 9999)).toBeNull();
+  });
+
+  test("returns schedule with new fields", () => {
+    const id = addSchedule(db, "https://example.com", "*/5 * * * *");
+    const s = getSchedule(db, id);
+    expect(s?.paused).toBe(0);
+    expect(s?.last_status).toBeNull();
+    expect(s?.consecutive_failures).toBe(0);
   });
 });
 

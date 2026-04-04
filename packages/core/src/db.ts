@@ -75,5 +75,22 @@ export function openDb(dir: string): Database {
     // Column already exists — safe to ignore.
   }
 
+  // Idempotent migration: add pause/resume and status tracking to schedules.
+  try {
+    db.exec("ALTER TABLE schedules ADD COLUMN paused INTEGER NOT NULL DEFAULT 0");
+  } catch {
+    // Column already exists — safe to ignore.
+  }
+  try {
+    db.exec("ALTER TABLE schedules ADD COLUMN last_status TEXT");
+  } catch {
+    // Column already exists — safe to ignore.
+  }
+  try {
+    db.exec("ALTER TABLE schedules ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0");
+  } catch {
+    // Column already exists — safe to ignore.
+  }
+
   return db;
 }

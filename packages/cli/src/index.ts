@@ -31,6 +31,7 @@ import {
   revokeApiKey,
   runPipeline,
   searchSnapshots,
+  updateScheduleStatus,
 } from "@webfrost/core";
 import { createLogger, resolveLogLevel } from "./logger";
 
@@ -343,10 +344,12 @@ switch (command) {
               }
               await Promise.allSettled(rssPromises);
               markScheduleRun(db2, schedule.id, schedule.cron);
+              updateScheduleStatus(db2, schedule.id, "success");
               logger.info(
                 `RSS feed schedule ${schedule.id} done: ${feedUrls.length} items, ${queued} new (${Date.now() - scheduleStart}ms)`,
               );
             } catch (err) {
+              updateScheduleStatus(db2, schedule.id, "failed");
               logger.error(
                 `RSS feed schedule ${schedule.id} failed: ${err instanceof Error ? err.message : String(err)}`,
               );
@@ -359,9 +362,14 @@ switch (command) {
             try {
               const snapshotId = createSnapshot(db2, schedule.url);
               await runPipeline(db2, snapshotId, schedule.url, archiveDir, undefined, logger);
+              const snap = db2
+                .query<{ status: string }, [number]>("SELECT status FROM snapshots WHERE id = ?")
+                .get(snapshotId);
+              const runStatus = snap?.status === "done" ? "success" : "failed";
               markScheduleRun(db2, schedule.id, schedule.cron);
+              updateScheduleStatus(db2, schedule.id, runStatus);
               logger.info(
-                `Schedule ${schedule.id} done: snapshot ${snapshotId} (${Date.now() - scheduleStart}ms)`,
+                `Schedule ${schedule.id} done: snapshot ${snapshotId} status=${snap?.status} (${Date.now() - scheduleStart}ms)`,
               );
             } catch (err) {
               logger.error(
