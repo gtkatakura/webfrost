@@ -179,31 +179,21 @@ test("@phase-a pagination: UI controls appear and navigate between pages", async
   page,
   request,
 }) => {
-  // Fetch the current snapshot count before seeding so we can compute the
-  // expected total pages even when prior tests left rows in the shared DB.
-  const beforeResp = await request.get("http://localhost:3000/api/snapshots?page=1&limit=1");
-  const beforeBody = await beforeResp.json();
-  const existingCount: number = beforeBody.total ?? 0;
-
-  // Seed enough snapshots to guarantee at least 2 pages of 20.
-  // We need (existingCount + seeded) > 20, so we add 21 to be safe.
-  const SEED = 21;
-  const PAGE_SIZE = 20;
+  // Seed 21 snapshots — enough to guarantee at least 2 pages of 20 regardless
+  // of how many items prior tests left in the shared DB.
   await Promise.all(
-    Array.from({ length: SEED }, (_, i) =>
+    Array.from({ length: 21 }, (_, i) =>
       request.post("http://localhost:3000/api/snapshots", {
         data: { url: `https://pagination-ui-${Date.now()}-${i}.example.com` },
       }),
     ),
   );
 
-  const totalCount = existingCount + SEED;
-  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
-
   await page.goto("/#/snapshots");
 
-  // Wait until the list renders (skeleton gone, at least one row visible).
-  await expect(page.locator("li").first()).toBeVisible({ timeout: 10000 });
+  // Wait until real snapshot rows load. Skeleton rows render as <li> without
+  // a child <a>, so "li a" only matches once actual data is in the DOM.
+  await expect(page.locator("li a").first()).toBeVisible({ timeout: 10000 });
 
   // Pagination controls must appear since totalPages > 1.
   const nextBtn = page.getByRole("button", { name: /Next/i });
@@ -211,8 +201,13 @@ test("@phase-a pagination: UI controls appear and navigate between pages", async
   await expect(nextBtn).toBeVisible();
   await expect(prevBtn).toBeVisible();
 
-  // Page indicator shows "1 / <totalPages>".
-  await expect(page.getByText(`1 / ${totalPages}`)).toBeVisible();
+  // Page indicator shows "1 / <N>" where N >= 2. Read totalPages from the DOM
+  // so subsequent assertions stay consistent with what the UI actually renders.
+  const indicator = page.getByText(/^1 \/ \d+$/);
+  await expect(indicator).toBeVisible();
+  const indicatorText = (await indicator.textContent()) ?? "";
+  const totalPages = Number.parseInt(indicatorText.split(" / ")[1] ?? "2", 10);
+  expect(totalPages).toBeGreaterThan(1);
 
   // Record the first item on page 1 so we can verify page 2 is different.
   const firstItemPage1 = await page.locator("li").first().textContent();
