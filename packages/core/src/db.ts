@@ -100,5 +100,17 @@ export function openDb(dir: string): Database {
     // Column already exists — safe to ignore.
   }
 
+  // Idempotent migrations: add per-extractor timing and error tracking to archive_results.
+  try {
+    db.exec("ALTER TABLE archive_results ADD COLUMN duration_ms INTEGER");
+  } catch {
+    // Column already exists — safe to ignore.
+  }
+  try {
+    db.exec("ALTER TABLE archive_results ADD COLUMN error TEXT");
+  } catch {
+    // Column already exists — safe to ignore.
+  }
+
   return db;
 }

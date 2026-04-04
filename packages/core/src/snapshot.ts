@@ -8,6 +8,8 @@ interface ArchiveResult {
   extractor: string;
   content: string | null;
   created_at: string;
+  duration_ms: number | null;
+  error: string | null;
 }
 
 export interface SnapshotDetail {
@@ -29,7 +31,7 @@ export function getSnapshot(db: Database, id: number): SnapshotDetail | null {
 
   const archiveResults = db
     .query<ArchiveResult, [number]>(
-      "SELECT id, extractor, content, created_at FROM archive_results WHERE snapshot_id = ? ORDER BY id",
+      "SELECT id, extractor, content, created_at, duration_ms, error FROM archive_results WHERE snapshot_id = ? ORDER BY id",
     )
     .all(id);
 

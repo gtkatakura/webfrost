@@ -779,4 +779,49 @@ describe("GET /snapshots/:id", () => {
     expect(body.url).toBe("https://example.com/article");
     expect(Array.isArray(body.archiveResults)).toBe(true);
   });
+
+  test("extractorMeta includes timing and status for mixed extractor outcomes", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    const id = createSnapshot(db, "https://example.com/video");
+    // Insert a successful extractor result with timing
+    db.query(
+      "INSERT INTO archive_results (snapshot_id, extractor, content, duration_ms) VALUES (?, ?, ?, ?)",
+    ).run(id, "readability", '{"title":"Test"}', 430);
+    // Insert a failed extractor result
+    db.query(
+      "INSERT INTO archive_results (snapshot_id, extractor, content, duration_ms, error) VALUES (?, ?, ?, ?, ?)",
+    ).run(id, "pdf", null, 200, "timeout");
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(new Request(`http://localhost/snapshots/${id}`));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      extractorMeta: Record<
+        string,
+        { status: string; durationMs: number | null; fileSizeBytes: number | null; error?: string }
+      >;
+      archiveResults: unknown[];
+    };
+
+    // Successful extractor
+    expect(body.extractorMeta.readability).toMatchObject({
+      status: "success",
+      durationMs: 430,
+    });
+    // Failed extractor
+    expect(body.extractorMeta.pdf).toMatchObject({
+      status: "failed",
+      durationMs: 200,
+      fileSizeBytes: null,
+      error: "timeout",
+    });
+    // Failed results are excluded from archiveResults
+    const arExtractors = (body.archiveResults as Array<{ extractor: string }>).map(
+      (ar) => ar.extractor,
+    );
+    expect(arExtractors).toContain("readability");
+    expect(arExtractors).not.toContain("pdf");
+  });
 });

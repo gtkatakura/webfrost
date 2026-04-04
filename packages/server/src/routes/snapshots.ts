@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -15,6 +16,28 @@ import { rateLimiterPlugin } from "../middleware/rateLimiter";
 
 function getWebfrostDir(): string {
   return process.env.WEBFROST_DIR ?? join(homedir(), ".webfrost");
+}
+
+// File-based extractors store a filesystem path in content; derive file size via stat.
+const FILE_BASED_EXTRACTORS = new Set([
+  "warc",
+  "pdf",
+  "screenshot",
+  "dom-snapshot",
+  "singlefile",
+  "media",
+]);
+
+function getFileSizeBytes(content: string | null, extractor: string): number | null {
+  if (!content) return null;
+  if (FILE_BASED_EXTRACTORS.has(extractor)) {
+    try {
+      return statSync(content).size;
+    } catch {
+      return null;
+    }
+  }
+  return Buffer.byteLength(content, "utf8");
 }
 
 const ALLOWED_EXTRACTORS = new Set([
@@ -167,12 +190,45 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
           set.status = 404;
           return { error: "not found" };
         }
+        const extractorMeta: Record<
+          string,
+          {
+            status: string;
+            durationMs: number | null;
+            fileSizeBytes: number | null;
+            error?: string;
+          }
+        > = {};
+        for (const ar of snapshot.archiveResults) {
+          if (ar.error !== null) {
+            extractorMeta[ar.extractor] = {
+              status: "failed",
+              durationMs: ar.duration_ms,
+              fileSizeBytes: null,
+              error: ar.error,
+            };
+          } else {
+            extractorMeta[ar.extractor] = {
+              status: "success",
+              durationMs: ar.duration_ms,
+              fileSizeBytes: getFileSizeBytes(ar.content, ar.extractor),
+            };
+          }
+        }
         return {
           id: snapshot.id,
           url: snapshot.url,
           status: snapshot.status,
           createdAt: snapshot.created_at,
-          archiveResults: snapshot.archiveResults,
+          archiveResults: snapshot.archiveResults
+            .filter((ar) => ar.error === null)
+            .map((ar) => ({
+              id: ar.id,
+              extractor: ar.extractor,
+              content: ar.content,
+              createdAt: ar.created_at,
+            })),
+          extractorMeta,
         };
       } finally {
         db.close();
