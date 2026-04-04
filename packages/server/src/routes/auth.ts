@@ -10,6 +10,7 @@ import {
   verifySessionToken,
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
+import { logger } from "../logger";
 
 function getWebfrostDir(): string {
   return process.env.WEBFROST_DIR ?? join(homedir(), ".webfrost");
@@ -44,7 +45,7 @@ export function authPlugin(app: Elysia) {
   const authDisabled = process.env.AUTH_DISABLED === "true";
 
   if (authDisabled) {
-    console.warn("[auth] AUTH_DISABLED=true — all auth checks bypassed (dev mode only)");
+    logger.warn("AUTH_DISABLED=true — all auth checks bypassed (dev mode only)");
     return app;
   }
 

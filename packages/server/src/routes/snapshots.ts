@@ -10,6 +10,7 @@ import {
   searchSnapshots,
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
+import { logger } from "../logger";
 import { rateLimiterPlugin } from "../middleware/rateLimiter";
 
 function getWebfrostDir(): string {
@@ -70,9 +71,10 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
 
       // Fire and forget with its own DB connection so the request DB can close immediately
       const pipelineDb = getDb();
-      runPipeline(pipelineDb, snapshotId, url, getWebfrostDir())
+      const pipelineLogger = logger.child({ snapshotId });
+      runPipeline(pipelineDb, snapshotId, url, getWebfrostDir(), undefined, pipelineLogger)
         .catch((err: unknown) => {
-          console.error("[pipeline] error for snapshot", snapshotId, err);
+          pipelineLogger.error({ err }, "pipeline error");
         })
         .finally(() => pipelineDb.close());
 

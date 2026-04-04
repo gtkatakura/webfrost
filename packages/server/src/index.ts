@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { extname, resolve } from "node:path";
 import { Elysia } from "elysia";
+import { logger } from "./logger";
 import { rateLimiterPlugin } from "./middleware/rateLimiter";
 import { authPlugin, authRouter } from "./routes/auth";
 import { importRouter } from "./routes/import";
@@ -22,8 +23,8 @@ const staticAssetsPath = existsSync(uiDistPath)
     : null;
 
 if (!staticAssetsPath) {
-  console.warn(
-    "[server] No UI assets found. Run 'bun run build' to build the UI, or 'cd packages/ui && bun run build' for just the UI package.",
+  logger.warn(
+    "No UI assets found. Run 'bun run build' to build the UI, or 'cd packages/ui && bun run build' for just the UI package.",
   );
 }
 
@@ -42,8 +43,8 @@ const MIME_TYPES: Record<string, string> = {
 
 // Refuse to start if auth is enabled but SESSION_SECRET is not configured
 if (process.env.AUTH_DISABLED !== "true" && !process.env.SESSION_SECRET) {
-  console.error(
-    "[server] SESSION_SECRET env var is required. Set it to a random string of at least 32 characters, or set AUTH_DISABLED=true for development.",
+  logger.error(
+    "SESSION_SECRET env var is required. Set it to a random string of at least 32 characters, or set AUTH_DISABLED=true for development.",
   );
   process.exit(1);
 }
@@ -76,6 +77,19 @@ async function serveStaticFile(pathname: string): Promise<Response | null> {
 }
 
 export const app = new Elysia()
+  .onRequest(({ request, store }) => {
+    (store as Record<string, number>).requestStart = Date.now();
+    logger.debug({ method: request.method, path: new URL(request.url).pathname }, "request");
+  })
+  .onAfterHandle(({ request, set, store }) => {
+    const start = (store as Record<string, number | undefined>).requestStart;
+    const duration = start !== undefined ? Date.now() - start : undefined;
+    const status = set.status ?? 200;
+    logger.info(
+      { method: request.method, path: new URL(request.url).pathname, status, duration },
+      "response",
+    );
+  })
   .onAfterHandle(({ set }) => {
     set.headers["content-security-policy"] =
       "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
@@ -122,5 +136,5 @@ export const app = new Elysia()
 
 if (import.meta.main) {
   app.listen(PORT);
-  console.log(`@webfrost/server listening on port ${PORT}`);
+  logger.info({ port: PORT }, "@webfrost/server listening");
 }
