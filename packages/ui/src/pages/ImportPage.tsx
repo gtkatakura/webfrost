@@ -1,41 +1,174 @@
 import { WebFrostError } from "@webfrost/sdk";
-import type { ImportResult } from "@webfrost/sdk";
-import { useRef, useState } from "react";
+import type { ImportRecord, ImportResult } from "@webfrost/sdk";
+import { CheckCircle, Clock, FileText, Globe, History, Link, Upload } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link as RouterLink } from "react-router-dom";
+import { toast } from "sonner";
+import { Button } from "../components";
 import { useClient } from "../context";
 
-type ImportType = "rss" | "opml" | "netscape" | "text";
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-const IMPORT_TYPES: { id: ImportType; label: string }[] = [
-  { id: "rss", label: "RSS Feed URL" },
-  { id: "opml", label: "OPML File" },
-  { id: "netscape", label: "Bookmarks HTML" },
-  { id: "text", label: "Plain Text URLs" },
+type ImportType = "rss" | "opml" | "netscape" | "text";
+type TabId = "import" | "history";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const IMPORT_TYPES: { id: ImportType; label: string; icon: React.ReactNode; hint: string }[] = [
+  {
+    id: "rss",
+    label: "RSS / Atom",
+    icon: <Globe size={14} />,
+    hint: "Paste a feed URL to import all linked articles",
+  },
+  {
+    id: "opml",
+    label: "OPML",
+    icon: <FileText size={14} />,
+    hint: "Import a list of feeds from an OPML file",
+  },
+  {
+    id: "netscape",
+    label: "Bookmarks",
+    icon: <Link size={14} />,
+    hint: "Import from browser bookmarks HTML export",
+  },
+  {
+    id: "text",
+    label: "Plain text",
+    icon: <FileText size={14} />,
+    hint: "One URL per line",
+  },
 ];
 
-const inputCls =
-  "w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500";
-const labelCls = "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1";
+const FORMAT_LABELS: Record<string, string> = {
+  rss: "RSS / Atom",
+  opml: "OPML",
+  netscape: "Bookmarks HTML",
+  text: "Plain text",
+};
 
-export function ImportPage() {
+// ─── Utilities ────────────────────────────────────────────────────────────────
+
+function relativeTime(val: string): string {
+  const diff = Date.now() - new Date(val).getTime();
+  if (diff < 60_000) return "just now";
+  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h ago`;
+  return new Date(val).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// ─── Sub-components ────────────────────────────────────────────────────────────
+
+function ImportSuccessCard({
+  result,
+  onReset,
+}: {
+  result: ImportResult;
+  onReset: () => void;
+}) {
+  return (
+    <div
+      style={{
+        background: "color-mix(in srgb, var(--status-success) 8%, var(--bg-surface))",
+        border: "1px solid color-mix(in srgb, var(--status-success) 30%, transparent)",
+        borderRadius: 10,
+        padding: 20,
+        display: "flex",
+        flexDirection: "column",
+        gap: 16,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <CheckCircle size={18} style={{ color: "var(--status-success)", flexShrink: 0 }} />
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-high)" }}>
+            Import complete
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-mid)", marginTop: 2 }}>
+            Format detected: {FORMAT_LABELS[result.format] ?? result.format}
+          </div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 12,
+        }}
+      >
+        {[
+          { label: "Total found", value: result.total },
+          { label: "Queued", value: result.queued, color: "var(--status-success)" },
+          { label: "Skipped", value: result.skipped, color: "var(--text-mid)" },
+        ].map(({ label, value, color }) => (
+          <div
+            key={label}
+            style={{
+              background: "var(--bg-overlay)",
+              borderRadius: 8,
+              padding: "10px 12px",
+              textAlign: "center",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 22,
+                fontWeight: 700,
+                color: color ?? "var(--text-high)",
+                lineHeight: 1,
+              }}
+            >
+              {value}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-low)", marginTop: 4 }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {result.queued > 0 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12,
+            color: "var(--text-mid)",
+          }}
+        >
+          <Clock size={12} />
+          {result.queued} URL{result.queued !== 1 ? "s" : ""} queued for archiving.{" "}
+          <RouterLink to="/snapshots" style={{ color: "var(--accent)", fontWeight: 500 }}>
+            View snapshots →
+          </RouterLink>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <Button variant="secondary" size="sm" onClick={onReset}>
+          Import more
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ImportForm({ onSuccess }: { onSuccess: (r: ImportResult) => void }) {
   const client = useClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
   const [importType, setImportType] = useState<ImportType>("rss");
   const [rssUrl, setRssUrl] = useState("");
   const [textContent, setTextContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<ImportResult | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
-    setResult(null);
-
     try {
       let res: ImportResult;
-
       if (importType === "rss") {
         res = await client.importUrls({ url: rssUrl.trim(), format: "rss" });
       } else if (importType === "text") {
@@ -44,17 +177,16 @@ export function ImportPage() {
         const file = fileInputRef.current?.files?.[0];
         if (!file) {
           setError("Please select a file.");
+          setSubmitting(false);
           return;
         }
         const content = await file.text();
         res = await client.importUrls({ content, format: importType });
       }
-
-      setResult(res);
-      // Reset form
       setRssUrl("");
       setTextContent("");
       if (fileInputRef.current) fileInputRef.current.value = "";
+      onSuccess(res);
     } catch (err) {
       setError(err instanceof WebFrostError ? err.message : String(err));
     } finally {
@@ -62,112 +194,446 @@ export function ImportPage() {
     }
   }
 
-  return (
-    <main className="max-w-[760px] mx-auto py-8 px-4">
-      <h1 className="text-2xl font-bold mb-6 text-gray-900 dark:text-gray-100">Import URLs</h1>
+  const activeType = IMPORT_TYPES.find((t) => t.id === importType) ?? IMPORT_TYPES[0];
 
-      <div className="flex gap-2 mb-6 flex-wrap">
-        {IMPORT_TYPES.map(({ id, label }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => {
-              setImportType(id);
-              setError(null);
-              setResult(null);
-            }}
-            className={`py-1.5 px-4 rounded border text-sm font-medium cursor-pointer transition-colors ${
-              importType === id
-                ? "bg-primary text-white border-primary"
-                : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-primary"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "8px 12px",
+    border: "1px solid var(--border-default)",
+    borderRadius: 6,
+    fontSize: 13,
+    background: "var(--bg-surface)",
+    color: "var(--text-high)",
+    outline: "none",
+    boxSizing: "border-box",
+  };
+
+  return (
+    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Type picker */}
+      <div>
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: "var(--text-low)",
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+            marginBottom: 8,
+          }}
+        >
+          Format
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {IMPORT_TYPES.map(({ id, label, icon }) => {
+            const active = importType === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  setImportType(id);
+                  setError(null);
+                }}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "6px 12px",
+                  borderRadius: 6,
+                  border: active ? "1px solid var(--accent)" : "1px solid var(--border-default)",
+                  background: active
+                    ? "color-mix(in srgb, var(--accent) 10%, transparent)"
+                    : "var(--bg-surface)",
+                  color: active ? "var(--accent)" : "var(--text-mid)",
+                  fontSize: 12,
+                  fontWeight: active ? 600 : 400,
+                  cursor: "pointer",
+                  transition: "all 120ms",
+                }}
+              >
+                {icon}
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ fontSize: 12, color: "var(--text-low)", marginTop: 6 }}>
+          {activeType.hint}
+        </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        {importType === "rss" && (
-          <div>
-            <label htmlFor="rss-url" className={labelCls}>
-              Feed URL
-            </label>
-            <input
-              id="rss-url"
-              type="url"
-              placeholder="https://example.com/feed.xml"
-              value={rssUrl}
-              onChange={(e) => setRssUrl(e.target.value)}
-              required
-              className={inputCls}
-            />
-          </div>
-        )}
+      {/* Input field */}
+      <div>
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: "var(--text-low)",
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+            marginBottom: 8,
+          }}
+        >
+          {importType === "rss"
+            ? "Feed URL"
+            : importType === "text"
+              ? "URLs"
+              : importType === "opml"
+                ? "OPML File"
+                : "Bookmarks File"}
+        </div>
 
-        {(importType === "opml" || importType === "netscape") && (
-          <div>
-            <label htmlFor="file-upload" className={labelCls}>
-              {importType === "opml" ? "OPML File" : "Bookmarks HTML File"}
-            </label>
-            <input
-              id="file-upload"
-              ref={fileInputRef}
-              type="file"
-              accept={importType === "opml" ? ".opml,.xml" : ".html,.htm"}
-              required
-              className="w-full text-sm text-gray-700 dark:text-gray-300 file:mr-3 file:py-1.5 file:px-4 file:rounded file:border file:border-gray-300 dark:file:border-gray-600 file:text-sm file:bg-white dark:file:bg-gray-800 file:cursor-pointer file:text-gray-700 dark:file:text-gray-300"
-            />
-          </div>
+        {importType === "rss" && (
+          <input
+            type="url"
+            placeholder="https://example.com/feed.xml"
+            value={rssUrl}
+            onChange={(e) => setRssUrl(e.target.value)}
+            required
+            style={inputStyle}
+          />
         )}
 
         {importType === "text" && (
-          <div>
-            <label htmlFor="text-urls" className={labelCls}>
-              URLs (one per line)
-            </label>
-            <textarea
-              id="text-urls"
-              placeholder={"https://example.com\nhttps://another.com"}
-              value={textContent}
-              onChange={(e) => setTextContent(e.target.value)}
-              required
-              rows={8}
-              className={`${inputCls} resize-y font-mono`}
-            />
-          </div>
+          <textarea
+            placeholder={"https://example.com\nhttps://another.com"}
+            value={textContent}
+            onChange={(e) => setTextContent(e.target.value)}
+            required
+            rows={8}
+            style={{
+              ...inputStyle,
+              fontFamily: "ui-monospace, monospace",
+              fontSize: 12,
+              resize: "vertical",
+            }}
+          />
         )}
 
-        {error && (
-          <p className="text-red-700 dark:text-red-400 bg-red-100 dark:bg-red-900/20 py-2.5 px-3.5 rounded text-sm">
-            {error}
-          </p>
+        {(importType === "opml" || importType === "netscape") && (
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={importType === "opml" ? ".opml,.xml" : ".html,.htm"}
+            required
+            style={{
+              ...inputStyle,
+              padding: "6px 8px",
+              cursor: "pointer",
+              color: "var(--text-mid)",
+            }}
+          />
         )}
+      </div>
 
-        {result && (
-          <div className="rounded border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 p-4 text-sm text-green-800 dark:text-green-300">
-            <p className="font-semibold mb-1">Import complete</p>
-            <ul className="list-none p-0 m-0 flex flex-col gap-0.5">
-              <li>Queued: {result.queued}</li>
-              <li>Skipped (already archived): {result.skipped}</li>
-              <li>Total found: {result.total}</li>
-              <li>Format detected: {result.format}</li>
-            </ul>
-          </div>
-        )}
-
-        <div>
-          <button
-            type="submit"
-            disabled={submitting}
-            className={`py-2 px-6 bg-primary text-white border-0 rounded font-semibold text-sm ${
-              submitting ? "cursor-not-allowed opacity-70" : "cursor-pointer"
-            }`}
-          >
-            {submitting ? "Importing…" : "Import"}
-          </button>
+      {error && (
+        <div
+          style={{
+            fontSize: 13,
+            color: "var(--status-danger)",
+            background: "color-mix(in srgb, var(--status-danger) 10%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--status-danger) 25%, transparent)",
+            borderRadius: 6,
+            padding: "8px 12px",
+          }}
+        >
+          {error}
         </div>
-      </form>
+      )}
+
+      <div>
+        <Button variant="primary" size="md" type="submit" disabled={submitting}>
+          <Upload size={14} />
+          {submitting ? "Importing…" : "Import"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+// ─── History tab ──────────────────────────────────────────────────────────────
+
+function HistoryTab() {
+  const client = useClient();
+  const [records, setRecords] = useState<ImportRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await client.listImports();
+      setRecords(data.slice().reverse()); // newest first
+    } catch (e) {
+      toast.error(e instanceof WebFrostError ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [client]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {[1, 2, 3].map((i) => (
+          <div
+            key={i}
+            style={{
+              height: 44,
+              borderRadius: 6,
+              background: "var(--bg-overlay)",
+              opacity: 0.6,
+            }}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (records.length === 0) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 12,
+          padding: "48px 0",
+          color: "var(--text-low)",
+        }}
+      >
+        <div
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: "50%",
+            background: "var(--bg-overlay)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <History size={20} style={{ color: "var(--text-low)" }} />
+        </div>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-mid)" }}>
+            No imports yet
+          </div>
+          <div style={{ fontSize: 13, color: "var(--text-low)", marginTop: 4 }}>
+            Your past imports will appear here.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        background: "var(--bg-surface)",
+        border: "1px solid var(--border-default)",
+        borderRadius: 10,
+        overflow: "hidden",
+      }}
+    >
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr
+            style={{
+              background: "var(--bg-overlay)",
+              borderBottom: "1px solid var(--border-default)",
+            }}
+          >
+            {["When", "Source", "Format", "Queued", "Skipped"].map((h) => (
+              <th
+                key={h}
+                style={{
+                  padding: "8px 12px",
+                  textAlign: "left",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: "var(--text-low)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {records.map((r) => (
+            <tr
+              key={r.id}
+              style={{ borderBottom: "1px solid var(--border-default)" }}
+              className="hover:bg-subtle"
+            >
+              <td
+                style={{
+                  padding: "10px 12px",
+                  fontSize: 12,
+                  color: "var(--text-mid)",
+                  whiteSpace: "nowrap",
+                }}
+                title={new Date(r.createdAt).toLocaleString()}
+              >
+                {relativeTime(r.createdAt)}
+              </td>
+              <td
+                style={{
+                  padding: "10px 12px",
+                  fontSize: 12,
+                  color: "var(--text-high)",
+                  maxWidth: 260,
+                }}
+              >
+                {r.sourceUrl ? (
+                  <a
+                    href={r.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={r.sourceUrl}
+                    style={{
+                      color: "var(--accent)",
+                      textDecoration: "none",
+                      display: "block",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {r.sourceUrl}
+                  </a>
+                ) : (
+                  <span style={{ color: "var(--text-low)", fontStyle: "italic" }}>file upload</span>
+                )}
+              </td>
+              <td style={{ padding: "10px 12px", fontSize: 12, color: "var(--text-mid)" }}>
+                {FORMAT_LABELS[r.format] ?? r.format}
+              </td>
+              <td
+                style={{
+                  padding: "10px 12px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: r.queued > 0 ? "var(--status-success)" : "var(--text-low)",
+                }}
+              >
+                {r.queued}
+              </td>
+              <td
+                style={{
+                  padding: "10px 12px",
+                  fontSize: 12,
+                  color: "var(--text-low)",
+                }}
+              >
+                {r.skipped}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─── Main page ─────────────────────────────────────────────────────────────────
+
+export function ImportPage() {
+  const [activeTab, setActiveTab] = useState<TabId>("import");
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+
+  function handleSuccess(result: ImportResult) {
+    setImportResult(result);
+    // Switch to history tab briefly to show it updated
+  }
+
+  function handleReset() {
+    setImportResult(null);
+  }
+
+  const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
+    { id: "import", label: "Import", icon: <Upload size={13} /> },
+    { id: "history", label: "History", icon: <History size={13} /> },
+  ];
+
+  return (
+    <main style={{ maxWidth: 720, margin: "0 auto", padding: "32px 20px" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+        <Upload size={20} style={{ color: "var(--accent)" }} />
+        <h1
+          style={{
+            margin: 0,
+            fontSize: 20,
+            fontWeight: 600,
+            color: "var(--text-high)",
+            lineHeight: 1.2,
+          }}
+        >
+          Import URLs
+        </h1>
+      </div>
+
+      {/* Tabs */}
+      <div
+        style={{
+          display: "flex",
+          gap: 2,
+          borderBottom: "1px solid var(--border-default)",
+          marginBottom: 24,
+        }}
+      >
+        {tabs.map(({ id, label, icon }) => {
+          const active = activeTab === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => {
+                setActiveTab(id);
+                if (id === "import" && importResult) handleReset();
+              }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "8px 14px",
+                background: "none",
+                border: "none",
+                borderBottom: active ? "2px solid var(--accent)" : "2px solid transparent",
+                color: active ? "var(--accent)" : "var(--text-mid)",
+                fontSize: 13,
+                fontWeight: active ? 600 : 400,
+                cursor: "pointer",
+                marginBottom: -1,
+                transition: "color 120ms",
+              }}
+            >
+              {icon}
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Content */}
+      {activeTab === "import" && (
+        <div>
+          {importResult ? (
+            <ImportSuccessCard result={importResult} onReset={handleReset} />
+          ) : (
+            <ImportForm onSuccess={handleSuccess} />
+          )}
+        </div>
+      )}
+
+      {activeTab === "history" && <HistoryTab />}
     </main>
   );
 }

@@ -5,6 +5,7 @@ export type {
   ArchiveResult,
   DashboardStats,
   ImportOptions,
+  ImportRecord,
   ImportResult,
   ListSnapshotsOptions,
   LoginResult,

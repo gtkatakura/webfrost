@@ -40,9 +40,19 @@ export interface ArchiveResult {
   createdAt: string;
 }
 
+/** Per-extractor timing and file-size metadata from GET /snapshots/:id */
+export interface ExtractorMeta {
+  status: "success" | "failed";
+  durationMs: number | null;
+  fileSizeBytes: number | null;
+  error?: string;
+}
+
 /** Full snapshot detail from GET /snapshots/:id */
 export interface SnapshotDetail extends Snapshot {
   archiveResults: ArchiveResult[];
+  /** Keyed by extractor name; only present for extractors that ran during the last pipeline execution */
+  extractorMeta: Record<string, ExtractorMeta>;
 }
 
 export interface WebFrostClientOptions {
@@ -143,6 +153,16 @@ export interface ApiKey {
 /** Response from POST /settings/keys — includes raw key shown once */
 export interface ApiKeyCreated extends ApiKey {
   rawKey: string;
+}
+
+/** Single record from GET /imports */
+export interface ImportRecord {
+  id: number;
+  sourceUrl: string | null;
+  format: "rss" | "opml" | "netscape" | "text";
+  queued: number;
+  skipped: number;
+  createdAt: string;
 }
 
 /** Single result from GET /snapshots?q=term */

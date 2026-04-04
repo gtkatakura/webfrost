@@ -4,6 +4,7 @@ import type {
   ArchiveResult,
   DashboardStats,
   ImportOptions,
+  ImportRecord,
   ImportResult,
   ListSnapshotsOptions,
   LoginResult,
@@ -434,5 +435,15 @@ export class WebFrostClient {
       throw new WebFrostError(res.status, body.error);
     }
     return res.json() as Promise<ImportResult>;
+  }
+
+  /** List past import records from GET /imports. */
+  async listImports(): Promise<ImportRecord[]> {
+    const res = await this.request(`${this.baseUrl}/imports`);
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
+      throw new WebFrostError(res.status, body.error);
+    }
+    return res.json() as Promise<ImportRecord[]>;
   }
 }
