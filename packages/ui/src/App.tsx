@@ -10,6 +10,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { ImportPage } from "./pages/ImportPage";
 import { LoginPage } from "./pages/LoginPage";
 import { SchedulesPage } from "./pages/SchedulesPage";
+import { SearchPage } from "./pages/SearchPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SetupPage } from "./pages/SetupPage";
 import { SnapshotDetailPage } from "./pages/SnapshotDetailPage";
@@ -43,6 +44,7 @@ function AppRoutes() {
             <Route index element={<DashboardPage />} />
             <Route path="snapshots" element={<SnapshotListPage />} />
             <Route path="snapshots/:id" element={<SnapshotDetailPage />} />
+            <Route path="search" element={<SearchPage />} />
             <Route path="tags" element={<TagsPage />} />
             <Route path="schedules" element={<SchedulesPage />} />
             <Route path="import" element={<ImportPage />} />

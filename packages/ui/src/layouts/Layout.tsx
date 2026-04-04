@@ -8,6 +8,7 @@ import {
   LogOut,
   Menu,
   Moon,
+  Search,
   Settings,
   Sun,
   Tag,
@@ -17,6 +18,7 @@ import {
 import { type ElementType, useEffect, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { toast } from "sonner";
+import { CommandPalette } from "../components/CommandPalette";
 import { useAuth } from "../context/auth";
 import { useThemeContext } from "../context/theme";
 import { SHORTCUTS, useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
@@ -169,6 +171,7 @@ export function Layout() {
   const { logout, username } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_KEY) === "true";
@@ -195,7 +198,10 @@ export function Layout() {
     }
   }
 
-  useKeyboardShortcuts({ onToggleHelp: () => setShortcutsOpen((v) => !v) });
+  useKeyboardShortcuts({
+    onToggleHelp: () => setShortcutsOpen((v) => !v),
+    onOpenSearch: () => setPaletteOpen(true),
+  });
 
   // Close mobile menu on route change
   // biome-ignore lint/correctness/useExhaustiveDependencies: location.pathname triggers the effect
@@ -247,6 +253,49 @@ export function Layout() {
           }}
         >
           {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        </button>
+      </div>
+
+      {/* Search trigger */}
+      <div style={{ padding: "0 8px", marginBottom: 4 }}>
+        <button
+          type="button"
+          onClick={() => setPaletteOpen(true)}
+          title={collapsed ? "Search (⌘K)" : undefined}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: collapsed ? "7px 0" : "7px 10px",
+            justifyContent: collapsed ? "center" : "flex-start",
+            background: "var(--bg-overlay)",
+            border: "1px solid var(--border-default)",
+            borderRadius: 6,
+            cursor: "pointer",
+            color: "var(--text-low)",
+            fontSize: 12,
+          }}
+        >
+          <Search size={13} style={{ flexShrink: 0 }} />
+          {!collapsed && (
+            <>
+              <span style={{ flex: 1, textAlign: "left" }}>Search…</span>
+              <kbd
+                style={{
+                  fontSize: 10,
+                  padding: "1px 4px",
+                  borderRadius: 3,
+                  background: "var(--bg-surface)",
+                  border: "1px solid var(--border-strong)",
+                  fontFamily: "ui-monospace, monospace",
+                  color: "var(--text-low)",
+                }}
+              >
+                ⌘K
+              </kbd>
+            </>
+          )}
         </button>
       </div>
 
@@ -388,6 +437,7 @@ export function Layout() {
 
   return (
     <div className="flex min-h-screen" style={{ background: "var(--bg-app)" }}>
+      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
       {/* ── Mobile header ─────────────────────────────────────── */}
       <header
         className="lg:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4"

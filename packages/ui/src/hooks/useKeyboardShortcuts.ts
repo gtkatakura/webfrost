@@ -3,9 +3,10 @@ import { useNavigate } from "react-router-dom";
 
 interface ShortcutOptions {
   onToggleHelp: () => void;
+  onOpenSearch?: () => void;
 }
 
-export function useKeyboardShortcuts({ onToggleHelp }: ShortcutOptions) {
+export function useKeyboardShortcuts({ onToggleHelp, onOpenSearch }: ShortcutOptions) {
   const navigate = useNavigate();
   const seqRef = useRef("");
   const seqTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -16,6 +17,13 @@ export function useKeyboardShortcuts({ onToggleHelp }: ShortcutOptions) {
       const tag = target.tagName;
       const isEditable =
         tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
+
+      // Cmd+K / Ctrl+K = open search palette
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        onOpenSearch?.();
+        return;
+      }
 
       // "?" = show shortcuts help (only outside inputs)
       if (e.key === "?" && !isEditable && !e.ctrlKey && !e.metaKey) {
@@ -67,12 +75,13 @@ export function useKeyboardShortcuts({ onToggleHelp }: ShortcutOptions) {
       window.removeEventListener("keydown", handleKeyDown);
       if (seqTimerRef.current) clearTimeout(seqTimerRef.current);
     };
-  }, [navigate, onToggleHelp]);
+  }, [navigate, onToggleHelp, onOpenSearch]);
 }
 
 export const SHORTCUTS = [
+  { keys: ["⌘", "K"], description: "Open search palette" },
   { keys: ["?"], description: "Show keyboard shortcuts" },
-  { keys: ["g", "h"], description: "Go to home / snapshots" },
+  { keys: ["g", "h"], description: "Go to home / dashboard" },
   { keys: ["g", "s"], description: "Go to snapshots" },
   { keys: ["g", "t"], description: "Go to tags" },
   { keys: ["g", "i"], description: "Go to import" },

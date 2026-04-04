@@ -261,7 +261,8 @@ export class WebFrostClient {
   async searchSnapshots(query: string): Promise<SearchResult[]> {
     const res = await this.request(`${this.baseUrl}/snapshots?q=${encodeURIComponent(query)}`);
     if (!res.ok) throw new WebFrostError(res.status, res.statusText);
-    return res.json() as Promise<SearchResult[]>;
+    const data = (await res.json()) as { items: SearchResult[] };
+    return data.items;
   }
 
   /** Delete a snapshot by id. Returns true if deleted, false if not found. */
