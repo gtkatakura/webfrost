@@ -66,6 +66,7 @@ See [docs/DEPLOY.md](docs/DEPLOY.md) for full deployment instructions, env vars,
 
 - **[Bun](https://bun.sh) v1.x** — package manager and runtime
 - **Chromium** — required for PDF, screenshot, DOM snapshot, and SingleFile extractors
+- **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** — optional; required for media extraction (video/audio)
 - **SQLite** — bundled with Bun, no installation needed
 
 ---
@@ -346,7 +347,7 @@ curl "http://localhost:3000/api/snapshots?q=climate+change" \
 **5. Download an archive file:**
 
 ```bash
-# Available extractors: warc, pdf, screenshot, readability, dom-snapshot, singlefile, html
+# Available extractors: warc, pdf, screenshot, readability, dom-snapshot, singlefile, html, media, media-metadata
 curl -O -J http://localhost:3000/api/snapshots/1/archives/screenshot/download \
   -H "Authorization: Bearer wf_your_api_key_here"
 ```
@@ -512,11 +513,11 @@ WebFrost is under active development. See [ROADMAP.md](./ROADMAP.md) for the ful
 - RSS feed auto-import (via `import` command and `/api/import`)
 - Tags and snapshot deletion
 - Screenshot (PNG), DOM snapshot, and SingleFile extractors
+- Media extraction via yt-dlp (video/audio archival from YouTube, Vimeo, SoundCloud, etc.)
 - Web UI with tag management, schedules, import, and settings pages
 - First-run setup wizard
 
 **Coming next:**
-- Media extraction via yt-dlp
 - Browser extension (Chrome/Firefox)
 - S3/remote storage backend
 

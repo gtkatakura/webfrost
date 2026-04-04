@@ -24,6 +24,8 @@ const ALLOWED_EXTRACTORS = new Set([
   "screenshot",
   "dom-snapshot",
   "singlefile",
+  "media",
+  "media-metadata",
 ]);
 
 function getDb() {
@@ -251,7 +253,33 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
         screenshot: { contentType: "image/png", filename: "screenshot.png" },
         "dom-snapshot": { contentType: "text/html", filename: "dom.html" },
         singlefile: { contentType: "text/html", filename: "singlefile.html" },
+        "media-metadata": { contentType: "application/json", filename: "media-metadata.json" },
       };
+
+      // Media files can be mp4 or mp3 depending on whether video or audio fallback was used
+      if (extractor === "media") {
+        const snapshotsDir = resolve(getWebfrostDir(), "snapshots");
+        if (!resolve(content).startsWith(`${snapshotsDir}/`)) {
+          return new Response(JSON.stringify({ error: "forbidden" }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        const file = Bun.file(content);
+        if (!(await file.exists())) {
+          return new Response(JSON.stringify({ error: "file not found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        const isAudio = content.endsWith(".mp3");
+        return new Response(file, {
+          headers: {
+            "Content-Type": isAudio ? "audio/mpeg" : "video/mp4",
+            "Content-Disposition": `attachment; filename="${isAudio ? "media.mp3" : "media.mp4"}"`,
+          },
+        });
+      }
 
       const fileExtractor = FILE_EXTRACTORS[extractor];
       if (fileExtractor) {

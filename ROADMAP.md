@@ -31,7 +31,7 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 | Screenshot (PNG) | ✅ | ✅ | — |
 | SingleFile (self-contained HTML) | ✅ | ✅ | — |
 | DOM snapshot | ✅ | ✅ | — |
-| Media extraction (video/audio via yt-dlp) | ✅ | ❌ | 🟠 P1 |
+| Media extraction (video/audio via yt-dlp) | ✅ | ✅ | — |
 | Git repo clone | ✅ | ❌ | ⚪ P3 |
 | WACZ (Web Archive Collection Zipped) | ❌ | ❌ | ⚪ P3 |
 

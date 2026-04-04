@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { domSnapshotExtractor } from "./extractors/dom-snapshot";
 import { htmlExtractor } from "./extractors/html";
+import { mediaExtractor } from "./extractors/media";
 import { pdfExtractor } from "./extractors/pdf";
 import { readabilityExtractor } from "./extractors/readability";
 import { screenshotExtractor } from "./extractors/screenshot";
@@ -115,10 +116,12 @@ export async function runPipeline(
     "screenshot",
     "dom-snapshot",
     "singlefile",
+    "media",
   ] as const;
 
   try {
     // Run all extractors in parallel — partial failure is non-fatal
+    // media extractor runs independently of Playwright (no page needed)
     const results = await Promise.allSettled([
       htmlExtractor(db, snapshotId, html),
       warcExtractor(db, snapshotId, url, headers, status, statusText, html, snapshotDir),
@@ -127,6 +130,7 @@ export async function runPipeline(
       page ? screenshotExtractor(db, snapshotId, snapshotDir, page) : Promise.resolve(),
       page ? domSnapshotExtractor(db, snapshotId, snapshotDir, page) : Promise.resolve(),
       page ? singleFileExtractor(db, snapshotId, snapshotDir, page) : Promise.resolve(),
+      mediaExtractor(db, snapshotId, snapshotDir, url),
     ]);
     results.forEach((result, i) => {
       const name = extractorNames[i] ?? `extractor-${i}`;
