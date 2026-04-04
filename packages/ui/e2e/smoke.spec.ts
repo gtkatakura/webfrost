@@ -30,6 +30,13 @@ test("@smoke: dashboard loads and snapshot appears after POST", async ({ page, r
   // Reload the page so the React app refetches the snapshot list.
   await page.reload();
 
-  // Wait for the snapshot row to appear in the list.
-  await expect(page.getByText("https://example.com")).toBeVisible({ timeout: 10_000 });
+  // Wait for the filter input to confirm the list page has rendered.
+  const filterInput = page.getByPlaceholder("Filter by URL\u2026");
+  await expect(filterInput).toBeVisible({ timeout: 10_000 });
+
+  // Narrow the client-side list to just this URL so pagination doesn't hide it.
+  await filterInput.fill("https://example.com");
+
+  // The snapshot row must be visible.
+  await expect(page.getByText("https://example.com")).toBeVisible({ timeout: 5_000 });
 });

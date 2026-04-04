@@ -36,8 +36,15 @@ async function loginViaUI(
   password = ADMIN_PASSWORD,
 ) {
   await page.goto("/#/login");
-  await page.getByLabel(/username/i).fill(username);
-  await page.getByLabel(/password/i).fill(password);
+
+  // When AUTH_DISABLED is active the app treats the session as authenticated
+  // and redirects away from /login before the form renders — nothing to fill.
+  const usernameInput = page.getByLabel(/username/i);
+  const formVisible = await usernameInput.isVisible({ timeout: 3_000 }).catch(() => false);
+  if (!formVisible) return;
+
+  await usernameInput.fill(username);
+  await page.getByLabel(/password/i, { exact: true }).fill(password);
   await page.getByRole("button", { name: /log in/i }).click();
   await page.waitForURL(/(#\/|#\/snapshots)/);
 }
