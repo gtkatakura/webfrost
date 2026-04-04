@@ -255,7 +255,7 @@ const client = new WebFrostClient({
 
 ```typescript
 const snapshot = await client.createSnapshot("https://example.com");
-// { id: "abc123", url: "https://example.com", status: "queued" }
+// { id: 1, url: "https://example.com", status: "pending" }
 ```
 
 **4. List snapshots:**
@@ -275,7 +275,7 @@ const results = await client.searchSnapshots("climate change policy");
 **6. Delete a snapshot:**
 
 ```typescript
-await client.deleteSnapshot("abc123");
+await client.deleteSnapshot(1);
 ```
 
 **7. Manage tags:**
@@ -285,13 +285,13 @@ await client.deleteSnapshot("abc123");
 const tag = await client.createTag("research", "#4f46e5");
 
 // Add tag to snapshot
-await client.addTagToSnapshot("abc123", tag.id);
+await client.addTagToSnapshot(1, tag.id);
 
 // List tags on a snapshot
-const tags = await client.listSnapshotTags("abc123");
+const tags = await client.listSnapshotTags(1);
 
 // Remove a tag from snapshot
-await client.removeTagFromSnapshot("abc123", tag.id);
+await client.removeTagFromSnapshot(1, tag.id);
 ```
 
 **8. Import URLs programmatically:**
@@ -321,7 +321,7 @@ curl -X POST http://localhost:3000/api/snapshots \
   -H "Authorization: Bearer wf_your_api_key_here" \
   -H "Content-Type: application/json" \
   -d '{"url": "https://example.com"}'
-# HTTP 202 — { "id": "abc123", "url": "https://example.com", "status": "queued" }
+# HTTP 202 — { "id": 1, "url": "https://example.com", "status": "pending" }
 ```
 
 **3. List snapshots:**
@@ -344,7 +344,7 @@ curl "http://localhost:3000/api/snapshots?q=climate+change" \
 
 ```bash
 # Available extractors: warc, pdf, screenshot, readability, dom-snapshot, singlefile, html
-curl -O -J http://localhost:3000/api/snapshots/abc123/archives/screenshot/download \
+curl -O -J http://localhost:3000/api/snapshots/1/archives/screenshot/download \
   -H "Authorization: Bearer wf_your_api_key_here"
 ```
 
