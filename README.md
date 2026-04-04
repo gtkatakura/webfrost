@@ -66,7 +66,7 @@ See [docs/DEPLOY.md](docs/DEPLOY.md) for full deployment instructions, env vars,
 
 - **[Bun](https://bun.sh) v1.x** — package manager and runtime
 - **Chromium** — required for PDF, screenshot, DOM snapshot, and SingleFile extractors
-- **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** — optional; required for media extraction (video/audio). Install via `brew install yt-dlp` or `pip install yt-dlp`
+- **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** — optional; required for media extraction (video/audio). Install via `brew install yt-dlp` or `pip install yt-dlp`. Media files larger than 500 MB are skipped by default (yt-dlp `--max-filesize` limit).
 - **SQLite** — bundled with Bun, no installation needed
 
 ---
@@ -91,6 +91,16 @@ WEBFROST_DIR=./data webfrost add https://example.com
 # Archiving https://example.com...
 # ✓ snapshot abc123 — warc, pdf, screenshot, readability, dom-snapshot, singlefile
 ```
+
+For video/audio URLs (YouTube, Vimeo, SoundCloud, etc.), WebFrost automatically extracts media via yt-dlp if it is installed:
+
+```bash
+WEBFROST_DIR=./data webfrost add https://www.youtube.com/watch?v=dQw4w9WgXcQ
+# Archiving https://www.youtube.com/watch?v=dQw4w9WgXcQ...
+# ✓ snapshot def456 — warc, readability, media, media-metadata
+```
+
+If yt-dlp is not installed, media extraction is silently skipped — the snapshot still completes with all other extractors.
 
 **3. List snapshots:**
 
