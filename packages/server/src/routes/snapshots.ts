@@ -122,6 +122,11 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
             status: s.status,
             createdAt: s.created_at,
             extractors: s.extractors,
+            title: s.title,
+            excerpt: s.excerpt,
+            screenshotUrl: s.hasScreenshot
+              ? `/api/snapshots/${s.id}/archives/screenshot/download`
+              : null,
             tags: s.tags.map((tag) => ({
               id: tag.id,
               name: tag.name,

@@ -1,6 +1,22 @@
 import type Database from "bun:sqlite";
 import type { Tag } from "./tags";
 
+function parseReadability(content: string | null): {
+  title: string | null;
+  excerpt: string | null;
+} {
+  if (!content) return { title: null, excerpt: null };
+  try {
+    const parsed = JSON.parse(content) as { title?: string | null; excerpt?: string | null };
+    const title = parsed.title ?? null;
+    const fullExcerpt = parsed.excerpt ?? null;
+    const excerpt = fullExcerpt ? fullExcerpt.slice(0, 120) : null;
+    return { title, excerpt };
+  } catch {
+    return { title: null, excerpt: null };
+  }
+}
+
 export interface Snapshot {
   id: number;
   url: string;
@@ -11,6 +27,9 @@ export interface Snapshot {
 export interface SnapshotWithExtractors extends Snapshot {
   extractors: string[];
   tags: Tag[];
+  title: string | null;
+  excerpt: string | null;
+  hasScreenshot: boolean;
 }
 
 export interface PaginatedResult<T> {
@@ -35,11 +54,15 @@ export function listSnapshotsWithExtractors(db: Database): SnapshotWithExtractor
         status: string;
         created_at: string;
         extractor_names: string | null;
+        readability_content: string | null;
+        has_screenshot: number | null;
       },
       []
     >(
       `SELECT s.id, s.url, s.status, s.created_at,
-         GROUP_CONCAT(DISTINCT ar.extractor) AS extractor_names
+         GROUP_CONCAT(DISTINCT ar.extractor) AS extractor_names,
+         MAX(CASE WHEN ar.extractor = 'readability' THEN ar.content END) AS readability_content,
+         MAX(CASE WHEN ar.extractor = 'screenshot' THEN 1 END) AS has_screenshot
        FROM snapshots s
        LEFT JOIN archive_results ar ON ar.snapshot_id = s.id
        GROUP BY s.id
@@ -83,14 +106,20 @@ export function listSnapshotsWithExtractors(db: Database): SnapshotWithExtractor
     });
   }
 
-  return rows.map((r) => ({
-    id: r.id,
-    url: r.url,
-    status: r.status,
-    created_at: r.created_at,
-    extractors: r.extractor_names ? r.extractor_names.split(",") : [],
-    tags: tagsBySnapshot.get(r.id) ?? [],
-  }));
+  return rows.map((r) => {
+    const { title, excerpt } = parseReadability(r.readability_content);
+    return {
+      id: r.id,
+      url: r.url,
+      status: r.status,
+      created_at: r.created_at,
+      extractors: r.extractor_names ? r.extractor_names.split(",") : [],
+      tags: tagsBySnapshot.get(r.id) ?? [],
+      title,
+      excerpt,
+      hasScreenshot: r.has_screenshot === 1,
+    };
+  });
 }
 
 export function listSnapshotsWithExtractorsPaginated(
@@ -111,11 +140,15 @@ export function listSnapshotsWithExtractorsPaginated(
         status: string;
         created_at: string;
         extractor_names: string | null;
+        readability_content: string | null;
+        has_screenshot: number | null;
       },
       [number, number]
     >(
       `SELECT s.id, s.url, s.status, s.created_at,
-         GROUP_CONCAT(DISTINCT ar.extractor) AS extractor_names
+         GROUP_CONCAT(DISTINCT ar.extractor) AS extractor_names,
+         MAX(CASE WHEN ar.extractor = 'readability' THEN ar.content END) AS readability_content,
+         MAX(CASE WHEN ar.extractor = 'screenshot' THEN 1 END) AS has_screenshot
        FROM snapshots s
        LEFT JOIN archive_results ar ON ar.snapshot_id = s.id
        GROUP BY s.id
@@ -168,14 +201,20 @@ export function listSnapshotsWithExtractorsPaginated(
     });
   }
 
-  const items = rows.map((r) => ({
-    id: r.id,
-    url: r.url,
-    status: r.status,
-    created_at: r.created_at,
-    extractors: r.extractor_names ? r.extractor_names.split(",") : [],
-    tags: tagsBySnapshot.get(r.id) ?? [],
-  }));
+  const items = rows.map((r) => {
+    const { title, excerpt } = parseReadability(r.readability_content);
+    return {
+      id: r.id,
+      url: r.url,
+      status: r.status,
+      created_at: r.created_at,
+      extractors: r.extractor_names ? r.extractor_names.split(",") : [],
+      tags: tagsBySnapshot.get(r.id) ?? [],
+      title,
+      excerpt,
+      hasScreenshot: r.has_screenshot === 1,
+    };
+  });
 
   return { items, total, page, limit };
 }

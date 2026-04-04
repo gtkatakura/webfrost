@@ -183,6 +183,85 @@ describe("GET /snapshots", () => {
     expect(body.items[0]?.url).toBe("https://second.com");
   });
 
+  test("returns title, excerpt, screenshotUrl when readability and screenshot extractors ran", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const db = openDb(testDir);
+    const id = createSnapshot(db, "https://example.com/article");
+    const snapshotsDir = join(testDir, "snapshots");
+    mkdirSync(snapshotsDir, { recursive: true });
+    const screenshotPath = join(snapshotsDir, `${id}-screenshot.png`);
+    writeFileSync(screenshotPath, new Uint8Array([137, 80, 78, 71]));
+    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
+      id,
+      "readability",
+      JSON.stringify({
+        title: "Test Article",
+        excerpt: "A short excerpt about something.",
+        byline: null,
+        textContent: null,
+      }),
+    );
+    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
+      id,
+      "screenshot",
+      screenshotPath,
+    );
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(new Request("http://localhost/snapshots"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: Array<{
+        id: number;
+        title: string | null;
+        excerpt: string | null;
+        screenshotUrl: string | null;
+      }>;
+    };
+    const item = body.items[0];
+    expect(item?.title).toBe("Test Article");
+    expect(item?.excerpt).toBe("A short excerpt about something.");
+    expect(item?.screenshotUrl).toBe(`/api/snapshots/${id}/archives/screenshot/download`);
+  });
+
+  test("returns null title, excerpt, screenshotUrl when extractors did not run", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    createSnapshot(db, "https://example.com/bare");
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(new Request("http://localhost/snapshots"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: Array<{ title: string | null; excerpt: string | null; screenshotUrl: string | null }>;
+    };
+    expect(body.items[0]?.title).toBeNull();
+    expect(body.items[0]?.excerpt).toBeNull();
+    expect(body.items[0]?.screenshotUrl).toBeNull();
+  });
+
+  test("truncates excerpt to 120 chars", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    const id = createSnapshot(db, "https://example.com/long");
+    const longExcerpt = "x".repeat(200);
+    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
+      id,
+      "readability",
+      JSON.stringify({ title: "Long", excerpt: longExcerpt, byline: null, textContent: null }),
+    );
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(new Request("http://localhost/snapshots"));
+    const body = (await res.json()) as { items: Array<{ excerpt: string | null }> };
+    expect(body.items[0]?.excerpt?.length).toBe(120);
+  });
+
   test("returns empty items for out-of-range page", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
     const db = openDb(testDir);
