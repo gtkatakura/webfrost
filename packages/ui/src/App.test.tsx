@@ -28,6 +28,7 @@ function mockClient(overrides: {
   getSnapshot?: (id: number) => Promise<SnapshotDetail | null>;
 }): WebFrostClient {
   return {
+    getSetupStatus: () => Promise.resolve({ needsSetup: false }),
     getMe: () => Promise.resolve({ username: "admin" }),
     login: () => Promise.resolve({ ok: true }),
     logout: () => Promise.resolve(),

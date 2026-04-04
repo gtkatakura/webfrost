@@ -235,11 +235,10 @@ test.skip("@phase-c setup-wizard: wizard is not accessible after admin user is c
 });
 
 // ---------------------------------------------------------------------------
-// 8. Settings page — skipped until WEB-107 is done
+// 8. Settings page — WEB-107 implemented
 // ---------------------------------------------------------------------------
 
-test.skip("@phase-c settings: settings page renders with expected sections", async ({ page }) => {
-  // TODO: implement when WEB-107 (settings page) is done.
+test("@phase-c settings: settings page renders with expected sections", async ({ page }) => {
   await loginViaUI(page);
   await page.goto("/#/settings");
 
