@@ -14,6 +14,7 @@ import {
   safeFetch,
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
+import { logger } from "../logger";
 
 function getWebfrostDir(): string {
   return process.env.WEBFROST_DIR ?? join(homedir(), ".webfrost");
@@ -45,7 +46,10 @@ function queueUrls(
       }
       try {
         const snapshotId = createSnapshot(db, url);
-        pipelineLimiter.run(() => runPipeline(db, snapshotId, url, webfrostDir)).catch(() => {});
+        const pipelineLogger = logger.child({ snapshotId });
+        pipelineLimiter
+          .run(() => runPipeline(db, snapshotId, url, webfrostDir, undefined, pipelineLogger))
+          .catch(() => {});
         queued++;
       } catch {
         // skip URLs that fail to enqueue
