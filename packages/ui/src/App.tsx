@@ -37,16 +37,19 @@ function AppRoutes() {
         element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />}
       />
       {isAuthenticated ? (
-        <Route element={<Layout />}>
-          <Route index element={<SnapshotListPage />} />
-          <Route path="snapshots" element={<SnapshotListPage />} />
-          <Route path="snapshots/:id" element={<SnapshotDetailPage />} />
-          <Route path="tags" element={<TagsPage />} />
-          <Route path="schedules" element={<SchedulesPage />} />
-          <Route path="import" element={<ImportPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="settings/api-keys" element={<ApiKeysPage />} />
-        </Route>
+        <>
+          <Route element={<Layout />}>
+            <Route index element={<SnapshotListPage />} />
+            <Route path="snapshots" element={<SnapshotListPage />} />
+            <Route path="snapshots/:id" element={<SnapshotDetailPage />} />
+            <Route path="tags" element={<TagsPage />} />
+            <Route path="schedules" element={<SchedulesPage />} />
+            <Route path="import" element={<ImportPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="settings/api-keys" element={<ApiKeysPage />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </>
       ) : (
         <Route path="*" element={<Navigate to="/login" replace />} />
       )}
