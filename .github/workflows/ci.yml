@@ -156,6 +156,9 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: bunx playwright install --with-deps chromium
 
+      - name: Install yt-dlp
+        run: pip install -q yt-dlp
+
       - name: Run E2E tests
         run: bunx playwright test
         working-directory: packages/ui
