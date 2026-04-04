@@ -1,4 +1,6 @@
 import type {
+  ApiKey,
+  ApiKeyCreated,
   ArchiveResult,
   ImportOptions,
   ImportResult,
@@ -356,6 +358,35 @@ export class WebFrostClient {
       const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
       throw new WebFrostError(res.status, body.error);
     }
+  }
+
+  /** List all active (non-revoked) API keys. */
+  async listApiKeys(): Promise<ApiKey[]> {
+    const res = await this.request(`${this.baseUrl}/settings/keys`);
+    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    return res.json() as Promise<ApiKey[]>;
+  }
+
+  /** Create a new API key. The raw key is returned once and never stored. */
+  async createApiKey(name: string): Promise<ApiKeyCreated> {
+    const res = await this.request(`${this.baseUrl}/settings/keys`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
+      throw new WebFrostError(res.status, body.error);
+    }
+    return res.json() as Promise<ApiKeyCreated>;
+  }
+
+  /** Revoke an API key by id. Returns true if revoked, false if not found. */
+  async revokeApiKey(id: string): Promise<boolean> {
+    const res = await this.request(`${this.baseUrl}/settings/keys/${id}`, { method: "DELETE" });
+    if (res.status === 404) return false;
+    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    return true;
   }
 
   /**

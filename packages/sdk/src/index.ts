@@ -1,5 +1,7 @@
 export { WebFrostClient, WebFrostError } from "./client";
 export type {
+  ApiKey,
+  ApiKeyCreated,
   ArchiveResult,
   ImportOptions,
   ImportResult,

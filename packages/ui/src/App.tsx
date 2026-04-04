@@ -5,9 +5,9 @@ import { ClientContext, defaultClient } from "./context";
 import { AuthProvider, useAuth } from "./context/auth";
 import { ThemeProvider } from "./context/theme";
 import { Layout } from "./layouts/Layout";
+import { ApiKeysPage } from "./pages/ApiKeysPage";
 import { ImportPage } from "./pages/ImportPage";
 import { LoginPage } from "./pages/LoginPage";
-import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SchedulesPage } from "./pages/SchedulesPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SetupPage } from "./pages/SetupPage";
@@ -45,7 +45,7 @@ function AppRoutes() {
           <Route path="schedules" element={<SchedulesPage />} />
           <Route path="import" element={<ImportPage />} />
           <Route path="settings" element={<SettingsPage />} />
-          <Route path="settings/api-keys" element={<PlaceholderPage title="API Keys" />} />
+          <Route path="settings/api-keys" element={<ApiKeysPage />} />
         </Route>
       ) : (
         <Route path="*" element={<Navigate to="/login" replace />} />

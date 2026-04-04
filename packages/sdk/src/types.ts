@@ -115,6 +115,20 @@ export interface ServerInfo {
   snapshotCount: number;
 }
 
+/** API key record from GET /settings/keys */
+export interface ApiKey {
+  id: string;
+  name: string;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+/** Response from POST /settings/keys — includes raw key shown once */
+export interface ApiKeyCreated extends ApiKey {
+  rawKey: string;
+}
+
 /** Single result from GET /snapshots?q=term */
 export interface SearchResult {
   id: number;

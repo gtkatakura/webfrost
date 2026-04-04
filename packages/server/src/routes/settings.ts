@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { openDb } from "@webfrost/core";
-import { Elysia } from "elysia";
+import { createApiKey, listApiKeys, openDb, revokeApiKey } from "@webfrost/core";
+import { Elysia, t } from "elysia";
 
 function getWebfrostDir(): string {
   return process.env.WEBFROST_DIR ?? join(homedir(), ".webfrost");
@@ -11,17 +11,60 @@ function getDb() {
   return openDb(getWebfrostDir());
 }
 
-export const settingsRouter = new Elysia({ prefix: "/settings" }).get("/info", () => {
-  const webfrostDir = getWebfrostDir();
-  const db = getDb();
-  try {
-    const row = db.query<{ count: number }, []>("SELECT COUNT(*) as count FROM snapshots").get();
-    return {
-      version: "0.0.0",
-      storagePath: webfrostDir,
-      snapshotCount: row?.count ?? 0,
-    };
-  } finally {
-    db.close();
-  }
-});
+export const settingsRouter = new Elysia({ prefix: "/settings" })
+  .get("/info", () => {
+    const webfrostDir = getWebfrostDir();
+    const db = getDb();
+    try {
+      const row = db.query<{ count: number }, []>("SELECT COUNT(*) as count FROM snapshots").get();
+      return {
+        version: "0.0.0",
+        storagePath: webfrostDir,
+        snapshotCount: row?.count ?? 0,
+      };
+    } finally {
+      db.close();
+    }
+  })
+  .get("/keys", () => {
+    const db = getDb();
+    try {
+      return listApiKeys(db);
+    } finally {
+      db.close();
+    }
+  })
+  .post(
+    "/keys",
+    ({ body, set }) => {
+      const db = getDb();
+      try {
+        const { id, rawKey } = createApiKey(db, body.name);
+        const keys = listApiKeys(db);
+        const key = keys.find((k) => k.id === id);
+        if (!key) {
+          set.status = 500;
+          return { error: "Failed to create key" };
+        }
+        set.status = 201;
+        return { ...key, rawKey };
+      } finally {
+        db.close();
+      }
+    },
+    { body: t.Object({ name: t.String({ minLength: 1 }) }) },
+  )
+  .delete("/keys/:id", ({ params, set }) => {
+    const db = getDb();
+    try {
+      const revoked = revokeApiKey(db, params.id);
+      if (!revoked) {
+        set.status = 404;
+        return { error: "Key not found" };
+      }
+      set.status = 204;
+      return;
+    } finally {
+      db.close();
+    }
+  });
