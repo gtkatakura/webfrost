@@ -25,6 +25,8 @@ function getSessionSecret(): string {
 
 export const setupRouter = new Elysia({ prefix: "/setup" })
   .get("/status", () => {
+    // AUTH_DISABLED bypasses setup so E2E tests can run without seeding an admin user
+    if (process.env.AUTH_DISABLED === "true") return { needsSetup: false };
     const db = getDb();
     try {
       return { needsSetup: !hasAdminUser(db) };
