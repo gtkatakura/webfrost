@@ -44,7 +44,12 @@ const detail = {
   ],
 };
 
-const snapshotsBody = JSON.stringify(snapshots);
+const snapshotsBody = JSON.stringify({
+  items: snapshots,
+  total: SNAPSHOT_COUNT,
+  page: 1,
+  limit: SNAPSHOT_COUNT,
+});
 const detailBody = JSON.stringify(detail);
 
 // ---------------------------------------------------------------------------
