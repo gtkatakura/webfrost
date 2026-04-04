@@ -23,6 +23,17 @@ Lefthook runs lint (biome) and typecheck on pre-commit. Fix any failures before 
 - Test: `bun run test`
 - Typecheck: `bun run typecheck`
 
+## Documentation Rules
+
+**README.md and ROADMAP.md must stay up to date at all times.**
+
+1. **Any task that adds, removes, or changes a feature MUST update README.md and ROADMAP.md before marking done.** This includes new CLI commands, API endpoints, extractors, UI pages, and configuration options.
+2. **README.md** must reflect the current state of every package: CLI commands, API routes, environment variables, and the Quickstart.
+3. **ROADMAP.md** must reflect shipped vs unshipped status accurately. When a feature ships, update its row (❌ → ✅ and remove the priority badge).
+4. **Getting Started sections** must cover all four surfaces: CLI, SDK, Server API, and Web UI. If a new surface or workflow is added, add a Getting Started example.
+5. Engineers and Frontend Engineers: if your change affects user-facing behavior, update docs in the same commit or a follow-up commit before marking done. Do not hand off to Technical Writer for routine doc updates — only for major rewrites or new guides.
+6. Technical Writer: audit README.md and ROADMAP.md accuracy on any docs-related task.
+
 ## Agent Handoff Protocol
 
 **When you finish a task, hand it off immediately — don't leave it for the next heartbeat.**
@@ -57,6 +68,7 @@ When your work is done and the next step belongs to another agent:
 | DevOps | CI/CD or infra change deployed | Mark **done** |
 | DevOps | Needs docs update | **Technical Writer** |
 | Technical Writer | Docs written and pushed | Mark **done** |
+| Frontend Engineer | UI feature implemented and pushed | **QA Engineer** (to verify) |
 
 ### Agent IDs (for `assigneeAgentId`)
 
