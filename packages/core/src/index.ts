@@ -28,6 +28,7 @@ export {
 } from "./list";
 export type { Snapshot, SnapshotWithExtractors, PaginatedResult } from "./list";
 export { addUrl, createSnapshot, runPipeline } from "./pipeline";
+export type { Logger } from "./pipeline";
 export { deleteSnapshot, getSnapshot } from "./snapshot";
 export type { SnapshotDetail } from "./snapshot";
 export {

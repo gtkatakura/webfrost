@@ -11,6 +11,13 @@ import { warcExtractor } from "./extractors/warc";
 import { FetchCache } from "./fetch-cache";
 import { extractIndexFields, indexSnapshot } from "./search";
 
+export interface Logger {
+  debug(msg: string): void;
+  info(msg: string): void;
+  warn(msg: string): void;
+  error(msg: string): void;
+}
+
 /** Insert a snapshot row and enqueue a job. Returns the new snapshot id. */
 export function createSnapshot(db: Database, url: string): number {
   const row = db
@@ -35,9 +42,13 @@ export async function runPipeline(
   url: string,
   dir: string,
   cache?: FetchCache,
+  logger?: Logger,
 ): Promise<void> {
+  const start = Date.now();
   const snapshotDir = join(dir, "snapshots", String(snapshotId));
   await mkdir(snapshotDir, { recursive: true });
+
+  logger?.debug(`pipeline start snapshot=${snapshotId} url=${url}`);
 
   // Use the provided shared cache, or create a one-shot cache for this run
   const fetchCache = cache ?? new FetchCache();
@@ -58,15 +69,21 @@ export async function runPipeline(
   let cached: Awaited<ReturnType<FetchCache["get"]>>;
   try {
     cached = await fetchCache.get(url);
-  } catch {
+  } catch (err) {
+    logger?.error(
+      `fetch failed snapshot=${snapshotId}: ${err instanceof Error ? err.message : String(err)}`,
+    );
     markFailed();
     return;
   }
 
   if (!cached.status || cached.status >= 400) {
+    logger?.warn(`fetch error snapshot=${snapshotId} status=${cached.status ?? "none"} url=${url}`);
     markFailed();
     return;
   }
+
+  logger?.debug(`fetch ok snapshot=${snapshotId} status=${cached.status}`);
 
   const { html, headers, status, statusText } = cached;
 
@@ -79,16 +96,30 @@ export async function runPipeline(
     browser = await pw.chromium.launch();
     page = await browser.newPage();
     await page.goto(url, { timeout: 30_000, waitUntil: "load" });
-  } catch {
+    logger?.debug(`playwright navigation ok snapshot=${snapshotId}`);
+  } catch (err) {
     // Playwright unavailable or navigation failed — PDF will be skipped
+    logger?.debug(
+      `playwright unavailable snapshot=${snapshotId}: ${err instanceof Error ? err.message : String(err)}`,
+    );
     await browser?.close();
     browser = undefined;
     page = undefined;
   }
 
+  const extractorNames = [
+    "html",
+    "warc",
+    "readability",
+    "pdf",
+    "screenshot",
+    "dom-snapshot",
+    "singlefile",
+  ] as const;
+
   try {
     // Run all extractors in parallel — partial failure is non-fatal
-    await Promise.allSettled([
+    const results = await Promise.allSettled([
       htmlExtractor(db, snapshotId, html),
       warcExtractor(db, snapshotId, url, headers, status, statusText, html, snapshotDir),
       readabilityExtractor(db, snapshotId, url, html),
@@ -97,6 +128,16 @@ export async function runPipeline(
       page ? domSnapshotExtractor(db, snapshotId, snapshotDir, page) : Promise.resolve(),
       page ? singleFileExtractor(db, snapshotId, snapshotDir, page) : Promise.resolve(),
     ]);
+    results.forEach((result, i) => {
+      const name = extractorNames[i] ?? `extractor-${i}`;
+      if (result.status === "rejected") {
+        logger?.warn(
+          `extractor ${name} failed snapshot=${snapshotId}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
+        );
+      } else {
+        logger?.debug(`extractor ${name} ok snapshot=${snapshotId}`);
+      }
+    });
   } finally {
     await browser?.close();
   }
@@ -126,11 +167,18 @@ export async function runPipeline(
   } catch {
     // FTS indexing failure is non-fatal
   }
+
+  logger?.debug(`pipeline done snapshot=${snapshotId} duration=${Date.now() - start}ms`);
 }
 
 /** Convenience: create a snapshot and run the full pipeline synchronously. */
-export async function addUrl(db: Database, url: string, dir: string): Promise<number> {
+export async function addUrl(
+  db: Database,
+  url: string,
+  dir: string,
+  logger?: Logger,
+): Promise<number> {
   const snapshotId = createSnapshot(db, url);
-  await runPipeline(db, snapshotId, url, dir);
+  await runPipeline(db, snapshotId, url, dir, undefined, logger);
   return snapshotId;
 }

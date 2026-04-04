@@ -380,6 +380,8 @@ curl -X POST http://localhost:3000/api/import \
 ```
 webfrost --help, -h                        Show help and list all commands
 webfrost --version, -v                     Show CLI version
+webfrost --verbose                         Enable debug-level output (or set WEBFROST_LOG_LEVEL=debug)
+webfrost --quiet                           Suppress info output — only warn/error messages shown
 webfrost <command> --help                  Show help for a specific command (e.g. webfrost tag --help)
 
 webfrost init                              Initialize a new archive at WEBFROST_DIR
@@ -417,6 +419,7 @@ webfrost admin key revoke <id>                         Revoke an API key
 | `SESSION_SECRET` | — | Required for the server. Random string ≥ 32 chars. |
 | `AUTH_DISABLED` | `false` | Set to `true` to skip auth in dev. Never use in production. |
 | `WEBFROST_CONCURRENCY` | `3` | Max number of archive pipelines running in parallel (import, schedule worker, server). |
+| `WEBFROST_LOG_LEVEL` | `info` | CLI log verbosity: `debug`, `info`, `warn`, `error`. Overridden by `--verbose` / `--quiet`. |
 
 See [docs/DEPLOY.md](docs/DEPLOY.md) for the full auth setup walkthrough.
 

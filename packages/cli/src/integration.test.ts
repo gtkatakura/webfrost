@@ -447,3 +447,84 @@ describe("tag", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// 6. --verbose / --quiet log level flags
+// ---------------------------------------------------------------------------
+
+describe("log level flags", () => {
+  test("--verbose produces debug-level output on stdout", async () => {
+    await runCli(["init"], testDir);
+
+    const server = startMockServer(
+      () =>
+        new Response("<html><body>verbose-test</body></html>", {
+          headers: { "content-type": "text/html" },
+        }),
+    );
+
+    try {
+      const url = `http://localhost:${server.port}/verbose`;
+      const result = await runCli(["add", "--verbose", url], testDir);
+
+      expect(result.exitCode).toBe(0);
+      // Debug-level pipeline logs should appear
+      expect(result.stdout).toMatch(/pipeline start/);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("--quiet suppresses info output but not errors", async () => {
+    await runCli(["init"], testDir);
+
+    const server = startMockServer(
+      () =>
+        new Response("<html><body>quiet-test</body></html>", {
+          headers: { "content-type": "text/html" },
+        }),
+    );
+
+    try {
+      const url = `http://localhost:${server.port}/quiet`;
+      const result = await runCli(["add", "--quiet", url], testDir);
+
+      expect(result.exitCode).toBe(0);
+      // Info-level messages (e.g. "Archiving ...") should be suppressed
+      expect(result.stdout).not.toMatch(/Archiving/);
+      // No errors expected on success
+      expect(result.stderr).toBe("");
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("--quiet error message still goes to stderr", async () => {
+    await runCli(["init"], testDir);
+
+    const result = await runCli(["add", "--quiet"], testDir);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Usage:");
+  });
+
+  test("WEBFROST_LOG_LEVEL=debug env var enables debug output", async () => {
+    await runCli(["init"], testDir);
+
+    const proc = Bun.spawn(["bun", "run", join(import.meta.dir, "index.ts"), "init"], {
+      cwd: testDir,
+      env: { ...process.env, WEBFROST_DIR: testDir, WEBFROST_LOG_LEVEL: "debug" },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [exitCode, stdout] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+
+    expect(exitCode).toBe(0);
+    // At debug level the timestamp format should appear
+    expect(stdout).toMatch(/\[\d{2}:\d{2}:\d{2}\]/);
+  });
+});

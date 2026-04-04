@@ -32,10 +32,19 @@ import {
   runPipeline,
   searchSnapshots,
 } from "@webfrost/core";
+import { createLogger, resolveLogLevel } from "./logger";
 
 const archiveDir = process.env.WEBFROST_DIR ?? process.cwd();
 const command = process.argv[2];
-const args = process.argv.slice(3);
+
+// Parse global flags from all trailing args before the command's own args.
+// --verbose / --quiet are stripped before passing args to each command handler.
+const rawArgs = process.argv.slice(3);
+const verbose = rawArgs.includes("--verbose");
+const quiet = rawArgs.includes("--quiet");
+const args = rawArgs.filter((a) => a !== "--verbose" && a !== "--quiet");
+
+const logger = createLogger(resolveLogLevel({ verbose, quiet }));
 
 // Read version from package.json
 const { version } = JSON.parse(
@@ -77,9 +86,12 @@ Commands:
 Flags:
   --help, -h      Show help
   --version, -v   Show version
+  --verbose       Enable debug-level output
+  --quiet         Suppress info output (warn/error only)
 
 Environment:
-  WEBFROST_DIR    Archive directory (default: current working directory)
+  WEBFROST_DIR        Archive directory (default: current working directory)
+  WEBFROST_LOG_LEVEL  Log level: debug | info | warn | error (default: info)
 
 Examples:
   webfrost init
@@ -137,30 +149,39 @@ if (command === "--version" || command === "-v") {
 switch (command) {
   case "init": {
     openDb(archiveDir).close();
-    console.log(`Archive initialized at ${archiveDir}`);
+    logger.info(`Archive initialized at ${archiveDir}`);
     break;
   }
 
   case "add": {
     const url = args[0];
     if (!url) {
-      console.error("Usage: webfrost add <url>");
+      logger.error("Usage: webfrost add <url>");
       process.exit(1);
     }
     let parsedAdd: URL;
     try {
       parsedAdd = new URL(url);
     } catch {
-      console.error("Invalid URL");
+      logger.error("Invalid URL");
       process.exit(1);
     }
     if (parsedAdd.protocol !== "http:" && parsedAdd.protocol !== "https:") {
-      console.error("Only http/https URLs are supported");
+      logger.error("Only http/https URLs are supported");
       process.exit(1);
     }
     const db = openDb(archiveDir);
-    await addUrl(db, url, archiveDir);
+    logger.info(`Archiving ${url}...`);
+    const snapshotId = await addUrl(db, url, archiveDir, logger);
+    const snap = db
+      .query<{ status: string }, [number]>("SELECT status FROM snapshots WHERE id = ?")
+      .get(snapshotId);
     db.close();
+    if (snap?.status === "done") {
+      logger.info(`Snapshot ${snapshotId} archived.`);
+    } else {
+      logger.warn(`Snapshot ${snapshotId} finished with status: ${snap?.status ?? "unknown"}`);
+    }
     break;
   }
 
@@ -193,9 +214,9 @@ switch (command) {
 
       if (!urlArg || !cronExpr) {
         if (isRss) {
-          console.error("Usage: webfrost schedule add --rss <feed-url> --cron <expr>");
+          logger.error("Usage: webfrost schedule add --rss <feed-url> --cron <expr>");
         } else {
-          console.error("Usage: webfrost schedule add <url> --cron <expr>");
+          logger.error("Usage: webfrost schedule add <url> --cron <expr>");
         }
         process.exit(1);
       }
@@ -204,11 +225,11 @@ switch (command) {
       try {
         parsedSchedule = new URL(urlArg);
       } catch {
-        console.error("Invalid URL");
+        logger.error("Invalid URL");
         process.exit(1);
       }
       if (parsedSchedule.protocol !== "http:" && parsedSchedule.protocol !== "https:") {
-        console.error("Only http/https URLs are supported");
+        logger.error("Only http/https URLs are supported");
         process.exit(1);
       }
 
@@ -218,7 +239,7 @@ switch (command) {
           ? addRssFeedSchedule(db, urlArg, cronExpr)
           : addSchedule(db, urlArg, cronExpr);
         const label = isRss ? "RSS feed schedule" : "Schedule";
-        console.log(`${label} ${id} created: ${urlArg} @ ${cronExpr}`);
+        logger.info(`${label} ${id} created: ${urlArg} @ ${cronExpr}`);
       } finally {
         db.close();
       }
@@ -248,21 +269,21 @@ switch (command) {
     if (sub === "remove") {
       const idArg = args[1];
       if (!idArg) {
-        console.error("Usage: webfrost schedule remove <id>");
+        logger.error("Usage: webfrost schedule remove <id>");
         process.exit(1);
       }
       const id = Number(idArg);
       if (!Number.isInteger(id) || id <= 0) {
-        console.error("Invalid schedule id");
+        logger.error("Invalid schedule id");
         process.exit(1);
       }
       const db = openDb(archiveDir);
       try {
         const removed = removeSchedule(db, id);
         if (removed) {
-          console.log(`Schedule ${id} removed.`);
+          logger.info(`Schedule ${id} removed.`);
         } else {
-          console.error(`Schedule ${id} not found.`);
+          logger.error(`Schedule ${id} not found.`);
           process.exit(1);
         }
       } finally {
@@ -274,13 +295,14 @@ switch (command) {
     if (sub === "worker") {
       // Polling worker: checks due schedules every 30 seconds
       const intervalMs = 30_000;
-      console.log(
+      logger.info(
         `Schedule worker started (polling every ${intervalMs / 1000}s). Press Ctrl+C to stop.`,
       );
 
       const workerLimiter = createConcurrencyLimiter();
 
       async function runDue(): Promise<void> {
+        logger.debug("Checking for due schedules...");
         const db = openDb(archiveDir);
         let due: ReturnType<typeof getDueSchedules>;
         try {
@@ -289,9 +311,17 @@ switch (command) {
           db.close();
         }
 
+        if (due.length === 0) {
+          logger.debug("No schedules due.");
+          return;
+        }
+
+        logger.info(`Found ${due.length} due schedule(s).`);
+
         for (const schedule of due) {
+          const scheduleStart = Date.now();
           if (schedule.kind === "rss_feed") {
-            console.log(`[worker] Running RSS feed schedule ${schedule.id}: ${schedule.url}`);
+            logger.info(`Running RSS feed schedule ${schedule.id}: ${schedule.url}`);
             const db2 = openDb(archiveDir);
             try {
               const feedUrls = await fetchRssFeedUrls(schedule.url);
@@ -302,33 +332,41 @@ switch (command) {
                 const snapshotId = createSnapshot(db2, url);
                 rssPromises.push(
                   workerLimiter
-                    .run(() => runPipeline(db2, snapshotId, url, archiveDir))
+                    .run(() => runPipeline(db2, snapshotId, url, archiveDir, undefined, logger))
                     .catch((err: unknown) => {
-                      console.error(`[worker] pipeline error for ${url}:`, err);
+                      logger.error(
+                        `Pipeline error for ${url}: ${err instanceof Error ? err.message : String(err)}`,
+                      );
                     }),
                 );
                 queued++;
               }
               await Promise.allSettled(rssPromises);
               markScheduleRun(db2, schedule.id, schedule.cron);
-              console.log(
-                `[worker] RSS feed schedule ${schedule.id} done (${feedUrls.length} items, ${queued} new)`,
+              logger.info(
+                `RSS feed schedule ${schedule.id} done: ${feedUrls.length} items, ${queued} new (${Date.now() - scheduleStart}ms)`,
               );
             } catch (err) {
-              console.error(`[worker] RSS feed schedule ${schedule.id} failed:`, err);
+              logger.error(
+                `RSS feed schedule ${schedule.id} failed: ${err instanceof Error ? err.message : String(err)}`,
+              );
             } finally {
               db2.close();
             }
           } else {
-            console.log(`[worker] Running schedule ${schedule.id}: ${schedule.url}`);
+            logger.info(`Running schedule ${schedule.id}: ${schedule.url}`);
             const db2 = openDb(archiveDir);
             try {
               const snapshotId = createSnapshot(db2, schedule.url);
-              await runPipeline(db2, snapshotId, schedule.url, archiveDir);
+              await runPipeline(db2, snapshotId, schedule.url, archiveDir, undefined, logger);
               markScheduleRun(db2, schedule.id, schedule.cron);
-              console.log(`[worker] Schedule ${schedule.id} done (snapshot ${snapshotId})`);
+              logger.info(
+                `Schedule ${schedule.id} done: snapshot ${snapshotId} (${Date.now() - scheduleStart}ms)`,
+              );
             } catch (err) {
-              console.error(`[worker] Schedule ${schedule.id} failed:`, err);
+              logger.error(
+                `Schedule ${schedule.id} failed: ${err instanceof Error ? err.message : String(err)}`,
+              );
             } finally {
               db2.close();
             }
@@ -341,7 +379,7 @@ switch (command) {
       break;
     }
 
-    console.error("Usage: webfrost schedule <add|list|remove|worker>");
+    logger.error("Usage: webfrost schedule <add|list|remove|worker>");
     process.exit(1);
     break;
   }
@@ -354,7 +392,7 @@ switch (command) {
     const source = positional[0];
 
     if (!source) {
-      console.error("Usage: webfrost import [--format=<fmt>] <url-or-file>");
+      logger.error("Usage: webfrost import [--format=<fmt>] <url-or-file>");
       process.exit(1);
     }
 
@@ -377,13 +415,13 @@ switch (command) {
       try {
         response = await fetch(source);
       } catch (err) {
-        console.error(
+        logger.error(
           `Cannot fetch URL: ${source}: ${err instanceof Error ? err.message : String(err)}`,
         );
         process.exit(1);
       }
       if (!response.ok) {
-        console.error(`Cannot fetch URL: ${source}: HTTP ${response.status}`);
+        logger.error(`Cannot fetch URL: ${source}: HTTP ${response.status}`);
         process.exit(1);
       }
       content = await response.text();
@@ -392,7 +430,7 @@ switch (command) {
       try {
         content = readFileSync(source, "utf8");
       } catch {
-        console.error(`Cannot read file: ${source}`);
+        logger.error(`Cannot read file: ${source}`);
         process.exit(1);
       }
       filename = source.split("/").pop() ?? source;
@@ -412,10 +450,11 @@ switch (command) {
     let failed = 0;
 
     const limiter = createConcurrencyLimiter();
-    console.log(
+    logger.info(
       `Detected format: ${format}. Found ${total} URL(s). Concurrency: ${limiter.limit}.`,
     );
 
+    const importStart = Date.now();
     const db = openDb(archiveDir);
     const pipelines: Promise<void>[] = [];
     for (const url of urls) {
@@ -426,32 +465,33 @@ switch (command) {
       try {
         const snapshotId = createSnapshot(db, url);
         queued++;
-        process.stdout.write(
-          `\rEnqueued: ${queued + failed + skipped}/${total} (queued: ${queued}, skipped: ${skipped}, failed: ${failed})`,
+        logger.debug(
+          `Enqueued ${queued + failed + skipped}/${total}: ${url} (snapshot ${snapshotId})`,
         );
         pipelines.push(
           limiter
-            .run(() => runPipeline(db, snapshotId, url, archiveDir))
+            .run(() => runPipeline(db, snapshotId, url, archiveDir, undefined, logger))
             .catch((err: unknown) => {
-              console.error(`\n[import] pipeline error for ${url}:`, err);
+              logger.error(
+                `Pipeline error for ${url}: ${err instanceof Error ? err.message : String(err)}`,
+              );
             }),
         );
       } catch {
         failed++;
-        process.stdout.write(
-          `\rEnqueued: ${queued + failed + skipped}/${total} (queued: ${queued}, skipped: ${skipped}, failed: ${failed})`,
-        );
+        logger.warn(`Failed to enqueue ${queued + failed + skipped}/${total}: ${url}`);
       }
     }
 
     if (pipelines.length > 0) {
-      process.stdout.write("\nRunning pipelines...\n");
+      logger.info(`Running ${pipelines.length} pipeline(s)...`);
       await Promise.allSettled(pipelines);
     }
     db.close();
 
-    console.log(
-      `Import complete: total=${total}, done=${queued}, skipped=${skipped}, failed=${failed}`,
+    const elapsed = ((Date.now() - importStart) / 1000).toFixed(1);
+    logger.info(
+      `Import complete: total=${total}, done=${queued}, skipped=${skipped}, failed=${failed} (${elapsed}s)`,
     );
     break;
   }
@@ -469,26 +509,26 @@ switch (command) {
       const snapshotIdArg = args[1];
       const tagName = args[2];
       if (!snapshotIdArg || !tagName) {
-        console.error("Usage: webfrost tag add <snapshot-id> <tag-name>");
+        logger.error("Usage: webfrost tag add <snapshot-id> <tag-name>");
         process.exit(1);
       }
       const snapshotId = Number(snapshotIdArg);
       if (!Number.isInteger(snapshotId) || snapshotId <= 0) {
-        console.error("Invalid snapshot id");
+        logger.error("Invalid snapshot id");
         process.exit(1);
       }
       const db = openDb(archiveDir);
       try {
         const snapshot = getSnapshot(db, snapshotId);
         if (!snapshot) {
-          console.error(`Snapshot ${snapshotId} not found.`);
+          logger.error(`Snapshot ${snapshotId} not found.`);
           process.exit(1);
         }
         // Find existing tag by name or create it
         const existing = listTags(db).find((t) => t.name === tagName);
         const tag = existing ?? createTag(db, tagName);
         addTagToSnapshot(db, snapshotId, tag.id);
-        console.log(`Tag "${tag.name}" added to snapshot ${snapshotId}.`);
+        logger.info(`Tag "${tag.name}" added to snapshot ${snapshotId}.`);
       } finally {
         db.close();
       }
@@ -503,12 +543,12 @@ switch (command) {
         if (snapshotIdArg !== undefined) {
           const snapshotId = Number(snapshotIdArg);
           if (!Number.isInteger(snapshotId) || snapshotId <= 0) {
-            console.error("Invalid snapshot id");
+            logger.error("Invalid snapshot id");
             process.exit(1);
           }
           const snapshot = getSnapshot(db, snapshotId);
           if (!snapshot) {
-            console.error(`Snapshot ${snapshotId} not found.`);
+            logger.error(`Snapshot ${snapshotId} not found.`);
             process.exit(1);
           }
           const tags = listSnapshotTags(db, snapshotId);
@@ -539,7 +579,7 @@ switch (command) {
       // webfrost tag create <name> [--color <hex>]
       const tagName = args[1];
       if (!tagName) {
-        console.error("Usage: webfrost tag create <name> [--color <hex>]");
+        logger.error("Usage: webfrost tag create <name> [--color <hex>]");
         process.exit(1);
       }
       const colorIdx = args.indexOf("--color");
@@ -551,7 +591,7 @@ switch (command) {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (msg.includes("UNIQUE") || msg.includes("unique")) {
-          console.error(`Tag "${tagName}" already exists.`);
+          logger.error(`Tag "${tagName}" already exists.`);
           process.exit(1);
         }
         throw err;
@@ -565,30 +605,30 @@ switch (command) {
     if (sub === "remove") {
       const tagIdArg = args[1];
       if (!tagIdArg) {
-        console.error("Usage: webfrost tag remove <tag-id>");
+        logger.error("Usage: webfrost tag remove <tag-id>");
         process.exit(1);
       }
       const tagId = Number(tagIdArg);
       if (!Number.isInteger(tagId) || tagId <= 0) {
-        console.error("Invalid tag id");
+        logger.error("Invalid tag id");
         process.exit(1);
       }
       const db = openDb(archiveDir);
       try {
         const tag = getTag(db, tagId);
         if (!tag) {
-          console.error(`Tag ${tagId} not found.`);
+          logger.error(`Tag ${tagId} not found.`);
           process.exit(1);
         }
         deleteTag(db, tagId);
-        console.log(`Tag "${tag.name}" removed.`);
+        logger.info(`Tag "${tag.name}" removed.`);
       } finally {
         db.close();
       }
       break;
     }
 
-    console.error("Usage: webfrost tag <add|list|create|remove>");
+    logger.error("Usage: webfrost tag <add|list|create|remove>");
     process.exit(1);
     break;
   }
@@ -609,7 +649,7 @@ switch (command) {
       const passwordArg = passwordIdx !== -1 ? args[passwordIdx + 1] : undefined;
 
       if (!usernameArg || !passwordArg) {
-        console.error("Usage: webfrost admin create --username <name> --password <pass>");
+        logger.error("Usage: webfrost admin create --username <name> --password <pass>");
         process.exit(1);
       }
 
@@ -617,12 +657,12 @@ switch (command) {
       try {
         await createAdminUser(db, usernameArg, passwordArg);
         const { id, rawKey } = createApiKey(db, "default");
-        console.log(`Admin user "${usernameArg}" created.`);
+        logger.info(`Admin user "${usernameArg}" created.`);
         console.log("Default API key (save this — shown once):");
         console.log(`  ID:  ${id}`);
         console.log(`  Key: ${rawKey}`);
       } catch (err) {
-        console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+        logger.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
         process.exit(1);
       } finally {
         db.close();
@@ -641,7 +681,7 @@ switch (command) {
         const expiresArg = expiresIdx !== -1 ? args[expiresIdx + 1] : undefined;
 
         if (!nameArg) {
-          console.error("Usage: webfrost admin key create --name <label> [--expires <ISO date>]");
+          logger.error("Usage: webfrost admin key create --name <label> [--expires <ISO date>]");
           process.exit(1);
         }
 
@@ -678,16 +718,16 @@ switch (command) {
       if (keyCmd === "revoke") {
         const keyId = args[2];
         if (!keyId) {
-          console.error("Usage: webfrost admin key revoke <id>");
+          logger.error("Usage: webfrost admin key revoke <id>");
           process.exit(1);
         }
         const db = openDb(archiveDir);
         try {
           const revoked = revokeApiKey(db, keyId);
           if (revoked) {
-            console.log(`API key ${keyId} revoked.`);
+            logger.info(`API key ${keyId} revoked.`);
           } else {
-            console.error(`API key ${keyId} not found or already revoked.`);
+            logger.error(`API key ${keyId} not found or already revoked.`);
             process.exit(1);
           }
         } finally {
@@ -696,12 +736,12 @@ switch (command) {
         break;
       }
 
-      console.error("Usage: webfrost admin key <create|list|revoke>");
+      logger.error("Usage: webfrost admin key <create|list|revoke>");
       process.exit(1);
       break;
     }
 
-    console.error("Usage: webfrost admin <create|key>");
+    logger.error("Usage: webfrost admin <create|key>");
     process.exit(1);
     break;
   }
@@ -710,7 +750,7 @@ switch (command) {
     // webfrost search <query>
     const query = args.join(" ");
     if (!query.trim()) {
-      console.error("Usage: webfrost search <query>");
+      logger.error("Usage: webfrost search <query>");
       process.exit(1);
     }
     const db = openDb(archiveDir);
@@ -736,7 +776,7 @@ switch (command) {
     const db = openDb(archiveDir);
     try {
       rebuildIndex(db);
-      console.log("Search index rebuilt.");
+      logger.info("Search index rebuilt.");
     } finally {
       db.close();
     }
@@ -747,21 +787,21 @@ switch (command) {
     // webfrost delete <id>
     const idArg = args[0];
     if (!idArg) {
-      console.error("Usage: webfrost delete <id>");
+      logger.error("Usage: webfrost delete <id>");
       process.exit(1);
     }
     const id = Number(idArg);
     if (!Number.isInteger(id) || id <= 0) {
-      console.error("Invalid snapshot id");
+      logger.error("Invalid snapshot id");
       process.exit(1);
     }
     const db = openDb(archiveDir);
     try {
       const deleted = await deleteSnapshot(db, id, archiveDir);
       if (deleted) {
-        console.log(`Snapshot ${id} deleted.`);
+        logger.info(`Snapshot ${id} deleted.`);
       } else {
-        console.error(`Snapshot ${id} not found.`);
+        logger.error(`Snapshot ${id} not found.`);
         process.exit(1);
       }
     } finally {
@@ -771,8 +811,8 @@ switch (command) {
   }
 
   default: {
-    console.error(`Unknown command: ${String(command)}`);
-    console.error(`Run "webfrost --help" for usage.`);
+    logger.error(`Unknown command: ${String(command)}`);
+    logger.error(`Run "webfrost --help" for usage.`);
     process.exit(1);
   }
 }

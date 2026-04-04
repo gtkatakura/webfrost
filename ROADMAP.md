@@ -108,6 +108,7 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 | Web UI (snapshot list + detail) | ✅ | ✅ | — |
 | CLI | ✅ | ✅ | — |
 | Tag management UI | ✅ | ✅ | — |
+| Structured CLI logging (`--verbose`, `--quiet`, `WEBFROST_LOG_LEVEL`) | ✅ | ✅ | — |
 | Batch operations (delete/retag) | ✅ | ❌ | 🟡 P2 |
 | Desktop app | ✅ | ❌ | ⚪ P3 |
 | Dark mode | partial | ❌ | 🟡 P2 |
