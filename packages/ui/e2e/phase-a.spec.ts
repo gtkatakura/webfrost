@@ -201,28 +201,27 @@ test("@phase-a pagination: UI controls appear and navigate between pages", async
   await expect(nextBtn).toBeVisible();
   await expect(prevBtn).toBeVisible();
 
-  // Page indicator shows "1 / <N>" where N >= 2. Read totalPages from the DOM
-  // so subsequent assertions stay consistent with what the UI actually renders.
-  const indicator = page.getByText(/^1 \/ \d+$/);
-  await expect(indicator).toBeVisible();
-  const indicatorText = (await indicator.textContent()) ?? "";
-  const totalPages = Number.parseInt(indicatorText.split(" / ")[1] ?? "2", 10);
+  // Page indicator: the Pagination component renders numbered buttons with
+  // aria-current="page" on the active page — no "1 / N" text. Verify page 1
+  // is active and count page buttons to confirm multiple pages exist.
+  await expect(page.locator('[aria-label="Page 1"][aria-current="page"]')).toBeVisible();
+  const totalPages = await page.locator('button[aria-label^="Page "]').count();
   expect(totalPages).toBeGreaterThan(1);
 
   // Record the first item on page 1 so we can verify page 2 is different.
-  const firstItemPage1 = await page.locator("li").first().textContent();
+  const firstItemPage1 = await page.locator("li a").first().textContent();
 
   // Navigate to page 2.
   await nextBtn.click();
-  await expect(page.getByText(`2 / ${totalPages}`)).toBeVisible();
+  await expect(page.locator('[aria-label="Page 2"][aria-current="page"]')).toBeVisible();
 
   // At least one item is visible on page 2.
-  await expect(page.locator("li").first()).toBeVisible();
-  const firstItemPage2 = await page.locator("li").first().textContent();
+  await expect(page.locator("li a").first()).toBeVisible();
+  const firstItemPage2 = await page.locator("li a").first().textContent();
   expect(firstItemPage2).not.toBe(firstItemPage1);
 
   // Navigate back to page 1.
   await prevBtn.click();
-  await expect(page.getByText(`1 / ${totalPages}`)).toBeVisible();
-  await expect(page.locator("li").first()).toBeVisible();
+  await expect(page.locator('[aria-label="Page 1"][aria-current="page"]')).toBeVisible();
+  await expect(page.locator("li a").first()).toBeVisible();
 });
