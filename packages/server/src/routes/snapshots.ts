@@ -345,6 +345,13 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
             headers: { "Content-Type": "application/json" },
           });
         }
+        const presignedUrl = storage.presignedDownloadUrl(content);
+        if (presignedUrl) {
+          return new Response(null, {
+            status: 302,
+            headers: { Location: presignedUrl },
+          });
+        }
         const bytes = await storage.getBytes(content);
         const isAudio = content.endsWith(".mp3");
         return new Response(bytes as unknown as BodyInit, {
@@ -367,6 +374,13 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
           return new Response(JSON.stringify({ error: "file not found" }), {
             status: 404,
             headers: { "Content-Type": "application/json" },
+          });
+        }
+        const presignedUrl = storage.presignedDownloadUrl(content);
+        if (presignedUrl) {
+          return new Response(null, {
+            status: 302,
+            headers: { Location: presignedUrl },
           });
         }
         const bytes = await storage.getBytes(content);

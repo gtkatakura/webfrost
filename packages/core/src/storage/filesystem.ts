@@ -79,4 +79,8 @@ export class FilesystemBackend implements StorageBackend {
       return false;
     }
   }
+
+  presignedDownloadUrl(_ref: string, _expiresIn?: number): null {
+    return null;
+  }
 }

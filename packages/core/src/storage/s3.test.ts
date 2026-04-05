@@ -240,6 +240,26 @@ describe("S3Backend", () => {
     });
   });
 
+  describe("presignedDownloadUrl", () => {
+    test("returns a non-empty URL string for a valid ref", () => {
+      const url = storage.presignedDownloadUrl("s3:snapshots/1/page.pdf");
+      expect(typeof url).toBe("string");
+      expect(url.length).toBeGreaterThan(0);
+      // Should contain the object key
+      expect(url).toContain("snapshots/1/page.pdf");
+    });
+
+    test("uses custom expiresIn when provided", () => {
+      const url = storage.presignedDownloadUrl("s3:snapshots/1/archive.warc", 600);
+      // Presigned URL should contain expiry information
+      expect(url).toContain("600");
+    });
+
+    test("throws on invalid ref", () => {
+      expect(() => storage.presignedDownloadUrl("/local/path")).toThrow();
+    });
+  });
+
   describe("validateS3Ref helper", () => {
     test("validates key against prefix", () => {
       expect(validateS3Ref("s3:snapshots/1/archive.warc", "snapshots")).toBe(true);

@@ -63,4 +63,13 @@ export interface StorageBackend {
    * is safe to serve. Used by the server to prevent path traversal attacks.
    */
   validateRef(ref: string): boolean;
+
+  /**
+   * Return a presigned URL for direct client download, or null if the backend
+   * does not support presigned URLs (e.g. FilesystemBackend).
+   *
+   * When non-null, the server should return a 302 redirect to this URL instead
+   * of proxying bytes — enabling zero-copy streaming from the storage backend.
+   */
+  presignedDownloadUrl(ref: string, expiresIn?: number): string | null;
 }

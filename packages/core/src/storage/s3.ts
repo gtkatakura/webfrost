@@ -1,128 +1,8 @@
-import { createHash, createHmac } from "node:crypto";
 import { mkdir, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { S3Client } from "bun";
 import type { StorageBackend } from "./interface";
-
-// ─────────────────────────────────────────────────────────────
-// AWS Signature V4 helpers (no external dependencies)
-// ─────────────────────────────────────────────────────────────
-
-function sha256hex(data: Buffer | string): string {
-  return createHash("sha256").update(data).digest("hex");
-}
-
-function hmacSha256(key: Buffer | string, data: string): Buffer {
-  return createHmac("sha256", key).update(data, "utf8").digest();
-}
-
-function getSigningKey(secretKey: string, date: string, region: string, service: string): Buffer {
-  const kDate = hmacSha256(`AWS4${secretKey}`, date);
-  const kRegion = hmacSha256(kDate, region);
-  const kService = hmacSha256(kRegion, service);
-  return hmacSha256(kService, "aws4_request");
-}
-
-interface SignedHeaders {
-  [key: string]: string;
-}
-
-/**
- * Sign an HTTP request with AWS Signature V4. Returns the complete set of
- * headers to send (including Authorization and x-amz-* headers).
- */
-function signV4(opts: {
-  method: string;
-  url: URL;
-  /** Extra headers to include (all will be signed). */
-  headers?: Record<string, string>;
-  /** Raw body bytes — used to compute the payload hash. */
-  body?: Buffer | null;
-  accessKey: string;
-  secretKey: string;
-  region: string;
-  service?: string;
-}): SignedHeaders {
-  const service = opts.service ?? "s3";
-  const now = new Date();
-  const isoBase = now
-    .toISOString()
-    .replace(/[:\-]|\.\d{3}/g, "")
-    .replace("Z", "Z")
-    .slice(0, 16);
-  const datetime = `${isoBase}00Z`;
-  // datetime format: YYYYMMDDTHHmmssZ
-  const date = datetime.slice(0, 8);
-
-  const bodyHash = opts.body ? sha256hex(opts.body) : sha256hex("");
-
-  // Build the canonical headers map (lowercase keys, sorted)
-  const hdrs: Record<string, string> = {
-    ...(opts.headers ?? {}),
-    host: opts.url.host,
-    "x-amz-date": datetime,
-    "x-amz-content-sha256": bodyHash,
-  };
-
-  const sortedKeys = Object.keys(hdrs)
-    .map((k) => k.toLowerCase())
-    .sort();
-
-  // Deduplicate (the above map already has lowercased keys after the spread)
-  const canonicalHdrs = sortedKeys
-    .map((k) => {
-      const v = hdrs[k] ?? hdrs[Object.keys(hdrs).find((h) => h.toLowerCase() === k) ?? ""] ?? "";
-      return `${k}:${v.trim()}`;
-    })
-    .join("\n");
-
-  const signedHeaders = sortedKeys.join(";");
-
-  const canonicalQueryString = [...opts.url.searchParams.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-    .join("&");
-
-  const canonicalRequest = [
-    opts.method.toUpperCase(),
-    opts.url.pathname,
-    canonicalQueryString,
-    `${canonicalHdrs}\n`,
-    signedHeaders,
-    bodyHash,
-  ].join("\n");
-
-  const credentialScope = `${date}/${opts.region}/${service}/aws4_request`;
-  const stringToSign = [
-    "AWS4-HMAC-SHA256",
-    datetime,
-    credentialScope,
-    sha256hex(canonicalRequest),
-  ].join("\n");
-
-  const signingKey = getSigningKey(opts.secretKey, date, opts.region, service);
-  const signature = hmacSha256(signingKey, stringToSign).toString("hex");
-
-  const authorization = [
-    `AWS4-HMAC-SHA256 Credential=${opts.accessKey}/${credentialScope}`,
-    `SignedHeaders=${signedHeaders}`,
-    `Signature=${signature}`,
-  ].join(", ");
-
-  // Return headers that the caller should send
-  const result: SignedHeaders = {
-    host: opts.url.host,
-    "x-amz-date": datetime,
-    "x-amz-content-sha256": bodyHash,
-    authorization,
-  };
-  if (opts.headers) {
-    for (const [k, v] of Object.entries(opts.headers)) {
-      if (k.toLowerCase() !== "host") result[k.toLowerCase()] = v;
-    }
-  }
-  return result;
-}
 
 // ─────────────────────────────────────────────────────────────
 // S3 config
@@ -148,6 +28,8 @@ const S3_REF_PREFIX = "s3:";
  * Storage backend that writes archive artifacts to an S3-compatible object
  * store (MinIO, AWS S3, Cloudflare R2, Backblaze B2).
  *
+ * Uses Bun's native S3Client — zero external dependencies.
+ *
  * DB refs have the form `s3:{key}` where `key` is the full S3 object key.
  *
  * For Playwright/yt-dlp extractors that must write to a local file first,
@@ -156,6 +38,7 @@ const S3_REF_PREFIX = "s3:";
  * file.
  */
 export class S3Backend implements StorageBackend {
+  private readonly client: S3Client;
   private readonly config: Required<S3Config>;
   private readonly tempBase: string;
 
@@ -165,6 +48,13 @@ export class S3Backend implements StorageBackend {
       pathPrefix: "snapshots",
       ...config,
     };
+    this.client = new S3Client({
+      endpoint: this.config.endpoint,
+      bucket: this.config.bucket,
+      accessKeyId: this.config.accessKey,
+      secretAccessKey: this.config.secretKey,
+      region: this.config.region,
+    });
     this.tempBase = join(tmpdir(), "webfrost-s3-tmp");
   }
 
@@ -184,94 +74,9 @@ export class S3Backend implements StorageBackend {
     return ref.slice(S3_REF_PREFIX.length);
   }
 
-  /** Local temp path (no dirs created yet). */
+  /** Local temp path for external-process writes (Playwright, yt-dlp). */
   private tempPath(snapshotId: number, filename: string): string {
     return join(this.tempBase, String(snapshotId), filename);
-  }
-
-  /** Build a URL for a given S3 key. Uses path-style addressing. */
-  private objectUrl(key: string): URL {
-    const base = this.config.endpoint.replace(/\/$/, "");
-    return new URL(`${base}/${this.config.bucket}/${key}`);
-  }
-
-  /** Execute a signed S3 request. */
-  private async s3Fetch(
-    method: string,
-    key: string,
-    body: Buffer | null,
-    extraHeaders?: Record<string, string>,
-    queryParams?: Record<string, string>,
-  ): Promise<Response> {
-    const url = this.objectUrl(key);
-    if (queryParams) {
-      for (const [k, v] of Object.entries(queryParams)) {
-        url.searchParams.set(k, v);
-      }
-    }
-
-    const signed = signV4({
-      method,
-      url,
-      ...(extraHeaders ? { headers: extraHeaders } : {}),
-      body,
-      accessKey: this.config.accessKey,
-      secretKey: this.config.secretKey,
-      region: this.config.region,
-    });
-
-    const headers: Record<string, string> = { ...signed };
-    if (body !== null && method !== "DELETE") {
-      headers["content-length"] = String(body.length);
-    }
-
-    return fetch(url.toString(), {
-      method,
-      headers,
-      body: body as BodyInit | null,
-    });
-  }
-
-  /** Build a URL for bucket-level operations (e.g. ListObjects). */
-  private bucketUrl(queryParams: Record<string, string>): URL {
-    const base = this.config.endpoint.replace(/\/$/, "");
-    const url = new URL(`${base}/${this.config.bucket}/`);
-    for (const [k, v] of Object.entries(queryParams)) {
-      url.searchParams.set(k, v);
-    }
-    return url;
-  }
-
-  /** List all S3 keys under a given prefix. */
-  private async listKeys(prefix: string): Promise<string[]> {
-    const url = this.bucketUrl({ "list-type": "2", prefix });
-
-    const signed = signV4({
-      method: "GET",
-      url,
-      body: null,
-      accessKey: this.config.accessKey,
-      secretKey: this.config.secretKey,
-      region: this.config.region,
-    });
-
-    const resp = await fetch(url.toString(), {
-      method: "GET",
-      headers: signed,
-    });
-
-    if (!resp.ok) return [];
-
-    const xml = await resp.text();
-    // Parse keys from ListObjectsV2 XML response
-    const keys: string[] = [];
-    const keyRe = /<Key>([^<]+)<\/Key>/g;
-    let m = keyRe.exec(xml);
-    while (m !== null) {
-      if (m[1]) keys.push(m[1]);
-      m = keyRe.exec(xml);
-    }
-    return keys;
   }
 
   // ── StorageBackend implementation ──────────────────────────
@@ -287,11 +92,7 @@ export class S3Backend implements StorageBackend {
     const key = this.key(snapshotId, filename);
 
     const bytes = await Bun.file(p).bytes();
-    const buf = Buffer.from(bytes);
-    const resp = await this.s3Fetch("PUT", key, buf);
-    if (!resp.ok) {
-      throw new Error(`S3 upload failed: ${resp.status} ${await resp.text()}`);
-    }
+    await this.client.write(key, bytes);
 
     // Remove temp file (best-effort)
     try {
@@ -305,47 +106,33 @@ export class S3Backend implements StorageBackend {
 
   async putText(snapshotId: number, filename: string, content: string): Promise<string> {
     const key = this.key(snapshotId, filename);
-    const buf = Buffer.from(content, "utf8");
-    const resp = await this.s3Fetch("PUT", key, buf, {
-      "content-type": "text/plain; charset=utf-8",
-    });
-    if (!resp.ok) {
-      throw new Error(`S3 upload failed: ${resp.status} ${await resp.text()}`);
-    }
+    await this.client.write(key, content);
     return this.toRef(key);
   }
 
   async putBytes(snapshotId: number, filename: string, content: Uint8Array): Promise<string> {
     const key = this.key(snapshotId, filename);
-    const buf = Buffer.from(content);
-    const resp = await this.s3Fetch("PUT", key, buf);
-    if (!resp.ok) {
-      throw new Error(`S3 upload failed: ${resp.status} ${await resp.text()}`);
-    }
+    await this.client.write(key, content);
     return this.toRef(key);
   }
 
   async getBytes(ref: string): Promise<Uint8Array> {
     const key = this.fromRef(ref);
-    const resp = await this.s3Fetch("GET", key, null);
-    if (!resp.ok) {
-      throw new Error(`S3 download failed: ${resp.status}`);
-    }
-    return new Uint8Array(await resp.arrayBuffer());
+    return this.client.file(key).bytes();
   }
 
   async fileExists(ref: string): Promise<boolean> {
     const key = this.fromRef(ref);
-    const resp = await this.s3Fetch("HEAD", key, null);
-    return resp.ok;
+    return this.client.exists(key);
   }
 
   async fileSize(ref: string): Promise<number> {
-    const key = this.fromRef(ref);
-    const resp = await this.s3Fetch("HEAD", key, null);
-    if (!resp.ok) return 0;
-    const len = resp.headers.get("content-length");
-    return len ? Number(len) : 0;
+    try {
+      const key = this.fromRef(ref);
+      return await this.client.size(key);
+    } catch {
+      return 0;
+    }
   }
 
   validateRef(ref: string): boolean {
@@ -354,28 +141,45 @@ export class S3Backend implements StorageBackend {
     return key.startsWith(`${this.config.pathPrefix}/`);
   }
 
+  /**
+   * Return a presigned download URL for the given DB ref.
+   * Expires in 1 hour by default. The server returns a 302 redirect to this
+   * URL, enabling zero-copy streaming directly from S3 to the client.
+   */
+  presignedDownloadUrl(ref: string, expiresIn = 3600): string {
+    const key = this.fromRef(ref);
+    return this.client.presign(key, { expiresIn });
+  }
+
   async deleteAll(snapshotId: number): Promise<void> {
     const prefix = `${this.config.pathPrefix}/${snapshotId}/`;
-    let keys: string[];
     try {
-      keys = await this.listKeys(prefix);
+      let startAfter: string | undefined;
+      for (;;) {
+        const result = await this.client.list({
+          prefix,
+          ...(startAfter ? { startAfter } : {}),
+        });
+        const keys = (result.contents ?? []).map((c) => c.key).filter(Boolean) as string[];
+        await Promise.all(
+          keys.map(async (k) => {
+            try {
+              await this.client.delete(k);
+            } catch {
+              // best-effort
+            }
+          }),
+        );
+        if (!result.isTruncated || keys.length === 0) break;
+        startAfter = keys[keys.length - 1];
+      }
     } catch {
-      return;
+      // best-effort — don't fail snapshot deletion if S3 is unreachable
     }
-    await Promise.all(
-      keys.map(async (key) => {
-        try {
-          await this.s3Fetch("DELETE", key, null);
-        } catch {
-          // best-effort
-        }
-      }),
-    );
 
     // Also clean up any leftover temp files
-    const tmpDir = join(this.tempBase, String(snapshotId));
     try {
-      await rm(tmpDir, { recursive: true, force: true });
+      await rm(join(this.tempBase, String(snapshotId)), { recursive: true, force: true });
     } catch {
       // best-effort
     }
