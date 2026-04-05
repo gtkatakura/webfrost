@@ -1,2 +1,5 @@
 [test]
 preload = ["./src/test-setup.ts"]
+# Restrict test discovery to src/ so e2e/*.spec.ts files are not picked up by
+# `bun test` (which uses Playwright's test() API, incompatible with bun test).
+root = "./src"

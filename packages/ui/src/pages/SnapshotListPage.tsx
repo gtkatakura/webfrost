@@ -551,7 +551,7 @@ export function SnapshotListPage() {
                 color: "var(--text-mid)",
               }}
             >
-              {total}
+              {search.trim() ? filtered.length : total}
             </span>
           )}
         </div>
