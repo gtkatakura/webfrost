@@ -7,8 +7,8 @@
 #   WEBFROST_STORAGE_BACKEND=s3 \
 #   S3_ENDPOINT=http://localhost:9000 \
 #   S3_BUCKET=webfrost \
-#   S3_ACCESS_KEY=minioadmin \
-#   S3_SECRET_KEY=minioadmin \
+#   S3_ACCESS_KEY_ID=minioadmin \
+#   S3_SECRET_ACCESS_KEY=minioadmin \
 #   S3_REGION=us-east-1 \
 #   bun run --cwd packages/server src/index.ts
 #

@@ -16,8 +16,8 @@ import { S3Backend } from "./s3";
  * S3 env vars (required when backend=s3):
  *   S3_ENDPOINT     — e.g. http://localhost:9000 or https://s3.amazonaws.com
  *   S3_BUCKET       — bucket name
- *   S3_ACCESS_KEY   — access key ID
- *   S3_SECRET_KEY   — secret access key
+ *   S3_ACCESS_KEY_ID       — access key ID
+ *   S3_SECRET_ACCESS_KEY   — secret access key
  *   S3_REGION       — region (default: us-east-1)
  *   S3_PATH_PREFIX  — object key prefix (default: snapshots)
  */
@@ -27,12 +27,12 @@ export function createStorageBackend(webfrostDir: string): StorageBackend {
   if (backend === "s3") {
     const endpoint = process.env.S3_ENDPOINT;
     const bucket = process.env.S3_BUCKET;
-    const accessKey = process.env.S3_ACCESS_KEY;
-    const secretKey = process.env.S3_SECRET_KEY;
+    const accessKey = process.env.S3_ACCESS_KEY_ID;
+    const secretKey = process.env.S3_SECRET_ACCESS_KEY;
 
     if (!endpoint || !bucket || !accessKey || !secretKey) {
       throw new Error(
-        "S3 storage backend requires S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, and S3_SECRET_KEY",
+        "S3 storage backend requires S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY",
       );
     }
 
