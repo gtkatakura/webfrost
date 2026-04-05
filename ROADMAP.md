@@ -111,7 +111,7 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 | Structured CLI logging (`--verbose`, `--quiet`, `WEBFROST_LOG_LEVEL`) | ✅ | ✅ | — |
 | Batch operations (delete/retag) | ✅ | ❌ | 🟡 P2 |
 | Desktop app | ✅ | ❌ | ⚪ P3 |
-| Dark mode | partial | ❌ | 🟡 P2 |
+| Dark mode | partial | ✅ | — |
 
 ### Deployment
 
@@ -169,7 +169,6 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 | **Cron timezone support** | Users expect local-time scheduling | S | partial |
 | **SAML / OAuth / OIDC** | Enterprise SSO integration | L | ✅ |
 | **Batch operations UI** | Delete/re-archive/tag in bulk | M | ✅ |
-| **Dark mode** | UX quality of life | S | partial |
 | **Kubernetes manifests** | Formal k8s deployment support | M | ❌ |
 | **Bare metal install** | `bun install -g @webfrost/cli` should work globally | S | ✅ |
 
