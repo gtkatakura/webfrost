@@ -124,7 +124,8 @@ function NavItem({ to, Icon, label, active, collapsed }: NavItemProps) {
     <Link
       to={to}
       title={collapsed ? label : undefined}
-      className="flex items-center gap-2.5 rounded-md no-underline transition-colors relative group"
+      aria-current={active ? "page" : undefined}
+      className={`flex items-center gap-2.5 rounded-md no-underline transition-colors relative group${active ? " nav-item--active" : " nav-item--inactive"}`}
       style={{
         padding: collapsed ? "8px 0" : "7px 10px",
         justifyContent: collapsed ? "center" : "flex-start",

@@ -97,6 +97,14 @@ test("@media youtube: snapshot completes and media file is archived", async ({ r
     return;
   }
 
+  if (process.env.CI) {
+    test.skip(
+      true,
+      "YouTube download tests skipped in CI — network unreliable for yt-dlp in GitHub Actions",
+    );
+    return;
+  }
+
   const postResp = await request.post(`${API}/api/snapshots`, {
     data: { url: YOUTUBE_VIDEO_URL },
   });
@@ -124,6 +132,14 @@ test("@media youtube: media download has correct content-type and non-zero size"
 
   if (!ytDlpAvailable) {
     test.skip(true, "yt-dlp not installed — skipping media extraction tests");
+    return;
+  }
+
+  if (process.env.CI) {
+    test.skip(
+      true,
+      "YouTube download tests skipped in CI — network unreliable for yt-dlp in GitHub Actions",
+    );
     return;
   }
 
@@ -165,6 +181,14 @@ test("@media youtube: media-metadata download returns valid JSON with title, dur
 
   if (!ytDlpAvailable) {
     test.skip(true, "yt-dlp not installed — skipping media extraction tests");
+    return;
+  }
+
+  if (process.env.CI) {
+    test.skip(
+      true,
+      "YouTube download tests skipped in CI — network unreliable for yt-dlp in GitHub Actions",
+    );
     return;
   }
 

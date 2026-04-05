@@ -595,6 +595,8 @@ export function ImportPage() {
             <button
               key={id}
               type="button"
+              aria-label={`${label} tab`}
+              aria-selected={active}
               onClick={() => {
                 setActiveTab(id);
                 if (id === "import" && importResult) handleReset();

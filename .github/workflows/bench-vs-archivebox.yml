@@ -47,10 +47,18 @@ jobs:
       - name: Pull competitor images
         run: |
           docker pull alpine:3.20
-          docker pull y2z/monolith
+          if docker pull y2z/monolith 2>&1; then
+            echo "MONOLITH_AVAILABLE=true" >> "$GITHUB_ENV"
+          else
+            echo "Monolith image unavailable — monolith scenarios will be skipped"
+            echo "MONOLITH_AVAILABLE=false" >> "$GITHUB_ENV"
+          fi
 
       - name: Run benchmark
-        run: bun bench/vs-archivebox/run.ts
+        run: |
+          SKIP_FLAGS=""
+          [ "$MONOLITH_AVAILABLE" = "false" ] && SKIP_FLAGS="$SKIP_FLAGS --skip-monolith"
+          bun bench/vs-archivebox/run.ts $SKIP_FLAGS
         timeout-minutes: 35
 
       - name: Generate chart report
