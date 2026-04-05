@@ -121,6 +121,34 @@ jobs:
       - name: Test
         run: bun run test
 
+  server-api-e2e:
+    name: Server API E2E Tests
+    needs: install
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: oven-sh/setup-bun@v2.0.2
+        with:
+          bun-version-file: .tool-versions
+
+      - name: Restore node_modules cache
+        id: cache-restore
+        uses: actions/cache/restore@v4.2.2
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: node-modules-${{ github.sha }}
+
+      - name: Install dependencies (cache miss fallback)
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
+
+      - name: Server API E2E tests
+        run: bun run test:e2e
+        working-directory: packages/server
+
   e2e:
     name: E2E Tests
     needs: install
