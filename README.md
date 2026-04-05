@@ -46,6 +46,8 @@ WEBFROST_DIR=./data SESSION_SECRET=$SESSION_SECRET bun run packages/server/src/i
 
 ## Documentation
 
+Full documentation site: `bun run docs:dev` → `http://localhost:5173`
+
 | Section | Contents |
 |---|---|
 | [Tutorials](docs/tutorials/first-archive.md) | Archive your first page end-to-end |
