@@ -94,6 +94,7 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 |---------|----|----|----------|
 | REST API for snapshots | ✅ | ✅ | — |
 | REST API for schedules | ✅ | ✅ | — |
+| Schedule pause/resume + health tracking (`lastStatus`, `consecutiveFailures`) | ❌ | ✅ | — |
 | SDK (programmatic use) | partial | ✅ | — |
 | Webhook notifications | ✅ | ❌ | 🟠 P1 |
 | OpenAPI / interactive docs | ✅ | ❌ | 🟠 P1 |

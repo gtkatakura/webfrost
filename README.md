@@ -449,7 +449,9 @@ The server exposes a REST API alongside the React UI. All `/api/*` routes requir
 | `POST` | `/api/snapshots/:id/tags` | Add a tag to a snapshot |
 | `DELETE` | `/api/snapshots/:id/tags/:tagId` | Remove a tag from a snapshot |
 | `POST` | `/api/schedules` | Add a recurring archive schedule |
-| `GET` | `/api/schedules` | List all schedules |
+| `GET` | `/api/schedules` | List all schedules (includes `paused`, `lastStatus`, `consecutiveFailures`) |
+| `GET` | `/api/schedules/:id` | Get a single schedule |
+| `PATCH` | `/api/schedules/:id` | Pause or resume a schedule — `{ paused: true\|false }` |
 | `DELETE` | `/api/schedules/:id` | Remove a schedule |
 | `GET` | `/api/tags` | List all tags |
 | `POST` | `/api/tags` | Create a tag |
