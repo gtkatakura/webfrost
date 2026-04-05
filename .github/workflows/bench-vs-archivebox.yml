@@ -12,20 +12,20 @@ concurrency:
 jobs:
   bench:
     name: WebFrost vs ArchiveBox + wget + monolith
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@v2.0.2
         with:
-          bun-version: latest
+          bun-version: 1.3.11
 
       - name: Cache Bun dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v4.2.2
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
@@ -67,7 +67,7 @@ jobs:
 
       - name: Upload results and report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.4.3
         with:
           name: vs-competitors-results-${{ github.sha }}
           path: bench/vs-archivebox/results/
