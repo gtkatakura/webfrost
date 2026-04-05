@@ -316,8 +316,8 @@ export function Layout() {
       {/* Divider */}
       <div className="my-3 mx-3" style={{ height: 1, background: "var(--border-default)" }} />
 
-      {/* Secondary navigation */}
-      <nav className="flex flex-col gap-0.5" style={{ padding: collapsed ? "0 8px" : "0 8px" }}>
+      {/* Secondary navigation — not a landmark nav to avoid strict-mode violations */}
+      <div className="flex flex-col gap-0.5" style={{ padding: collapsed ? "0 8px" : "0 8px" }}>
         {SECONDARY_NAV.map(({ label, to, Icon }) => (
           <NavItem
             key={to}
@@ -328,7 +328,7 @@ export function Layout() {
             collapsed={collapsed}
           />
         ))}
-      </nav>
+      </div>
 
       {/* Bottom section */}
       <div

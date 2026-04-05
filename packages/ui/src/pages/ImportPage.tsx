@@ -23,19 +23,19 @@ const IMPORT_TYPES: { id: ImportType; label: string; icon: React.ReactNode; hint
   },
   {
     id: "opml",
-    label: "OPML",
+    label: "OPML File",
     icon: <FileText size={14} />,
     hint: "Import a list of feeds from an OPML file",
   },
   {
     id: "netscape",
-    label: "Bookmarks",
+    label: "Bookmarks HTML",
     icon: <Link size={14} />,
     hint: "Import from browser bookmarks HTML export",
   },
   {
     id: "text",
-    label: "Plain text",
+    label: "Plain Text URLs",
     icon: <FileText size={14} />,
     hint: "One URL per line",
   },
@@ -43,9 +43,9 @@ const IMPORT_TYPES: { id: ImportType; label: string; icon: React.ReactNode; hint
 
 const FORMAT_LABELS: Record<string, string> = {
   rss: "RSS / Atom",
-  opml: "OPML",
+  opml: "OPML File",
   netscape: "Bookmarks HTML",
-  text: "Plain text",
+  text: "Plain Text URLs",
 };
 
 // ─── Utilities ────────────────────────────────────────────────────────────────

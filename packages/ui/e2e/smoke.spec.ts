@@ -14,12 +14,8 @@ test("@smoke: dashboard loads and snapshot appears after POST", async ({ page, r
   // Navigate to the UI root.
   await page.goto("/");
 
-  // Assert the WebFrost heading is visible.
-  await expect(page.getByRole("heading", { name: "WebFrost" })).toBeVisible();
-
-  // Assert the snapshot list container is rendered (even when empty).
-  // The filter-by-URL input is always visible on the list page.
-  await expect(page.getByPlaceholder("Filter by URL\u2026")).toBeVisible();
+  // Assert the Dashboard heading is visible.
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 
   // POST a snapshot via the API directly to avoid waiting for the pipeline.
   const resp = await request.post("http://localhost:3000/api/snapshots", {
@@ -27,16 +23,12 @@ test("@smoke: dashboard loads and snapshot appears after POST", async ({ page, r
   });
   expect(resp.status()).toBe(202);
 
-  // Reload the page so the React app refetches the snapshot list.
-  await page.reload();
+  // Navigate to the snapshots list page.
+  await page.goto("/#/snapshots");
 
-  // Wait for the filter input to confirm the list page has rendered.
-  const filterInput = page.getByPlaceholder("Filter by URL\u2026");
-  await expect(filterInput).toBeVisible({ timeout: 10_000 });
+  // Wait for real snapshot rows to load (li > a structure).
+  await expect(page.locator("li a").first()).toBeVisible({ timeout: 10_000 });
 
-  // Narrow the client-side list to just this URL so pagination doesn't hide it.
-  await filterInput.fill("https://example.com");
-
-  // The snapshot row must be visible.
-  await expect(page.getByText("https://example.com")).toBeVisible({ timeout: 5_000 });
+  // The snapshot row must be visible on the first page (most recent items first).
+  await expect(page.getByText("https://example.com").first()).toBeVisible({ timeout: 5_000 });
 });

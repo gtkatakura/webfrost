@@ -1,4 +1,3 @@
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { WebFrostError } from "@webfrost/sdk";
 import type { Snapshot, Tag } from "@webfrost/sdk";
 import {
@@ -16,6 +15,7 @@ import {
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import { Pagination } from "../components/Pagination";
 import { useClient } from "../context";
 import { useBulkSnapshots, useSnapshots, useTags } from "../hooks";
 import { SnapshotDetailPanel } from "./SnapshotDetailPanel";
@@ -23,6 +23,7 @@ import { SnapshotDetailPanel } from "./SnapshotDetailPanel";
 // ─── Constants ────────────────────────────────────────────────
 
 const DENSITY_KEY = "webfrost-snapshot-density";
+const PAGE_SIZE = 20;
 const KNOWN_EXTRACTORS = [
   "screenshot",
   "warc",
@@ -103,21 +104,12 @@ interface SnapshotRowProps {
   snapshot: Snapshot;
   selected: boolean;
   onToggle: (id: number) => void;
-  onOpenDetail: (id: number) => void;
   density: Density;
   height: number;
   style?: CSSProperties;
 }
 
-function SnapshotRow({
-  snapshot,
-  selected,
-  onToggle,
-  onOpenDetail,
-  density,
-  height,
-  style,
-}: SnapshotRowProps) {
+function SnapshotRow({ snapshot, selected, onToggle, density, height, style }: SnapshotRowProps) {
   const ts = new Date(snapshot.createdAt).toLocaleString(undefined, {
     month: "short",
     day: "numeric",
@@ -128,7 +120,7 @@ function SnapshotRow({
   const extractorSet = new Set(snapshot.extractors);
 
   return (
-    <div
+    <li
       style={{
         ...style,
         height,
@@ -137,6 +129,7 @@ function SnapshotRow({
         borderBottom: "1px solid var(--border-default)",
         background: selected ? "color-mix(in srgb, var(--accent) 6%, transparent)" : "transparent",
         transition: "background 100ms ease",
+        listStyle: "none",
       }}
       onMouseEnter={(e) => {
         if (!selected) (e.currentTarget as HTMLElement).style.background = "var(--bg-subtle)";
@@ -191,12 +184,11 @@ function SnapshotRow({
         </div>
       )}
 
-      {/* URL + title (main content) */}
-      <button
-        type="button"
-        className="flex-1 min-w-0 flex flex-col justify-center text-left cursor-pointer border-0 bg-transparent pr-3"
-        style={{ height: "100%" }}
-        onClick={() => onOpenDetail(snapshot.id)}
+      {/* URL + title (main content) — rendered as a link for accessibility and test targeting */}
+      <Link
+        to={`?detail=${snapshot.id}`}
+        className="flex-1 min-w-0 flex flex-col justify-center text-left no-underline pr-3"
+        style={{ height: "100%", color: "inherit" }}
       >
         {density === "comfortable" && snapshot.title ? (
           <>
@@ -212,7 +204,7 @@ function SnapshotRow({
             {snapshot.url}
           </span>
         )}
-      </button>
+      </Link>
 
       {/* Extractor chips */}
       <div className="hidden md:flex items-center gap-1 shrink-0 mr-3">
@@ -253,7 +245,7 @@ function SnapshotRow({
         <Clock size={10} />
         <span className="truncate">{ts}</span>
       </div>
-    </div>
+    </li>
   );
 }
 
@@ -454,8 +446,17 @@ function BulkBar({
 
 export function SnapshotListPage() {
   const client = useClient();
-  const { snapshots, loading, error: snapshotsError, setError, refetch } = useSnapshots();
+  const [page, setPage] = useState(1);
+  const {
+    snapshots,
+    total,
+    loading,
+    error: snapshotsError,
+    setError,
+    refetch,
+  } = useSnapshots(page, PAGE_SIZE);
   const { tags: allTags } = useTags();
+  const totalPages = Math.ceil(total / PAGE_SIZE);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const detailId = searchParams.get("detail") ? Number(searchParams.get("detail")) : null;
@@ -471,7 +472,7 @@ export function SnapshotListPage() {
     }
   });
 
-  // filtered must be defined before bulk (which needs visibleIds)
+  // Client-side search filters within the current page
   const filtered = useMemo(() => {
     if (!search.trim()) return snapshots;
     const q = search.toLowerCase();
@@ -529,19 +530,6 @@ export function SnapshotListPage() {
   }
 
   const rowHeight = ROW_HEIGHT[density];
-
-  // Virtual scroll
-  const parentRef = useRef<HTMLDivElement>(null);
-  const virtualizer = useVirtualizer({
-    count: filtered.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => rowHeight,
-    overscan: 10,
-  });
-
-  const virtualItems = virtualizer.getVirtualItems();
-
-  // Skeleton rows during initial load
   const skeletonCount = 10;
 
   return (
@@ -563,7 +551,7 @@ export function SnapshotListPage() {
                 color: "var(--text-mid)",
               }}
             >
-              {filtered.length}
+              {total}
             </span>
           )}
         </div>
@@ -645,23 +633,24 @@ export function SnapshotListPage() {
         </div>
       </div>
 
-      {/* ── Virtual list ─────────────────────────────────────── */}
+      {/* ── List ─────────────────────────────────────────────── */}
       <div
-        ref={parentRef}
         className="flex-1 overflow-y-auto overflow-x-hidden"
         style={{ background: "var(--bg-app)" }}
       >
         {loading ? (
-          // Skeleton
-          <div>
+          // Skeleton rows — rendered as <li> without child <a> so tests can
+          // distinguish them from real data rows via the "li a" selector.
+          <ul style={{ margin: 0, padding: 0 }}>
             {Array.from({ length: skeletonCount }).map((_, i) => (
-              <div
+              <li
                 // biome-ignore lint/suspicious/noArrayIndexKey: skeleton rows
                 key={i}
                 className="flex items-center gap-3 px-5 border-b"
                 style={{
                   height: rowHeight,
                   borderColor: "var(--border-default)",
+                  listStyle: "none",
                 }}
               >
                 <div
@@ -686,9 +675,9 @@ export function SnapshotListPage() {
                     />
                   )}
                 </div>
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         ) : filtered.length === 0 ? (
           // Empty state
           <div
@@ -717,35 +706,30 @@ export function SnapshotListPage() {
             </div>
           </div>
         ) : (
-          // Virtualised rows
-          <div
-            style={{
-              height: virtualizer.getTotalSize(),
-              position: "relative",
-            }}
-          >
-            {virtualItems.map((virtualItem) => {
-              const snapshot = filtered[virtualItem.index];
-              return (
-                <SnapshotRow
-                  key={snapshot.id}
-                  snapshot={snapshot}
-                  selected={bulk.selectedIds.has(snapshot.id)}
-                  onToggle={bulk.toggle}
-                  onOpenDetail={openDetail}
-                  density={density}
-                  height={rowHeight}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    transform: `translateY(${virtualItem.start}px)`,
-                  }}
-                />
-              );
-            })}
-          </div>
+          // Paginated rows — <ul> > <li> > <Link> structure
+          <ul style={{ margin: 0, padding: 0 }}>
+            {filtered.map((snapshot) => (
+              <SnapshotRow
+                key={snapshot.id}
+                snapshot={snapshot}
+                selected={bulk.selectedIds.has(snapshot.id)}
+                onToggle={bulk.toggle}
+                density={density}
+                height={rowHeight}
+              />
+            ))}
+          </ul>
+        )}
+
+        {/* ── Pagination ────────────────────────────────────── */}
+        {!loading && totalPages > 1 && (
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPrev={() => setPage((p) => Math.max(1, p - 1))}
+            onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+            onPage={setPage}
+          />
         )}
       </div>
 
