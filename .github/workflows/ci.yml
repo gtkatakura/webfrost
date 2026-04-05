@@ -118,8 +118,32 @@ jobs:
         if: steps.cache-restore.outputs.cache-hit != 'true'
         run: bun install --frozen-lockfile
 
+      - name: Start MinIO for integration tests
+        run: |
+          docker run -d --name minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio:latest server /data
+          # Wait up to 30 s for MinIO to become ready
+          for i in $(seq 1 6); do
+            if curl -sf http://localhost:9000/minio/health/live; then
+              echo "MinIO is ready"; break
+            fi
+            echo "Waiting for MinIO ($i/6)..."; sleep 5
+          done
+          # Create integration test bucket
+          docker run --rm --network host \
+            -e MC_HOST_local=http://minioadmin:minioadmin@localhost:9000 \
+            minio/mc:latest mb --ignore-existing local/webfrost-integration
+
       - name: Test
         run: bun run test
+        env:
+          MINIO_TEST_ENDPOINT: http://localhost:9000
+          MINIO_TEST_BUCKET: webfrost-integration
+          MINIO_TEST_ACCESS_KEY: minioadmin
+          MINIO_TEST_SECRET_KEY: minioadmin
 
   server-api-e2e:
     name: Server API E2E Tests
