@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Page } from "playwright";
 import { openDb } from "../db";
+import { FilesystemBackend } from "../storage";
 import { screenshotExtractor } from "./screenshot";
 
 /** Minimal Page stub whose screenshot() always throws (simulates Playwright unavailable). */
@@ -35,19 +36,21 @@ afterEach(() => {
   }
 });
 
+function makeStorage() {
+  return new FilesystemBackend(join(testDir, "snapshots"));
+}
+
 describe("screenshotExtractor", () => {
   test("does not throw when page.screenshot() fails (graceful degradation)", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
     const page = makeFailingPage();
 
-    await expect(screenshotExtractor(db, 1, snapshotDir, page)).resolves.toBeUndefined();
+    await expect(screenshotExtractor(db, 1, makeStorage(), page)).resolves.toBeUndefined();
   });
 
   test("does not insert archive_result row when extraction fails", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
     const page = makeFailingPage();
 
-    await screenshotExtractor(db, 1, snapshotDir, page);
+    await screenshotExtractor(db, 1, makeStorage(), page);
 
     const rows = db
       .query<{ extractor: string }, []>(

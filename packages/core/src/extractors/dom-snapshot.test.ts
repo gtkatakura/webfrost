@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Page } from "playwright";
 import { openDb } from "../db";
+import { FilesystemBackend } from "../storage";
 import { domSnapshotExtractor } from "./dom-snapshot";
 
 /** Minimal Page stub whose content() always throws. */
@@ -45,19 +46,21 @@ afterEach(() => {
   }
 });
 
+function makeStorage() {
+  return new FilesystemBackend(join(testDir, "snapshots"));
+}
+
 describe("domSnapshotExtractor", () => {
   test("does not throw when page.content() fails (graceful degradation)", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
     const page = makeFailingPage();
 
-    await expect(domSnapshotExtractor(db, 1, snapshotDir, page)).resolves.toBeUndefined();
+    await expect(domSnapshotExtractor(db, 1, makeStorage(), page)).resolves.toBeUndefined();
   });
 
   test("does not insert archive_result row when extraction fails", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
     const page = makeFailingPage();
 
-    await domSnapshotExtractor(db, 1, snapshotDir, page);
+    await domSnapshotExtractor(db, 1, makeStorage(), page);
 
     const rows = db
       .query<{ extractor: string }, []>(
@@ -69,11 +72,10 @@ describe("domSnapshotExtractor", () => {
   });
 
   test("writes dom.html and inserts archive_result row on success", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
     const html = "<html><body><p>Hello JS world</p></body></html>";
     const page = makeSuccessPage(html);
 
-    await domSnapshotExtractor(db, 1, snapshotDir, page);
+    await domSnapshotExtractor(db, 1, makeStorage(), page);
 
     const row = db
       .query<{ content: string }, []>(

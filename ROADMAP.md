@@ -71,8 +71,8 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 | SQLite + filesystem | ✅ | ✅ | — |
 | WAL mode for concurrent reads | ✅ | ✅ | — |
 | Snapshot deletion | ❌ | ✅ | — |
-| S3/object storage backend | ✅ | ❌ | 🟠 P1 |
-| Backblaze B2 / Cloudflare R2 | ✅ | ❌ | 🟠 P1 |
+| S3/object storage backend | ✅ | ✅ | — |
+| Backblaze B2 / Cloudflare R2 | ✅ | ✅ | — |
 | Archive export (zip/tar) | partial | ❌ | 🟡 P2 |
 | NFS/SFTP remote filesystem | ✅ | ❌ | ⚪ P3 |
 
@@ -149,7 +149,7 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 | Feature | Why it matters | Complexity | AB has it |
 |---------|----------------|------------|-----------|
 | **Browser extension** (Chrome + Firefox) | One-click archiving from browser; major UX unlock | L | ✅ |
-| **S3/object storage backend** | Scale archive beyond local disk; cloud-native deployments | L | ✅ |
+| ~~**S3/object storage backend**~~ ✅ shipped | Scale archive beyond local disk; cloud-native deployments | L | ✅ |
 | **Webhook notifications** | Automation pipelines and integrations | S | ✅ |
 | **OpenAPI / Swagger docs** | Developer experience; SDK generation | S | ✅ |
 | **Custom extractor SDK** | Community can add formats without forking | L | partial |

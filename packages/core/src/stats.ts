@@ -1,7 +1,7 @@
 import type Database from "bun:sqlite";
-import { statSync } from "node:fs";
+import type { StorageBackend } from "./storage";
 
-// Extractors that store a filesystem path as content rather than inline text
+// Extractors that store a backend ref as content rather than inline text
 const FILE_BACKED_EXTRACTORS = new Set([
   "screenshot",
   "pdf",
@@ -20,7 +20,7 @@ export interface Stats {
   failedToday: number;
 }
 
-export function getStats(db: Database): Stats {
+export async function getStats(db: Database, storage: StorageBackend): Promise<Stats> {
   // Total snapshot count
   const snapshotRow = db
     .query<{ count: number }, []>("SELECT COUNT(*) AS count FROM snapshots")
@@ -35,20 +35,19 @@ export function getStats(db: Database): Stats {
     .all();
 
   const storageByExtractor: Record<string, number> = {};
-  for (const row of archiveRows) {
-    if (!row.content) continue;
-    let bytes: number;
-    if (FILE_BACKED_EXTRACTORS.has(row.extractor)) {
-      try {
-        bytes = statSync(row.content).size;
-      } catch {
-        bytes = 0;
+  await Promise.all(
+    archiveRows.map(async (row) => {
+      if (!row.content) return;
+      let bytes: number;
+      if (FILE_BACKED_EXTRACTORS.has(row.extractor)) {
+        bytes = await storage.fileSize(row.content);
+      } else {
+        bytes = row.content.length;
       }
-    } else {
-      bytes = row.content.length;
-    }
-    storageByExtractor[row.extractor] = (storageByExtractor[row.extractor] ?? 0) + bytes;
-  }
+      storageByExtractor[row.extractor] = (storageByExtractor[row.extractor] ?? 0) + bytes;
+    }),
+  );
+
   const storageBytes = Object.values(storageByExtractor).reduce((a, b) => a + b, 0);
 
   // Success rate over last 30 days (snapshots that have finished — pending excluded)

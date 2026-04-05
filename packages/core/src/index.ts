@@ -1,5 +1,8 @@
 // @webfrost/core — DB, pipeline, extractors
 export { ConcurrencyLimiter, createConcurrencyLimiter } from "./concurrency";
+export type { StorageBackend } from "./storage";
+export { FilesystemBackend, S3Backend, createStorageBackend, validateS3Ref } from "./storage";
+export type { S3Config } from "./storage";
 export { openDb } from "./db";
 export {
   createAdminUser,

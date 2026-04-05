@@ -1,7 +1,6 @@
 import type Database from "bun:sqlite";
-import { rm } from "node:fs/promises";
-import { join } from "node:path";
 import { removeFromIndex } from "./search";
+import type { StorageBackend } from "./storage";
 
 interface ArchiveResult {
   id: number;
@@ -40,13 +39,13 @@ export function getSnapshot(db: Database, id: number): SnapshotDetail | null {
 
 /**
  * Delete a snapshot and all related data (archive results, job queue entries,
- * snapshot-tag associations) plus artifact files on disk.
+ * snapshot-tag associations) plus artifact files on disk/S3.
  * Returns true if the snapshot was found and deleted, false if not found.
  */
 export async function deleteSnapshot(
   db: Database,
   id: number,
-  snapshotsBaseDir: string,
+  storage: StorageBackend,
 ): Promise<boolean> {
   const exists = db
     .query<{ id: number }, [number]>("SELECT id FROM snapshots WHERE id = ?")
@@ -61,13 +60,8 @@ export async function deleteSnapshot(
   removeFromIndex(db, id);
   db.query<null, [number]>("DELETE FROM snapshots WHERE id = ?").run(id);
 
-  // Remove artifact files from disk (best effort — don't fail if already gone)
-  const snapshotDir = join(snapshotsBaseDir, "snapshots", String(id));
-  try {
-    await rm(snapshotDir, { recursive: true, force: true });
-  } catch {
-    // best-effort cleanup
-  }
+  // Remove artifact files (best effort — don't fail if already gone)
+  await storage.deleteAll(id);
 
   return true;
 }

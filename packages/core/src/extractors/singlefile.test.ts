@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Page } from "playwright";
 import { openDb } from "../db";
+import { FilesystemBackend } from "../storage";
 import { singleFileExtractor } from "./singlefile";
 
 /** Minimal Page stub whose content() always throws. */
@@ -47,19 +48,21 @@ afterEach(() => {
   }
 });
 
+function makeStorage() {
+  return new FilesystemBackend(join(testDir, "snapshots"));
+}
+
 describe("singleFileExtractor", () => {
   test("does not throw when page.content() fails (graceful degradation)", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
     const page = makeFailingPage();
 
-    await expect(singleFileExtractor(db, 1, snapshotDir, page)).resolves.toBeUndefined();
+    await expect(singleFileExtractor(db, 1, makeStorage(), page)).resolves.toBeUndefined();
   });
 
   test("does not insert archive_result row when extraction fails", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
     const page = makeFailingPage();
 
-    await singleFileExtractor(db, 1, snapshotDir, page);
+    await singleFileExtractor(db, 1, makeStorage(), page);
 
     const row = db
       .query<{ extractor: string }, []>(
@@ -71,11 +74,10 @@ describe("singleFileExtractor", () => {
   });
 
   test("writes singlefile.html and inserts archive_result row on success", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
     const html = "<html><body><p>Hello world</p></body></html>";
     const page = makeSuccessPage(html);
 
-    await singleFileExtractor(db, 1, snapshotDir, page);
+    await singleFileExtractor(db, 1, makeStorage(), page);
 
     const row = db
       .query<{ content: string }, []>(
@@ -92,7 +94,6 @@ describe("singleFileExtractor", () => {
   });
 
   test("rebases relative url() references in inlined CSS to absolute URLs", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
     const cssText = "body { background: url(../images/bg.png); color: red; }";
 
     const server = Bun.serve({
@@ -109,7 +110,7 @@ describe("singleFileExtractor", () => {
     const html = `<html><head><link rel="stylesheet" href="${base}/css/style.css"></head><body></body></html>`;
     const page = makeSuccessPage(html, `${base}/page.html`);
 
-    await singleFileExtractor(db, 1, snapshotDir, page);
+    await singleFileExtractor(db, 1, makeStorage(), page);
     server.stop(true);
 
     const row = db
@@ -126,7 +127,6 @@ describe("singleFileExtractor", () => {
   });
 
   test("inlines font files as base64 data URIs when rebasing CSS url() references", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
     const fakeFont = new Uint8Array([1, 2, 3, 4]);
     const cssText = "@font-face { src: url(../fonts/test.woff2); }";
 
@@ -148,7 +148,7 @@ describe("singleFileExtractor", () => {
     const html = `<html><head><link rel="stylesheet" href="${base}/css/style.css"></head><body></body></html>`;
     const page = makeSuccessPage(html, `${base}/page.html`);
 
-    await singleFileExtractor(db, 1, snapshotDir, page);
+    await singleFileExtractor(db, 1, makeStorage(), page);
     server.stop(true);
 
     const row = db
@@ -165,7 +165,6 @@ describe("singleFileExtractor", () => {
   });
 
   test("falls back to absolute URL when font fetch fails", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
     const cssText = "@font-face { src: url(../fonts/missing.woff2); }";
 
     const server = Bun.serve({
@@ -183,7 +182,7 @@ describe("singleFileExtractor", () => {
     const html = `<html><head><link rel="stylesheet" href="${base}/css/style.css"></head><body></body></html>`;
     const page = makeSuccessPage(html, `${base}/page.html`);
 
-    await singleFileExtractor(db, 1, snapshotDir, page);
+    await singleFileExtractor(db, 1, makeStorage(), page);
     server.stop(true);
 
     const row = db
@@ -200,13 +199,12 @@ describe("singleFileExtractor", () => {
   });
 
   test("leaves link[rel=stylesheet] unchanged when fetch fails", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
     const html =
       '<html><head><link rel="stylesheet" href="https://nonexistent.invalid/style.css"></head><body></body></html>';
     const page = makeSuccessPage(html);
 
     // Should not throw even if fetch fails
-    await expect(singleFileExtractor(db, 1, snapshotDir, page)).resolves.toBeUndefined();
+    await expect(singleFileExtractor(db, 1, makeStorage(), page)).resolves.toBeUndefined();
 
     const row = db
       .query<{ content: string }, []>(

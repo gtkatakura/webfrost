@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb } from "../db";
+import { FilesystemBackend } from "../storage";
 import { warcExtractor } from "./warc";
 
 let testDir: string;
@@ -26,15 +27,19 @@ afterEach(() => {
   }
 });
 
+function makeStorage() {
+  return new FilesystemBackend(join(testDir, "snapshots"));
+}
+
 describe("warcExtractor", () => {
-  test("writes a valid WARC/1.1 file to snapshotDir", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
+  test("writes a valid WARC/1.1 file to storage", async () => {
+    const storage = makeStorage();
     const mockHeaders = new Headers({ "content-type": "text/html; charset=utf-8" });
     const html = "<html><body>Hello WARC</body></html>";
 
-    await warcExtractor(db, 1, "https://example.com", mockHeaders, 200, "OK", html, snapshotDir);
+    await warcExtractor(db, 1, "https://example.com", mockHeaders, 200, "OK", html, storage);
 
-    const warcPath = join(snapshotDir, "archive.warc");
+    const warcPath = join(testDir, "snapshots", "1", "archive.warc");
     expect(existsSync(warcPath)).toBe(true);
 
     const content = readFileSync(warcPath, "utf8");
@@ -45,20 +50,11 @@ describe("warcExtractor", () => {
     expect(content).toContain("Hello WARC");
   });
 
-  test("stores WARC file path in archive_results with extractor=warc", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
+  test("stores WARC file ref in archive_results with extractor=warc", async () => {
+    const storage = makeStorage();
     const mockHeaders = new Headers({ "content-type": "text/html" });
 
-    await warcExtractor(
-      db,
-      1,
-      "https://example.com",
-      mockHeaders,
-      200,
-      "OK",
-      "<html/>",
-      snapshotDir,
-    );
+    await warcExtractor(db, 1, "https://example.com", mockHeaders, 200, "OK", "<html/>", storage);
 
     const row = db
       .query<{ extractor: string; content: string }, []>(
@@ -71,21 +67,12 @@ describe("warcExtractor", () => {
     expect(row?.content).toContain("archive.warc");
   });
 
-  test("creates snapshotDir if it does not exist", async () => {
-    const snapshotDir = join(testDir, "snapshots", "99");
+  test("creates storage directory if it does not exist", async () => {
+    const storage = makeStorage();
     const mockHeaders = new Headers({});
 
-    await warcExtractor(
-      db,
-      1,
-      "https://example.com",
-      mockHeaders,
-      200,
-      "OK",
-      "<html/>",
-      snapshotDir,
-    );
+    await warcExtractor(db, 1, "https://example.com", mockHeaders, 200, "OK", "<html/>", storage);
 
-    expect(existsSync(snapshotDir)).toBe(true);
+    expect(existsSync(join(testDir, "snapshots", "1", "archive.warc"))).toBe(true);
   });
 });

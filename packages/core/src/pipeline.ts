@@ -1,6 +1,4 @@
 import type Database from "bun:sqlite";
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
 import { domSnapshotExtractor } from "./extractors/dom-snapshot";
 import { htmlExtractor } from "./extractors/html";
 import { mediaExtractor } from "./extractors/media";
@@ -11,6 +9,8 @@ import { singleFileExtractor } from "./extractors/singlefile";
 import { warcExtractor } from "./extractors/warc";
 import { FetchCache } from "./fetch-cache";
 import { extractIndexFields, indexSnapshot } from "./search";
+import { createStorageBackend } from "./storage";
+import type { StorageBackend } from "./storage";
 
 export interface Logger {
   debug(msg: string): void;
@@ -44,10 +44,10 @@ export async function runPipeline(
   dir: string,
   cache?: FetchCache,
   logger?: Logger,
+  storage?: StorageBackend,
 ): Promise<void> {
   const start = Date.now();
-  const snapshotDir = join(dir, "snapshots", String(snapshotId));
-  await mkdir(snapshotDir, { recursive: true });
+  const effectiveStorage = storage ?? createStorageBackend(dir);
 
   logger?.debug(`pipeline start snapshot=${snapshotId} url=${url}`);
 
@@ -128,20 +128,20 @@ export async function runPipeline(
     runTimed("html", Promise.resolve(htmlExtractor(db, snapshotId, html))),
     runTimed(
       "warc",
-      warcExtractor(db, snapshotId, url, headers, status, statusText, html, snapshotDir),
+      warcExtractor(db, snapshotId, url, headers, status, statusText, html, effectiveStorage),
     ),
     runTimed("readability", Promise.resolve(readabilityExtractor(db, snapshotId, url, html))),
     ...(page
       ? [
-          runTimed("pdf", pdfExtractor(db, snapshotId, snapshotDir, page)),
-          runTimed("screenshot", screenshotExtractor(db, snapshotId, snapshotDir, page)),
-          runTimed("dom-snapshot", domSnapshotExtractor(db, snapshotId, snapshotDir, page)),
-          runTimed("singlefile", singleFileExtractor(db, snapshotId, snapshotDir, page)),
+          runTimed("pdf", pdfExtractor(db, snapshotId, effectiveStorage, page)),
+          runTimed("screenshot", screenshotExtractor(db, snapshotId, effectiveStorage, page)),
+          runTimed("dom-snapshot", domSnapshotExtractor(db, snapshotId, effectiveStorage, page)),
+          runTimed("singlefile", singleFileExtractor(db, snapshotId, effectiveStorage, page)),
         ]
       : []),
     runTimed(
       "media",
-      mediaExtractor(db, snapshotId, snapshotDir, url, { ...(logger ? { logger } : {}) }),
+      mediaExtractor(db, snapshotId, effectiveStorage, url, { ...(logger ? { logger } : {}) }),
     ),
   ];
 
@@ -209,8 +209,9 @@ export async function addUrl(
   url: string,
   dir: string,
   logger?: Logger,
+  storage?: StorageBackend,
 ): Promise<number> {
   const snapshotId = createSnapshot(db, url);
-  await runPipeline(db, snapshotId, url, dir, undefined, logger);
+  await runPipeline(db, snapshotId, url, dir, undefined, logger, storage);
   return snapshotId;
 }

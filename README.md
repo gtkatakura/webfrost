@@ -451,6 +451,31 @@ webfrost admin key revoke <id>                         Revoke an API key
 | `AUTH_DISABLED` | `false` | Set to `true` to skip auth in dev. Never use in production. |
 | `WEBFROST_CONCURRENCY` | `3` | Max number of archive pipelines running in parallel (import, schedule worker, server). |
 | `WEBFROST_LOG_LEVEL` | `info` | CLI log verbosity: `debug`, `info`, `warn`, `error`. Overridden by `--verbose` / `--quiet`. |
+| `WEBFROST_STORAGE_BACKEND` | `filesystem` | Storage backend: `filesystem` or `s3`. |
+| `S3_ENDPOINT` | — | S3-compatible endpoint URL (e.g. `https://s3.amazonaws.com`, `http://localhost:9000`). Required when `WEBFROST_STORAGE_BACKEND=s3`. |
+| `S3_BUCKET` | — | S3 bucket name. Required when backend is `s3`. |
+| `S3_ACCESS_KEY` | — | S3 access key ID. Required when backend is `s3`. |
+| `S3_SECRET_KEY` | — | S3 secret access key. Required when backend is `s3`. |
+| `S3_REGION` | `us-east-1` | S3 region. |
+| `S3_PATH_PREFIX` | `snapshots` | Object key prefix inside the bucket. |
+
+**Local dev with MinIO (S3-compatible):**
+
+```bash
+# Start MinIO + auto-create bucket
+docker compose -f docker-compose.dev.yml up -d
+
+# Run server against MinIO
+WEBFROST_STORAGE_BACKEND=s3 \
+S3_ENDPOINT=http://localhost:9000 \
+S3_BUCKET=webfrost \
+S3_ACCESS_KEY=minioadmin \
+S3_SECRET_KEY=minioadmin \
+WEBFROST_DIR=./data SESSION_SECRET=$(openssl rand -hex 32) \
+bun run packages/server/src/index.ts
+```
+
+MinIO console available at `http://localhost:9001` (minioadmin / minioadmin).
 
 See [docs/DEPLOY.md](docs/DEPLOY.md) for the full auth setup walkthrough.
 

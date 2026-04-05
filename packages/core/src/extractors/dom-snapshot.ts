@@ -1,6 +1,5 @@
 import type Database from "bun:sqlite";
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import type { StorageBackend } from "../storage";
 
 /**
  * Capture the post-JS-execution DOM from an already-navigated Playwright page.
@@ -11,11 +10,9 @@ import { join } from "node:path";
 export async function domSnapshotExtractor(
   db: Database,
   snapshotId: number,
-  snapshotDir: string,
+  storage: StorageBackend,
   page: import("playwright").Page,
 ): Promise<void> {
-  await mkdir(snapshotDir, { recursive: true });
-
   let dom: string;
   try {
     dom = await page.content();
@@ -24,10 +21,9 @@ export async function domSnapshotExtractor(
     return;
   }
 
-  const domPath = join(snapshotDir, "dom.html");
-  await Bun.write(domPath, dom);
+  const ref = await storage.putText(snapshotId, "dom.html", dom);
 
   db.query<null, [number, string]>(
     "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'dom-snapshot', ?)",
-  ).run(snapshotId, domPath);
+  ).run(snapshotId, ref);
 }

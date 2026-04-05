@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb } from "./db";
 import { deleteSnapshot, getSnapshot } from "./snapshot";
+import { FilesystemBackend } from "./storage";
 
 let testDir: string;
 let db: Database;
@@ -25,14 +26,18 @@ afterEach(() => {
   }
 });
 
+function makeStorage() {
+  return new FilesystemBackend(join(testDir, "snapshots"));
+}
+
 describe("deleteSnapshot", () => {
   test("returns false when snapshot does not exist", async () => {
-    const deleted = await deleteSnapshot(db, 9999, testDir);
+    const deleted = await deleteSnapshot(db, 9999, makeStorage());
     expect(deleted).toBe(false);
   });
 
   test("returns true and removes snapshot row", async () => {
-    const deleted = await deleteSnapshot(db, 1, testDir);
+    const deleted = await deleteSnapshot(db, 1, makeStorage());
     expect(deleted).toBe(true);
 
     const snap = getSnapshot(db, 1);
@@ -44,7 +49,7 @@ describe("deleteSnapshot", () => {
       "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (1, 'html', '<p>hi</p>')",
     ).run();
 
-    await deleteSnapshot(db, 1, testDir);
+    await deleteSnapshot(db, 1, makeStorage());
 
     const rows = db
       .query<{ id: number }, []>("SELECT id FROM archive_results WHERE snapshot_id = 1")
@@ -55,7 +60,7 @@ describe("deleteSnapshot", () => {
   test("cascades to job_queue", async () => {
     db.query("INSERT INTO job_queue (snapshot_id, status) VALUES (1, 'done')").run();
 
-    await deleteSnapshot(db, 1, testDir);
+    await deleteSnapshot(db, 1, makeStorage());
 
     const rows = db
       .query<{ id: number }, []>("SELECT id FROM job_queue WHERE snapshot_id = 1")
@@ -68,13 +73,13 @@ describe("deleteSnapshot", () => {
     mkdirSync(snapshotDir, { recursive: true });
     writeFileSync(join(snapshotDir, "screenshot.png"), "fake-png");
 
-    await deleteSnapshot(db, 1, testDir);
+    await deleteSnapshot(db, 1, makeStorage());
 
     const exists = await Bun.file(join(snapshotDir, "screenshot.png")).exists();
     expect(exists).toBe(false);
   });
 
   test("does not throw if artifact directory is already gone", async () => {
-    await expect(deleteSnapshot(db, 1, testDir)).resolves.toBe(true);
+    await expect(deleteSnapshot(db, 1, makeStorage())).resolves.toBe(true);
   });
 });

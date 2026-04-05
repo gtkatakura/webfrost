@@ -1,7 +1,6 @@
 import type Database from "bun:sqlite";
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
 import { safeFetch } from "../ssrf-guard";
+import type { StorageBackend } from "../storage";
 
 /**
  * Produce a self-contained HTML file with external CSS and images inlined as
@@ -20,11 +19,9 @@ import { safeFetch } from "../ssrf-guard";
 export async function singleFileExtractor(
   db: Database,
   snapshotId: number,
-  snapshotDir: string,
+  storage: StorageBackend,
   page: import("playwright").Page,
 ): Promise<void> {
-  await mkdir(snapshotDir, { recursive: true });
-
   let html: string;
   const pageUrl = page.url();
 
@@ -37,12 +34,11 @@ export async function singleFileExtractor(
 
   const inlined = await inlineAssets(html, pageUrl);
 
-  const singleFilePath = join(snapshotDir, "singlefile.html");
-  await Bun.write(singleFilePath, inlined);
+  const ref = await storage.putText(snapshotId, "singlefile.html", inlined);
 
   db.query<null, [number, string]>(
     "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'singlefile', ?)",
-  ).run(snapshotId, singleFilePath);
+  ).run(snapshotId, ref);
 }
 
 /**

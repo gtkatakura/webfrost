@@ -4,6 +4,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb } from "../db";
+import { FilesystemBackend } from "../storage";
 import { type YtDlpSpawner, mediaExtractor } from "./media";
 
 type SpawnResult = { exitCode: number | null; stdout: string; stderr: string };
@@ -48,6 +49,10 @@ afterEach(() => {
   }
 });
 
+function makeStorage() {
+  return new FilesystemBackend(join(testDir, "snapshots"));
+}
+
 function archiveRows() {
   return db
     .query<{ extractor: string; content: string }, []>(
@@ -60,10 +65,9 @@ describe("mediaExtractor", () => {
   test("skips gracefully when yt-dlp is not installed (ENOENT)", async () => {
     const enoentErr = Object.assign(new Error("spawn yt-dlp ENOENT"), { code: "ENOENT" });
     const spawner = makeSpawner([enoentErr]);
-    const snapshotDir = join(testDir, "snapshots", "1");
 
     await expect(
-      mediaExtractor(db, 1, snapshotDir, "https://youtube.com/watch?v=test", {
+      mediaExtractor(db, 1, makeStorage(), "https://youtube.com/watch?v=test", {
         _spawner: spawner,
       }),
     ).resolves.toBeUndefined();
@@ -73,24 +77,22 @@ describe("mediaExtractor", () => {
 
   test("skips silently when URL is not media-extractable (detect exit 1)", async () => {
     const spawner = makeSpawner([FAIL]);
-    const snapshotDir = join(testDir, "snapshots", "1");
 
     await expect(
-      mediaExtractor(db, 1, snapshotDir, "https://example.com/page", { _spawner: spawner }),
+      mediaExtractor(db, 1, makeStorage(), "https://example.com/page", { _spawner: spawner }),
     ).resolves.toBeUndefined();
 
     expect(archiveRows()).toHaveLength(0);
   });
 
   test("stores metadata and video path on successful video download", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
     const spawner = makeSpawner([
       OK, // detect
       META_OK, // metadata
       OK, // video download
     ]);
 
-    await mediaExtractor(db, 1, snapshotDir, "https://youtube.com/watch?v=test", {
+    await mediaExtractor(db, 1, makeStorage(), "https://youtube.com/watch?v=test", {
       _spawner: spawner,
     });
 
@@ -105,7 +107,6 @@ describe("mediaExtractor", () => {
   });
 
   test("falls back to audio-only (mp3) when video download fails", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
     const spawner = makeSpawner([
       OK, // detect
       META_OK, // metadata
@@ -113,7 +114,7 @@ describe("mediaExtractor", () => {
       OK, // audio fallback succeeds
     ]);
 
-    await mediaExtractor(db, 1, snapshotDir, "https://soundcloud.com/track", {
+    await mediaExtractor(db, 1, makeStorage(), "https://soundcloud.com/track", {
       _spawner: spawner,
     });
 
@@ -124,7 +125,6 @@ describe("mediaExtractor", () => {
   });
 
   test("stores only metadata row when both video and audio downloads fail", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
     const spawner = makeSpawner([
       OK, // detect
       META_OK, // metadata
@@ -132,7 +132,7 @@ describe("mediaExtractor", () => {
       FAIL, // audio fails
     ]);
 
-    await mediaExtractor(db, 1, snapshotDir, "https://youtube.com/watch?v=test", {
+    await mediaExtractor(db, 1, makeStorage(), "https://youtube.com/watch?v=test", {
       _spawner: spawner,
     });
 
@@ -142,7 +142,6 @@ describe("mediaExtractor", () => {
   });
 
   test("passes maxFileSize option to download commands", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
     const calls: string[][] = [];
 
     const spawner: YtDlpSpawner = async (args) => {
@@ -150,7 +149,7 @@ describe("mediaExtractor", () => {
       return OK;
     };
 
-    await mediaExtractor(db, 1, snapshotDir, "https://youtube.com/watch?v=test", {
+    await mediaExtractor(db, 1, makeStorage(), "https://youtube.com/watch?v=test", {
       maxFileSize: "100m",
       _spawner: spawner,
     });
@@ -163,7 +162,6 @@ describe("mediaExtractor", () => {
   });
 
   test("uses 500m as default maxFileSize", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
     const calls: string[][] = [];
 
     const spawner: YtDlpSpawner = async (args) => {
@@ -171,7 +169,7 @@ describe("mediaExtractor", () => {
       return OK;
     };
 
-    await mediaExtractor(db, 1, snapshotDir, "https://youtube.com/watch?v=test", {
+    await mediaExtractor(db, 1, makeStorage(), "https://youtube.com/watch?v=test", {
       _spawner: spawner,
     });
 
@@ -180,15 +178,14 @@ describe("mediaExtractor", () => {
     expect(downloadCall?.[idx + 1]).toBe("500m");
   });
 
-  test("writes metadata JSON file to disk", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
+  test("writes metadata JSON file to storage", async () => {
     const spawner = makeSpawner([
       OK, // detect
       { exitCode: 0, stdout: '{"title":"Hello","duration":42}', stderr: "" }, // metadata
       OK, // video
     ]);
 
-    await mediaExtractor(db, 1, snapshotDir, "https://youtube.com/watch?v=test", {
+    await mediaExtractor(db, 1, makeStorage(), "https://youtube.com/watch?v=test", {
       _spawner: spawner,
     });
 

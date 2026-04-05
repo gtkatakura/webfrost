@@ -9,6 +9,7 @@ import {
   createApiKey,
   createConcurrencyLimiter,
   createSnapshot,
+  createStorageBackend,
   createTag,
   deleteSnapshot,
   deleteTag,
@@ -805,7 +806,7 @@ switch (command) {
     }
     const db = openDb(archiveDir);
     try {
-      const deleted = await deleteSnapshot(db, id, archiveDir);
+      const deleted = await deleteSnapshot(db, id, createStorageBackend(archiveDir));
       if (deleted) {
         logger.info(`Snapshot ${id} deleted.`);
       } else {

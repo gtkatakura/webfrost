@@ -1,7 +1,6 @@
 import type Database from "bun:sqlite";
 import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import type { StorageBackend } from "../storage";
 
 function buildWarcRecord(headers: Record<string, string>, block: string): string {
   const blockBytes = Buffer.byteLength(block, "utf8");
@@ -19,10 +18,8 @@ export async function warcExtractor(
   statusCode: number,
   statusText: string,
   html: string,
-  snapshotDir: string,
+  storage: StorageBackend,
 ): Promise<void> {
-  await mkdir(snapshotDir, { recursive: true });
-
   const now = new Date().toISOString().replace(/\.\d+Z$/, "Z");
 
   // warcinfo record
@@ -55,10 +52,9 @@ export async function warcExtractor(
     httpBlock,
   );
 
-  const warcPath = join(snapshotDir, "archive.warc");
-  await Bun.write(warcPath, warcinfoRecord + responseRecord);
+  const ref = await storage.putText(snapshotId, "archive.warc", warcinfoRecord + responseRecord);
 
   db.query<null, [number, string]>(
     "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'warc', ?)",
-  ).run(snapshotId, warcPath);
+  ).run(snapshotId, ref);
 }

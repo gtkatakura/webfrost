@@ -1,8 +1,8 @@
-import { statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import {
   createSnapshot,
+  createStorageBackend,
   deleteSnapshot,
   getSnapshot,
   listSnapshotsWithExtractorsPaginated,
@@ -10,6 +10,7 @@ import {
   runPipeline,
   searchSnapshots,
 } from "@webfrost/core";
+import type { StorageBackend } from "@webfrost/core";
 import { Elysia, t } from "elysia";
 import { logger } from "../logger";
 import { rateLimiterPlugin } from "../middleware/rateLimiter";
@@ -18,7 +19,15 @@ function getWebfrostDir(): string {
   return process.env.WEBFROST_DIR ?? join(homedir(), ".webfrost");
 }
 
-// File-based extractors store a filesystem path in content; derive file size via stat.
+function getDb() {
+  return openDb(getWebfrostDir());
+}
+
+function getStorage(): StorageBackend {
+  return createStorageBackend(getWebfrostDir());
+}
+
+// File-based extractors store a storage ref in content; derive file size via storage backend.
 const FILE_BASED_EXTRACTORS = new Set([
   "warc",
   "pdf",
@@ -28,14 +37,15 @@ const FILE_BASED_EXTRACTORS = new Set([
   "media",
 ]);
 
-function getFileSizeBytes(content: string | null, extractor: string): number | null {
+async function getFileSizeBytes(
+  content: string | null,
+  extractor: string,
+  storage: StorageBackend,
+): Promise<number | null> {
   if (!content) return null;
   if (FILE_BASED_EXTRACTORS.has(extractor)) {
-    try {
-      return statSync(content).size;
-    } catch {
-      return null;
-    }
+    const size = await storage.fileSize(content);
+    return size > 0 ? size : null;
   }
   return Buffer.byteLength(content, "utf8");
 }
@@ -52,9 +62,14 @@ const ALLOWED_EXTRACTORS = new Set([
   "media-metadata",
 ]);
 
-function getDb() {
-  return openDb(getWebfrostDir());
-}
+const FILE_EXTRACTORS: Record<string, { contentType: string; filename: string }> = {
+  warc: { contentType: "application/warc", filename: "archive.warc" },
+  pdf: { contentType: "application/pdf", filename: "page.pdf" },
+  screenshot: { contentType: "image/png", filename: "screenshot.png" },
+  "dom-snapshot": { contentType: "text/html", filename: "dom.html" },
+  singlefile: { contentType: "text/html", filename: "singlefile.html" },
+  "media-metadata": { contentType: "application/json", filename: "media-metadata.json" },
+};
 
 export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
   // 60 req/min per IP for snapshot creation (write) to prevent pipeline abuse
@@ -95,7 +110,8 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       // Fire and forget with its own DB connection so the request DB can close immediately
       const pipelineDb = getDb();
       const pipelineLogger = logger.child({ snapshotId });
-      runPipeline(pipelineDb, snapshotId, url, getWebfrostDir(), undefined, pipelineLogger)
+      const storage = getStorage();
+      runPipeline(pipelineDb, snapshotId, url, getWebfrostDir(), undefined, pipelineLogger, storage)
         .catch((err: unknown) => {
           pipelineLogger.error({ err }, "pipeline error");
         })
@@ -176,7 +192,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
   )
   .get(
     "/:id",
-    ({ params, set }) => {
+    async ({ params, set }) => {
       const id = Number(params.id);
       if (!Number.isInteger(id) || id <= 0) {
         set.status = 404;
@@ -184,6 +200,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       }
 
       const db = getDb();
+      const storage = getStorage();
       try {
         const snapshot = getSnapshot(db, id);
         if (!snapshot) {
@@ -199,22 +216,24 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
             error?: string;
           }
         > = {};
-        for (const ar of snapshot.archiveResults) {
-          if (ar.error !== null) {
-            extractorMeta[ar.extractor] = {
-              status: "failed",
-              durationMs: ar.duration_ms,
-              fileSizeBytes: null,
-              error: ar.error,
-            };
-          } else {
-            extractorMeta[ar.extractor] = {
-              status: "success",
-              durationMs: ar.duration_ms,
-              fileSizeBytes: getFileSizeBytes(ar.content, ar.extractor),
-            };
-          }
-        }
+        await Promise.all(
+          snapshot.archiveResults.map(async (ar) => {
+            if (ar.error !== null) {
+              extractorMeta[ar.extractor] = {
+                status: "failed",
+                durationMs: ar.duration_ms,
+                fileSizeBytes: null,
+                error: ar.error,
+              };
+            } else {
+              extractorMeta[ar.extractor] = {
+                status: "success",
+                durationMs: ar.duration_ms,
+                fileSizeBytes: await getFileSizeBytes(ar.content, ar.extractor, storage),
+              };
+            }
+          }),
+        );
         return {
           id: snapshot.id,
           url: snapshot.url,
@@ -248,8 +267,9 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       }
 
       const db = getDb();
+      const storage = getStorage();
       try {
-        const deleted = await deleteSnapshot(db, id, getWebfrostDir());
+        const deleted = await deleteSnapshot(db, id, storage);
         if (!deleted) {
           set.status = 404;
           return { error: "not found" };
@@ -309,34 +329,25 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
         });
       }
 
-      // These extractors store a filesystem path — sandbox to the snapshots directory
-      const FILE_EXTRACTORS: Record<string, { contentType: string; filename: string }> = {
-        warc: { contentType: "application/warc", filename: "archive.warc" },
-        pdf: { contentType: "application/pdf", filename: "page.pdf" },
-        screenshot: { contentType: "image/png", filename: "screenshot.png" },
-        "dom-snapshot": { contentType: "text/html", filename: "dom.html" },
-        singlefile: { contentType: "text/html", filename: "singlefile.html" },
-        "media-metadata": { contentType: "application/json", filename: "media-metadata.json" },
-      };
+      const storage = getStorage();
 
       // Media files can be mp4 or mp3 depending on whether video or audio fallback was used
       if (extractor === "media") {
-        const snapshotsDir = resolve(getWebfrostDir(), "snapshots");
-        if (!resolve(content).startsWith(`${snapshotsDir}/`)) {
+        if (!storage.validateRef(content)) {
           return new Response(JSON.stringify({ error: "forbidden" }), {
             status: 403,
             headers: { "Content-Type": "application/json" },
           });
         }
-        const file = Bun.file(content);
-        if (!(await file.exists())) {
+        if (!(await storage.fileExists(content))) {
           return new Response(JSON.stringify({ error: "file not found" }), {
             status: 404,
             headers: { "Content-Type": "application/json" },
           });
         }
+        const bytes = await storage.getBytes(content);
         const isAudio = content.endsWith(".mp3");
-        return new Response(file, {
+        return new Response(bytes as unknown as BodyInit, {
           headers: {
             "Content-Type": isAudio ? "audio/mpeg" : "video/mp4",
             "Content-Disposition": `attachment; filename="${isAudio ? "media.mp3" : "media.mp4"}"`,
@@ -346,21 +357,20 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
 
       const fileExtractor = FILE_EXTRACTORS[extractor];
       if (fileExtractor) {
-        const snapshotsDir = resolve(getWebfrostDir(), "snapshots");
-        if (!resolve(content).startsWith(`${snapshotsDir}/`)) {
+        if (!storage.validateRef(content)) {
           return new Response(JSON.stringify({ error: "forbidden" }), {
             status: 403,
             headers: { "Content-Type": "application/json" },
           });
         }
-        const file = Bun.file(content);
-        if (!(await file.exists())) {
+        if (!(await storage.fileExists(content))) {
           return new Response(JSON.stringify({ error: "file not found" }), {
             status: 404,
             headers: { "Content-Type": "application/json" },
           });
         }
-        return new Response(await file.bytes(), {
+        const bytes = await storage.getBytes(content);
+        return new Response(bytes as unknown as BodyInit, {
           headers: {
             "Content-Type": fileExtractor.contentType,
             "Content-Disposition": `attachment; filename="${fileExtractor.filename}"`,
@@ -368,7 +378,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
         });
       }
 
-      // Default: return raw content (e.g. readability JSON)
+      // Default: return raw content (e.g. readability JSON, html)
       return new Response(content, {
         headers: {
           "Content-Type": "application/json",

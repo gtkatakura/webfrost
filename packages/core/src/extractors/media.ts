@@ -1,7 +1,6 @@
 import type Database from "bun:sqlite";
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
 import type { Logger } from "../pipeline";
+import type { StorageBackend } from "../storage";
 
 type SpawnResult = { exitCode: number | null; stdout: string; stderr: string };
 
@@ -33,15 +32,13 @@ async function defaultSpawner(args: string[]): Promise<SpawnResult> {
 export async function mediaExtractor(
   db: Database,
   snapshotId: number,
-  snapshotDir: string,
+  storage: StorageBackend,
   url: string,
   options?: { maxFileSize?: string; _spawner?: YtDlpSpawner; logger?: Logger },
 ): Promise<void> {
   const maxFileSize = options?.maxFileSize ?? "500m";
   const spawner = options?._spawner ?? defaultSpawner;
   const logger = options?.logger;
-  const mediaDir = join(snapshotDir, "media");
-  await mkdir(mediaDir, { recursive: true });
 
   // Step 1: Detect whether yt-dlp is installed and the URL is extractable
   let detectResult: SpawnResult;
@@ -69,14 +66,13 @@ export async function mediaExtractor(
     metadataJson = "{}";
   }
 
-  const metadataPath = join(mediaDir, "media-metadata.json");
-  await Bun.write(metadataPath, metadataJson);
+  const metadataRef = await storage.putText(snapshotId, "media/media-metadata.json", metadataJson);
   db.query<null, [number, string]>(
     "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'media-metadata', ?)",
-  ).run(snapshotId, metadataPath);
+  ).run(snapshotId, metadataRef);
 
   // Step 3: Attempt video download (bestvideo+bestaudio merged to mp4)
-  const videoPath = join(mediaDir, "media.mp4");
+  const videoLocalPath = await storage.localPath(snapshotId, "media/media.mp4");
   let videoResult: SpawnResult;
   try {
     videoResult = await spawner([
@@ -87,7 +83,7 @@ export async function mediaExtractor(
       "--max-filesize",
       maxFileSize,
       "-o",
-      videoPath,
+      videoLocalPath,
       url,
     ]);
   } catch (err: unknown) {
@@ -99,14 +95,15 @@ export async function mediaExtractor(
   }
 
   if (videoResult.exitCode === 0) {
+    const videoRef = await storage.finalize(snapshotId, "media/media.mp4");
     db.query<null, [number, string]>(
       "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'media', ?)",
-    ).run(snapshotId, videoPath);
+    ).run(snapshotId, videoRef);
     return;
   }
 
   // Step 4: Audio-only fallback (for audio-only sources like SoundCloud, podcasts)
-  const audioPath = join(mediaDir, "media.mp3");
+  const audioLocalPath = await storage.localPath(snapshotId, "media/media.mp3");
   let audioResult: SpawnResult;
   try {
     audioResult = await spawner([
@@ -118,7 +115,7 @@ export async function mediaExtractor(
       "--max-filesize",
       maxFileSize,
       "-o",
-      audioPath,
+      audioLocalPath,
       url,
     ]);
   } catch {
@@ -126,8 +123,9 @@ export async function mediaExtractor(
   }
 
   if (audioResult.exitCode === 0) {
+    const audioRef = await storage.finalize(snapshotId, "media/media.mp3");
     db.query<null, [number, string]>(
       "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'media', ?)",
-    ).run(snapshotId, audioPath);
+    ).run(snapshotId, audioRef);
   }
 }

@@ -1,6 +1,5 @@
 import type Database from "bun:sqlite";
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import type { StorageBackend } from "../storage";
 
 /**
  * Generate a PDF from an already-navigated Playwright page.
@@ -10,20 +9,20 @@ import { join } from "node:path";
 export async function pdfExtractor(
   db: Database,
   snapshotId: number,
-  snapshotDir: string,
+  storage: StorageBackend,
   page: import("playwright").Page,
 ): Promise<void> {
-  await mkdir(snapshotDir, { recursive: true });
-
-  const pdfPath = join(snapshotDir, "page.pdf");
+  const localPath = await storage.localPath(snapshotId, "page.pdf");
   try {
-    await page.pdf({ path: pdfPath });
+    await page.pdf({ path: localPath });
   } catch (err) {
     console.warn("[pdf] extraction failed:", err);
     return;
   }
 
+  const ref = await storage.finalize(snapshotId, "page.pdf");
+
   db.query<null, [number, string]>(
     "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'pdf', ?)",
-  ).run(snapshotId, pdfPath);
+  ).run(snapshotId, ref);
 }

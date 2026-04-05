@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Page } from "playwright";
 import { openDb } from "../db";
+import { FilesystemBackend } from "../storage";
 import { pdfExtractor } from "./pdf";
 
 /** Minimal Page stub whose pdf() always throws (simulates Playwright unavailable). */
@@ -35,19 +36,21 @@ afterEach(() => {
   }
 });
 
+function makeStorage() {
+  return new FilesystemBackend(join(testDir, "snapshots"));
+}
+
 describe("pdfExtractor", () => {
   test("does not throw when page.pdf() fails (graceful degradation)", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
     const page = makeFailingPage();
 
-    await expect(pdfExtractor(db, 1, snapshotDir, page)).resolves.toBeUndefined();
+    await expect(pdfExtractor(db, 1, makeStorage(), page)).resolves.toBeUndefined();
   });
 
   test("does not insert archive_result row when extraction fails", async () => {
-    const snapshotDir = join(testDir, "snapshots", "1");
     const page = makeFailingPage();
 
-    await pdfExtractor(db, 1, snapshotDir, page);
+    await pdfExtractor(db, 1, makeStorage(), page);
 
     const rows = db
       .query<{ extractor: string }, []>(
