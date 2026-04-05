@@ -8,7 +8,7 @@
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target bun",
     "test": "bun test",
-    "benchmarks": "echo 'no benchmarks'"
+    "benchmarks": "echo 'CLI benchmarks are covered by bench/cli-add.bench.ts at the repo root'"
   },
   "dependencies": {
     "@webfrost/core": "workspace:*"

@@ -15,6 +15,8 @@
  *   --archivebox-url <url>    ArchiveBox base URL (default: http://localhost:18082)
  *   --fixture-url <url>       Fixture server URL  (default: http://localhost:18080)
  *   --skip-archivebox         Skip ArchiveBox scenarios (WebFrost only)
+ *   --skip-wget               Skip wget comparison scenarios
+ *   --skip-monolith           Skip monolith comparison scenarios
  *   --output <path>           JSON results file   (default: bench/vs-archivebox/results/latest.json)
  *   --compose-project <name>  Docker Compose project name (default: vs-archivebox)
  *
@@ -42,7 +44,7 @@ interface Metrics {
 }
 
 interface ScenarioResult {
-  system: "webfrost" | "archivebox";
+  system: string;
   scenario: string;
   urlCount: number;
   urls: string[];
@@ -57,6 +59,7 @@ interface BenchmarkRun {
   webfrostUrl: string;
   archiveboxUrl: string;
   fixtureUrl: string;
+  composeProject: string;
   scenarios: ScenarioResult[];
 }
 
@@ -87,6 +90,8 @@ function parseArgs(): {
     archiveboxUrl: get("--archivebox-url", "http://localhost:18082"),
     fixtureUrl: get("--fixture-url", "http://localhost:18080"),
     skipArchivebox: args.includes("--skip-archivebox"),
+    skipWget: args.includes("--skip-wget"),
+    skipMonolith: args.includes("--skip-monolith"),
     outputPath: get("--output", resolve(import.meta.dir, "results/latest.json")),
     composeProject: get("--compose-project", "vs-archivebox"),
   };
@@ -397,6 +402,229 @@ async function runArchiveBoxScenario(
 }
 
 // ---------------------------------------------------------------------------
+// wget scenario runner
+// ---------------------------------------------------------------------------
+
+/**
+ * Measure how long wget takes to download a set of URLs.
+ *
+ * Each URL is fetched as `docker run --rm --network <net> alpine:3.20 wget ...`.
+ * We run URLs sequentially (wget is single-threaded by design).
+ * Disk delta is measured via a named Docker volume mounted at /output.
+ * CPU/memory stats are null — ephemeral containers exit too fast to sample.
+ */
+async function runWgetScenario(
+  opts: ReturnType<typeof parseArgs>,
+  urls: string[],
+  scenarioName: string,
+): Promise<ScenarioResult> {
+  console.log(`  wget — ${scenarioName} (${urls.length} URL${urls.length > 1 ? "s" : ""})`);
+
+  const network = `${opts.composeProject}_bench_net`;
+  const volume = `wget_bench_${Date.now()}`;
+
+  // Create a Docker volume for output
+  await Bun.spawn(["docker", "volume", "create", volume], { stdout: "pipe", stderr: "pipe" })
+    .exited;
+
+  // Measure disk before (empty volume = 0)
+  const diskBefore = 0;
+
+  const start = performance.now();
+  let successCount = 0;
+  let failureCount = 0;
+
+  for (const url of urls) {
+    try {
+      const proc = Bun.spawn(
+        [
+          "docker",
+          "run",
+          "--rm",
+          "--network",
+          network,
+          "-v",
+          `${volume}:/output`,
+          "alpine:3.20",
+          "sh",
+          "-c",
+          `wget --mirror --page-requisites --no-parent --convert-links -P /output -q "${url}"`,
+        ],
+        { stdout: "pipe", stderr: "pipe" },
+      );
+      const code = await proc.exited;
+      if (code === 0) {
+        successCount++;
+      } else {
+        failureCount++;
+      }
+    } catch {
+      failureCount++;
+    }
+  }
+
+  const wallMs = Math.round(performance.now() - start);
+
+  // Measure disk used by the volume
+  let diskAfter: number | null = null;
+  try {
+    const du = Bun.spawn(
+      [
+        "docker",
+        "run",
+        "--rm",
+        "-v",
+        `${volume}:/output:ro`,
+        "alpine:3.20",
+        "du",
+        "-sk",
+        "/output",
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const text = await new Response(du.stdout).text();
+    await du.exited;
+    const kb = Number.parseInt(text.split("\t")[0] ?? "0", 10);
+    diskAfter = Number.isNaN(kb) ? null : kb;
+  } catch {
+    diskAfter = null;
+  }
+
+  // Cleanup volume
+  await Bun.spawn(["docker", "volume", "rm", "-f", volume], { stdout: "pipe", stderr: "pipe" })
+    .exited;
+
+  console.log(
+    `    → ${wallMs}ms wall | success=${successCount} fail=${failureCount} | cpu=n/a mem=n/a`,
+  );
+
+  return {
+    system: "wget",
+    scenario: scenarioName,
+    urlCount: urls.length,
+    urls,
+    metrics: {
+      wallMs,
+      peakCpuPct: null,
+      peakMemMb: null,
+      diskDeltaKb: diskAfter !== null ? diskAfter - diskBefore : null,
+    },
+    successCount,
+    failureCount,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Monolith scenario runner
+// ---------------------------------------------------------------------------
+
+/**
+ * Measure how long monolith (y2z/monolith) takes to archive a set of URLs.
+ *
+ * Monolith bundles a full web page — HTML + assets — into a single self-contained
+ * HTML file. Each URL runs as `docker run --rm --network <net> y2z/monolith <url> -o ...`.
+ * Like the wget runner, CPU/memory stats are null for ephemeral containers.
+ */
+async function runMonolithScenario(
+  opts: ReturnType<typeof parseArgs>,
+  urls: string[],
+  scenarioName: string,
+): Promise<ScenarioResult> {
+  console.log(`  monolith — ${scenarioName} (${urls.length} URL${urls.length > 1 ? "s" : ""})`);
+
+  const network = `${opts.composeProject}_bench_net`;
+  const volume = `monolith_bench_${Date.now()}`;
+
+  await Bun.spawn(["docker", "volume", "create", volume], { stdout: "pipe", stderr: "pipe" })
+    .exited;
+
+  const start = performance.now();
+  let successCount = 0;
+  let failureCount = 0;
+
+  for (let i = 0; i < urls.length; i++) {
+    const url = urls[i] as string;
+    try {
+      const proc = Bun.spawn(
+        [
+          "docker",
+          "run",
+          "--rm",
+          "--network",
+          network,
+          "-v",
+          `${volume}:/output`,
+          "y2z/monolith",
+          url,
+          "-o",
+          `/output/page-${i}.html`,
+          "-s", // silent
+        ],
+        { stdout: "pipe", stderr: "pipe" },
+      );
+      const code = await proc.exited;
+      if (code === 0) {
+        successCount++;
+      } else {
+        failureCount++;
+      }
+    } catch {
+      failureCount++;
+    }
+  }
+
+  const wallMs = Math.round(performance.now() - start);
+
+  let diskAfter: number | null = null;
+  try {
+    const du = Bun.spawn(
+      [
+        "docker",
+        "run",
+        "--rm",
+        "-v",
+        `${volume}:/output:ro`,
+        "alpine:3.20",
+        "du",
+        "-sk",
+        "/output",
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const text = await new Response(du.stdout).text();
+    await du.exited;
+    const kb = Number.parseInt(text.split("\t")[0] ?? "0", 10);
+    diskAfter = Number.isNaN(kb) ? null : kb;
+  } catch {
+    diskAfter = null;
+  }
+
+  await Bun.spawn(["docker", "volume", "rm", "-f", volume], { stdout: "pipe", stderr: "pipe" })
+    .exited;
+
+  console.log(
+    `    → ${wallMs}ms wall | success=${successCount} fail=${failureCount} | cpu=n/a mem=n/a`,
+  );
+
+  return {
+    system: "monolith",
+    scenario: scenarioName,
+    urlCount: urls.length,
+    urls,
+    metrics: {
+      wallMs,
+      peakCpuPct: null,
+      peakMemMb: null,
+      diskDeltaKb: diskAfter !== null ? diskAfter : null,
+    },
+    successCount,
+    failureCount,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Scenario definitions
 // ---------------------------------------------------------------------------
 
@@ -448,13 +676,30 @@ function fmtOpt(n: number | null, unit = ""): string {
 function generateMarkdownSection(run: BenchmarkRun): string {
   const date = run.date.split("T")[0];
 
+  // Collect the ordered list of systems present in this run
+  const systemOrder = ["webfrost", "archivebox", "wget", "monolith"];
+  const presentSystems = [...new Set(run.scenarios.map((s) => s.system))].sort((a, b) => {
+    const ai = systemOrder.indexOf(a);
+    const bi = systemOrder.indexOf(b);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+
+  const systemLabel: Record<string, string> = {
+    webfrost: "WebFrost",
+    archivebox: "ArchiveBox",
+    wget: "wget",
+    monolith: "monolith",
+  };
+
+  const competitors = presentSystems.filter((s) => s !== "webfrost").join(", ");
+
   const header = `
-## WebFrost vs ArchiveBox — Head-to-Head Comparison
+## WebFrost vs ${competitors || "Competitors"} — Head-to-Head Comparison
 
 **Date:** ${date}
 **Fixture server:** ${run.fixtureUrl}
 **WebFrost:** ${run.webfrostUrl}
-**ArchiveBox:** ${run.archiveboxUrl}
+**Systems compared:** ${presentSystems.map((s) => systemLabel[s] ?? s).join(", ")}
 
 **Test pages:**
 | Page | Size | Description |
@@ -465,7 +710,7 @@ function generateMarkdownSection(run: BenchmarkRun): string {
 
 **Scenarios:** single-URL (small, medium, large), batch 10, 50, 100 URLs.
 **Metrics:** wall time, peak CPU %, peak memory MB, disk delta KB.
-All metrics sampled via \`docker stats\`; disk via \`du -sk /data\` before/after.
+WebFrost and ArchiveBox stats sampled via \`docker stats\`; wget/monolith run as ephemeral containers (CPU/mem not available).
 
 `;
 
@@ -478,29 +723,51 @@ All metrics sampled via \`docker stats\`; disk via \`du -sk /data\` before/after
     "batch-100",
   ];
 
-  const wfResults = new Map(
-    run.scenarios.filter((s) => s.system === "webfrost").map((s) => [s.scenario, s]),
-  );
-  const abResults = new Map(
-    run.scenarios.filter((s) => s.system === "archivebox").map((s) => [s.scenario, s]),
+  // Build per-system result maps
+  const resultsBySystem = new Map(
+    presentSystems.map((sys) => [
+      sys,
+      new Map(run.scenarios.filter((s) => s.system === sys).map((s) => [s.scenario, s])),
+    ]),
   );
 
+  // Wall time table — one column per system, plus a "WF vs fastest competitor" column
   let table = "### Wall Time\n\n";
-  table += "| Scenario | URLs | WebFrost wall | ArchiveBox wall | WF faster? |\n";
-  table += "|----------|------|--------------|-----------------|------------|\n";
+  const sysHeaders = presentSystems.map((s) => systemLabel[s] ?? s).join(" wall | ");
+  table += `| Scenario | URLs | ${sysHeaders} wall | WF vs best |\n`;
+  table += `|----------|------|${"--------------|".repeat(presentSystems.length + 1)}\n`;
 
   for (const sc of scenarios) {
-    const wf = wfResults.get(sc);
-    const ab = abResults.get(sc);
-    const wfMs = wf?.metrics.wallMs ?? null;
-    const abMs = ab?.metrics.wallMs ?? null;
-    const urlCount = wf?.urlCount ?? ab?.urlCount ?? "?";
-    let faster = "—";
-    if (wfMs !== null && abMs !== null) {
-      const ratio = abMs / wfMs;
-      faster = ratio > 1 ? `${ratio.toFixed(1)}× faster` : `${(1 / ratio).toFixed(1)}× slower`;
+    const wfMs = resultsBySystem.get("webfrost")?.get(sc)?.metrics.wallMs ?? null;
+    const urlCount =
+      resultsBySystem.get("webfrost")?.get(sc)?.urlCount ??
+      presentSystems
+        .map((s) => resultsBySystem.get(s)?.get(sc)?.urlCount)
+        .find((v) => v !== undefined) ??
+      "?";
+
+    const wallCols = presentSystems
+      .map((s) => {
+        const ms = resultsBySystem.get(s)?.get(sc)?.metrics.wallMs ?? null;
+        return ms !== null ? fmtMs(ms) : "—";
+      })
+      .join(" | ");
+
+    // Find fastest competitor to compare against WebFrost
+    let vsLabel = "—";
+    if (wfMs !== null) {
+      const competitorMs = presentSystems
+        .filter((s) => s !== "webfrost")
+        .map((s) => resultsBySystem.get(s)?.get(sc)?.metrics.wallMs ?? null)
+        .filter((v): v is number => v !== null);
+      if (competitorMs.length > 0) {
+        const bestCompetitor = Math.min(...competitorMs);
+        const ratio = bestCompetitor / wfMs;
+        vsLabel = ratio > 1 ? `${ratio.toFixed(1)}× faster` : `${(1 / ratio).toFixed(1)}× slower`;
+      }
     }
-    table += `| ${sc} | ${urlCount} | ${wfMs !== null ? fmtMs(wfMs) : "—"} | ${abMs !== null ? fmtMs(abMs) : "—"} | ${faster} |\n`;
+
+    table += `| ${sc} | ${urlCount} | ${wallCols} | ${vsLabel} |\n`;
   }
 
   table += "\n### Peak Resource Usage\n\n";
@@ -508,12 +775,10 @@ All metrics sampled via \`docker stats\`; disk via \`du -sk /data\` before/after
   table += "|----------|--------|-------|-----------|----------|\n";
 
   for (const sc of scenarios) {
-    for (const [label, map] of [
-      ["WebFrost", wfResults],
-      ["ArchiveBox", abResults],
-    ] as const) {
-      const r = map.get(sc);
+    for (const sys of presentSystems) {
+      const r = resultsBySystem.get(sys)?.get(sc);
       if (!r) continue;
+      const label = systemLabel[sys] ?? sys;
       table += `| ${sc} | ${label} | ${fmtOpt(r.metrics.peakCpuPct, "%")} | ${fmtOpt(r.metrics.peakMemMb)} | ${fmtOpt(r.metrics.diskDeltaKb)} |\n`;
     }
   }
@@ -523,9 +788,14 @@ All metrics sampled via \`docker stats\`; disk via \`du -sk /data\` before/after
     "- Wall time includes request submission + polling until all archives are marked `done`.\n";
   table += "- ArchiveBox scenarios use `archivebox add --depth=0` via `docker compose exec`.\n";
   table +=
+    "- wget runs as `docker run --rm alpine:3.20 wget --mirror --page-requisites --convert-links`.\n";
+  table += "- monolith runs as `docker run --rm y2z/monolith <url> -o /output/page-N.html`.\n";
+  table +=
     "- CPU/memory are point-in-time samples at ~800 ms intervals; true peak may be higher.\n";
   table +=
-    "- Disk delta reflects growth in the `/data` volume; ArchiveBox may be higher due to wget mirrors.\n";
+    "- wget/monolith run as ephemeral containers — CPU/mem stats are not available (shown as —).\n";
+  table +=
+    "- Disk delta reflects growth in the output volume; ArchiveBox/wget may be higher due to asset mirroring.\n";
 
   return header + table;
 }
@@ -537,14 +807,25 @@ All metrics sampled via \`docker stats\`; disk via \`du -sk /data\` before/after
 async function main(): Promise<void> {
   const opts = parseArgs();
 
-  console.log("WebFrost vs ArchiveBox benchmark harness");
-  console.log("=========================================");
-  console.log(`WebFrost:  ${opts.webfrostUrl}`);
+  const skipped = [
+    opts.skipArchivebox ? "archivebox" : null,
+    opts.skipWget ? "wget" : null,
+    opts.skipMonolith ? "monolith" : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  console.log("WebFrost vs competitors benchmark harness");
+  console.log("==========================================");
+  console.log(`WebFrost:   ${opts.webfrostUrl}`);
   console.log(`ArchiveBox: ${opts.archiveboxUrl}${opts.skipArchivebox ? " (skipped)" : ""}`);
-  console.log(`Fixtures:  ${opts.fixtureUrl}`);
+  console.log(`wget:       docker run alpine:3.20${opts.skipWget ? " (skipped)" : ""}`);
+  console.log(`monolith:   docker run y2z/monolith${opts.skipMonolith ? " (skipped)" : ""}`);
+  console.log(`Fixtures:   ${opts.fixtureUrl}`);
+  if (skipped) console.log(`Skipped:    ${skipped}`);
   console.log();
 
-  // Health checks
+  // Health checks for long-running services
   console.log("Waiting for services...");
   await waitForHealth(`${opts.fixtureUrl}/small.html`, "fixtures");
   await waitForHealth(`${opts.webfrostUrl}/health`, "webfrost");
@@ -566,6 +847,16 @@ async function main(): Promise<void> {
       results.push(abResult);
     }
 
+    if (!opts.skipWget) {
+      const wgetResult = await runWgetScenario(opts, sc.urls, sc.name);
+      results.push(wgetResult);
+    }
+
+    if (!opts.skipMonolith) {
+      const monolithResult = await runMonolithScenario(opts, sc.urls, sc.name);
+      results.push(monolithResult);
+    }
+
     console.log();
   }
 
@@ -574,6 +865,7 @@ async function main(): Promise<void> {
     webfrostUrl: opts.webfrostUrl,
     archiveboxUrl: opts.archiveboxUrl,
     fixtureUrl: opts.fixtureUrl,
+    composeProject: opts.composeProject,
     scenarios: results,
   };
 

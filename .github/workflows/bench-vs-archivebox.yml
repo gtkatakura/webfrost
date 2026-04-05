@@ -1,4 +1,4 @@
-name: Benchmark vs ArchiveBox
+name: Benchmark vs competitors (ArchiveBox, wget, monolith)
 
 on:
   push:
@@ -11,9 +11,9 @@ concurrency:
 
 jobs:
   bench:
-    name: WebFrost vs ArchiveBox
+    name: WebFrost vs ArchiveBox + wget + monolith
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -44,15 +44,24 @@ jobs:
         run: |
           docker compose -f bench/vs-archivebox/docker-compose.yml logs --no-color
 
+      - name: Pull competitor images
+        run: |
+          docker pull alpine:3.20
+          docker pull y2z/monolith
+
       - name: Run benchmark
         run: bun bench/vs-archivebox/run.ts
-        timeout-minutes: 20
+        timeout-minutes: 35
 
-      - name: Upload results
+      - name: Generate chart report
+        if: always()
+        run: bun bench/vs-archivebox/chart.ts
+
+      - name: Upload results and report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vs-archivebox-results-${{ github.sha }}
+          name: vs-competitors-results-${{ github.sha }}
           path: bench/vs-archivebox/results/
           if-no-files-found: ignore
           retention-days: 90

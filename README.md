@@ -71,6 +71,26 @@ See [docs/DEPLOY.md](docs/DEPLOY.md) for full deployment instructions, env vars,
 
 ---
 
+### Makefile (recommended for contributors)
+
+A `Makefile` at the repo root provides discoverable, one-command workflows. Run `make` (or `make help`) to list all targets:
+
+```bash
+make setup          # Bootstrap a fresh clone: bun install + Playwright browsers
+make dev            # Start API server + Vite UI concurrently (Ctrl+C stops both)
+make ci             # Lint + typecheck + unit tests — mirrors the CI pipeline
+make test           # Unit tests only
+make test-e2e       # Playwright E2E tests
+make bench          # Internal microbenchmarks
+make bench-vs-archivebox  # Head-to-head vs ArchiveBox (Docker required)
+make act            # Simulate CI locally via nektos/act
+make clean          # Remove all dist/ build artifacts
+```
+
+> **Requires:** [Bun](https://bun.sh) v1.x, Make (pre-installed on macOS/Linux), Docker (for `bench-vs-archivebox`), and [nektos/act](https://github.com/nektos/act) (for `make act`).
+
+---
+
 ### CLI Getting Started
 
 The CLI is the fastest way to start archiving locally.

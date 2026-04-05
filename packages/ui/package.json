@@ -6,7 +6,7 @@
     "build": "vite build",
     "dev": "vite",
     "test": "bun test src",
-    "benchmarks": "echo 'no benchmarks'"
+    "benchmarks": "echo 'UI benchmarks are covered by bench/page-load.ts at the repo root'"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.2",

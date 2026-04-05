@@ -7,7 +7,7 @@
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target bun --external playwright --external jsdom",
     "test": "AUTH_DISABLED=true bun test",
-    "benchmarks": "echo 'no benchmarks'",
+    "benchmarks": "AUTH_DISABLED=true bun run src/server.bench.ts",
     "start": "bun run src/index.ts"
   },
   "dependencies": {
