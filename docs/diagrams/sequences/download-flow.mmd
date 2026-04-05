@@ -1,0 +1,23 @@
+sequenceDiagram
+  actor Client
+  participant Server as Server (Elysia)
+  participant Auth as Auth middleware
+  participant DB as SQLite
+  participant Storage as Filesystem (future: S3)
+
+  Client->>Server: GET /api/snapshots/:id/archives/:extractor/download
+  Server->>Auth: validate Bearer token or session cookie
+  Auth-->>Server: ok / 401
+
+  Server->>DB: SELECT extractor_result WHERE snapshotId=:id AND extractor=:extractor
+  DB-->>Server: { filePath, mimeType }
+
+  alt file on local filesystem
+    Server->>Storage: read file
+    Storage-->>Server: file buffer
+    Server-->>Client: 200 file download (Content-Disposition: attachment)
+  else file on S3 (future)
+    Server->>Storage: generate presigned URL
+    Storage-->>Server: presigned URL
+    Server-->>Client: 302 redirect to presigned URL
+  end

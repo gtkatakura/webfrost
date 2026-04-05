@@ -1,0 +1,29 @@
+sequenceDiagram
+  actor User
+  participant CLI as CLI / Server / SDK
+  participant Pipeline as Pipeline (core)
+  participant Cache as Fetch Cache
+  participant Browser as Chromium (Playwright)
+  participant Extractors as Extractors (parallel)
+  participant DB as SQLite
+  participant FS as Filesystem
+
+  User->>CLI: webfrost add <url>
+  CLI->>DB: INSERT snapshot (status=pending)
+  CLI->>Pipeline: run(url, snapshotId)
+
+  Pipeline->>Cache: init shared HTTP cache
+  Pipeline->>Browser: launch headless Chromium
+  Browser-->>Pipeline: page handle
+
+  Pipeline->>Extractors: run all in parallel
+  note over Extractors: warc, readability, html<br/>use Fetch Cache (no browser)<br/><br/>pdf, screenshot, dom-snapshot,<br/>singlefile use Browser page<br/><br/>media, media-metadata<br/>spawn yt-dlp subprocess
+
+  Extractors-->>Pipeline: results (buffers / JSON)
+
+  Pipeline->>FS: write archive files
+  Pipeline->>DB: UPDATE extractor_results
+  Pipeline->>DB: UPDATE snapshot (status=complete)
+  Pipeline->>Browser: close page
+
+  CLI-->>User: ✓ snapshot <id> — warc, pdf, screenshot, ...

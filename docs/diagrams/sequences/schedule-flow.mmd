@@ -1,0 +1,23 @@
+sequenceDiagram
+  participant Worker as Schedule worker
+  participant DB as SQLite
+  participant Cron as Cron evaluator
+  participant Pipeline as Pipeline (core)
+
+  loop every poll interval
+    Worker->>DB: SELECT schedules WHERE paused=false
+    DB-->>Worker: schedule list
+
+    loop for each schedule
+      Worker->>Cron: isDue(schedule.cron, schedule.lastRunAt)
+      alt due
+        Worker->>DB: UPDATE schedule (lastRunAt=now)
+        Worker->>Pipeline: run(schedule.url)
+        alt success
+          Worker->>DB: UPDATE schedule (lastStatus=success, consecutiveFailures=0)
+        else failure
+          Worker->>DB: UPDATE schedule (lastStatus=error, consecutiveFailures++)
+        end
+      end
+    end
+  end

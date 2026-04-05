@@ -1,0 +1,29 @@
+C4Component
+  title @webfrost/core — Components
+
+  Container_Boundary(core, "@webfrost/core") {
+    Component(pipeline, "Pipeline", "pipeline.ts", "Orchestrates a full snapshot: launches browser, runs all extractors in parallel, writes results to DB and disk.")
+    Component(extractors, "Extractors", "extractors/", "Individual extractor modules: warc, readability, pdf, screenshot, dom-snapshot, singlefile, html, media, media-metadata.")
+    Component(db, "Database", "db.ts", "SQLite access layer. Snapshots, extractor results, tags, schedules, API keys, import history, FTS index.")
+    Component(fetchCache, "Fetch Cache", "fetch-cache.ts", "In-memory HTTP cache shared across extractors within one snapshot. Ensures one network request per resource.")
+    Component(importModule, "Import", "import.ts", "Parses and enqueues URLs from plain text, OPML, Netscape HTML, and RSS feeds.")
+    Component(scheduler, "Scheduler", "cron.ts / schedules.ts", "Cron expression evaluation and schedule execution logic.")
+    Component(auth, "Auth", "auth.ts", "Password hashing, API key generation and verification, session management.")
+    Component(rss, "RSS", "rss.ts", "Fetches and parses RSS/Atom feeds.")
+  }
+
+  ContainerDb(db_file, "SQLite (archive.db)")
+  ContainerDb(files, "Archive Files")
+  System_Ext(browser, "Chromium (Playwright)")
+  System_Ext(ytdlp, "yt-dlp")
+
+  Rel(pipeline, fetchCache, "Shares cache across extractors")
+  Rel(pipeline, extractors, "Runs in parallel")
+  Rel(pipeline, db, "Persists snapshot and results")
+  Rel(pipeline, files, "Writes archive files")
+  Rel(extractors, browser, "pdf, screenshot, dom-snapshot, singlefile")
+  Rel(extractors, ytdlp, "media, media-metadata")
+  Rel(importModule, rss, "RSS feed import")
+  Rel(importModule, pipeline, "Enqueues URLs")
+  Rel(scheduler, pipeline, "Triggers due schedules")
+  Rel(db, db_file, "SQLite queries")
