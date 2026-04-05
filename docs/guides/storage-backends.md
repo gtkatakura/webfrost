@@ -29,8 +29,8 @@ Set `WEBFROST_STORAGE_BACKEND=s3` and the required S3 variables:
 WEBFROST_STORAGE_BACKEND=s3 \
 S3_ENDPOINT=https://s3.amazonaws.com \
 S3_BUCKET=my-webfrost-bucket \
-S3_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE \
-S3_SECRET_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
+S3_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE \
+S3_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
 S3_REGION=us-east-1 \
 WEBFROST_DIR=./data \
 bun run packages/server/src/index.ts
@@ -43,8 +43,8 @@ bun run packages/server/src/index.ts
 | `WEBFROST_STORAGE_BACKEND` | `filesystem` | `filesystem` or `s3` |
 | `S3_ENDPOINT` | — | S3 endpoint URL. Required when `s3`. |
 | `S3_BUCKET` | — | Bucket name. Required when `s3`. |
-| `S3_ACCESS_KEY` | — | Access key ID. Required when `s3`. |
-| `S3_SECRET_KEY` | — | Secret access key. Required when `s3`. |
+| `S3_ACCESS_KEY_ID` | — | Access key ID. Required when `s3`. |
+| `S3_SECRET_ACCESS_KEY` | — | Secret access key. Required when `s3`. |
 | `S3_REGION` | `us-east-1` | S3 region. |
 | `S3_PATH_PREFIX` | `snapshots` | Object key prefix inside the bucket. |
 
@@ -58,8 +58,8 @@ docker compose -f docker-compose.dev.yml up -d
 WEBFROST_STORAGE_BACKEND=s3 \
 S3_ENDPOINT=http://localhost:9000 \
 S3_BUCKET=webfrost \
-S3_ACCESS_KEY=minioadmin \
-S3_SECRET_KEY=minioadmin \
+S3_ACCESS_KEY_ID=minioadmin \
+S3_SECRET_ACCESS_KEY=minioadmin \
 WEBFROST_DIR=./data SESSION_SECRET=$(openssl rand -hex 32) \
 bun run packages/server/src/index.ts
 ```

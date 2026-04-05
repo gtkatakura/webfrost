@@ -29,8 +29,8 @@ All configuration is via environment variables. There is no config file.
 | `WEBFROST_STORAGE_BACKEND` | `filesystem` | `filesystem` or `s3` |
 | `S3_ENDPOINT` | — | S3-compatible endpoint URL. Required when `WEBFROST_STORAGE_BACKEND=s3`. |
 | `S3_BUCKET` | — | S3 bucket name. Required when backend is `s3`. |
-| `S3_ACCESS_KEY` | — | S3 access key ID. Required when backend is `s3`. |
-| `S3_SECRET_KEY` | — | S3 secret access key. Required when backend is `s3`. |
+| `S3_ACCESS_KEY_ID` | — | S3 access key ID. Required when backend is `s3`. |
+| `S3_SECRET_ACCESS_KEY` | — | S3 secret access key. Required when backend is `s3`. |
 | `S3_REGION` | `us-east-1` | S3 region. |
 | `S3_PATH_PREFIX` | `snapshots` | Object key prefix inside the bucket. |
 
