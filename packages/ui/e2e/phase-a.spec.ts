@@ -100,8 +100,8 @@ test("@phase-a import: plain text URLs shows queued count", async ({ page, reque
   // Wait for result banner.
   await expect(page.getByText("Import complete")).toBeVisible({ timeout: 15_000 });
 
-  // Verify the queued count is shown (2 fresh URLs → queued: 2).
-  await expect(page.getByText(/Queued:\s*2/)).toBeVisible();
+  // Verify the queued count is shown (2 fresh URLs → "2 URLs queued for archiving.").
+  await expect(page.getByText(/2 URLs queued/)).toBeVisible();
 });
 
 test("@phase-a import: switching import type updates the form fields", async ({ page }) => {
