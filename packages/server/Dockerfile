@@ -1,5 +1,6 @@
 # Stage 1 — build the React UI
-FROM oven/bun:1.3.11 AS ui-builder
+ARG BUN_VERSION=1.3.11
+FROM oven/bun:${BUN_VERSION} AS ui-builder
 WORKDIR /app
 
 # Copy all workspace manifests so bun can resolve the full lockfile
@@ -20,7 +21,7 @@ RUN bun run --filter '@webfrost/sdk' build
 RUN bun run --filter '@webfrost/ui' build
 
 # Stage 2 — build the Elysia server
-FROM oven/bun:1.3.11 AS server-builder
+FROM oven/bun:${BUN_VERSION} AS server-builder
 WORKDIR /app
 
 # Copy all workspace manifests so bun can resolve the full lockfile
@@ -48,7 +49,7 @@ RUN ln -sf "$(readlink -f packages/core/node_modules/jsdom)" node_modules/jsdom 
     ln -sf "$(readlink -f packages/core/node_modules/@mozilla/readability)" node_modules/@mozilla/readability
 
 # Stage 3 — runtime image
-FROM oven/bun:1.3.11-slim
+FROM oven/bun:${BUN_VERSION}-slim
 WORKDIR /app
 
 # External deps (jsdom reads CSS from disk via __dirname at load time;
