@@ -3,6 +3,6 @@ pre-commit:
   commands:
     lint:
       glob: "*.{js,ts,jsx,tsx,json,css}"
-      run: bunx biome check --staged --no-errors-on-unmatched
+      run: /opt/homebrew/bin/mise exec -- bunx biome check --staged --no-errors-on-unmatched
     typecheck:
-      run: bun run typecheck
+      run: /opt/homebrew/bin/mise exec -- bun run typecheck

@@ -248,11 +248,10 @@ test.skip("@phase-c setup-wizard: wizard is not accessible after admin user is c
 test("@phase-c settings: settings page renders with expected sections", async ({ page }) => {
   await loginViaUI(page);
   await page.goto("/#/settings");
-  // Wait for auth API calls (getSetupStatus + getMe) to finish before asserting —
-  // the protected route won't render until isAuthenticated resolves.
-  await page.waitForLoadState("networkidle");
-
-  await expect(page.getByRole("heading", { name: /settings/i })).toBeVisible();
+  // Auth resolves asynchronously (getSetupStatus → getMe). networkidle can fire
+  // before the auth useEffect starts its fetch, so use a generous assertion
+  // timeout to let auth complete and the protected route re-render instead.
+  await expect(page.getByRole("heading", { name: /settings/i })).toBeVisible({ timeout: 15_000 });
   // At minimum the settings page should have an API keys section heading.
   await expect(page.getByRole("heading", { name: /api key/i })).toBeVisible();
 });
