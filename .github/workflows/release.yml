@@ -129,6 +129,93 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # ── Visual verification: smoke-test the pushed Docker image ──────────────
+  verify-docker:
+    name: Visual Verify → Docker
+    needs: docker
+    runs-on: ubuntu-24.04
+    if: |
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      github.event.inputs.target == 'docker-ghcr' ||
+      github.event.inputs.target == 'all'
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: oven-sh/setup-bun@v2.0.2
+        with:
+          bun-version-file: .tool-versions
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4.2.2
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - run: bun install --frozen-lockfile
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4.2.2
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/bun.lock') }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: bunx playwright install --with-deps chromium
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3.3.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Start WebFrost container
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/server:sha-${GITHUB_SHA::7}"
+          docker run -d --name webfrost-verify \
+            -p 3000:3000 \
+            -e WEBFROST_DIR=/data \
+            -e AUTH_DISABLED=true \
+            -e SESSION_SECRET=$(openssl rand -hex 32) \
+            "$IMAGE"
+          echo "Container started from $IMAGE"
+          # Wait up to 60 s for health endpoint
+          for i in $(seq 1 12); do
+            if curl -sf http://localhost:3000/health > /dev/null; then
+              echo "Server is ready"; exit 0
+            fi
+            echo "Waiting for server ($i/12)..."; sleep 5
+          done
+          echo "::error::Server failed to become healthy after 60s" >&2
+          docker logs webfrost-verify >&2
+          exit 1
+
+      - name: Run visual verification
+        working-directory: packages/ui
+        run: bunx playwright test --config playwright.verify.config.ts
+        env:
+          VERIFY_URL: http://localhost:3000
+
+      - name: Upload deploy screenshot
+        if: always()
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: deploy-screenshot-${{ github.sha }}
+          path: packages/ui/test-results/deploy-screenshot.png
+          retention-days: 90
+
+      - name: Stop container
+        if: always()
+        run: docker stop webfrost-verify && docker rm webfrost-verify
+
   # ── npm: publish public packages ─────────────────────────────────────────
   # NOTE: packages are currently private. Flip "private": false in package.json
   # and set NPM_TOKEN secret before enabling this job for real publishes.

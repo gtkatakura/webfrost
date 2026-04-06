@@ -39,6 +39,7 @@ File: `.github/workflows/ci.yml`
 2. GHCR login via `GITHUB_TOKEN` (no extra secret needed).
 3. Docker image built from `packages/server/Dockerfile` (multi-stage: UI → server → runtime).
 4. Layer cache via GitHub Actions cache (`cache-from/to: type=gha`).
+5. **Visual verification** — the `verify-docker` job starts the freshly pushed container and runs Playwright against it (see [Post-Deploy Visual Verification](#post-deploy-visual-verification) below).
 
 **Dockerfile stages:**
 
@@ -147,6 +148,39 @@ See `.env.example` at the repo root for a template. Never commit `.env` to versi
 | `GET /api/snapshots/:id/tags` | List tags on a snapshot |
 | `POST /api/snapshots/:id/tags` | Add a tag to a snapshot |
 | `DELETE /api/snapshots/:id/tags/:tagId` | Remove a tag from a snapshot |
+
+---
+
+## Post-Deploy Visual Verification
+
+After each Docker push, the `verify-docker` job in `release.yml` performs a browser-based smoke test against the pushed image. HTTP 200 alone is not sufficient — the job confirms the UI is actually rendered.
+
+**What it does:**
+
+1. Pulls the image tag `sha-<shortsha>` from GHCR.
+2. Starts the container with `AUTH_DISABLED=true` and a throwaway `SESSION_SECRET`.
+3. Waits up to 60 s for `GET /health` to return `{"status":"ok"}`.
+4. Runs Playwright (Chromium) via `playwright.verify.config.ts` against `http://localhost:3000`:
+   - Checks the page body is not blank.
+   - Asserts at least one structural element (`h1`, `h2`, `nav`) is visible.
+   - Captures JS console errors — test fails if any are detected.
+   - Takes a full-page screenshot.
+5. Uploads the screenshot as the artifact `deploy-screenshot-<sha>` (retained 90 days).
+6. Stops and removes the container.
+
+**Relevant files:**
+
+| File | Purpose |
+|------|---------|
+| `packages/ui/e2e/verify-deploy.spec.ts` | Playwright test spec |
+| `packages/ui/playwright.verify.config.ts` | Playwright config (no webServer, targets `VERIFY_URL`) |
+| `.github/workflows/release.yml` → `verify-docker` job | CI wiring |
+
+**If verification fails:**
+
+- Check the `deploy-screenshot-<sha>` artifact for a visual — blank or error state is immediately obvious.
+- Review the Playwright trace output in the job log for the failing assertion.
+- Common causes: static asset build failure (blank page), JS bundle error (console errors), or startup race (health timeout).
 
 ---
 
