@@ -10,7 +10,7 @@ hero:
   actions:
     - theme: brand
       text: Get started
-      link: /getting-started/quickstart
+      link: /tutorials/first-archive
     - theme: alt
       text: View on GitHub
       link: https://github.com/gtkatakura/webfrost

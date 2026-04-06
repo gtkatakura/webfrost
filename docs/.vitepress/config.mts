@@ -2,135 +2,70 @@ import { withMermaid } from "vitepress-plugin-mermaid";
 
 export default withMermaid({
   title: "WebFrost",
-  description:
-    "Self-hosted web archiving toolkit — fastest practical archiver with one shared HTTP cache and no lock-in.",
-  lang: "en-US",
-
-  ignoreDeadLinks: [
-    /^\/WEB\/issues\//,
-    // Repo-root files not included in docs/
-    /ROADMAP$/,
-    /\.env\.example$/,
-    // Diagram directory index links from legacy docs
-    /\/diagrams\//,
-  ],
+  description: "A self-hosted web archiving toolkit",
+  base: "/",
+  outDir: "../dist/docs",
+  ignoreDeadLinks: true,
 
   themeConfig: {
-    logo: "/logo.svg",
-    siteTitle: "WebFrost",
-
     nav: [
-      { text: "Getting Started", link: "/getting-started/" },
-      { text: "Guides", link: "/guides/cli-usage" },
+      { text: "Getting Started", link: "/tutorials/first-archive" },
+      { text: "Guides", link: "/how-to/bulk-import" },
       { text: "Reference", link: "/reference/cli" },
-      { text: "Architecture", link: "/architecture/overview" },
+      { text: "Architecture", link: "/explanation/architecture" },
     ],
 
-    sidebar: {
-      "/getting-started/": [
-        {
-          text: "Getting Started",
-          items: [
-            { text: "What is WebFrost?", link: "/getting-started/" },
-            { text: "Quickstart", link: "/getting-started/quickstart" },
-            { text: "Installation", link: "/getting-started/install" },
-            { text: "Docker setup", link: "/getting-started/docker" },
-          ],
-        },
-      ],
-      "/guides/": [
-        {
-          text: "Guides",
-          items: [
-            { text: "CLI usage", link: "/guides/cli-usage" },
-            { text: "Web UI", link: "/guides/web-ui" },
-            { text: "SDK usage", link: "/guides/sdk-usage" },
-            { text: "Bulk import", link: "/guides/bulk-import" },
-            { text: "Scheduled archiving", link: "/guides/scheduled-archiving" },
-            { text: "Storage backends", link: "/guides/storage-backends" },
-            { text: "Docker deploy", link: "/guides/docker-deploy" },
-            { text: "Cookies and sessions", link: "/guides/cookies-sessions" },
-            { text: "Troubleshooting", link: "/guides/troubleshooting" },
-          ],
-        },
-      ],
-      "/reference/": [
-        {
-          text: "Reference",
-          items: [
-            { text: "CLI", link: "/reference/cli" },
-            { text: "REST API", link: "/reference/rest-api" },
-            { text: "SDK API", link: "/reference/sdk-api" },
-            { text: "Configuration", link: "/reference/configuration" },
-            { text: "Extractors", link: "/reference/extractors" },
-            { text: "Supported sources", link: "/reference/supported-sources" },
-            { text: "Supported outputs", link: "/reference/supported-outputs" },
-            { text: "Disk layout", link: "/reference/disk-layout" },
-            { text: "Database schema", link: "/reference/database-schema" },
-          ],
-        },
-      ],
-      "/architecture/": [
-        {
-          text: "Architecture",
-          items: [
-            { text: "Overview", link: "/architecture/overview" },
-            { text: "Containers", link: "/architecture/containers" },
-            { text: "Components", link: "/architecture/components" },
-            { text: "Pipeline", link: "/architecture/pipeline" },
-            { text: "Storage model", link: "/architecture/storage-model" },
-            { text: "Security", link: "/architecture/security" },
-          ],
-        },
-      ],
-      "/contributing/": [
-        {
-          text: "Contributing",
-          items: [
-            { text: "Development setup", link: "/contributing/development" },
-            { text: "Project structure", link: "/contributing/project-structure" },
-            { text: "Roadmap", link: "/contributing/roadmap" },
-          ],
-        },
-      ],
-    },
+    sidebar: [
+      {
+        text: "Tutorials",
+        items: [{ text: "Archive Your First Page", link: "/tutorials/first-archive" }],
+      },
+      {
+        text: "How-to Guides",
+        items: [
+          { text: "Bulk Import", link: "/how-to/bulk-import" },
+          { text: "Scheduled Archives", link: "/how-to/scheduled-archives" },
+          { text: "Docker Deploy", link: "/how-to/docker-deploy" },
+          { text: "S3 Storage", link: "/how-to/s3-storage" },
+        ],
+      },
+      {
+        text: "Reference",
+        items: [
+          { text: "CLI Commands", link: "/reference/cli" },
+          { text: "REST API", link: "/reference/rest-api" },
+          { text: "SDK", link: "/reference/sdk" },
+          { text: "Environment Variables", link: "/reference/environment-variables" },
+          { text: "Extractors", link: "/reference/extractors" },
+        ],
+      },
+      {
+        text: "Architecture",
+        items: [
+          { text: "Architecture Overview", link: "/explanation/architecture" },
+          { text: "Pipeline", link: "/explanation/pipeline" },
+          { text: "Storage Model", link: "/explanation/storage-model" },
+        ],
+      },
+      {
+        text: "Operations",
+        items: [
+          { text: "Deployment", link: "/DEPLOY" },
+          { text: "Release Process", link: "/RELEASE" },
+          { text: "Versioning", link: "/VERSIONING" },
+          { text: "Security", link: "/SECURITY" },
+        ],
+      },
+    ],
 
     search: {
       provider: "local",
     },
 
-    socialLinks: [
-      {
-        icon: "github",
-        link: "https://github.com/gtkatakura/webfrost",
-      },
-    ],
+    socialLinks: [{ icon: "github", link: "https://github.com/gtkatakura/webfrost" }],
 
     footer: {
-      message: "WebFrost — self-hosted web archiving toolkit.",
+      message: "WebFrost — self-hosted web archiving toolkit",
     },
-
-    editLink: {
-      pattern: "https://github.com/gtkatakura/webfrost/edit/main/docs/:path",
-      text: "Edit this page on GitHub",
-    },
-  },
-
-  // Use port 5174 to avoid conflict with the app UI dev server (5173).
-  vite: {
-    server: {
-      port: 5174,
-    },
-    optimizeDeps: {
-      // vitepress-plugin-mermaid adds these to optimizeDeps.include, but they are
-      // transitive Mermaid dependencies not directly installed. Exclude them from
-      // pre-bundling so Vite resolves them at runtime without noisy warnings.
-      exclude: ["@braintree/sanitize-url", "cytoscape", "cytoscape-cose-bilkent", "dayjs", "debug"],
-    },
-  },
-
-  mermaid: {},
-  mermaidPlugin: {
-    class: "mermaid",
   },
 });
