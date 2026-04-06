@@ -15,14 +15,14 @@ jobs:
     name: Install
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v6.0.2
 
-      - uses: oven-sh/setup-bun@v2.0.2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .tool-versions
 
       - name: Cache Bun dependencies
-        uses: actions/cache@v4.2.2
+        uses: actions/cache@v5.0.4
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
@@ -33,7 +33,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Save node_modules cache
-        uses: actions/cache/save@v4.2.2
+        uses: actions/cache/save@v5.0.4
         with:
           path: |
             node_modules
@@ -45,15 +45,15 @@ jobs:
     needs: install
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v6.0.2
 
-      - uses: oven-sh/setup-bun@v2.0.2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .tool-versions
 
       - name: Restore node_modules cache
         id: cache-restore
-        uses: actions/cache/restore@v4.2.2
+        uses: actions/cache/restore@v5.0.4
         with:
           path: |
             node_modules
@@ -72,15 +72,15 @@ jobs:
     needs: install
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v6.0.2
 
-      - uses: oven-sh/setup-bun@v2.0.2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .tool-versions
 
       - name: Restore node_modules cache
         id: cache-restore
-        uses: actions/cache/restore@v4.2.2
+        uses: actions/cache/restore@v5.0.4
         with:
           path: |
             node_modules
@@ -99,15 +99,15 @@ jobs:
     needs: install
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v6.0.2
 
-      - uses: oven-sh/setup-bun@v2.0.2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .tool-versions
 
       - name: Restore node_modules cache
         id: cache-restore
-        uses: actions/cache/restore@v4.2.2
+        uses: actions/cache/restore@v5.0.4
         with:
           path: |
             node_modules
@@ -150,15 +150,15 @@ jobs:
     needs: install
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v6.0.2
 
-      - uses: oven-sh/setup-bun@v2.0.2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .tool-versions
 
       - name: Restore node_modules cache
         id: cache-restore
-        uses: actions/cache/restore@v4.2.2
+        uses: actions/cache/restore@v5.0.4
         with:
           path: |
             node_modules
@@ -178,15 +178,15 @@ jobs:
     needs: install
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v6.0.2
 
-      - uses: oven-sh/setup-bun@v2.0.2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .tool-versions
 
       - name: Restore node_modules cache
         id: cache-restore
-        uses: actions/cache/restore@v4.2.2
+        uses: actions/cache/restore@v5.0.4
         with:
           path: |
             node_modules
@@ -199,7 +199,7 @@ jobs:
 
       - name: Cache Playwright browsers
         id: playwright-cache
-        uses: actions/cache@v4.2.2
+        uses: actions/cache@v5.0.4
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/bun.lock') }}
@@ -223,7 +223,7 @@ jobs:
 
       - name: Upload test traces
         if: failure()
-        uses: actions/upload-artifact@v4.4.3
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: playwright-traces-${{ github.sha }}
           path: packages/ui/test-results/
@@ -235,15 +235,15 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v6.0.2
 
-      - uses: oven-sh/setup-bun@v2.0.2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .tool-versions
 
       - name: Restore node_modules cache
         id: cache-restore
-        uses: actions/cache/restore@v4.2.2
+        uses: actions/cache/restore@v5.0.4
         with:
           path: |
             node_modules
@@ -256,7 +256,7 @@ jobs:
 
       - name: Cache Playwright browsers
         id: playwright-cache
-        uses: actions/cache@v4.2.2
+        uses: actions/cache@v5.0.4
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/bun.lock') }}
@@ -269,7 +269,7 @@ jobs:
         run: bun run bench
 
       - name: Upload bench results
-        uses: actions/upload-artifact@v4.4.3
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: bench-results-${{ github.sha }}
           path: bench/

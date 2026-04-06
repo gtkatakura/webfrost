@@ -33,12 +33,12 @@ jobs:
     name: CI gate
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4.2.2
-      - uses: oven-sh/setup-bun@v2.0.2
+      - uses: actions/checkout@v6.0.2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .tool-versions
       - name: Cache Bun dependencies
-        uses: actions/cache@v4.2.2
+        uses: actions/cache@v5.0.4
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
@@ -59,12 +59,12 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4.2.2
-      - uses: oven-sh/setup-bun@v2.0.2
+      - uses: actions/checkout@v6.0.2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .tool-versions
       - name: Cache Bun dependencies
-        uses: actions/cache@v4.2.2
+        uses: actions/cache@v5.0.4
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
@@ -72,7 +72,7 @@ jobs:
             ${{ runner.os }}-bun-
       - run: bun install --frozen-lockfile
       - name: Create or update Version Packages PR
-        uses: changesets/action@v1.4.5
+        uses: changesets/action@v1.7.0
         with:
           title: "chore: version packages"
           commit: "chore: version packages"
@@ -93,14 +93,14 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v6.0.2
 
       - name: Read Bun version from .tool-versions
         id: bun-version
         run: echo "version=$(grep '^bun ' .tool-versions | awk '{print $2}')" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3.3.0
+        uses: docker/login-action@v4.1.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -108,7 +108,7 @@ jobs:
 
       - name: Extract Docker metadata
         id: meta
-        uses: docker/metadata-action@v5.6.1
+        uses: docker/metadata-action@v6.0.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/server
           tags: |
@@ -118,7 +118,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6.9.0
+        uses: docker/build-push-action@v7.0.0
         with:
           context: .
           file: packages/server/Dockerfile
@@ -143,14 +143,14 @@ jobs:
       packages: read
 
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v6.0.2
 
-      - uses: oven-sh/setup-bun@v2.0.2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .tool-versions
 
       - name: Cache Bun dependencies
-        uses: actions/cache@v4.2.2
+        uses: actions/cache@v5.0.4
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
@@ -161,7 +161,7 @@ jobs:
 
       - name: Cache Playwright browsers
         id: playwright-cache
-        uses: actions/cache@v4.2.2
+        uses: actions/cache@v5.0.4
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/bun.lock') }}
@@ -171,7 +171,7 @@ jobs:
         run: bunx playwright install --with-deps chromium
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3.3.0
+        uses: docker/login-action@v4.1.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -206,7 +206,7 @@ jobs:
 
       - name: Upload deploy screenshot
         if: always()
-        uses: actions/upload-artifact@v4.4.3
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: deploy-screenshot-${{ github.sha }}
           path: packages/ui/test-results/deploy-screenshot.png
@@ -225,8 +225,8 @@ jobs:
     runs-on: ubuntu-24.04
     if: false # Remove this line when packages are ready for npm publish
     steps:
-      - uses: actions/checkout@v4.2.2
-      - uses: oven-sh/setup-bun@v2.0.2
+      - uses: actions/checkout@v6.0.2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .tool-versions
       - run: bun install --frozen-lockfile
