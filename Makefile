@@ -5,7 +5,8 @@
 
 .PHONY: help setup install dev build test test-e2e lint format typecheck ci \
         bench bench-vs-archivebox bench-up bench-down bench-chart \
-        act docker-up docker-down clean
+        act docker-up docker-down clean \
+        docs-dev docs-build docs-preview docs-install
 
 ## ─── Discovery ────────────────────────────────────────────────────────────────
 
@@ -33,6 +34,20 @@ dev: ## Start API server + Vite UI dev server concurrently (Ctrl+C stops both)
 	  (WEBFROST_DIR=./data AUTH_DISABLED=true bun run packages/server/src/index.ts) & \
 	  (cd packages/ui && bun run dev) & \
 	  wait
+
+## ─── Docs ─────────────────────────────────────────────────────────────────────
+
+docs-install: ## Install docs dependencies
+	cd docs && bun install 2>/dev/null || bun install
+
+docs-dev: ## Start VitePress docs dev server with hot reload (http://localhost:5174/)
+	bun run docs:dev
+
+docs-build: ## Build static docs site for production
+	bun run docs:build
+
+docs-preview: ## Preview production docs build locally
+	bun run docs:preview
 
 ## ─── Build ────────────────────────────────────────────────────────────────────
 

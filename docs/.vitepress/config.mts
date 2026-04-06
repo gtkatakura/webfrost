@@ -116,6 +116,19 @@ export default withMermaid({
     },
   },
 
+  // Use port 5174 to avoid conflict with the app UI dev server (5173).
+  vite: {
+    server: {
+      port: 5174,
+    },
+    optimizeDeps: {
+      // vitepress-plugin-mermaid adds these to optimizeDeps.include, but they are
+      // transitive Mermaid dependencies not directly installed. Exclude them from
+      // pre-bundling so Vite resolves them at runtime without noisy warnings.
+      exclude: ["@braintree/sanitize-url", "cytoscape", "cytoscape-cose-bilkent", "dayjs", "debug"],
+    },
+  },
+
   mermaid: {},
   mermaidPlugin: {
     class: "mermaid",
