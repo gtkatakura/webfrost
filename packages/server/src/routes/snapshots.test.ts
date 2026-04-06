@@ -262,6 +262,61 @@ describe("GET /snapshots", () => {
     expect(body.items[0]?.excerpt?.length).toBe(120);
   });
 
+  test("filters snapshots by status query param", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    const pendingId = createSnapshot(db, "https://pending.com");
+    const doneId = createSnapshot(db, "https://done.com");
+    db.query("UPDATE snapshots SET status = 'done' WHERE id = ?").run(doneId);
+    db.close();
+
+    const app = await getApp();
+
+    const pendingRes = await app.handle(new Request("http://localhost/snapshots?status=pending"));
+    expect(pendingRes.status).toBe(200);
+    const pendingBody = (await pendingRes.json()) as SnapshotPage;
+    expect(pendingBody.items).toHaveLength(1);
+    expect(pendingBody.items[0]?.id).toBe(pendingId);
+    expect(pendingBody.total).toBe(1);
+
+    const doneRes = await app.handle(new Request("http://localhost/snapshots?status=done"));
+    expect(doneRes.status).toBe(200);
+    const doneBody = (await doneRes.json()) as SnapshotPage;
+    expect(doneBody.items).toHaveLength(1);
+    expect(doneBody.items[0]?.id).toBe(doneId);
+    expect(doneBody.total).toBe(1);
+  });
+
+  test("returns all snapshots when status param is omitted", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    createSnapshot(db, "https://a.com");
+    const id2 = createSnapshot(db, "https://b.com");
+    db.query("UPDATE snapshots SET status = 'done' WHERE id = ?").run(id2);
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(new Request("http://localhost/snapshots"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SnapshotPage;
+    expect(body.items).toHaveLength(2);
+    expect(body.total).toBe(2);
+  });
+
+  test("returns empty when status filter matches no snapshots", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    createSnapshot(db, "https://example.com");
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(new Request("http://localhost/snapshots?status=done"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SnapshotPage;
+    expect(body.items).toHaveLength(0);
+    expect(body.total).toBe(0);
+  });
+
   test("returns empty items for out-of-range page", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
     const db = openDb(testDir);

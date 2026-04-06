@@ -267,6 +267,115 @@ describe("POST /import — OPML format via content", () => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /import/file (multipart file upload)
+// ---------------------------------------------------------------------------
+
+const OPML_CONTENT = `<?xml version="1.0"?>
+<opml version="2.0">
+  <body>
+    <outline type="rss" text="Example Feed" xmlUrl="https://example.com/feed.rss"/>
+    <outline type="rss" text="Other Feed" xmlUrl="https://other.com/atom.xml"/>
+  </body>
+</opml>`;
+
+const NETSCAPE_CONTENT = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<HTML><BODY>
+<DL><p>
+<DT><A HREF="https://example.com">Example</A>
+<DT><A HREF="https://other.com">Other</A>
+</DL></p>
+</BODY></HTML>`;
+
+function postFile(
+  app: Awaited<ReturnType<typeof getApp>>,
+  content: string,
+  filename: string,
+  format?: string,
+) {
+  const formData = new FormData();
+  formData.append("file", new File([content], filename, { type: "text/plain" }));
+  if (format) formData.append("format", format);
+  return app.handle(
+    new Request("http://localhost/import/file", {
+      method: "POST",
+      body: formData,
+    }),
+  );
+}
+
+describe("POST /import/file — multipart upload", () => {
+  test("imports plain text URL list from uploaded file", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await postFile(app, "https://example.com\nhttps://other.com\n", "urls.txt", "text");
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as {
+      queued: number;
+      skipped: number;
+      total: number;
+      format: string;
+    };
+    expect(body.format).toBe("text");
+    expect(body.total).toBe(2);
+    expect(body.queued).toBe(2);
+  });
+
+  test("imports OPML file and auto-detects format from filename", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await postFile(app, OPML_CONTENT, "subscriptions.opml");
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { format: string; total: number };
+    expect(body.format).toBe("opml");
+    expect(body.total).toBe(2);
+  });
+
+  test("imports Netscape bookmarks file with explicit format", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await postFile(app, NETSCAPE_CONTENT, "bookmarks.html", "netscape");
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { format: string; total: number };
+    expect(body.format).toBe("netscape");
+    expect(body.total).toBe(2);
+  });
+
+  test("records file import in history with null sourceUrl", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    await postFile(app, "https://example.com\n", "urls.txt", "text");
+
+    const res = await app.handle(new Request("http://localhost/imports"));
+    const body = (await res.json()) as Array<{ sourceUrl: string | null; format: string }>;
+    expect(body).toHaveLength(1);
+    expect(body[0]?.sourceUrl).toBeNull();
+    expect(body[0]?.format).toBe("text");
+  });
+
+  test("returns 400 when no file is provided", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request("http://localhost/import/file", {
+        method: "POST",
+        body: new FormData(),
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET /imports
 // ---------------------------------------------------------------------------
 

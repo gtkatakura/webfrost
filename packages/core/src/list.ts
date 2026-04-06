@@ -126,12 +126,20 @@ export function listSnapshotsWithExtractorsPaginated(
   db: Database,
   page: number,
   limit: number,
+  status?: string,
 ): PaginatedResult<SnapshotWithExtractors> {
   const offset = (page - 1) * limit;
 
-  const countRow = db.query<{ total: number }, []>("SELECT COUNT(*) AS total FROM snapshots").get();
+  const countRow = status
+    ? db
+        .query<{ total: number }, [string]>(
+          "SELECT COUNT(*) AS total FROM snapshots WHERE status = ?",
+        )
+        .get(status)
+    : db.query<{ total: number }, []>("SELECT COUNT(*) AS total FROM snapshots").get();
   const total = countRow?.total ?? 0;
 
+  const whereClause = status ? "WHERE s.status = ?" : "";
   const rows = db
     .query<
       {
@@ -143,7 +151,7 @@ export function listSnapshotsWithExtractorsPaginated(
         readability_content: string | null;
         has_screenshot: number | null;
       },
-      [number, number]
+      [string, number, number] | [number, number]
     >(
       `SELECT s.id, s.url, s.status, s.created_at,
          GROUP_CONCAT(DISTINCT ar.extractor) AS extractor_names,
@@ -151,11 +159,16 @@ export function listSnapshotsWithExtractorsPaginated(
          MAX(CASE WHEN ar.extractor = 'screenshot' THEN 1 END) AS has_screenshot
        FROM snapshots s
        LEFT JOIN archive_results ar ON ar.snapshot_id = s.id
+       ${whereClause}
        GROUP BY s.id
        ORDER BY s.id
        LIMIT ? OFFSET ?`,
     )
-    .all(limit, offset);
+    .all(
+      ...(status
+        ? ([status, limit, offset] as [string, number, number])
+        : ([limit, offset] as [number, number])),
+    );
 
   if (rows.length === 0) {
     return { items: [], total, page, limit };

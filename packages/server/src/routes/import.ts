@@ -180,6 +180,56 @@ export const importRouter = new Elysia({ prefix: "/import" })
         format: t.Optional(t.String()),
       }),
     },
+  )
+  /**
+   * POST /api/import/file
+   *
+   * Import URLs from an uploaded file (OPML, Netscape bookmarks, RSS, or plain text).
+   *
+   * Body (multipart/form-data):
+   *   - file: File  — The file to import
+   *   - format?: string — One of "rss" | "opml" | "netscape" | "text" (auto-detected from filename if omitted)
+   *
+   * Returns 202 with { queued, skipped, total, format }.
+   */
+  .post(
+    "/file",
+    async ({ body, set }) => {
+      const { file, format: formatHint } = body;
+      const webfrostDir = getWebfrostDir();
+
+      const rawContent = await file.text();
+      const filename = file.name ?? "";
+
+      const format: ImportFormat = VALID_FORMATS.includes(formatHint ?? "")
+        ? (formatHint as ImportFormat)
+        : detectFormat(filename, rawContent);
+
+      const urls = parseUrls(rawContent, format);
+      const { queued, skipped } = queueUrls(urls, format === "rss", webfrostDir);
+
+      const db = getDb();
+      try {
+        recordImport(db, {
+          id: crypto.randomUUID(),
+          source_url: null,
+          format,
+          queued,
+          skipped,
+        });
+      } finally {
+        db.close();
+      }
+
+      set.status = 202;
+      return { queued, skipped, total: urls.length, format };
+    },
+    {
+      body: t.Object({
+        file: t.File(),
+        format: t.Optional(t.String()),
+      }),
+    },
   );
 
 export const importsRouter = new Elysia({ prefix: "/imports" }).get("/", () => {

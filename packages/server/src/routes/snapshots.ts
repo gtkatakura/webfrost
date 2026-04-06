@@ -136,6 +136,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
         const q = query.q?.trim();
         const page = Math.max(1, Number(query.page) || 1);
         const limit = Math.min(10000, Math.max(1, Number(query.limit) || 20));
+        const status = query.status?.trim() || undefined;
 
         if (q) {
           // FTS5 ranked search — returns paginated results with snippet
@@ -153,7 +154,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
           };
         }
 
-        const result = listSnapshotsWithExtractorsPaginated(db, page, limit);
+        const result = listSnapshotsWithExtractorsPaginated(db, page, limit, status);
         return {
           items: result.items.map((s) => ({
             id: s.id,
@@ -187,6 +188,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
         q: t.Optional(t.String()),
         page: t.Optional(t.String()),
         limit: t.Optional(t.String()),
+        status: t.Optional(t.String()),
       }),
     },
   )
