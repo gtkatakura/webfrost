@@ -77,6 +77,8 @@ function parseArgs(): {
   archiveboxUrl: string;
   fixtureUrl: string;
   skipArchivebox: boolean;
+  skipWget: boolean;
+  skipMonolith: boolean;
   outputPath: string;
   composeProject: string;
 } {
@@ -149,7 +151,8 @@ async function sampleDockerStat(containerName: string): Promise<DockerStat | nul
     const cpuPct = Number.parseFloat(cpuStr);
     const memMb = parseMemMb(memStr);
     return { cpuPct: Number.isNaN(cpuPct) ? 0 : cpuPct, memMb };
-  } catch {
+  } catch (err) {
+    console.warn(`  [warn] docker stats failed for ${containerName}: ${err}`);
     return null;
   }
 }
@@ -169,7 +172,7 @@ function parseMemMb(s: string): number {
  */
 function startStatSampler(
   containerName: string,
-  intervalMs = 800,
+  intervalMs = 200,
 ): {
   stop: () => Promise<{ peakCpuPct: number | null; peakMemMb: number | null }>;
 } {
@@ -244,10 +247,9 @@ async function archiveWebFrost(
   const data = (await res.json()) as { id: number };
   const id = data.id;
 
-  // Poll until done or failed
+  // Poll until done or failed — poll immediately, then sleep between retries
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    await sleep(pollIntervalMs);
     try {
       const poll = await fetch(`${baseUrl}/api/snapshots/${id}`, {
         signal: AbortSignal.timeout(5_000),
@@ -259,6 +261,7 @@ async function archiveWebFrost(
     } catch {
       // transient; keep polling
     }
+    await sleep(pollIntervalMs);
   }
   return { success: false };
 }
@@ -539,6 +542,9 @@ async function runMonolithScenario(
   await Bun.spawn(["docker", "volume", "create", volume], { stdout: "pipe", stderr: "pipe" })
     .exited;
 
+  // diskBefore is always 0 for a fresh ephemeral volume; tracked for consistency
+  const diskBefore = 0;
+
   const start = performance.now();
   let successCount = 0;
   let failureCount = 0;
@@ -616,7 +622,7 @@ async function runMonolithScenario(
       wallMs,
       peakCpuPct: null,
       peakMemMb: null,
-      diskDeltaKb: diskAfter !== null ? diskAfter : null,
+      diskDeltaKb: diskAfter !== null ? diskAfter - diskBefore : null,
     },
     successCount,
     failureCount,
@@ -712,6 +718,10 @@ function generateMarkdownSection(run: BenchmarkRun): string {
 **Metrics:** wall time, peak CPU %, peak memory MB, disk delta KB.
 WebFrost and ArchiveBox stats sampled via \`docker stats\`; wget/monolith run as ephemeral containers (CPU/mem not available).
 
+> **Concurrency note:** WebFrost submits all URLs concurrently (parallel). ArchiveBox batches in chunks of 20 (sequential chunks). wget and monolith process URLs one at a time (sequential). Wall-time comparisons reflect each tool's native concurrency model — not an apples-to-apples throughput test.
+
+> **Validity note:** Scenarios where \`success=0\` (nothing was archived) are marked **INVALID** and excluded from speed comparisons — failure timing is not a meaningful benchmark.
+
 `;
 
   const scenarios = [
@@ -738,33 +748,45 @@ WebFrost and ArchiveBox stats sampled via \`docker stats\`; wget/monolith run as
   table += `|----------|------|${"--------------|".repeat(presentSystems.length + 1)}\n`;
 
   for (const sc of scenarios) {
-    const wfMs = resultsBySystem.get("webfrost")?.get(sc)?.metrics.wallMs ?? null;
+    const wfResult = resultsBySystem.get("webfrost")?.get(sc);
+    const wfMs = wfResult?.metrics.wallMs ?? null;
     const urlCount =
-      resultsBySystem.get("webfrost")?.get(sc)?.urlCount ??
+      wfResult?.urlCount ??
       presentSystems
         .map((s) => resultsBySystem.get(s)?.get(sc)?.urlCount)
         .find((v) => v !== undefined) ??
       "?";
 
+    // A scenario is invalid if the WebFrost result archived nothing
+    const wfInvalid = wfResult !== undefined && wfResult.successCount === 0;
+
     const wallCols = presentSystems
       .map((s) => {
-        const ms = resultsBySystem.get(s)?.get(sc)?.metrics.wallMs ?? null;
-        return ms !== null ? fmtMs(ms) : "—";
+        const r = resultsBySystem.get(s)?.get(sc);
+        if (!r) return "—";
+        const invalid = r.successCount === 0;
+        const label = fmtMs(r.metrics.wallMs);
+        return invalid ? `~~${label}~~ ⚠️` : label;
       })
       .join(" | ");
 
-    // Find fastest competitor to compare against WebFrost
+    // Find fastest valid competitor to compare against WebFrost
     let vsLabel = "—";
-    if (wfMs !== null) {
+    if (wfMs !== null && !wfInvalid) {
       const competitorMs = presentSystems
         .filter((s) => s !== "webfrost")
-        .map((s) => resultsBySystem.get(s)?.get(sc)?.metrics.wallMs ?? null)
+        .map((s) => {
+          const r = resultsBySystem.get(s)?.get(sc);
+          return r && r.successCount > 0 ? r.metrics.wallMs : null;
+        })
         .filter((v): v is number => v !== null);
       if (competitorMs.length > 0) {
         const bestCompetitor = Math.min(...competitorMs);
         const ratio = bestCompetitor / wfMs;
         vsLabel = ratio > 1 ? `${ratio.toFixed(1)}× faster` : `${(1 / ratio).toFixed(1)}× slower`;
       }
+    } else if (wfInvalid) {
+      vsLabel = "**INVALID**";
     }
 
     table += `| ${sc} | ${urlCount} | ${wallCols} | ${vsLabel} |\n`;
@@ -791,7 +813,7 @@ WebFrost and ArchiveBox stats sampled via \`docker stats\`; wget/monolith run as
     "- wget runs as `docker run --rm alpine:3.20 wget --mirror --page-requisites --convert-links`.\n";
   table += "- monolith runs as `docker run --rm y2z/monolith <url> -o /output/page-N.html`.\n";
   table +=
-    "- CPU/memory are point-in-time samples at ~800 ms intervals; true peak may be higher.\n";
+    "- CPU/memory are point-in-time samples at ~200 ms intervals; true peak may be higher.\n";
   table +=
     "- wget/monolith run as ephemeral containers — CPU/mem stats are not available (shown as —).\n";
   table +=
@@ -832,6 +854,64 @@ async function main(): Promise<void> {
   if (!opts.skipArchivebox) {
     await waitForHealth(opts.archiveboxUrl, "archivebox");
   }
+  console.log();
+
+  // ---------------------------------------------------------------------------
+  // Smoke test — verify each tool can archive at least one URL before the matrix
+  // ---------------------------------------------------------------------------
+  console.log("Smoke test: verifying each tool can archive one URL...");
+  const smokeUrl = `${opts.fixtureUrl}/small.html`;
+
+  const wfSmoke = await archiveWebFrost(opts.webfrostUrl, smokeUrl);
+  if (!wfSmoke.success) {
+    console.error(
+      `  ✗ WebFrost smoke test failed — cannot archive ${smokeUrl}. Aborting benchmark.`,
+    );
+    console.error(
+      "    Check that the fixture server is reachable from within the WebFrost container.",
+    );
+    process.exit(1);
+  }
+  console.log("  ✓ WebFrost smoke test passed");
+
+  if (!opts.skipArchivebox) {
+    const abSmoke = await archiveArchiveBox(COMPOSE_FILE, opts.composeProject, [smokeUrl]);
+    if (!abSmoke.success) {
+      console.error(
+        `  ✗ ArchiveBox smoke test failed — cannot archive ${smokeUrl}. Aborting benchmark.`,
+      );
+      process.exit(1);
+    }
+    console.log("  ✓ ArchiveBox smoke test passed");
+  }
+
+  if (!opts.skipWget) {
+    const network = `${opts.composeProject}_bench_net`;
+    const proc = Bun.spawn(
+      [
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        network,
+        "alpine:3.20",
+        "wget",
+        "-q",
+        "--spider",
+        smokeUrl,
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const code = await proc.exited;
+    if (code !== 0) {
+      console.error(
+        "  ✗ wget smoke test failed — fixture URL unreachable from Docker network. Aborting benchmark.",
+      );
+      process.exit(1);
+    }
+    console.log("  ✓ wget smoke test passed");
+  }
+
   console.log();
 
   const scenarios = buildScenarios(opts.fixtureUrl);
