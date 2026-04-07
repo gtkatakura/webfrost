@@ -412,64 +412,40 @@ async function runArchiveBoxScenario(
  * Measure how long wget takes to download a set of URLs.
  *
  * Each URL is fetched as `docker run --rm --network <net> alpine:3.20 wget ...`.
- * We run URLs sequentially (wget is single-threaded by design).
+ * Sequential variant: URLs are fetched one at a time (wget's native model).
+ * Parallel variant: up to WGET_CONCURRENCY URLs run simultaneously.
  * Disk delta is measured via a named Docker volume mounted at /output.
  * CPU/memory stats are null — ephemeral containers exit too fast to sample.
  */
-async function runWgetScenario(
-  opts: ReturnType<typeof parseArgs>,
-  urls: string[],
-  scenarioName: string,
-): Promise<ScenarioResult> {
-  console.log(`  wget — ${scenarioName} (${urls.length} URL${urls.length > 1 ? "s" : ""})`);
 
-  const network = `${opts.composeProject}_bench_net`;
-  const volume = `wget_bench_${Date.now()}`;
+const WGET_CONCURRENCY = 10;
 
-  // Create a Docker volume for output
-  await Bun.spawn(["docker", "volume", "create", volume], { stdout: "pipe", stderr: "pipe" })
-    .exited;
-
-  // Measure disk before (empty volume = 0)
-  const diskBefore = 0;
-
-  const start = performance.now();
-  let successCount = 0;
-  let failureCount = 0;
-
-  for (const url of urls) {
-    try {
-      const proc = Bun.spawn(
-        [
-          "docker",
-          "run",
-          "--rm",
-          "--network",
-          network,
-          "-v",
-          `${volume}:/output`,
-          "alpine:3.20",
-          "sh",
-          "-c",
-          `wget --mirror --page-requisites --no-parent --convert-links -P /output -q "${url}"`,
-        ],
-        { stdout: "pipe", stderr: "pipe" },
-      );
-      const code = await proc.exited;
-      if (code === 0) {
-        successCount++;
-      } else {
-        failureCount++;
-      }
-    } catch {
-      failureCount++;
-    }
+async function wgetFetchUrl(network: string, volume: string, url: string): Promise<boolean> {
+  try {
+    const proc = Bun.spawn(
+      [
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        network,
+        "-v",
+        `${volume}:/output`,
+        "alpine:3.20",
+        "sh",
+        "-c",
+        `wget --mirror --page-requisites --no-parent --convert-links -P /output -q "${url}"`,
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const code = await proc.exited;
+    return code === 0;
+  } catch {
+    return false;
   }
+}
 
-  const wallMs = Math.round(performance.now() - start);
-
-  // Measure disk used by the volume
-  let diskAfter: number | null = null;
+async function measureWgetDisk(volume: string): Promise<number | null> {
   try {
     const du = Bun.spawn(
       [
@@ -488,12 +464,40 @@ async function runWgetScenario(
     const text = await new Response(du.stdout).text();
     await du.exited;
     const kb = Number.parseInt(text.split("\t")[0] ?? "0", 10);
-    diskAfter = Number.isNaN(kb) ? null : kb;
+    return Number.isNaN(kb) ? null : kb;
   } catch {
-    diskAfter = null;
+    return null;
+  }
+}
+
+async function runWgetScenario(
+  opts: ReturnType<typeof parseArgs>,
+  urls: string[],
+  scenarioName: string,
+): Promise<ScenarioResult> {
+  console.log(
+    `  wget (sequential) — ${scenarioName} (${urls.length} URL${urls.length > 1 ? "s" : ""})`,
+  );
+
+  const network = `${opts.composeProject}_bench_net`;
+  const volume = `wget_seq_bench_${Date.now()}`;
+
+  await Bun.spawn(["docker", "volume", "create", volume], { stdout: "pipe", stderr: "pipe" })
+    .exited;
+
+  const start = performance.now();
+  let successCount = 0;
+  let failureCount = 0;
+
+  for (const url of urls) {
+    const ok = await wgetFetchUrl(network, volume, url);
+    if (ok) successCount++;
+    else failureCount++;
   }
 
-  // Cleanup volume
+  const wallMs = Math.round(performance.now() - start);
+  const diskAfter = await measureWgetDisk(volume);
+
   await Bun.spawn(["docker", "volume", "rm", "-f", volume], { stdout: "pipe", stderr: "pipe" })
     .exited;
 
@@ -510,7 +514,65 @@ async function runWgetScenario(
       wallMs,
       peakCpuPct: null,
       peakMemMb: null,
-      diskDeltaKb: diskAfter !== null ? diskAfter - diskBefore : null,
+      diskDeltaKb: diskAfter !== null ? diskAfter : null,
+    },
+    successCount,
+    failureCount,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+/**
+ * Parallel wget variant: runs up to WGET_CONCURRENCY docker containers simultaneously.
+ * This gives wget a fair chance to compete with WebFrost's concurrent submission model.
+ */
+async function runWgetParallelScenario(
+  opts: ReturnType<typeof parseArgs>,
+  urls: string[],
+  scenarioName: string,
+): Promise<ScenarioResult> {
+  console.log(
+    `  wget (parallel) — ${scenarioName} (${urls.length} URL${urls.length > 1 ? "s" : ""})`,
+  );
+
+  const network = `${opts.composeProject}_bench_net`;
+  const volume = `wget_par_bench_${Date.now()}`;
+
+  await Bun.spawn(["docker", "volume", "create", volume], { stdout: "pipe", stderr: "pipe" })
+    .exited;
+
+  const start = performance.now();
+  let successCount = 0;
+  let failureCount = 0;
+
+  // Run in batches of WGET_CONCURRENCY to avoid overwhelming the CI runner
+  for (let i = 0; i < urls.length; i += WGET_CONCURRENCY) {
+    const batch = urls.slice(i, i + WGET_CONCURRENCY);
+    const results = await Promise.all(batch.map((url) => wgetFetchUrl(network, volume, url)));
+    successCount += results.filter(Boolean).length;
+    failureCount += results.filter((r) => !r).length;
+  }
+
+  const wallMs = Math.round(performance.now() - start);
+  const diskAfter = await measureWgetDisk(volume);
+
+  await Bun.spawn(["docker", "volume", "rm", "-f", volume], { stdout: "pipe", stderr: "pipe" })
+    .exited;
+
+  console.log(
+    `    → ${wallMs}ms wall | success=${successCount} fail=${failureCount} | cpu=n/a mem=n/a`,
+  );
+
+  return {
+    system: "wget-parallel",
+    scenario: scenarioName,
+    urlCount: urls.length,
+    urls,
+    metrics: {
+      wallMs,
+      peakCpuPct: null,
+      peakMemMb: null,
+      diskDeltaKb: diskAfter !== null ? diskAfter : null,
     },
     successCount,
     failureCount,
@@ -527,62 +589,45 @@ async function runWgetScenario(
  *
  * Monolith bundles a full web page — HTML + assets — into a single self-contained
  * HTML file. Each URL runs as `docker run --rm --network <net> y2z/monolith <url> -o ...`.
+ * Sequential variant: URLs archived one at a time (monolith's native model).
+ * Parallel variant: up to MONOLITH_CONCURRENCY containers run simultaneously.
  * Like the wget runner, CPU/memory stats are null for ephemeral containers.
  */
-async function runMonolithScenario(
-  opts: ReturnType<typeof parseArgs>,
-  urls: string[],
-  scenarioName: string,
-): Promise<ScenarioResult> {
-  console.log(`  monolith — ${scenarioName} (${urls.length} URL${urls.length > 1 ? "s" : ""})`);
 
-  const network = `${opts.composeProject}_bench_net`;
-  const volume = `monolith_bench_${Date.now()}`;
+const MONOLITH_CONCURRENCY = 10;
 
-  await Bun.spawn(["docker", "volume", "create", volume], { stdout: "pipe", stderr: "pipe" })
-    .exited;
-
-  // diskBefore is always 0 for a fresh ephemeral volume; tracked for consistency
-  const diskBefore = 0;
-
-  const start = performance.now();
-  let successCount = 0;
-  let failureCount = 0;
-
-  for (let i = 0; i < urls.length; i++) {
-    const url = urls[i] as string;
-    try {
-      const proc = Bun.spawn(
-        [
-          "docker",
-          "run",
-          "--rm",
-          "--network",
-          network,
-          "-v",
-          `${volume}:/output`,
-          "y2z/monolith",
-          url,
-          "-o",
-          `/output/page-${i}.html`,
-          "-s", // silent
-        ],
-        { stdout: "pipe", stderr: "pipe" },
-      );
-      const code = await proc.exited;
-      if (code === 0) {
-        successCount++;
-      } else {
-        failureCount++;
-      }
-    } catch {
-      failureCount++;
-    }
+async function monolithArchiveUrl(
+  network: string,
+  volume: string,
+  url: string,
+  index: number,
+): Promise<boolean> {
+  try {
+    const proc = Bun.spawn(
+      [
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        network,
+        "-v",
+        `${volume}:/output`,
+        "y2z/monolith",
+        url,
+        "-o",
+        `/output/page-${index}.html`,
+        "-s", // silent
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const code = await proc.exited;
+    return code === 0;
+  } catch {
+    return false;
   }
+}
 
-  const wallMs = Math.round(performance.now() - start);
-
-  let diskAfter: number | null = null;
+async function measureMonolithDisk(volume: string): Promise<number | null> {
   try {
     const du = Bun.spawn(
       [
@@ -601,10 +646,39 @@ async function runMonolithScenario(
     const text = await new Response(du.stdout).text();
     await du.exited;
     const kb = Number.parseInt(text.split("\t")[0] ?? "0", 10);
-    diskAfter = Number.isNaN(kb) ? null : kb;
+    return Number.isNaN(kb) ? null : kb;
   } catch {
-    diskAfter = null;
+    return null;
   }
+}
+
+async function runMonolithScenario(
+  opts: ReturnType<typeof parseArgs>,
+  urls: string[],
+  scenarioName: string,
+): Promise<ScenarioResult> {
+  console.log(
+    `  monolith (sequential) — ${scenarioName} (${urls.length} URL${urls.length > 1 ? "s" : ""})`,
+  );
+
+  const network = `${opts.composeProject}_bench_net`;
+  const volume = `monolith_seq_bench_${Date.now()}`;
+
+  await Bun.spawn(["docker", "volume", "create", volume], { stdout: "pipe", stderr: "pipe" })
+    .exited;
+
+  const start = performance.now();
+  let successCount = 0;
+  let failureCount = 0;
+
+  for (let i = 0; i < urls.length; i++) {
+    const ok = await monolithArchiveUrl(network, volume, urls[i] as string, i);
+    if (ok) successCount++;
+    else failureCount++;
+  }
+
+  const wallMs = Math.round(performance.now() - start);
+  const diskAfter = await measureMonolithDisk(volume);
 
   await Bun.spawn(["docker", "volume", "rm", "-f", volume], { stdout: "pipe", stderr: "pipe" })
     .exited;
@@ -622,7 +696,67 @@ async function runMonolithScenario(
       wallMs,
       peakCpuPct: null,
       peakMemMb: null,
-      diskDeltaKb: diskAfter !== null ? diskAfter - diskBefore : null,
+      diskDeltaKb: diskAfter !== null ? diskAfter : null,
+    },
+    successCount,
+    failureCount,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+/**
+ * Parallel monolith variant: runs up to MONOLITH_CONCURRENCY containers simultaneously.
+ * Gives monolith a fair chance to compete with WebFrost's concurrent submission model.
+ */
+async function runMonolithParallelScenario(
+  opts: ReturnType<typeof parseArgs>,
+  urls: string[],
+  scenarioName: string,
+): Promise<ScenarioResult> {
+  console.log(
+    `  monolith (parallel) — ${scenarioName} (${urls.length} URL${urls.length > 1 ? "s" : ""})`,
+  );
+
+  const network = `${opts.composeProject}_bench_net`;
+  const volume = `monolith_par_bench_${Date.now()}`;
+
+  await Bun.spawn(["docker", "volume", "create", volume], { stdout: "pipe", stderr: "pipe" })
+    .exited;
+
+  const start = performance.now();
+  let successCount = 0;
+  let failureCount = 0;
+
+  // Run in batches of MONOLITH_CONCURRENCY to avoid overwhelming the CI runner
+  for (let i = 0; i < urls.length; i += MONOLITH_CONCURRENCY) {
+    const batch = urls.slice(i, i + MONOLITH_CONCURRENCY);
+    const results = await Promise.all(
+      batch.map((url, j) => monolithArchiveUrl(network, volume, url, i + j)),
+    );
+    successCount += results.filter(Boolean).length;
+    failureCount += results.filter((r) => !r).length;
+  }
+
+  const wallMs = Math.round(performance.now() - start);
+  const diskAfter = await measureMonolithDisk(volume);
+
+  await Bun.spawn(["docker", "volume", "rm", "-f", volume], { stdout: "pipe", stderr: "pipe" })
+    .exited;
+
+  console.log(
+    `    → ${wallMs}ms wall | success=${successCount} fail=${failureCount} | cpu=n/a mem=n/a`,
+  );
+
+  return {
+    system: "monolith-parallel",
+    scenario: scenarioName,
+    urlCount: urls.length,
+    urls,
+    metrics: {
+      wallMs,
+      peakCpuPct: null,
+      peakMemMb: null,
+      diskDeltaKb: diskAfter !== null ? diskAfter : null,
     },
     successCount,
     failureCount,
@@ -683,7 +817,14 @@ function generateMarkdownSection(run: BenchmarkRun): string {
   const date = run.date.split("T")[0];
 
   // Collect the ordered list of systems present in this run
-  const systemOrder = ["webfrost", "archivebox", "wget", "monolith"];
+  const systemOrder = [
+    "webfrost",
+    "archivebox",
+    "wget",
+    "wget-parallel",
+    "monolith",
+    "monolith-parallel",
+  ];
   const presentSystems = [...new Set(run.scenarios.map((s) => s.system))].sort((a, b) => {
     const ai = systemOrder.indexOf(a);
     const bi = systemOrder.indexOf(b);
@@ -691,16 +832,21 @@ function generateMarkdownSection(run: BenchmarkRun): string {
   });
 
   const systemLabel: Record<string, string> = {
-    webfrost: "WebFrost",
+    webfrost: "WebFrost (parallel)",
     archivebox: "ArchiveBox",
-    wget: "wget",
-    monolith: "monolith",
+    wget: "wget (sequential)",
+    "wget-parallel": "wget (parallel)",
+    monolith: "monolith (sequential)",
+    "monolith-parallel": "monolith (parallel)",
   };
 
-  const competitors = presentSystems.filter((s) => s !== "webfrost").join(", ");
+  const competitors = presentSystems
+    .filter((s) => s !== "webfrost")
+    .map((s) => systemLabel[s] ?? s)
+    .join(", ");
 
   const header = `
-## WebFrost vs ${competitors || "Competitors"} — Head-to-Head Comparison
+## WebFrost vs Competitors — Head-to-Head Comparison
 
 **Date:** ${date}
 **Fixture server:** ${run.fixtureUrl}
@@ -718,7 +864,7 @@ function generateMarkdownSection(run: BenchmarkRun): string {
 **Metrics:** wall time, peak CPU %, peak memory MB, disk delta KB.
 WebFrost and ArchiveBox stats sampled via \`docker stats\`; wget/monolith run as ephemeral containers (CPU/mem not available).
 
-> **Concurrency note:** WebFrost submits all URLs concurrently (parallel). ArchiveBox batches in chunks of 20 (sequential chunks). wget and monolith process URLs one at a time (sequential). Wall-time comparisons reflect each tool's native concurrency model — not an apples-to-apples throughput test.
+> **Concurrency note:** WebFrost submits all URLs concurrently (parallel). ArchiveBox batches in chunks of 20 (sequential chunks). wget and monolith are shown in two modes: sequential (one URL at a time, native model) and parallel (up to 10 simultaneous \`docker run\` containers). The parallel column for wget and monolith gives a fair apples-to-apples comparison against WebFrost's parallel submission model.
 
 > **Validity note:** Scenarios where \`success=0\` (nothing was archived) are marked **INVALID** and excluded from speed comparisons — failure timing is not a meaningful benchmark.
 
@@ -810,8 +956,9 @@ WebFrost and ArchiveBox stats sampled via \`docker stats\`; wget/monolith run as
     "- Wall time includes request submission + polling until all archives are marked `done`.\n";
   table += "- ArchiveBox scenarios use `archivebox add --depth=0` via `docker compose exec`.\n";
   table +=
-    "- wget runs as `docker run --rm alpine:3.20 wget --mirror --page-requisites --convert-links`.\n";
-  table += "- monolith runs as `docker run --rm y2z/monolith <url> -o /output/page-N.html`.\n";
+    "- wget (sequential) runs one `docker run --rm alpine:3.20 wget` per URL; wget (parallel) runs up to 10 simultaneously.\n";
+  table +=
+    "- monolith (sequential) runs one `docker run --rm y2z/monolith` per URL; monolith (parallel) runs up to 10 simultaneously.\n";
   table +=
     "- CPU/memory are point-in-time samples at ~200 ms intervals; true peak may be higher.\n";
   table +=
@@ -930,11 +1077,15 @@ async function main(): Promise<void> {
     if (!opts.skipWget) {
       const wgetResult = await runWgetScenario(opts, sc.urls, sc.name);
       results.push(wgetResult);
+      const wgetParResult = await runWgetParallelScenario(opts, sc.urls, sc.name);
+      results.push(wgetParResult);
     }
 
     if (!opts.skipMonolith) {
       const monolithResult = await runMonolithScenario(opts, sc.urls, sc.name);
       results.push(monolithResult);
+      const monolithParResult = await runMonolithParallelScenario(opts, sc.urls, sc.name);
+      results.push(monolithParResult);
     }
 
     console.log();
