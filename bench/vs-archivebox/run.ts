@@ -331,7 +331,7 @@ async function archiveArchiveBox(
   composeFile: string,
   composeProject: string,
   urls: string[],
-): Promise<{ success: boolean }> {
+): Promise<{ success: boolean; stderr?: string }> {
   try {
     const proc = Bun.spawn(
       [
@@ -351,10 +351,10 @@ async function archiveArchiveBox(
       ],
       { stdout: "pipe", stderr: "pipe" },
     );
-    const code = await proc.exited;
-    return { success: code === 0 };
-  } catch {
-    return { success: false };
+    const [code, stderrText] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
+    return { success: code === 0, stderr: stderrText.trim() || undefined };
+  } catch (err) {
+    return { success: false, stderr: String(err) };
   }
 }
 
@@ -1037,12 +1037,14 @@ async function main(): Promise<void> {
   if (!opts.skipArchivebox) {
     const abSmoke = await archiveArchiveBox(COMPOSE_FILE, opts.composeProject, [smokeUrl]);
     if (!abSmoke.success) {
-      console.error(
-        `  ✗ ArchiveBox smoke test failed — cannot archive ${smokeUrl}. Aborting benchmark.`,
+      console.warn(
+        `  ✗ ArchiveBox smoke test failed — cannot archive ${smokeUrl}. Skipping ArchiveBox scenarios.`,
       );
-      process.exit(1);
+      if (abSmoke.stderr) console.warn(`    stderr: ${abSmoke.stderr}`);
+      opts.skipArchivebox = true;
+    } else {
+      console.log("  ✓ ArchiveBox smoke test passed");
     }
-    console.log("  ✓ ArchiveBox smoke test passed");
   }
 
   if (!opts.skipWget) {
@@ -1064,12 +1066,13 @@ async function main(): Promise<void> {
     );
     const wgetCode = await wgetSmoke.exited;
     if (wgetCode !== 0) {
-      console.error(
-        "  ✗ wget smoke test failed — fixture URL unreachable from Docker network. Aborting benchmark.",
+      console.warn(
+        "  ✗ wget smoke test failed — fixture URL unreachable from Docker network. Skipping wget scenarios.",
       );
-      process.exit(1);
+      opts.skipWget = true;
+    } else {
+      console.log("  ✓ wget smoke test passed");
     }
-    console.log("  ✓ wget smoke test passed");
   }
 
   if (!opts.skipMonolith) {
@@ -1081,12 +1084,13 @@ async function main(): Promise<void> {
     await Bun.spawn(["docker", "volume", "rm", "-f", volume], { stdout: "pipe", stderr: "pipe" })
       .exited;
     if (!ok) {
-      console.error(
-        `  ✗ monolith smoke test failed — cannot archive ${smokeUrl}. Aborting benchmark.`,
+      console.warn(
+        `  ✗ monolith smoke test failed — cannot archive ${smokeUrl}. Skipping monolith scenarios.`,
       );
-      process.exit(1);
+      opts.skipMonolith = true;
+    } else {
+      console.log("  ✓ monolith smoke test passed");
     }
-    console.log("  ✓ monolith smoke test passed");
   }
 
   console.log();

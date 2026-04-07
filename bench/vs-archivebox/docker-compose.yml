@@ -77,6 +77,8 @@ services:
       PUBLIC_INDEX: "True"
       PUBLIC_SNAPSHOTS: "True"
       CHECK_SSL_VALIDITY: "False"
+      # Allow archiving fixture URLs that resolve to private Docker bridge IPs (172.x.x.x).
+      SAVE_PRIVATE_IPS: "True"
       SAVE_SCREENSHOT: "True"
       SAVE_PDF: "True"
       SAVE_TITLE: "True"

@@ -39,11 +39,6 @@ jobs:
         run: docker compose -f bench/vs-archivebox/docker-compose.yml up -d --wait
         timeout-minutes: 10
 
-      - name: Dump container logs on failure
-        if: failure()
-        run: |
-          docker compose -f bench/vs-archivebox/docker-compose.yml logs --no-color
-
       - name: Pull competitor images
         run: |
           docker pull alpine:3.20
@@ -64,6 +59,11 @@ jobs:
             --fixture-internal-url http://fixtures \
             $SKIP_FLAGS
         timeout-minutes: 35
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: |
+          docker compose -f bench/vs-archivebox/docker-compose.yml logs --no-color
 
       - name: Generate chart report
         if: always()
