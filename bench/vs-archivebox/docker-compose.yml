@@ -38,6 +38,9 @@ services:
       PORT: "3000"
       WEBFROST_DIR: /data
       AUTH_DISABLED: "true"
+      # Fixture server resolves to a private Docker bridge IP (172.x.x.x).
+      # Allow private URLs so WebFrost can fetch fixture pages during benchmarks.
+      WEBFROST_ALLOW_PRIVATE_URLS: "true"
     volumes:
       - webfrost_data:/data
     networks:
