@@ -58,7 +58,11 @@ jobs:
         run: |
           SKIP_FLAGS=""
           [ "$MONOLITH_AVAILABLE" = "false" ] && SKIP_FLAGS="$SKIP_FLAGS --skip-monolith"
-          bun bench/vs-archivebox/run.ts $SKIP_FLAGS
+          # --fixture-internal-url uses the Docker service name so tools running inside
+          # bench_net containers can reach the fixture server (localhost:18080 is host-only).
+          bun bench/vs-archivebox/run.ts \
+            --fixture-internal-url http://fixtures \
+            $SKIP_FLAGS
         timeout-minutes: 35
 
       - name: Generate chart report

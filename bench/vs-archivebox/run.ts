@@ -11,14 +11,16 @@
  *   bun bench/vs-archivebox/run.ts [options]
  *
  * Options:
- *   --webfrost-url <url>      WebFrost base URL  (default: http://localhost:18081)
- *   --archivebox-url <url>    ArchiveBox base URL (default: http://localhost:18082)
- *   --fixture-url <url>       Fixture server URL  (default: http://localhost:18080)
- *   --skip-archivebox         Skip ArchiveBox scenarios (WebFrost only)
- *   --skip-wget               Skip wget comparison scenarios
- *   --skip-monolith           Skip monolith comparison scenarios
- *   --output <path>           JSON results file   (default: bench/vs-archivebox/results/latest.json)
- *   --compose-project <name>  Docker Compose project name (default: vs-archivebox)
+ *   --webfrost-url <url>          WebFrost base URL  (default: http://localhost:18081)
+ *   --archivebox-url <url>        ArchiveBox base URL (default: http://localhost:18082)
+ *   --fixture-url <url>           Fixture server URL for host-side health checks (default: http://localhost:18080)
+ *   --fixture-internal-url <url>  Fixture URL used in archive requests sent to tools inside Docker
+ *                                 (default: same as --fixture-url; set to http://fixtures in CI)
+ *   --skip-archivebox             Skip ArchiveBox scenarios (WebFrost only)
+ *   --skip-wget                   Skip wget comparison scenarios
+ *   --skip-monolith               Skip monolith comparison scenarios
+ *   --output <path>               JSON results file   (default: bench/vs-archivebox/results/latest.json)
+ *   --compose-project <name>      Docker Compose project name (default: vs-archivebox)
  *
  * Metrics collected per scenario:
  *   wallMs       — wall-clock time from first request to last completion
@@ -76,6 +78,7 @@ function parseArgs(): {
   webfrostUrl: string;
   archiveboxUrl: string;
   fixtureUrl: string;
+  fixtureInternalUrl: string;
   skipArchivebox: boolean;
   skipWget: boolean;
   skipMonolith: boolean;
@@ -87,10 +90,15 @@ function parseArgs(): {
     const i = args.indexOf(flag);
     return i !== -1 && args[i + 1] ? (args[i + 1] as string) : fallback;
   };
+  const fixtureUrl = get("--fixture-url", "http://localhost:18080");
   return {
     webfrostUrl: get("--webfrost-url", "http://localhost:18081"),
     archiveboxUrl: get("--archivebox-url", "http://localhost:18082"),
-    fixtureUrl: get("--fixture-url", "http://localhost:18080"),
+    fixtureUrl,
+    // URL used inside Docker containers — must be reachable from within the bench_net bridge.
+    // In CI, pass --fixture-internal-url http://fixtures (the Docker service name).
+    // Defaults to fixtureUrl so local runs where both host and containers can reach localhost work.
+    fixtureInternalUrl: get("--fixture-internal-url", fixtureUrl),
     skipArchivebox: args.includes("--skip-archivebox"),
     skipWget: args.includes("--skip-wget"),
     skipMonolith: args.includes("--skip-monolith"),
@@ -991,7 +999,7 @@ async function main(): Promise<void> {
   console.log(`ArchiveBox: ${opts.archiveboxUrl}${opts.skipArchivebox ? " (skipped)" : ""}`);
   console.log(`wget:       docker run alpine:3.20${opts.skipWget ? " (skipped)" : ""}`);
   console.log(`monolith:   docker run y2z/monolith${opts.skipMonolith ? " (skipped)" : ""}`);
-  console.log(`Fixtures:   ${opts.fixtureUrl}`);
+  console.log(`Fixtures:   ${opts.fixtureUrl} (host) / ${opts.fixtureInternalUrl} (internal)`);
   if (skipped) console.log(`Skipped:    ${skipped}`);
   console.log();
 
@@ -1008,7 +1016,8 @@ async function main(): Promise<void> {
   // Smoke test — verify each tool can archive at least one URL before the matrix
   // ---------------------------------------------------------------------------
   console.log("Smoke test: verifying each tool can archive one URL...");
-  const smokeUrl = `${opts.fixtureUrl}/small.html`;
+  // Use the internal fixture URL — these URLs are fetched by tools running inside Docker containers.
+  const smokeUrl = `${opts.fixtureInternalUrl}/small.html`;
 
   const wfSmoke = await archiveWebFrost(opts.webfrostUrl, smokeUrl);
   if (!wfSmoke.success) {
@@ -1017,6 +1026,9 @@ async function main(): Promise<void> {
     );
     console.error(
       "    Check that the fixture server is reachable from within the WebFrost container.",
+    );
+    console.error(
+      "    If running in CI, pass --fixture-internal-url http://<docker-service-name> (e.g. http://fixtures).",
     );
     process.exit(1);
   }
@@ -1035,7 +1047,7 @@ async function main(): Promise<void> {
 
   if (!opts.skipWget) {
     const network = `${opts.composeProject}_bench_net`;
-    const proc = Bun.spawn(
+    const wgetSmoke = Bun.spawn(
       [
         "docker",
         "run",
@@ -1050,8 +1062,8 @@ async function main(): Promise<void> {
       ],
       { stdout: "pipe", stderr: "pipe" },
     );
-    const code = await proc.exited;
-    if (code !== 0) {
+    const wgetCode = await wgetSmoke.exited;
+    if (wgetCode !== 0) {
       console.error(
         "  ✗ wget smoke test failed — fixture URL unreachable from Docker network. Aborting benchmark.",
       );
@@ -1060,9 +1072,26 @@ async function main(): Promise<void> {
     console.log("  ✓ wget smoke test passed");
   }
 
+  if (!opts.skipMonolith) {
+    const network = `${opts.composeProject}_bench_net`;
+    const volume = `monolith_smoke_${Date.now()}`;
+    await Bun.spawn(["docker", "volume", "create", volume], { stdout: "pipe", stderr: "pipe" })
+      .exited;
+    const ok = await monolithArchiveUrl(network, volume, smokeUrl, 0);
+    await Bun.spawn(["docker", "volume", "rm", "-f", volume], { stdout: "pipe", stderr: "pipe" })
+      .exited;
+    if (!ok) {
+      console.error(
+        `  ✗ monolith smoke test failed — cannot archive ${smokeUrl}. Aborting benchmark.`,
+      );
+      process.exit(1);
+    }
+    console.log("  ✓ monolith smoke test passed");
+  }
+
   console.log();
 
-  const scenarios = buildScenarios(opts.fixtureUrl);
+  const scenarios = buildScenarios(opts.fixtureInternalUrl);
   const results: ScenarioResult[] = [];
 
   for (const sc of scenarios) {
