@@ -32,6 +32,26 @@ WEBFROST_DIR=./data SESSION_SECRET=$SESSION_SECRET bun run packages/server/src/i
 
 ---
 
+## Web UI
+
+The server serves a React SPA at `http://localhost:3000`. Key features:
+
+- **Dashboard** — stats cards, Quick Archive form, recent activity feed
+- **Snapshots** — virtualized list, density toggle, inline filtering, bulk delete, slide-over detail panel
+- **Search** — SQLite FTS5 full-text search with snippet highlighting and saved searches
+- **Schedules** — cron-based scheduling with health badges (On schedule / Overdue / Paused)
+- **Tags** — color-coded tag management
+- **Import** — RSS, OPML, Netscape bookmarks, plain-text URL list
+- **Light/dark theme** — follows system preference, persisted to `localStorage`
+- **Keyboard shortcuts** — `⌘K` search palette, `?` shortcut help, `g h/s/t/i` navigation
+- **Collapsible sidebar** — 240 px expanded, 56 px icon-only; state persisted
+
+Stack: React 18, React Router v6, Tailwind CSS v4 (CSS variable design system), `@tanstack/react-virtual`, `lucide-react`, `sonner`.
+
+See [Web UI guide](docs/guides/web-ui.md) for full documentation.
+
+---
+
 ## Packages
 
 | Package | Description |
@@ -51,6 +71,7 @@ Full documentation site: `bun run docs:dev` → `http://localhost:5173`
 | Section | Contents |
 |---|---|
 | [Tutorials](docs/tutorials/first-archive.md) | Archive your first page end-to-end |
+| [Guide: Web UI](docs/guides/web-ui.md) | Keyboard shortcuts, theme, search palette, all pages |
 | [How-to: Bulk import](docs/how-to/bulk-import.md) | Import URLs from files, feeds, and bookmarks |
 | [How-to: Scheduled archives](docs/how-to/scheduled-archives.md) | Set up recurring archive jobs |
 | [How-to: Docker deploy](docs/how-to/docker-deploy.md) | Run as a persistent server with Docker |
@@ -94,4 +115,6 @@ See [ROADMAP.md](ROADMAP.md) for the full feature roadmap.
 
 **Shipped in 0.1.0:** API auth, full-text search, RSS import, tags, screenshots, DOM snapshots, SingleFile, media extraction via yt-dlp, web UI, first-run setup wizard.
 
-**Coming next:** Browser extension, S3/remote storage backend.
+**Shipped in 0.2.0 (UI):** Redesigned React UI — light/dark theme, command palette, keyboard shortcuts, virtualized snapshot list, bulk delete, schedule health tracking, import history, API key management.
+
+**Coming next:** Browser extension, rate limiting, public-read/private-write access control.

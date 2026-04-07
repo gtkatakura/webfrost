@@ -110,9 +110,11 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 | CLI | ✅ | ✅ | — |
 | Tag management UI | ✅ | ✅ | — |
 | Structured CLI logging (`--verbose`, `--quiet`, `WEBFROST_LOG_LEVEL`) | ✅ | ✅ | — |
-| Batch operations (delete/retag) | ✅ | ❌ | 🟡 P2 |
+| Batch operations (bulk delete) | ✅ | ✅ | — |
 | Desktop app | ✅ | ❌ | ⚪ P3 |
 | Dark mode | partial | ✅ | — |
+| Keyboard shortcuts (⌘K, g+h/s/t/i, ?) | ❌ | ✅ | — |
+| Command palette | ❌ | ✅ | — |
 
 ### Deployment
 
@@ -169,7 +171,6 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 | **Concurrent schedule dedup** | Prevent overlapping runs when interval < execution time | S | ✅ |
 | **Cron timezone support** | Users expect local-time scheduling | S | partial |
 | **SAML / OAuth / OIDC** | Enterprise SSO integration | L | ✅ |
-| **Batch operations UI** | Delete/re-archive/tag in bulk | M | ✅ |
 | **Kubernetes manifests** | Formal k8s deployment support | M | ❌ |
 | **Bare metal install** | `bun install -g @webfrost/cli` should work globally | S | ✅ |
 
