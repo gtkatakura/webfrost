@@ -1,3 +1,4 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { WebFrostError } from "@webfrost/sdk";
 import type { Schedule } from "@webfrost/sdk";
 import {
@@ -9,7 +10,7 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "../components";
 import { useClient } from "../context";
@@ -101,7 +102,10 @@ function shortDate(date: Date): string {
     date.getMonth() === now.getMonth() &&
     date.getDate() === now.getDate();
   if (sameDay) {
-    return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    return date.toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   }
   return date.toLocaleDateString(undefined, {
     month: "short",
@@ -124,9 +128,21 @@ function getHealth(schedule: Schedule): HealthState {
 }
 
 const healthConfig: Record<HealthState, { label: string; dot: string; text: string }> = {
-  ok: { label: "On schedule", dot: "var(--status-success)", text: "var(--status-success)" },
-  overdue: { label: "Overdue", dot: "var(--status-warning)", text: "var(--status-warning)" },
-  never: { label: "Never run", dot: "var(--text-low)", text: "var(--text-low)" },
+  ok: {
+    label: "On schedule",
+    dot: "var(--status-success)",
+    text: "var(--status-success)",
+  },
+  overdue: {
+    label: "Overdue",
+    dot: "var(--status-warning)",
+    text: "var(--status-warning)",
+  },
+  never: {
+    label: "Never run",
+    dot: "var(--text-low)",
+    text: "var(--text-low)",
+  },
 };
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
@@ -153,7 +169,9 @@ function HealthBadge({ schedule }: { schedule: Schedule }) {
           background: cfg.dot,
           flexShrink: 0,
           ...(h === "ok"
-            ? { boxShadow: `0 0 0 2px color-mix(in srgb, ${cfg.dot} 25%, transparent)` }
+            ? {
+                boxShadow: `0 0 0 2px color-mix(in srgb, ${cfg.dot} 25%, transparent)`,
+              }
             : {}),
         }}
       />
@@ -237,7 +255,13 @@ function ScheduleRow({
       className="group"
     >
       {/* URL */}
-      <td style={{ padding: "10px 12px 10px 0", maxWidth: 220, verticalAlign: "top" }}>
+      <td
+        style={{
+          padding: "10px 12px 10px 0",
+          maxWidth: 220,
+          verticalAlign: "top",
+        }}
+      >
         <a
           href={schedule.url}
           target="_blank"
@@ -271,19 +295,35 @@ function ScheduleRow({
           />
         </a>
         <div
-          style={{ fontSize: 11, color: "var(--text-low)", marginTop: 2, fontFamily: "monospace" }}
+          style={{
+            fontSize: 11,
+            color: "var(--text-low)",
+            marginTop: 2,
+            fontFamily: "monospace",
+          }}
         >
           {schedule.url.replace(/^https?:\/\/[^/]+/, "") || "/"}
         </div>
       </td>
 
       {/* Schedule + cron preview */}
-      <td style={{ padding: "10px 12px 10px 0", verticalAlign: "top", minWidth: 160 }}>
+      <td
+        style={{
+          padding: "10px 12px 10px 0",
+          verticalAlign: "top",
+          minWidth: 160,
+        }}
+      >
         <div style={{ fontSize: 13, color: "var(--text-high)", fontWeight: 500 }}>
           {describeCron(schedule.cron)}
         </div>
         <div
-          style={{ fontSize: 11, color: "var(--text-low)", fontFamily: "monospace", marginTop: 1 }}
+          style={{
+            fontSize: 11,
+            color: "var(--text-low)",
+            fontFamily: "monospace",
+            marginTop: 1,
+          }}
         >
           {schedule.cron !== describeCron(schedule.cron) ? null : schedule.cron}
         </div>
@@ -386,31 +426,34 @@ function ScheduleRow({
 
 // ─── Add schedule form ─────────────────────────────────────────────────────────
 
-function AddScheduleForm({
-  onCreated,
-}: {
-  onCreated: (s: Schedule) => void;
-}) {
+const SCHEDULE_KEYS = {
+  all: ["schedules"] as const,
+  list: () => ["schedules", "list"] as const,
+};
+
+function AddScheduleForm() {
   const client = useClient();
+  const queryClient = useQueryClient();
   const [url, setUrl] = useState("");
   const [cron, setCron] = useState("");
-  const [creating, setCreating] = useState(false);
+
+  const createMutation = useMutation({
+    mutationFn: ({ url, cron }: { url: string; cron: string }) => client.createSchedule(url, cron),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: SCHEDULE_KEYS.all });
+      setUrl("");
+      setCron("");
+      toast.success("Schedule created");
+    },
+    onError: (e) => toast.error(e instanceof WebFrostError ? e.message : String(e)),
+  });
+
+  const creating = createMutation.isPending;
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!url.trim() || !cron.trim()) return;
-    setCreating(true);
-    try {
-      const created = await client.createSchedule(url.trim(), cron.trim());
-      onCreated(created);
-      setUrl("");
-      setCron("");
-      toast.success("Schedule created");
-    } catch (e) {
-      toast.error(e instanceof WebFrostError ? e.message : String(e));
-    } finally {
-      setCreating(false);
-    }
+    createMutation.mutate({ url: url.trim(), cron: cron.trim() });
   }
 
   const inputStyle: React.CSSProperties = {
@@ -458,7 +501,12 @@ function AddScheduleForm({
       </div>
       <form
         onSubmit={handleCreate}
-        style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 10,
+          alignItems: "flex-end",
+        }}
       >
         <label style={{ ...labelStyle, flex: 1, minWidth: 200 }}>
           URL
@@ -495,7 +543,11 @@ function AddScheduleForm({
             value={cron}
             onChange={(e) => setCron(e.target.value)}
             required
-            style={{ ...inputStyle, fontFamily: "ui-monospace, monospace", width: 160 }}
+            style={{
+              ...inputStyle,
+              fontFamily: "ui-monospace, monospace",
+              width: 160,
+            }}
           />
         </label>
         <Button variant="primary" size="md" type="submit" disabled={creating}>
@@ -511,35 +563,27 @@ function AddScheduleForm({
 
 export function SchedulesPage() {
   const client = useClient();
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  const refetch = useCallback(async () => {
-    try {
-      const data = await client.listSchedules();
-      setSchedules(data);
-    } catch (e) {
-      toast.error(e instanceof WebFrostError ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [client]);
+  const { data: schedules = [], isPending: loading } = useQuery<Schedule[]>({
+    queryKey: SCHEDULE_KEYS.list(),
+    queryFn: () => client.listSchedules(),
+  });
 
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
-
-  async function handleDelete(id: number) {
-    try {
-      await client.deleteSchedule(id);
-      setSchedules((prev) => prev.filter((s) => s.id !== id));
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => client.deleteSchedule(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: SCHEDULE_KEYS.all });
       toast.success("Schedule deleted");
-    } catch (e) {
-      toast.error(e instanceof WebFrostError ? e.message : String(e));
-    }
+    },
+    onError: (e) => toast.error(e instanceof WebFrostError ? e.message : String(e)),
+  });
+
+  function handleDelete(id: number) {
+    deleteMutation.mutate(id);
   }
 
-  const activeCount = schedules.filter((s) => s.nextRunAt !== null).length;
+  const activeCount = schedules.filter((s: Schedule) => s.nextRunAt !== null).length;
 
   return (
     <main style={{ maxWidth: 940, margin: "0 auto", padding: "32px 20px" }}>
@@ -582,7 +626,7 @@ export function SchedulesPage() {
       </div>
 
       {/* Add form */}
-      <AddScheduleForm onCreated={(s) => setSchedules((prev) => [...prev, s])} />
+      <AddScheduleForm />
 
       {/* Table / empty state */}
       {loading ? (
@@ -625,7 +669,13 @@ export function SchedulesPage() {
             <CalendarClock size={24} style={{ color: "var(--text-low)" }} />
           </div>
           <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-mid)" }}>
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 600,
+                color: "var(--text-mid)",
+              }}
+            >
               No schedules yet
             </div>
             <div style={{ fontSize: 13, color: "var(--text-low)", marginTop: 4 }}>

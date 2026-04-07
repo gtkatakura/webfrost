@@ -1,11 +1,11 @@
-import { WebFrostError } from "@webfrost/sdk";
+import { useQuery } from "@tanstack/react-query";
 import type { SearchResult, Tag } from "@webfrost/sdk";
 import { Bookmark, BookmarkCheck, Search, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { toast } from "sonner";
 import { useClient } from "../context";
 import { useSearch } from "../hooks/useSearch";
+import { tagKeys } from "../hooks/useTags";
 
 // ─── Saved searches ────────────────────────────────────────────────────────────
 
@@ -221,51 +221,35 @@ export function SearchPage() {
   const [activeDays, setActiveDays] = useState<number | null>(null);
   const [activeExtractors, setActiveExtractors] = useState<Set<string>>(new Set());
   const [activeTags, setActiveTags] = useState<Set<number>>(new Set());
-  const [allTags, setAllTags] = useState<Tag[]>([]);
 
-  const loadTags = useCallback(async () => {
-    try {
-      const data = await client.listTags();
-      setAllTags(data);
-    } catch (e) {
-      toast.error(e instanceof WebFrostError ? e.message : String(e));
-    }
-  }, [client]);
-
-  useEffect(() => {
-    loadTags();
-  }, [loadTags]);
+  const { data: allTags = [] } = useQuery<Tag[]>({
+    queryKey: tagKeys.list(),
+    queryFn: () => client.listTags(),
+  });
 
   // ── Snapshot metadata for filter cross-reference ──────────────────────────
-  const [snapshotMeta, setSnapshotMeta] = useState<
-    Map<number, { status: string; createdAt: string; extractors: string[]; tags: Tag[] }>
-  >(new Map());
+  const { data: snapshotMetaPage } = useQuery({
+    queryKey: ["snapshots", "meta-for-search"],
+    queryFn: () => client.listSnapshots({ limit: 100 }),
+    enabled: rawResults.length > 0,
+    staleTime: 60_000,
+  });
 
-  const loadMeta = useCallback(async () => {
-    if (rawResults.length === 0) return;
-    try {
-      const page = await client.listSnapshots({ limit: 100 });
-      const map = new Map<
-        number,
-        { status: string; createdAt: string; extractors: string[]; tags: Tag[] }
-      >();
-      for (const s of page.items) {
-        map.set(s.id, {
-          status: s.status,
-          createdAt: s.createdAt,
-          extractors: s.extractors,
-          tags: s.tags,
-        });
-      }
-      setSnapshotMeta(map);
-    } catch {
-      // non-critical, filters just won't refine
+  const snapshotMeta = useMemo(() => {
+    const map = new Map<
+      number,
+      { status: string; createdAt: string; extractors: string[]; tags: Tag[] }
+    >();
+    for (const s of snapshotMetaPage?.items ?? []) {
+      map.set(s.id, {
+        status: s.status,
+        createdAt: s.createdAt,
+        extractors: s.extractors,
+        tags: s.tags,
+      });
     }
-  }, [client, rawResults]);
-
-  useEffect(() => {
-    loadMeta();
-  }, [loadMeta]);
+    return map;
+  }, [snapshotMetaPage]);
 
   // ── Apply filters to FTS results ──────────────────────────────────────────
   const dateThreshold = activeDays ? dateFromDays(activeDays) : null;
@@ -355,7 +339,13 @@ export function SearchPage() {
     activeTags.size > 0;
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "var(--bg-app)" }}>
+    <div
+      style={{
+        display: "flex",
+        minHeight: "100vh",
+        background: "var(--bg-app)",
+      }}
+    >
       {/* ── Sidebar filters ─────────────────────────────────────────────── */}
       <aside
         style={{
@@ -497,7 +487,14 @@ export function SearchPage() {
       {/* ── Main content ────────────────────────────────────────────────── */}
       <main style={{ flex: 1, padding: "24px 28px", minWidth: 0 }}>
         {/* Search input + save */}
-        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16 }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            marginBottom: 16,
+          }}
+        >
           <div
             style={{
               flex: 1,
@@ -638,7 +635,14 @@ export function SearchPage() {
 
         {/* Saved searches chips */}
         {saved.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+              marginBottom: 16,
+            }}
+          >
             {saved.map((s) => (
               <span
                 key={s.q}
@@ -735,10 +739,22 @@ export function SearchPage() {
             >
               <Search size={28} style={{ opacity: 0.4 }} />
               <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-mid)" }}>
+                <div
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: "var(--text-mid)",
+                  }}
+                >
                   No results for "{ftsQuery}"
                 </div>
-                <div style={{ fontSize: 12, color: "var(--text-low)", marginTop: 4 }}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-low)",
+                    marginTop: 4,
+                  }}
+                >
                   Try different keywords or clear some filters.
                 </div>
               </div>

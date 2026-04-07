@@ -1,7 +1,7 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { WebFrostError } from "@webfrost/sdk";
 import type { SnapshotDetail } from "@webfrost/sdk";
 import { ArrowLeft, Clock } from "lucide-react";
-import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -12,45 +12,46 @@ import {
   StatusBadge,
 } from "../components";
 import { useClient } from "../context";
+import { snapshotKeys } from "../hooks/useSnapshots";
 
 export function SnapshotDetailPage() {
   const client = useClient();
+  const queryClient = useQueryClient();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [detail, setDetail] = useState<SnapshotDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const numId = id ? Number(id) : null;
 
-  async function handleDelete() {
-    if (!id) return;
+  const {
+    data: detail,
+    isPending: loading,
+    error: queryError,
+  } = useQuery<SnapshotDetail | null>({
+    queryKey: snapshotKeys.detail(numId ?? 0),
+    queryFn: () => (numId ? client.getSnapshot(numId) : null),
+    enabled: numId !== null,
+  });
+
+  const error = queryError ? String(queryError) : detail === null ? "Snapshot not found." : null;
+
+  const deleteMutation = useMutation({
+    mutationFn: () => client.deleteSnapshot(numId ?? 0),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: snapshotKeys.all });
+      toast.success("Snapshot deleted");
+      navigate("/");
+    },
+    onError: (e) => toast.error(e instanceof WebFrostError ? e.message : String(e)),
+  });
+
+  function handleDelete() {
+    if (!numId) return;
     if (!window.confirm("Delete this snapshot and all its artifacts? This cannot be undone.")) {
       return;
     }
-    setDeleting(true);
-    try {
-      await client.deleteSnapshot(Number(id));
-      toast.success("Snapshot deleted");
-      navigate("/");
-    } catch (e) {
-      toast.error(e instanceof WebFrostError ? e.message : String(e));
-      setDeleting(false);
-    }
+    deleteMutation.mutate();
   }
 
-  useEffect(() => {
-    if (!id) return;
-    client
-      .getSnapshot(Number(id))
-      .then((d) => {
-        if (!d) setError("Snapshot not found.");
-        else setDetail(d);
-      })
-      .catch((e: unknown) => {
-        setError(e instanceof WebFrostError ? e.message : String(e));
-      })
-      .finally(() => setLoading(false));
-  }, [id, client]);
+  const deleting = deleteMutation.isPending;
 
   return (
     <main className="max-w-[760px] mx-auto py-8 px-4">

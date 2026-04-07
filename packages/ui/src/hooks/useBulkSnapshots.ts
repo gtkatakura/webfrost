@@ -1,10 +1,13 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { WebFrostError } from "@webfrost/sdk";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useClient } from "../context";
+import { snapshotKeys } from "./useSnapshots";
 
-export function useBulkSnapshots(visibleIds: number[], refetch: () => Promise<void>) {
+export function useBulkSnapshots(visibleIds: number[]) {
   const client = useClient();
+  const queryClient = useQueryClient();
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [status, setStatus] = useState<string | null>(null);
 
@@ -44,10 +47,12 @@ export function useBulkSnapshots(visibleIds: number[], refetch: () => Promise<vo
         }
       }
       clearSelection();
-      await refetch();
+      await queryClient.invalidateQueries({ queryKey: snapshotKeys.all });
       toast.success(`Deleted ${ids.length} snapshot(s)`, { id: toastId });
     } catch (e) {
-      toast.error(e instanceof WebFrostError ? e.message : String(e), { id: toastId });
+      toast.error(e instanceof WebFrostError ? e.message : String(e), {
+        id: toastId,
+      });
     } finally {
       setStatus(null);
     }
@@ -67,10 +72,12 @@ export function useBulkSnapshots(visibleIds: number[], refetch: () => Promise<vo
         }
       }
       clearSelection();
-      await refetch();
+      await queryClient.invalidateQueries({ queryKey: snapshotKeys.all });
       toast.success(`Tagged ${ids.length} snapshot(s)`, { id: toastId });
     } catch (e) {
-      toast.error(e instanceof WebFrostError ? e.message : String(e), { id: toastId });
+      toast.error(e instanceof WebFrostError ? e.message : String(e), {
+        id: toastId,
+      });
     } finally {
       setStatus(null);
     }

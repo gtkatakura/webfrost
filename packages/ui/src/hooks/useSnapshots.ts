@@ -1,30 +1,25 @@
-import { WebFrostError } from "@webfrost/sdk";
-import type { Snapshot } from "@webfrost/sdk";
-import { useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { SnapshotPage } from "@webfrost/sdk";
 import { useClient } from "../context";
+
+export const snapshotKeys = {
+  all: ["snapshots"] as const,
+  list: (page: number, limit: number) => ["snapshots", "list", page, limit] as const,
+  detail: (id: number) => ["snapshots", "detail", id] as const,
+};
 
 export function useSnapshots(page = 1, limit = 20) {
   const client = useClient();
-  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const query = useQuery<SnapshotPage>({
+    queryKey: snapshotKeys.list(page, limit),
+    queryFn: () => client.listSnapshots({ page, limit }),
+  });
 
-  const refetch = useCallback(async () => {
-    try {
-      const result = await client.listSnapshots({ page, limit });
-      setSnapshots(result.items);
-      setTotal(result.total);
-    } catch (e) {
-      setError(e instanceof WebFrostError ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [client, page, limit]);
-
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
-
-  return { snapshots, total, loading, error, setError, refetch };
+  return {
+    snapshots: query.data?.items ?? [],
+    total: query.data?.total ?? 0,
+    loading: query.isPending,
+    error: query.error ? String(query.error) : null,
+    refetch: query.refetch,
+  };
 }

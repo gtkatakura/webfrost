@@ -1,3 +1,4 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { WebFrostError } from "@webfrost/sdk";
 import type { Snapshot, Tag } from "@webfrost/sdk";
 import {
@@ -18,6 +19,7 @@ import { toast } from "sonner";
 import { Pagination } from "../components/Pagination";
 import { useClient } from "../context";
 import { useBulkSnapshots, useSnapshots, useTags } from "../hooks";
+import { snapshotKeys } from "../hooks/useSnapshots";
 import { SnapshotDetailPanel } from "./SnapshotDetailPanel";
 
 // ─── Constants ────────────────────────────────────────────────
@@ -240,7 +242,11 @@ function SnapshotRow({ snapshot, selected, onToggle, density, height, style }: S
       {/* Timestamp */}
       <div
         className="shrink-0 flex items-center gap-1 text-ui-xs mr-3"
-        style={{ color: "var(--text-low)", width: 100, justifyContent: "flex-end" }}
+        style={{
+          color: "var(--text-low)",
+          width: 100,
+          justifyContent: "flex-end",
+        }}
       >
         <Clock size={10} />
         <span className="truncate">{ts}</span>
@@ -446,22 +452,15 @@ function BulkBar({
 
 export function SnapshotListPage() {
   const client = useClient();
+  const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
-  const {
-    snapshots,
-    total,
-    loading,
-    error: snapshotsError,
-    setError,
-    refetch,
-  } = useSnapshots(page, PAGE_SIZE);
+  const { snapshots, total, loading, error: snapshotsError } = useSnapshots(page, PAGE_SIZE);
   const { tags: allTags } = useTags();
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const detailId = searchParams.get("detail") ? Number(searchParams.get("detail")) : null;
 
-  const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState("");
   const [density, setDensity] = useState<Density>(() => {
     try {
@@ -481,17 +480,20 @@ export function SnapshotListPage() {
     );
   }, [snapshots, search]);
 
-  const bulk = useBulkSnapshots(
-    filtered.map((s) => s.id),
-    refetch,
-  );
+  const bulk = useBulkSnapshots(filtered.map((s) => s.id));
+
+  const archiveMutation = useMutation({
+    mutationFn: (url: string) => client.createSnapshot(url),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: snapshotKeys.all });
+      toast.success("Snapshot queued");
+    },
+    onError: (e) => toast.error(e instanceof WebFrostError ? e.message : String(e)),
+  });
 
   useEffect(() => {
-    if (snapshotsError) {
-      toast.error(snapshotsError);
-      setError(null);
-    }
-  }, [snapshotsError, setError]);
+    if (snapshotsError) toast.error(snapshotsError);
+  }, [snapshotsError]);
 
   function setDensityAndPersist(d: Density) {
     setDensity(d);
@@ -500,18 +502,11 @@ export function SnapshotListPage() {
     } catch {}
   }
 
-  async function handleArchiveUrl(url: string) {
-    setSubmitting(true);
-    try {
-      await client.createSnapshot(url);
-      await refetch();
-      toast.success("Snapshot queued");
-    } catch (e) {
-      toast.error(e instanceof WebFrostError ? e.message : String(e));
-    } finally {
-      setSubmitting(false);
-    }
+  function handleArchiveUrl(url: string) {
+    archiveMutation.mutate(url);
   }
+
+  const submitting = archiveMutation.isPending;
 
   function openDetail(id: number) {
     setSearchParams((prev) => {
@@ -655,23 +650,39 @@ export function SnapshotListPage() {
               >
                 <div
                   className="rounded animate-pulse"
-                  style={{ width: 12, height: 12, background: "var(--bg-overlay)" }}
+                  style={{
+                    width: 12,
+                    height: 12,
+                    background: "var(--bg-overlay)",
+                  }}
                 />
                 {density === "comfortable" && (
                   <div
                     className="rounded animate-pulse"
-                    style={{ width: 56, height: 40, background: "var(--bg-overlay)" }}
+                    style={{
+                      width: 56,
+                      height: 40,
+                      background: "var(--bg-overlay)",
+                    }}
                   />
                 )}
                 <div className="flex-1 flex flex-col gap-1.5">
                   <div
                     className="rounded animate-pulse"
-                    style={{ width: "60%", height: 10, background: "var(--bg-overlay)" }}
+                    style={{
+                      width: "60%",
+                      height: 10,
+                      background: "var(--bg-overlay)",
+                    }}
                   />
                   {density === "comfortable" && (
                     <div
                       className="rounded animate-pulse"
-                      style={{ width: "40%", height: 8, background: "var(--bg-overlay)" }}
+                      style={{
+                        width: "40%",
+                        height: 8,
+                        background: "var(--bg-overlay)",
+                      }}
                     />
                   )}
                 </div>

@@ -1,4 +1,4 @@
 export { useBulkSnapshots } from "./useBulkSnapshots";
-export { useSearch } from "./useSearch";
-export { useSnapshots } from "./useSnapshots";
-export { useTags } from "./useTags";
+export { useSearch, searchKeys } from "./useSearch";
+export { useSnapshots, snapshotKeys } from "./useSnapshots";
+export { useTags, tagKeys } from "./useTags";

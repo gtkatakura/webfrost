@@ -1,7 +1,8 @@
+import { useQuery } from "@tanstack/react-query";
 import { WebFrostError } from "@webfrost/sdk";
 import type { ImportRecord, ImportResult } from "@webfrost/sdk";
 import { CheckCircle, Clock, FileText, Globe, History, Link, Upload } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "../components";
@@ -14,7 +15,12 @@ type TabId = "import" | "history";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const IMPORT_TYPES: { id: ImportType; label: string; icon: React.ReactNode; hint: string }[] = [
+const IMPORT_TYPES: {
+  id: ImportType;
+  label: string;
+  icon: React.ReactNode;
+  hint: string;
+}[] = [
   {
     id: "rss",
     label: "RSS / Atom",
@@ -55,7 +61,10 @@ function relativeTime(val: string): string {
   if (diff < 60_000) return "just now";
   if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`;
   if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h ago`;
-  return new Date(val).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return new Date(val).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
@@ -100,7 +109,11 @@ function ImportSuccessCard({
       >
         {[
           { label: "Total found", value: result.total },
-          { label: "Queued", value: result.queued, color: "var(--status-success)" },
+          {
+            label: "Queued",
+            value: result.queued,
+            color: "var(--status-success)",
+          },
           { label: "Skipped", value: result.skipped, color: "var(--text-mid)" },
         ].map(({ label, value, color }) => (
           <div
@@ -356,23 +369,13 @@ function ImportForm({ onSuccess }: { onSuccess: (r: ImportResult) => void }) {
 
 function HistoryTab() {
   const client = useClient();
-  const [records, setRecords] = useState<ImportRecord[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    try {
-      const data = await client.listImports();
-      setRecords(data.slice().reverse()); // newest first
-    } catch (e) {
-      toast.error(e instanceof WebFrostError ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [client]);
+  const { data: rawRecords, isPending: loading } = useQuery<ImportRecord[]>({
+    queryKey: ["imports", "list"],
+    queryFn: () => client.listImports(),
+  });
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  const records = rawRecords ? rawRecords.slice().reverse() : [];
 
   if (loading) {
     return (
@@ -512,7 +515,13 @@ function HistoryTab() {
                   <span style={{ color: "var(--text-low)", fontStyle: "italic" }}>file upload</span>
                 )}
               </td>
-              <td style={{ padding: "10px 12px", fontSize: 12, color: "var(--text-mid)" }}>
+              <td
+                style={{
+                  padding: "10px 12px",
+                  fontSize: 12,
+                  color: "var(--text-mid)",
+                }}
+              >
                 {FORMAT_LABELS[r.format] ?? r.format}
               </td>
               <td
@@ -565,7 +574,14 @@ export function ImportPage() {
   return (
     <main style={{ maxWidth: 720, margin: "0 auto", padding: "32px 20px" }}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          marginBottom: 24,
+        }}
+      >
         <Upload size={20} style={{ color: "var(--accent)" }} />
         <h1
           style={{

@@ -1,3 +1,4 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { WebFrostError } from "@webfrost/sdk";
 import type { DashboardStats, Snapshot } from "@webfrost/sdk";
 import {
@@ -10,10 +11,11 @@ import {
   TriangleAlert,
   Upload,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useClient } from "../context";
+import { snapshotKeys } from "../hooks/useSnapshots";
 
 // ——————————————————————————————————————————————
 // Utilities
@@ -144,89 +146,67 @@ function StatCard({
 // Dashboard page
 // ——————————————————————————————————————————————
 
+const DASHBOARD_SNAPSHOT_LIMIT = 30;
+const STATS_KEY = ["stats"] as const;
+const DASHBOARD_SNAPSHOTS_KEY = snapshotKeys.list(1, DASHBOARD_SNAPSHOT_LIMIT);
+
 export function DashboardPage() {
   const client = useClient();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [statsLoading, setStatsLoading] = useState(true);
-  const [statsUnavailable, setStatsUnavailable] = useState(false);
-
-  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
-  const [snapshotsLoading, setSnapshotsLoading] = useState(true);
-
   const [archiveUrl, setArchiveUrl] = useState("");
-  const [archiving, setArchiving] = useState(false);
 
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { data: snapshots = [], isPending: snapshotsLoading } = useQuery({
+    queryKey: DASHBOARD_SNAPSHOTS_KEY,
+    queryFn: async () => {
+      const result = await client.listSnapshots({
+        limit: DASHBOARD_SNAPSHOT_LIMIT,
+      });
+      return result.items;
+    },
+    // Poll every 5s while any snapshot is pending
+    refetchInterval: (query) => {
+      const items = query.state.data ?? [];
+      return items.some((s) => s.status === "pending") ? 5000 : false;
+    },
+  });
 
-  const fetchSnapshots = useCallback(async () => {
-    try {
-      const result = await client.listSnapshots({ limit: 30 });
-      setSnapshots(result.items);
-    } catch {
-      // silent — partial data is fine for the dashboard
-    } finally {
-      setSnapshotsLoading(false);
-    }
-  }, [client]);
+  const {
+    data: stats,
+    isPending: statsLoading,
+    isError: statsUnavailable,
+  } = useQuery<DashboardStats>({
+    queryKey: STATS_KEY,
+    queryFn: () => client.getStats(),
+    retry: false,
+  });
 
-  const fetchStats = useCallback(async () => {
-    try {
-      const data = await client.getStats();
-      setStats(data);
-      setStatsUnavailable(false);
-    } catch {
-      setStatsUnavailable(true);
-    } finally {
-      setStatsLoading(false);
-    }
-  }, [client]);
-
-  useEffect(() => {
-    fetchStats();
-    fetchSnapshots();
-  }, [fetchStats, fetchSnapshots]);
-
-  // Poll every 5 s while any snapshot is pending
-  useEffect(() => {
-    const hasPending = snapshots.some((s) => s.status === "pending");
-    if (hasPending) {
-      pollRef.current = setInterval(fetchSnapshots, 5000);
-    } else if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-    return () => {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-    };
-  }, [snapshots, fetchSnapshots]);
+  const archiveMutation = useMutation({
+    mutationFn: (url: string) => client.createSnapshot(url),
+    onSuccess: () => {
+      toast.success("Snapshot queued");
+      setArchiveUrl("");
+      queryClient.invalidateQueries({ queryKey: DASHBOARD_SNAPSHOTS_KEY });
+      queryClient.invalidateQueries({ queryKey: STATS_KEY });
+    },
+    onError: (err) => {
+      toast.error(err instanceof WebFrostError ? err.message : String(err));
+    },
+  });
 
   async function handleArchive(e: React.FormEvent) {
     e.preventDefault();
     if (!archiveUrl.trim()) return;
-    setArchiving(true);
-    try {
-      await client.createSnapshot(archiveUrl.trim());
-      setArchiveUrl("");
-      toast.success("Snapshot queued");
-      await fetchSnapshots();
-      await fetchStats();
-    } catch (err) {
-      toast.error(err instanceof WebFrostError ? err.message : String(err));
-    } finally {
-      setArchiving(false);
-    }
+    archiveMutation.mutate(archiveUrl.trim());
   }
 
-  const pendingSnapshots = snapshots.filter((s) => s.status === "pending");
-  const completedSnapshots = snapshots.filter((s) => s.status !== "pending");
+  const pendingSnapshots = snapshots.filter((s: Snapshot) => s.status === "pending");
+  const completedSnapshots = snapshots.filter((s: Snapshot) => s.status !== "pending");
   const activityGroups = groupSnapshotsByDay(completedSnapshots);
   const isEmpty = !snapshotsLoading && snapshots.length === 0;
   const failedToday = stats?.failedToday ?? 0;
+  const archiving = archiveMutation.isPending;
 
   return (
     <main className="max-w-5xl mx-auto py-8 px-4">

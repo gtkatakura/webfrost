@@ -1,6 +1,7 @@
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { type ServerInfo, WebFrostError } from "@webfrost/sdk";
 import { Moon, Sun } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { useClient } from "../context";
@@ -33,42 +34,36 @@ export function SettingsPage() {
   const client = useClient();
   const { theme, toggle } = useThemeContext();
 
-  const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
-  const [infoLoading, setInfoLoading] = useState(true);
+  const { data: serverInfo, isPending: infoLoading } = useQuery<ServerInfo>({
+    queryKey: ["server-info"],
+    queryFn: () => client.getServerInfo(),
+    retry: false,
+  });
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [changingPassword, setChangingPassword] = useState(false);
 
-  useEffect(() => {
-    client
-      .getServerInfo()
-      .then(setServerInfo)
-      .catch(() => {})
-      .finally(() => setInfoLoading(false));
-  }, [client]);
-
-  async function handleChangePassword(e: React.FormEvent) {
-    e.preventDefault();
-
-    if (newPassword !== confirmPassword) {
-      toast.error("New passwords do not match");
-      return;
-    }
-
-    setChangingPassword(true);
-    try {
-      await client.changePassword(currentPassword, newPassword);
+  const changePasswordMutation = useMutation({
+    mutationFn: () => client.changePassword(currentPassword, newPassword),
+    onSuccess: () => {
       toast.success("Password changed successfully");
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-    } catch (err) {
-      toast.error(err instanceof WebFrostError ? err.message : String(err));
-    } finally {
-      setChangingPassword(false);
+    },
+    onError: (err) => toast.error(err instanceof WebFrostError ? err.message : String(err)),
+  });
+
+  const changingPassword = changePasswordMutation.isPending;
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      toast.error("New passwords do not match");
+      return;
     }
+    changePasswordMutation.mutate();
   }
 
   return (

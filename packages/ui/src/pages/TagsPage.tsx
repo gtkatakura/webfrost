@@ -1,19 +1,16 @@
-import { WebFrostError } from "@webfrost/sdk";
 import { ArrowLeft, Tag } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { TagChip } from "../components";
-import { useClient } from "../context";
 import { useTags } from "../hooks";
 
 const inputCls =
   "py-2 px-3 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500";
 
 export function TagsPage() {
-  const client = useClient();
   const navigate = useNavigate();
-  const { tags, setTags, loading } = useTags();
+  const { tags, loading, createTag, deleteTag } = useTags();
 
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState("#6b7280");
@@ -24,13 +21,11 @@ export function TagsPage() {
     if (!newName.trim()) return;
     setCreating(true);
     try {
-      await client.createTag(newName.trim(), newColor);
-      setNewName("");
-      const data = await client.listTags();
-      setTags(data);
+      await createTag({ name: newName.trim(), color: newColor });
       toast.success(`Tag "${newName.trim()}" created`);
-    } catch (e) {
-      toast.error(e instanceof WebFrostError ? e.message : String(e));
+      setNewName("");
+    } catch {
+      // error handled in hook
     } finally {
       setCreating(false);
     }
@@ -38,11 +33,10 @@ export function TagsPage() {
 
   async function handleDelete(tagId: number, tagName: string) {
     try {
-      await client.deleteTag(tagId);
-      setTags((prev) => prev.filter((t) => t.id !== tagId));
+      await deleteTag(tagId);
       toast.success(`Tag "${tagName}" deleted`);
-    } catch (e) {
-      toast.error(e instanceof WebFrostError ? e.message : String(e));
+    } catch {
+      // error handled in hook
     }
   }
 

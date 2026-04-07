@@ -1,28 +1,37 @@
-import { WebFrostError } from "@webfrost/sdk";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Tag } from "@webfrost/sdk";
-import { useCallback, useEffect, useState } from "react";
 import { useClient } from "../context";
+
+export const tagKeys = {
+  all: ["tags"] as const,
+  list: () => ["tags", "list"] as const,
+};
 
 export function useTags() {
   const client = useClient();
-  const [tags, setTags] = useState<Tag[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const query = useQuery<Tag[]>({
+    queryKey: tagKeys.list(),
+    queryFn: () => client.listTags(),
+  });
 
-  const refetch = useCallback(async () => {
-    try {
-      const data = await client.listTags();
-      setTags(data);
-    } catch (e) {
-      setError(e instanceof WebFrostError ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [client]);
+  const createTag = useMutation({
+    mutationFn: ({ name, color }: { name: string; color?: string }) =>
+      client.createTag(name, color),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: tagKeys.all }),
+  });
 
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
+  const deleteTag = useMutation({
+    mutationFn: (id: number) => client.deleteTag(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: tagKeys.all }),
+  });
 
-  return { tags, setTags, loading, error, setError, refetch };
+  return {
+    tags: query.data ?? [],
+    loading: query.isPending,
+    error: query.error ? String(query.error) : null,
+    refetch: query.refetch,
+    createTag: createTag.mutateAsync,
+    deleteTag: deleteTag.mutateAsync,
+  };
 }

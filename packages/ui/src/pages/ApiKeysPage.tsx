@@ -1,6 +1,7 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ApiKey } from "@webfrost/sdk";
 import { WebFrostError } from "@webfrost/sdk";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { useClient } from "../context";
 
@@ -12,54 +13,48 @@ function formatDate(val: string | null): string {
   return new Date(val).toLocaleString();
 }
 
+const API_KEY_QUERY = ["api-keys"] as const;
+
 export function ApiKeysPage() {
   const client = useClient();
-  const [keys, setKeys] = useState<ApiKey[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [name, setName] = useState("");
-  const [creating, setCreating] = useState(false);
   const [newRawKey, setNewRawKey] = useState<string | null>(null);
   const rawKeyRef = useRef<HTMLInputElement>(null);
 
-  const refetch = useCallback(async () => {
-    try {
-      setKeys(await client.listApiKeys());
-    } catch (e) {
-      toast.error(e instanceof WebFrostError ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [client]);
+  const { data: keys = [], isPending: loading } = useQuery<ApiKey[]>({
+    queryKey: API_KEY_QUERY,
+    queryFn: () => client.listApiKeys(),
+  });
 
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
-
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) return;
-    setCreating(true);
-    try {
-      const created = await client.createApiKey(name.trim());
+  const createMutation = useMutation({
+    mutationFn: (keyName: string) => client.createApiKey(keyName),
+    onSuccess: (created) => {
       setNewRawKey(created.rawKey);
       setName("");
-      await refetch();
-    } catch (err) {
-      toast.error(err instanceof WebFrostError ? err.message : String(err));
-    } finally {
-      setCreating(false);
-    }
+      queryClient.invalidateQueries({ queryKey: API_KEY_QUERY });
+    },
+    onError: (err) => toast.error(err instanceof WebFrostError ? err.message : String(err)),
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: (id: string) => client.revokeApiKey(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: API_KEY_QUERY });
+      toast.success("API key revoked");
+    },
+    onError: (err) => toast.error(err instanceof WebFrostError ? err.message : String(err)),
+  });
+
+  function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    createMutation.mutate(name.trim());
   }
 
-  async function handleRevoke(id: string, keyName: string) {
+  function handleRevoke(id: string, keyName: string) {
     if (!confirm(`Revoke API key "${keyName}"? This cannot be undone.`)) return;
-    try {
-      await client.revokeApiKey(id);
-      toast.success("API key revoked");
-      await refetch();
-    } catch (err) {
-      toast.error(err instanceof WebFrostError ? err.message : String(err));
-    }
+    revokeMutation.mutate(id);
   }
 
   function handleCopy() {
@@ -69,6 +64,8 @@ export function ApiKeysPage() {
       .then(() => toast.success("Copied to clipboard"))
       .catch(() => toast.error("Copy failed"));
   }
+
+  const creating = createMutation.isPending;
 
   return (
     <main className="max-w-[760px] mx-auto py-8 px-4">

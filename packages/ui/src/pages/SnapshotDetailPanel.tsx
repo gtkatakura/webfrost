@@ -1,3 +1,4 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { WebFrostError } from "@webfrost/sdk";
 import type { ArchiveResult, SnapshotDetail, Tag } from "@webfrost/sdk";
 import {
@@ -20,6 +21,8 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useClient } from "../context";
+import { snapshotKeys } from "../hooks/useSnapshots";
+import { tagKeys } from "../hooks/useTags";
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -439,46 +442,51 @@ function HistoryTab({ results }: { results: ArchiveResult[] }) {
 
 // ─── Inline tag editor ────────────────────────────────────────
 
+const snapshotTagKeys = {
+  list: (snapshotId: number) => ["snapshot-tags", snapshotId] as const,
+};
+
 function InlineTags({ snapshotId }: { snapshotId: number }) {
   const client = useClient();
-  const [tags, setTags] = useState<Tag[]>([]);
-  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const queryClient = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
 
-  useEffect(() => {
-    Promise.all([client.listSnapshotTags(snapshotId), client.listTags()])
-      .then(([st, all]) => {
-        setTags(st);
-        setAllTags(all);
-      })
-      .catch((e: unknown) => {
-        toast.error(e instanceof WebFrostError ? e.message : String(e));
-      });
-  }, [snapshotId, client]);
+  const { data: tags = [] } = useQuery<Tag[]>({
+    queryKey: snapshotTagKeys.list(snapshotId),
+    queryFn: () => client.listSnapshotTags(snapshotId),
+  });
 
-  async function handleRemove(tagId: number) {
-    setTags((prev) => prev.filter((t) => t.id !== tagId));
-    try {
-      await client.removeTagFromSnapshot(snapshotId, tagId);
-    } catch (e) {
-      toast.error(e instanceof WebFrostError ? e.message : String(e));
-      const st = await client.listSnapshotTags(snapshotId);
-      setTags(st);
-    }
+  const { data: allTags = [] } = useQuery<Tag[]>({
+    queryKey: tagKeys.list(),
+    queryFn: () => client.listTags(),
+  });
+
+  const removeTag = useMutation({
+    mutationFn: (tagId: number) => client.removeTagFromSnapshot(snapshotId, tagId),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: snapshotTagKeys.list(snapshotId),
+      }),
+    onError: (e) => toast.error(e instanceof WebFrostError ? e.message : String(e)),
+  });
+
+  const addTag = useMutation({
+    mutationFn: (tagId: number) => client.addTagToSnapshot(snapshotId, tagId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: snapshotTagKeys.list(snapshotId),
+      });
+      setShowAdd(false);
+    },
+    onError: (e) => toast.error(e instanceof WebFrostError ? e.message : String(e)),
+  });
+
+  function handleRemove(tagId: number) {
+    removeTag.mutate(tagId);
   }
 
-  async function handleAdd(tagId: number) {
-    const tag = allTags.find((t) => t.id === tagId);
-    if (!tag) return;
-    setTags((prev) => [...prev, tag]);
-    setShowAdd(false);
-    try {
-      await client.addTagToSnapshot(snapshotId, tagId);
-    } catch (e) {
-      toast.error(e instanceof WebFrostError ? e.message : String(e));
-      const st = await client.listSnapshotTags(snapshotId);
-      setTags(st);
-    }
+  function handleAdd(tagId: number) {
+    addTag.mutate(tagId);
   }
 
   const available = allTags.filter((t) => !tags.some((st) => st.id === t.id));
@@ -500,7 +508,11 @@ function InlineTags({ snapshotId }: { snapshotId: number }) {
             type="button"
             onClick={() => handleRemove(tag.id)}
             className="border-0 cursor-pointer p-0 leading-none"
-            style={{ background: "transparent", color: "inherit", opacity: 0.6 }}
+            style={{
+              background: "transparent",
+              color: "inherit",
+              opacity: 0.6,
+            }}
             aria-label={`Remove tag ${tag.name}`}
           >
             ×
@@ -720,11 +732,31 @@ interface SnapshotDetailPanelProps {
 
 export function SnapshotDetailPanel({ snapshotId, onClose, onDelete }: SnapshotDetailPanelProps) {
   const client = useClient();
-  const [detail, setDetail] = useState<SnapshotDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<TabId>("reader");
+
+  const {
+    data: detail,
+    isPending: loading,
+    error: queryError,
+  } = useQuery<SnapshotDetail | null>({
+    queryKey: snapshotKeys.detail(snapshotId),
+    queryFn: () => client.getSnapshot(snapshotId),
+  });
+
+  const error = queryError ? String(queryError) : detail === null ? "Snapshot not found." : null;
+
+  const deleteMutation = useMutation({
+    mutationFn: () => client.deleteSnapshot(snapshotId),
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: snapshotKeys.all });
+      toast.success("Snapshot deleted");
+      await onDelete();
+    },
+    onError: (e) => toast.error(e instanceof WebFrostError ? e.message : String(e)),
+  });
+
+  const deleting = deleteMutation.isPending;
 
   // Panel open/close animation state
   const [visible, setVisible] = useState(false);
@@ -746,23 +778,6 @@ export function SnapshotDetailPanel({ snapshotId, onClose, onDelete }: SnapshotD
     };
   }, []);
 
-  useEffect(() => {
-    setLoading(true);
-    setDetail(null);
-    setError(null);
-
-    client
-      .getSnapshot(snapshotId)
-      .then((d) => {
-        if (!d) setError("Snapshot not found.");
-        else setDetail(d);
-      })
-      .catch((e: unknown) => {
-        setError(e instanceof WebFrostError ? e.message : String(e));
-      })
-      .finally(() => setLoading(false));
-  }, [snapshotId, client]);
-
   // biome-ignore lint/correctness/useExhaustiveDependencies: handleClose is defined in same render, stable enough
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -772,18 +787,10 @@ export function SnapshotDetailPanel({ snapshotId, onClose, onDelete }: SnapshotD
     return () => window.removeEventListener("keydown", handleKey);
   }, []);
 
-  async function handleDelete() {
+  function handleDelete() {
     if (!window.confirm("Delete this snapshot and all its artifacts? This cannot be undone."))
       return;
-    setDeleting(true);
-    try {
-      await client.deleteSnapshot(snapshotId);
-      toast.success("Snapshot deleted");
-      await onDelete();
-    } catch (e) {
-      toast.error(e instanceof WebFrostError ? e.message : String(e));
-      setDeleting(false);
-    }
+    deleteMutation.mutate();
   }
 
   // Select appropriate default tab based on available extractors

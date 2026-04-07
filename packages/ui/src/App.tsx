@@ -1,4 +1,6 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { WebFrostClient } from "@webfrost/sdk";
+import { useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner";
 import { ClientContext, defaultClient } from "./context";
@@ -61,14 +63,27 @@ function AppRoutes() {
 }
 
 export default function App({ client = defaultClient }: { client?: WebFrostClient }) {
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: 30_000,
+            retry: 1,
+          },
+        },
+      }),
+  );
   return (
-    <ClientContext.Provider value={client}>
-      <ThemeProvider>
-        <AuthProvider client={client}>
-          <Toaster richColors position="top-right" />
-          <AppRoutes />
-        </AuthProvider>
-      </ThemeProvider>
-    </ClientContext.Provider>
+    <QueryClientProvider client={queryClient}>
+      <ClientContext.Provider value={client}>
+        <ThemeProvider>
+          <AuthProvider client={client}>
+            <Toaster richColors position="top-right" />
+            <AppRoutes />
+          </AuthProvider>
+        </ThemeProvider>
+      </ClientContext.Provider>
+    </QueryClientProvider>
   );
 }
