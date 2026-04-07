@@ -220,7 +220,8 @@ async function getDiskUsageKb(composeProject: string, service: string): Promise<
     await proc.exited;
     const kb = Number.parseInt(text.split("\t")[0] ?? "0", 10);
     return Number.isNaN(kb) ? null : kb;
-  } catch {
+  } catch (err) {
+    console.warn(`  [warn] getDiskUsageKb failed for ${service}: ${err}`);
     return null;
   }
 }

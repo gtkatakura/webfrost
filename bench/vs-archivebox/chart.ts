@@ -63,7 +63,9 @@ const SYSTEM_COLORS: Record<string, string> = {
   webfrost: "#3b82f6",
   archivebox: "#f97316",
   wget: "#10b981",
+  "wget-parallel": "#059669",
   monolith: "#8b5cf6",
+  "monolith-parallel": "#6d28d9",
 };
 
 function systemColor(sys: string): string {
@@ -180,7 +182,14 @@ function svgBarChart(
 function generateHtml(run: BenchmarkRun): string {
   const date = run.date.split("T")[0] ?? run.date;
 
-  const systemOrder = ["webfrost", "archivebox", "wget", "monolith"];
+  const systemOrder = [
+    "webfrost",
+    "archivebox",
+    "wget",
+    "wget-parallel",
+    "monolith",
+    "monolith-parallel",
+  ];
   const allSystems = [...new Set(run.scenarios.map((s) => s.system))].sort((a, b) => {
     const ai = systemOrder.indexOf(a);
     const bi = systemOrder.indexOf(b);
@@ -192,18 +201,31 @@ function generateHtml(run: BenchmarkRun): string {
   const lookup = (sys: string, sc: string): ScenarioResult | undefined =>
     run.scenarios.find((r) => r.system === sys && r.scenario === sc);
 
-  // Build datasets for each metric
+  // A scenario result is invalid if it archived nothing (success=0)
+  const isInvalid = (r: ScenarioResult | undefined): boolean =>
+    r !== undefined && r.successCount === 0;
+
+  // Build datasets for each metric — null out invalid results so bars are omitted
   const wallDatasets: Dataset[] = allSystems.map((sys) => ({
     label: sys,
-    values: allScenarios.map((sc) => lookup(sys, sc)?.metrics.wallMs ?? null),
+    values: allScenarios.map((sc) => {
+      const r = lookup(sys, sc);
+      return isInvalid(r) ? null : (r?.metrics.wallMs ?? null);
+    }),
   }));
   const memDatasets: Dataset[] = allSystems.map((sys) => ({
     label: sys,
-    values: allScenarios.map((sc) => lookup(sys, sc)?.metrics.peakMemMb ?? null),
+    values: allScenarios.map((sc) => {
+      const r = lookup(sys, sc);
+      return isInvalid(r) ? null : (r?.metrics.peakMemMb ?? null);
+    }),
   }));
   const diskDatasets: Dataset[] = allSystems.map((sys) => ({
     label: sys,
-    values: allScenarios.map((sc) => lookup(sys, sc)?.metrics.diskDeltaKb ?? null),
+    values: allScenarios.map((sc) => {
+      const r = lookup(sys, sc);
+      return isInvalid(r) ? null : (r?.metrics.diskDeltaKb ?? null);
+    }),
   }));
 
   const wallChart = svgBarChart("Wall Time by Scenario", allScenarios, wallDatasets, "wall time");
@@ -219,8 +241,10 @@ function generateHtml(run: BenchmarkRun): string {
     const wallCells = allSystems
       .map((s) => {
         const r = lookup(s, sc);
-        const ms = r?.metrics.wallMs;
-        return `<td>${ms !== undefined ? fmtMs(ms) : "—"}</td>`;
+        if (!r) return "<td>—</td>";
+        if (isInvalid(r))
+          return `<td style="color:#ef4444;text-decoration:line-through" title="INVALID: success=0">${fmtMs(r.metrics.wallMs)} ⚠</td>`;
+        return `<td>${fmtMs(r.metrics.wallMs)}</td>`;
       })
       .join("");
     const memCells = allSystems
