@@ -212,6 +212,7 @@ export class WebFrostClient {
     const params = new URLSearchParams();
     if (options?.page !== undefined) params.set("page", String(options.page));
     if (options?.limit !== undefined) params.set("limit", String(options.limit));
+    if (options?.status !== undefined) params.set("status", options.status);
     const qs = params.size > 0 ? `?${params.toString()}` : "";
 
     const res = await this.request(`${this.baseUrl}/snapshots${qs}`);
@@ -349,6 +350,20 @@ export class WebFrostClient {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url, cron }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
+      throw new WebFrostError(res.status, body.error);
+    }
+    return res.json() as Promise<Schedule>;
+  }
+
+  /** Update a schedule (e.g. pause/resume). Returns the updated schedule. */
+  async updateSchedule(id: number, update: { paused: boolean }): Promise<Schedule> {
+    const res = await this.request(`${this.baseUrl}/schedules/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(update),
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };

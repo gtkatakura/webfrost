@@ -117,6 +117,25 @@ describe("GET /stats — happy path", () => {
     expect(body.successRate).toBe(100);
   });
 
+  test("activeScheduleCount excludes paused schedules", async () => {
+    const db = openDb(testDir);
+    try {
+      db.exec(`
+        INSERT INTO schedules (url, cron, next_run_at, kind) VALUES
+          ('https://active.com', '0 * * * *', datetime('now', '+1 hour'), 'url'),
+          ('https://paused.com', '0 * * * *', datetime('now', '+1 hour'), 'url');
+        UPDATE schedules SET paused = 1 WHERE url = 'https://paused.com';
+      `);
+    } finally {
+      db.close();
+    }
+
+    const app = await getApp();
+    const res = await app.handle(new Request("http://localhost/stats"));
+    const body = (await res.json()) as StatsBody;
+    expect(body.activeScheduleCount).toBe(1);
+  });
+
   test("excludes snapshots older than 30 days from successRate", async () => {
     const db = openDb(testDir);
     try {

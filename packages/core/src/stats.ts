@@ -64,9 +64,9 @@ export async function getStats(db: Database, storage: StorageBackend): Promise<S
   const total = successRow?.total ?? 0;
   const successRate = total > 0 ? Math.round((done / total) * 10000) / 100 : 0;
 
-  // Active schedule count (no paused concept in schema — all rows are active)
+  // Active schedule count (excludes paused schedules)
   const scheduleRow = db
-    .query<{ count: number }, []>("SELECT COUNT(*) AS count FROM schedules")
+    .query<{ count: number }, []>("SELECT COUNT(*) AS count FROM schedules WHERE paused = 0")
     .get();
   const activeScheduleCount = scheduleRow?.count ?? 0;
 

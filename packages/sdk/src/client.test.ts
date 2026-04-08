@@ -118,6 +118,68 @@ describe("WebFrostClient.listSnapshots", () => {
   });
 });
 
+describe("WebFrostClient.listSnapshots — status filter", () => {
+  test("passes status as query param", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ items: [], total: 0, page: 1, limit: 20 }));
+
+    const client = new WebFrostClient({ baseUrl: BASE });
+    await client.listSnapshots({ status: "done" });
+
+    expect((fetchSpy.mock.calls[0] as unknown[])[0]).toBe(`${BASE}/snapshots?status=done`);
+  });
+
+  test("combines status with page and limit params", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ items: [], total: 0, page: 1, limit: 10 }));
+
+    const client = new WebFrostClient({ baseUrl: BASE });
+    await client.listSnapshots({ page: 1, limit: 10, status: "pending" });
+
+    expect((fetchSpy.mock.calls[0] as unknown[])[0]).toBe(
+      `${BASE}/snapshots?page=1&limit=10&status=pending`,
+    );
+  });
+});
+
+describe("WebFrostClient.updateSchedule", () => {
+  test("sends PATCH with paused body and returns updated schedule", async () => {
+    const schedule = {
+      id: 1,
+      url: "https://example.com",
+      cron: "*/5 * * * *",
+      createdAt: "2024-01-01T00:00:00.000Z",
+      lastRunAt: null,
+      nextRunAt: "2024-01-01T00:05:00.000Z",
+      paused: true,
+      lastStatus: null,
+      consecutiveFailures: 0,
+    };
+    fetchSpy.mockResolvedValueOnce(jsonResponse(schedule));
+
+    const client = new WebFrostClient({ baseUrl: BASE });
+    const result = await client.updateSchedule(1, { paused: true });
+
+    expect(result).toEqual(schedule);
+    const [calledUrl, calledInit] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(calledUrl).toBe(`${BASE}/schedules/1`);
+    expect(calledInit.method).toBe("PATCH");
+    expect(calledInit.body).toBe(JSON.stringify({ paused: true }));
+  });
+
+  test("throws WebFrostError on 404", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ error: "not found" }, 404));
+
+    const client = new WebFrostClient({ baseUrl: BASE });
+    let caught: unknown;
+    try {
+      await client.updateSchedule(9999, { paused: true });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(WebFrostError);
+    expect((caught as WebFrostError).status).toBe(404);
+  });
+});
+
 describe("WebFrostClient.getSnapshot", () => {
   test("returns SnapshotDetail with mapped archiveResults", async () => {
     const raw = {

@@ -49,6 +49,9 @@ const snapshot = await client.createSnapshot("https://example.com");
 
 ```typescript
 const { items, total } = await client.listSnapshots({ page: 1, limit: 20 });
+
+// Filter by status
+const pending = await client.listSnapshots({ status: "pending" });
 ```
 
 ### `searchSnapshots(query: string): Promise<SearchResult[]>`
@@ -98,6 +101,37 @@ const tags = await client.listTags();
 
 ---
 
+## Schedules
+
+### `listSchedules(): Promise<Schedule[]>`
+
+```typescript
+const schedules = await client.listSchedules();
+```
+
+### `createSchedule(url: string, cron: string): Promise<Schedule>`
+
+```typescript
+const schedule = await client.createSchedule("https://example.com", "0 9 * * *");
+```
+
+### `updateSchedule(id: number, update: { paused: boolean }): Promise<Schedule>`
+
+Pause or resume a schedule.
+
+```typescript
+await client.updateSchedule(1, { paused: true });  // pause
+await client.updateSchedule(1, { paused: false }); // resume
+```
+
+### `deleteSchedule(id: number): Promise<boolean>`
+
+```typescript
+await client.deleteSchedule(1);
+```
+
+---
+
 ## Import
 
 ### `importUrls(options): Promise<ImportResult>`
@@ -142,6 +176,18 @@ interface SearchResult {
   url: string;
   snippet: string;
   rank: number;
+}
+
+interface Schedule {
+  id: number;
+  url: string;
+  cron: string;
+  createdAt: string;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  paused: boolean;
+  lastStatus: string | null;
+  consecutiveFailures: number;
 }
 
 interface ImportResult {

@@ -67,6 +67,8 @@ export interface ListSnapshotsOptions {
   page?: number;
   /** Items per page (1–100). Defaults to 20. */
   limit?: number;
+  /** Filter by snapshot status (e.g. "pending", "done", "failed"). */
+  status?: string;
 }
 
 export interface SnapshotPage {
@@ -102,6 +104,9 @@ export interface Schedule {
   createdAt: string;
   lastRunAt: string | null;
   nextRunAt: string | null;
+  paused: boolean;
+  lastStatus: string | null;
+  consecutiveFailures: number;
 }
 
 /** Response from POST /auth/login */
