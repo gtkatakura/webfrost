@@ -46,7 +46,7 @@ The server serves a React SPA at `http://localhost:3000`. Key features:
 - **Keyboard shortcuts** — `⌘K` search palette, `?` shortcut help, `g h/s/t/i` navigation
 - **Collapsible sidebar** — 240 px expanded, 56 px icon-only; state persisted
 
-Stack: React 18, React Router v6, Tailwind CSS v4 (CSS variable design system), `@tanstack/react-virtual`, `lucide-react`, `sonner`.
+Stack: React 18, React Router v6, Tailwind CSS v4 (CSS variable design system), `@tanstack/react-query`, `@tanstack/react-virtual`, `lucide-react`, `sonner`.
 
 See [Web UI guide](docs/guides/web-ui.md) for full documentation.
 
