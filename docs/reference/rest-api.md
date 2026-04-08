@@ -56,7 +56,7 @@ Create API keys via `webfrost admin key create` or **Settings → API Keys** in 
 | Method | Route | Description |
 |---|---|---|
 | `POST` | `/api/snapshots` | Submit a URL for archiving (HTTP 202 — async) |
-| `GET` | `/api/snapshots` | List all snapshots. Supports `?page=X&limit=Y` |
+| `GET` | `/api/snapshots` | List all snapshots. Supports `?page=X&limit=Y&status=<status>` |
 | `GET` | `/api/snapshots?q=<term>` | Full-text search — returns ranked results with snippets |
 | `GET` | `/api/snapshots/:id` | Get a snapshot with its archive results |
 | `DELETE` | `/api/snapshots/:id` | Delete a snapshot and its archive files |
@@ -73,10 +73,19 @@ curl -X POST http://localhost:3000/api/snapshots \
 
 ### GET /api/snapshots (list)
 
+Supports pagination and optional status filter:
+
 ```bash
 curl "http://localhost:3000/api/snapshots?page=1&limit=20" \
   -H "Authorization: Bearer wf_your_api_key_here"
 # { "items": [...], "total": 42, "page": 1, "limit": 20 }
+```
+
+Filter by status (`pending`, `done`, or `failed`):
+
+```bash
+curl "http://localhost:3000/api/snapshots?status=pending" \
+  -H "Authorization: Bearer wf_your_api_key_here"
 ```
 
 ### GET /api/snapshots (search)
@@ -134,7 +143,10 @@ curl -O -J \
 
 | Method | Route | Description |
 |---|---|---|
-| `POST` | `/api/import` | Bulk import from RSS, OPML, Netscape HTML, or plain text (HTTP 202 — async) |
+| `POST` | `/api/import` | Bulk import from a URL (RSS, OPML, Netscape HTML, or plain text — HTTP 202 async) |
+| `POST` | `/api/import/file` | Bulk import from an uploaded file (multipart/form-data — HTTP 202 async) |
+
+### Import from URL
 
 ```bash
 curl -X POST http://localhost:3000/api/import \
@@ -142,6 +154,16 @@ curl -X POST http://localhost:3000/api/import \
   -H "Content-Type: application/json" \
   -d '{"url": "https://example.com/feed.xml", "format": "rss"}'
 # HTTP 202 — { "queued": 12, "skipped": 3, "total": 15, "format": "rss" }
+```
+
+### Import from file upload
+
+```bash
+curl -X POST http://localhost:3000/api/import/file \
+  -H "Authorization: Bearer wf_your_api_key_here" \
+  -F "file=@bookmarks.html" \
+  -F "format=netscape"
+# HTTP 202 — { "queued": 45, "skipped": 2, "total": 47, "format": "netscape" }
 ```
 
 Supported `format` values: `rss`, `opml`, `netscape`, `text`.
