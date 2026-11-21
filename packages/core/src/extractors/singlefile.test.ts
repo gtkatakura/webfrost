@@ -6,7 +6,7 @@ import { join } from "node:path";
 import type { Page } from "playwright";
 import { openDb } from "../db";
 import { FilesystemBackend } from "../storage";
-import { singleFileExtractor } from "./singlefile";
+import { inlineAssets, singleFileExtractor } from "./singlefile";
 
 /** Minimal Page stub whose content() always throws. */
 function makeFailingPage(): Page {
@@ -235,5 +235,90 @@ describe("singleFileExtractor — cancellation", () => {
 
     const rows = db.query<{ extractor: string }, []>("SELECT extractor FROM archive_results").all();
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe("inlineAssets", () => {
+  let server: ReturnType<typeof Bun.serve>;
+  let base: string;
+  let inFlight = 0;
+  let maxInFlight = 0;
+
+  beforeEach(() => {
+    inFlight = 0;
+    maxInFlight = 0;
+    server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        const { pathname } = new URL(req.url);
+        if (pathname === "/dollar.css") {
+          // `$'` and `$&` are special in a String.replace replacement string.
+          return new Response(`a::after { content: "$' and $& and $$"; }`, {
+            headers: { "content-type": "text/css" },
+          });
+        }
+        if (pathname.startsWith("/img/")) {
+          inFlight++;
+          maxInFlight = Math.max(maxInFlight, inFlight);
+          await Bun.sleep(20);
+          inFlight--;
+          return new Response(new Uint8Array(1000).fill(7), {
+            headers: { "content-type": "image/png" },
+          });
+        }
+        return new Response("Not found", { status: 404 });
+      },
+    });
+    base = `http://127.0.0.1:${server.port}`;
+  });
+
+  afterEach(() => {
+    server.stop(true);
+    for (const key of ["WEBFROST_SINGLEFILE_MAX_BYTES", "WEBFROST_SINGLEFILE_CONCURRENCY"]) {
+      Reflect.deleteProperty(process.env, key);
+    }
+  });
+
+  test("inlines CSS literally: $' and $& in the stylesheet are not expanded", async () => {
+    const html = `<head><link rel="stylesheet" href="/dollar.css"></head><body>tail</body>`;
+    const out = await inlineAssets(html, `${base}/`);
+    expect(out).toBe(
+      `<head><style>a::after { content: "$' and $& and $$"; }</style></head><body>tail</body>`,
+    );
+  });
+
+  test("replaces every occurrence of a repeated tag, not just the first", async () => {
+    const tag = `<link rel="stylesheet" href="/dollar.css">`;
+    const out = await inlineAssets(`${tag}<p>x</p>${tag}`, `${base}/`);
+    expect(out).not.toContain("<link");
+    expect(out.match(/<style>/g)).toHaveLength(2);
+
+    const img = `<img src="/img/a.png">`;
+    const outImg = await inlineAssets(`${img}${img}`, `${base}/`);
+    expect(outImg.match(/data:image\/png;base64,/g)).toHaveLength(2);
+  });
+
+  test("never downloads more than 8 assets at once", async () => {
+    const html = Array.from({ length: 40 }, (_, i) => `<img src="/img/${i}.png">`).join("");
+    const out = await inlineAssets(html, `${base}/`);
+    expect(out.match(/data:image\/png/g)).toHaveLength(40);
+    expect(maxInFlight).toBeLessThanOrEqual(8);
+    expect(maxInFlight).toBeGreaterThan(1);
+  });
+
+  test("stops inlining at the byte budget and leaves the rest as remote URLs", async () => {
+    process.env.WEBFROST_SINGLEFILE_MAX_BYTES = "2500"; // room for two 1000-byte images
+    process.env.WEBFROST_SINGLEFILE_CONCURRENCY = "1"; // deterministic order
+    const html = Array.from({ length: 5 }, (_, i) => `<img src="/img/${i}.png">`).join("");
+    const out = await inlineAssets(html, `${base}/`);
+    expect(out.match(/data:image\/png/g)).toHaveLength(2);
+    expect(out.match(/src="\/img\/\d\.png"/g)).toHaveLength(3);
+  });
+
+  test("an aborted signal leaves assets remote", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const html = `<img src="/img/a.png">`;
+    expect(await inlineAssets(html, `${base}/`, controller.signal)).toBe(html);
   });
 });
