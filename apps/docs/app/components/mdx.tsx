@@ -4,6 +4,7 @@ import { Tab, Tabs } from "fumadocs-ui/components/tabs";
 import defaultMdxComponents from "fumadocs-ui/mdx";
 import type { MDXComponents } from "mdx/types";
 import { Mermaid } from "./mermaid";
+import { Picture } from "./picture";
 
 // What a page may use without importing it.
 export function getMDXComponents(components?: MDXComponents) {
@@ -11,6 +12,7 @@ export function getMDXComponents(components?: MDXComponents) {
     ...defaultMdxComponents,
     Callout,
     Mermaid,
+    Picture,
     Step,
     Steps,
     Tab,

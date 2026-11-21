@@ -12,6 +12,7 @@
       "@/*": ["./app/*"]
     },
     "esModuleInterop": true,
+    "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
     "resolveJsonModule": true,

@@ -111,6 +111,10 @@ run = "bun run docs:build"
 description = "Serve the built docs site on http://localhost:5175"
 run = "bun run docs:preview"
 
+[tasks.brand]
+description = "Rewrite the brand images not built with the site (README banner, social preview, favicons)"
+run = "bun apps/docs/scripts/brand-images.ts"
+
 [tasks."docs:deploy"]
 
 

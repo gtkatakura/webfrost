@@ -1,5 +1,6 @@
 import { useMDXComponents } from "@/components/mdx";
 import { baseOptions } from "@/lib/layout.shared";
+import { shareMeta } from "@/lib/site";
 import { docs, source } from "@/lib/source";
 import { useFumadocsLoader } from "fumadocs-core/source/client";
 import { DocsLayout } from "fumadocs-ui/layouts/docs";
@@ -14,11 +15,12 @@ export async function loader({ params }: Route.LoaderArgs) {
 
   return {
     path: page.path,
+    url: page.url,
     pageTree: await source.serializePageTree(source.getPageTree()),
   };
 }
 
-function Content({ path }: { path: string }) {
+function Content({ path, url }: { path: string; url: string }) {
   const page = docs.getPage(path);
   if (!page) throw new Error(`unknown page: ${path}`);
 
@@ -29,6 +31,13 @@ function Content({ path }: { path: string }) {
     <DocsPage toc={toc} full={page.full}>
       <title>{`${page.title} · WebFrost`}</title>
       <meta name="description" content={page.description} />
+      {shareMeta({
+        title: `${page.title} · WebFrost`,
+        description: page.description ?? "",
+        path: url,
+      }).map((tag) => (
+        <meta key={"name" in tag ? tag.name : tag.property} {...tag} />
+      ))}
       <DocsTitle>{page.title}</DocsTitle>
       <DocsDescription>{page.description}</DocsDescription>
       <DocsBody>
@@ -39,11 +48,11 @@ function Content({ path }: { path: string }) {
 }
 
 export default function Page({ loaderData }: Route.ComponentProps) {
-  const { pageTree, path } = useFumadocsLoader(loaderData);
+  const { pageTree, path, url } = useFumadocsLoader(loaderData);
 
   return (
     <DocsLayout {...baseOptions({ inDocs: true })} tree={pageTree}>
-      <Content path={path} />
+      <Content path={path} url={url} />
     </DocsLayout>
   );
 }

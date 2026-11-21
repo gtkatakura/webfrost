@@ -1,16 +1,21 @@
-// Types for image imports processed by vite-imagetools (see vite.config.ts).
+// Types for images imported through a preset (see image-presets.ts).
 
-/** `?…&as=picture`: one srcset per format, plus the fallback <img>. */
-declare module "*&as=picture" {
-  const picture: {
-    sources: Record<string, string>;
-    img: { src: string; w: number; h: number };
-  };
-  export default picture;
+/** `?preset=hero` or `?preset=content`: every width and format, ready for <Picture>. */
+declare module "*?preset=hero" {
+  const image: import("@/components/picture").ResponsiveImage;
+  export default image;
+}
+declare module "*?preset=content" {
+  const image: import("@/components/picture").ResponsiveImage;
+  export default image;
 }
 
-/** Any other processed image: its URL (or a data: URI when it is tiny). */
-declare module "*&imagetools" {
+/** `?preset=og` or `?preset=touch-icon`: the URL of one generated file. */
+declare module "*?preset=og" {
+  const src: string;
+  export default src;
+}
+declare module "*?preset=touch-icon" {
   const src: string;
   export default src;
 }

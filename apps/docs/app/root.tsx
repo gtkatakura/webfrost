@@ -1,3 +1,4 @@
+import touchIcon from "@/assets/brand/mark.svg?preset=touch-icon";
 import SearchDialog from "@/components/search";
 import { RootProvider } from "fumadocs-ui/provider/react-router";
 import {
@@ -41,6 +42,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
           }}
         />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <link rel="apple-touch-icon" href={touchIcon} />
+        <meta name="theme-color" content="#080c16" />
         <Meta />
         <Links />
       </head>

@@ -1,3 +1,7 @@
+<p align="center">
+  <a href="https://webfrost.dev"><img src=".github/assets/banner.webp" width="720" alt="WebFrost: an arctic fox asleep on a frozen archive box, with the formats it keeps around it"></a>
+</p>
+
 # WebFrost
 
 A self-hosted web archiving toolkit. Archive URLs to WARC, Readability JSON, PDF, full-page screenshots, DOM snapshots, self-contained HTML and media with one command.

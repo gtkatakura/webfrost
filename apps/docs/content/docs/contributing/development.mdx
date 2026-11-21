@@ -143,6 +143,27 @@ Components available without an import: `Callout` (`type` is `info`, `warn` or `
 In prose, write a bare `<` as `&lt;` or put it in backticks, and do the same for `{`. Comments are `{/* */}`, not `<!-- -->`. Inside fenced code blocks anything goes.
 </Callout>
 
+### Add an image
+
+Put the original, as large as you have it, in `apps/docs/app/assets/`. Import it with a preset and draw it with `Picture`:
+
+```mdx
+import shot from "@/assets/screens/search.png?preset=content";
+
+<Picture image={shot} sizes="(min-width: 1024px) 720px, 100vw" alt="Search results with highlighted matches" />
+```
+
+The build makes every width in AVIF, WebP and JPG plus a blurred placeholder, and the browser downloads only the one that fits the screen. `sizes` tells it how wide the image is drawn. The presets are in `apps/docs/image-presets.ts`:
+
+| Preset | For |
+|---|---|
+| `content` | An image in the text column, such as a screenshot |
+| `hero` | The large image at the top of a page, with a 4:3 crop for phones |
+| `og` | The link preview for social sites (a URL, 1200×630) |
+| `touch-icon` | The iOS home-screen icon (a URL, 180×180) |
+
+After changing the mascot art in `app/assets/brand`, run `mise run brand`. It rewrites the images that are not built with the site: the link-preview master, the README banner, the GitHub social preview and the web app's favicon.
+
 <Cards>
   <Card title="Project structure" href="/docs/contributing/project-structure">
     Where the code lives and how to add an extractor.
