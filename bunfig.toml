@@ -1,0 +1,6 @@
+# Supply-chain safety: `bun add` and `bun update` only pick versions published at least 7 days ago,
+# so a compromised release has time to be caught and pulled before it reaches this repository.
+# To take a security fix sooner, pass `--minimum-release-age=0` for that one package and say why
+# in the commit. Installs from bun.lock (CI, Docker) are not affected.
+[install]
+minimumReleaseAge = 604800
