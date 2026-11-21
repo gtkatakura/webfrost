@@ -2,7 +2,7 @@ import { mkdir, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { S3Client } from "bun";
-import type { StorageBackend } from "./interface";
+import type { PresignedResponseHeaders, StorageBackend } from "./interface";
 
 // ─────────────────────────────────────────────────────────────
 // S3 config
@@ -145,10 +145,19 @@ export class S3Backend implements StorageBackend {
    * Return a presigned download URL for the given DB ref.
    * Expires in 1 hour by default. The server returns a 302 redirect to this
    * URL, enabling zero-copy streaming directly from S3 to the client.
+   * `response` becomes the signed response-content-type/-disposition overrides.
    */
-  presignedDownloadUrl(ref: string, expiresIn = 3600): string {
+  presignedDownloadUrl(
+    ref: string,
+    expiresIn = 3600,
+    response: PresignedResponseHeaders = {},
+  ): string {
     const key = this.fromRef(ref);
-    return this.client.presign(key, { expiresIn });
+    return this.client.presign(key, {
+      expiresIn,
+      ...(response.contentType ? { type: response.contentType } : {}),
+      ...(response.contentDisposition ? { contentDisposition: response.contentDisposition } : {}),
+    });
   }
 
   async deleteAll(snapshotId: number): Promise<void> {

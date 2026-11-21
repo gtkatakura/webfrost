@@ -70,6 +70,19 @@ export interface StorageBackend {
    *
    * When non-null, the server should return a 302 redirect to this URL instead
    * of proxying bytes — enabling zero-copy streaming from the storage backend.
+   *
+   * `response` overrides the headers the storage service answers with, so a file
+   * can be forced to download (and never render on the bucket's origin).
    */
-  presignedDownloadUrl(ref: string, expiresIn?: number): string | null;
+  presignedDownloadUrl(
+    ref: string,
+    expiresIn?: number,
+    response?: PresignedResponseHeaders,
+  ): string | null;
+}
+
+/** Response headers a presigned download URL asks the storage service to send. */
+export interface PresignedResponseHeaders {
+  contentType?: string;
+  contentDisposition?: string;
 }

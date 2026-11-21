@@ -255,6 +255,19 @@ describe("S3Backend", () => {
       expect(url).toContain("600");
     });
 
+    test("signs response content type and disposition overrides", () => {
+      const url = new URL(
+        storage.presignedDownloadUrl("s3:snapshots/1/dom.html", 600, {
+          contentType: "text/html",
+          contentDisposition: 'attachment; filename="dom.html"',
+        }),
+      );
+      expect(url.searchParams.get("response-content-type")).toBe("text/html");
+      expect(url.searchParams.get("response-content-disposition")).toBe(
+        'attachment; filename="dom.html"',
+      );
+    });
+
     test("throws on invalid ref", () => {
       expect(() => storage.presignedDownloadUrl("/local/path")).toThrow();
     });

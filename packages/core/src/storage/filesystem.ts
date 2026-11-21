@@ -77,7 +77,7 @@ export class FilesystemBackend implements StorageBackend {
     return target === root || target.startsWith(root + sep);
   }
 
-  presignedDownloadUrl(_ref: string, _expiresIn?: number): null {
+  presignedDownloadUrl(_ref: string, _expiresIn?: number, _response?: unknown): null {
     return null;
   }
 }
