@@ -12,7 +12,7 @@
     "bench": "bun run --filter '*' benchmarks && bun bench/page-load.ts && bun bench/fetch-cache.bench.ts && bun bench/playwright-navigation.bench.ts && bun bench/cli-add.bench.ts",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "typecheck": "tsc --noEmit -p tsconfig.json && bun run --filter @webfrost/docs typecheck",
+    "typecheck": "tsc --noEmit -p tsconfig.json && bun run --filter @webfrost/ui typecheck && bun run --filter @webfrost/docs typecheck",
     "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && lefthook install || true",
     "docs:dev": "bun run --filter @webfrost/docs dev",
     "docs:build": "bun run --filter @webfrost/docs build",

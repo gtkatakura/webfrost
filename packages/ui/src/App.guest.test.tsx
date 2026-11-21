@@ -229,7 +229,7 @@ describe("signed in on a public-read instance", () => {
     renderApp(client, "/schedules");
 
     const [signOut] = await screen.findAllByText("Sign out");
-    fireEvent.click(signOut);
+    fireEvent.click(signOut as HTMLElement);
 
     await screen.findByText("Total Snapshots");
     expect(screen.queryByText("Sign in to continue")).toBeNull();

@@ -14,7 +14,7 @@ export function MetadataSidebar({
 }: {
   detail: SnapshotDetail;
   /** Omitted for read-only guests: no Delete control is rendered. */
-  onDelete?: () => void;
+  onDelete?: (() => void) | undefined;
 }) {
   const { state: copyState, copy } = useCopy();
   const urlRef = useRef<HTMLAnchorElement>(null);

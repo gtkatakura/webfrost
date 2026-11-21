@@ -57,7 +57,7 @@ export default defineConfig({
 
   use: {
     baseURL: "http://localhost:4173",
-    launchOptions: { executablePath },
+    launchOptions: executablePath ? { executablePath } : {},
   },
 
   projects: [

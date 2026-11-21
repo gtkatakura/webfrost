@@ -13,7 +13,7 @@ interface SnapshotRowProps {
   snapshot: Snapshot;
   selected: boolean;
   /** Omitted for read-only guests: no checkbox is rendered. */
-  onToggle?: (id: number) => void;
+  onToggle?: ((id: number) => void) | undefined;
   density: Density;
   /** Where the row opens the detail panel. */
   to: string;

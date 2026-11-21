@@ -4,7 +4,9 @@ const TONE: Record<string, string> = {
 };
 const PENDING_TONE = "bg-warning/10 text-warning border-warning/25";
 
-export function StatusBadge({ status }: { status: string }) {
+/** A snapshot's status. Renders nothing when the server reports none (search results can). */
+export function StatusBadge({ status }: { status: string | null }) {
+  if (!status) return null;
   return (
     <span
       className={`inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-ui-xs font-semibold ${TONE[status] ?? PENDING_TONE}`}

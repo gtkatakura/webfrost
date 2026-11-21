@@ -61,7 +61,7 @@ function FilterChip({
   active: boolean;
   onClick: () => void;
   children: ReactNode;
-  dot?: string;
+  dot?: string | undefined;
 }) {
   return (
     <button

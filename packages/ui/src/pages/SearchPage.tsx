@@ -131,7 +131,7 @@ export function SearchPage() {
     if (!hasFilters(filters)) return rawResults;
     const threshold = filters.days ? dateFromDays(filters.days) : null;
     return rawResults.filter((r) => {
-      if (filters.statuses.size > 0 && !filters.statuses.has(r.status)) return false;
+      if (filters.statuses.size > 0 && (!r.status || !filters.statuses.has(r.status))) return false;
       if (threshold && r.createdAt < threshold) return false;
       for (const ext of filters.extractors) if (!r.extractors.includes(ext)) return false;
       const tagIds = new Set(r.tags.map((t) => t.id));

@@ -4,6 +4,7 @@
   "license": "MIT",
   "private": true,
   "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "vite build",
     "dev": "vite",
     "test": "bun test src",
