@@ -1,29 +1,13 @@
-import type { ButtonHTMLAttributes, CSSProperties } from "react";
+import type { ButtonHTMLAttributes } from "react";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 type Size = "sm" | "md" | "lg";
 
-const variantStyles: Record<Variant, CSSProperties> = {
-  primary: {
-    background: "var(--accent)",
-    color: "var(--accent-fg)",
-    borderColor: "transparent",
-  },
-  secondary: {
-    background: "var(--bg-overlay)",
-    color: "var(--text-high)",
-    borderColor: "var(--border-default)",
-  },
-  ghost: {
-    background: "transparent",
-    color: "var(--text-mid)",
-    borderColor: "transparent",
-  },
-  danger: {
-    background: "var(--status-danger)",
-    color: "#ffffff",
-    borderColor: "transparent",
-  },
+const variantCls: Record<Variant, string> = {
+  primary: "bg-accent text-accent-fg border-transparent hover:bg-accent-hover",
+  secondary: "bg-overlay text-high border-border hover:bg-subtle hover:border-border-strong",
+  ghost: "bg-transparent text-mid border-transparent hover:bg-subtle hover:text-high",
+  danger: "bg-danger text-danger-fg border-transparent hover:opacity-90",
 };
 
 const sizeCls: Record<Size, string> = {
@@ -31,6 +15,11 @@ const sizeCls: Record<Size, string> = {
   md: "py-1.5 px-3.5 text-ui-sm",
   lg: "py-2 px-5 text-ui-base",
 };
+
+/** Class string for anything that should look like a button (a Link, for instance). */
+export function buttonClasses(variant: Variant = "primary", size: Size = "md"): string {
+  return `inline-flex items-center justify-center gap-1.5 font-medium rounded-md border no-underline transition-colors hover:no-underline disabled:opacity-50 disabled:cursor-not-allowed ${sizeCls[size]} ${variantCls[variant]}`;
+}
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
@@ -41,23 +30,10 @@ export function Button({
   variant = "primary",
   size = "md",
   className = "",
-  style,
-  disabled,
-  children,
+  type = "button",
   ...props
 }: ButtonProps) {
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      className={`inline-flex items-center gap-1.5 font-medium rounded border transition-colors cursor-pointer
-        ${sizeCls[size]}
-        ${disabled ? "opacity-50 cursor-not-allowed" : ""}
-        ${className}`}
-      style={{ ...variantStyles[variant], ...style }}
-      {...props}
-    >
-      {children}
-    </button>
+    <button type={type} className={`${buttonClasses(variant, size)} ${className}`} {...props} />
   );
 }

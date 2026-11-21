@@ -56,3 +56,53 @@ describe("useBulkSnapshots.bulkDelete", () => {
     confirm.mockRestore();
   });
 });
+
+describe("useBulkSnapshots selection scope", () => {
+  function setup(initial: number[]) {
+    const deleted: number[] = [];
+    const client = {
+      deleteSnapshot: async (id: number) => {
+        deleted.push(id);
+        return true;
+      },
+    } as unknown as WebFrostClient;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={new QueryClient()}>
+        <ClientContext.Provider value={client}>{children}</ClientContext.Provider>
+      </QueryClientProvider>
+    );
+    const hook = renderHook(({ ids }) => useBulkSnapshots(ids), {
+      wrapper,
+      initialProps: { ids: initial },
+    });
+    return { hook, deleted };
+  }
+
+  test("ids that leave the visible set are dropped and never come back", () => {
+    const { hook } = setup([1, 2, 3]);
+    act(() => hook.result.current.toggleAll());
+    expect(hook.result.current.selectedIds.size).toBe(3);
+
+    // Next page / narrower filter: only 4 and 2 are visible now.
+    hook.rerender({ ids: [4, 2] });
+    expect([...hook.result.current.selectedIds]).toEqual([2]);
+
+    // Back to the first set: 1 and 3 must not reappear as selected.
+    hook.rerender({ ids: [1, 2, 3] });
+    expect([...hook.result.current.selectedIds]).toEqual([2]);
+  });
+
+  test("bulk delete only deletes visible ids and the confirmation says how many", async () => {
+    const { hook, deleted } = setup([1, 2, 3]);
+    act(() => hook.result.current.toggleAll());
+    hook.rerender({ ids: [3] });
+
+    const confirm = spyOn(window, "confirm").mockReturnValue(true);
+    await act(async () => {
+      await hook.result.current.bulkDelete();
+    });
+    expect(confirm).toHaveBeenCalledWith("Delete 1 selected snapshot? This cannot be undone.");
+    expect(deleted).toEqual([3]);
+    confirm.mockRestore();
+  });
+});

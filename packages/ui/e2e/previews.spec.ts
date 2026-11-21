@@ -70,17 +70,17 @@ test("previews: archived page produces the extractor results", async ({ request 
 });
 
 test("previews: reader tab shows the readable text", async ({ page }) => {
-  await page.goto(`/#/snapshots?detail=${snapshotId}`);
+  await page.goto(`/#/snapshots/${snapshotId}`);
 
-  await page.getByRole("button", { name: "Reader", exact: true }).click();
-  await expect(page.getByRole("heading", { name: PAGE_TITLE })).toBeVisible();
+  await page.getByRole("tab", { name: "Reader", exact: true }).click();
+  await expect(page.getByRole("tabpanel").getByRole("heading", { name: PAGE_TITLE })).toBeVisible();
   await expect(page.getByText(PAGE_TEXT)).toBeVisible();
 });
 
 test("previews: screenshot tab loads the image", async ({ page }) => {
-  await page.goto(`/#/snapshots?detail=${snapshotId}`);
+  await page.goto(`/#/snapshots/${snapshotId}`);
 
-  await page.getByRole("button", { name: "Screenshot", exact: true }).click();
+  await page.getByRole("tab", { name: "Screenshot", exact: true }).click();
   const image = page.getByAltText("Page screenshot");
   await expect(image).toBeVisible();
   await expect
@@ -89,9 +89,9 @@ test("previews: screenshot tab loads the image", async ({ page }) => {
 });
 
 test("previews: DOM tab frames the archived page in a sandboxed iframe", async ({ page }) => {
-  await page.goto(`/#/snapshots?detail=${snapshotId}`);
+  await page.goto(`/#/snapshots/${snapshotId}`);
 
-  await page.getByRole("button", { name: "DOM", exact: true }).click();
+  await page.getByRole("tab", { name: "DOM", exact: true }).click();
   const iframe = page.locator('iframe[title="Archived page preview"]');
   await expect(iframe).toBeVisible();
   // Untrusted HTML must be framed with every sandbox permission off.

@@ -1,9 +1,16 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
+import { AuthShell, cardCls } from "../components/AuthShell";
+import { Button } from "../components/ui/Button";
+import { ErrorBanner } from "../components/ui/StateViews";
+import { TextField } from "../components/ui/TextField";
 import { useClient } from "../context";
 import { useAuth } from "../context/auth";
+import { useCopy } from "../lib/clipboard";
 import { setupErrorMessage } from "../lib/errors";
 
 type Step = "credentials" | "apikey";
+
+const MIN_PASSWORD = 8;
 
 export function SetupPage() {
   const { completeSetup, finishSetup } = useAuth();
@@ -16,6 +23,11 @@ export function SetupPage() {
   // Asked for only when the server has WEBFROST_SETUP_TOKEN set.
   const [tokenRequired, setTokenRequired] = useState(false);
   const [setupToken, setSetupToken] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const keyRef = useRef<HTMLInputElement>(null);
+  const { state: copyState, copy } = useCopy();
 
   useEffect(() => {
     client
@@ -23,10 +35,6 @@ export function SetupPage() {
       .then((status) => setTokenRequired(status.setupTokenRequired === true))
       .catch(() => {});
   }, [client]);
-  const [apiKey, setApiKey] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   async function handleSubmitCredentials(e: FormEvent) {
     e.preventDefault();
@@ -36,8 +44,8 @@ export function SetupPage() {
       setError("Passwords do not match.");
       return;
     }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
+    if (password.length < MIN_PASSWORD) {
+      setError(`Password must be at least ${MIN_PASSWORD} characters.`);
       return;
     }
 
@@ -53,166 +61,97 @@ export function SetupPage() {
     }
   }
 
-  async function handleCopy() {
-    await navigator.clipboard.writeText(apiKey);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 px-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <span className="text-2xl font-bold text-gray-800 dark:text-gray-100 tracking-tight">
-            WebFrost
-          </span>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            {step === "credentials" ? "Set up your admin account" : "Save your API key"}
-          </p>
-        </div>
+    <AuthShell
+      subtitle={step === "credentials" ? "Set up your admin account" : "Save your API key"}
+    >
+      {step === "credentials" && (
+        <form onSubmit={handleSubmitCredentials} className={cardCls}>
+          {error && <ErrorBanner message={error} />}
 
-        {step === "credentials" && (
-          <form
-            onSubmit={handleSubmitCredentials}
-            className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-6 flex flex-col gap-4"
+          {tokenRequired && (
+            <TextField
+              label="Setup token"
+              type="password"
+              autoComplete="off"
+              required
+              autoFocus
+              value={setupToken}
+              onChange={(e) => setSetupToken(e.target.value)}
+              hint="The value of WEBFROST_SETUP_TOKEN on the server."
+            />
+          )}
+          <TextField
+            label="Username"
+            type="text"
+            autoComplete="username"
+            required
+            autoFocus={!tokenRequired}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="admin"
+          />
+          <TextField
+            label="Password"
+            type="password"
+            autoComplete="new-password"
+            required
+            minLength={MIN_PASSWORD}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+            hint={`At least ${MIN_PASSWORD} characters.`}
+          />
+          <TextField
+            label="Confirm password"
+            type="password"
+            autoComplete="new-password"
+            required
+            minLength={MIN_PASSWORD}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="••••••••"
+          />
+          <Button type="submit" size="lg" disabled={loading} className="mt-1">
+            {loading ? "Creating account…" : "Create account"}
+          </Button>
+        </form>
+      )}
+
+      {step === "apikey" && (
+        <div className={cardCls}>
+          <p
+            role="alert"
+            className="m-0 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-ui-base text-warning"
           >
-            {error && (
-              <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
-                {error}
-              </div>
-            )}
+            This API key will not be shown again. Copy it now and store it securely.
+          </p>
 
-            {tokenRequired && (
-              <div className="flex flex-col gap-1">
-                <label
-                  htmlFor="setup-token"
-                  className="text-sm font-medium text-gray-700 dark:text-gray-300"
-                >
-                  Setup token
-                </label>
-                <input
-                  id="setup-token"
-                  type="password"
-                  autoComplete="off"
-                  required
-                  value={setupToken}
-                  onChange={(e) => setSetupToken(e.target.value)}
-                  className="px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                />
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  The value of WEBFROST_SETUP_TOKEN on the server.
-                </p>
-              </div>
-            )}
-
-            <div className="flex flex-col gap-1">
-              <label
-                htmlFor="username"
-                className="text-sm font-medium text-gray-700 dark:text-gray-300"
-              >
-                Username
-              </label>
-              <input
-                id="username"
-                type="text"
-                autoComplete="username"
-                required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                placeholder="admin"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label
-                htmlFor="password"
-                className="text-sm font-medium text-gray-700 dark:text-gray-300"
-              >
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                placeholder="••••••••"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label
-                htmlFor="confirm-password"
-                className="text-sm font-medium text-gray-700 dark:text-gray-300"
-              >
-                Confirm password
-              </label>
-              <input
-                id="confirm-password"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                placeholder="••••••••"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="mt-2 w-full py-2 px-4 rounded-lg bg-primary text-white text-sm font-medium hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer border-0"
-            >
-              {loading ? "Creating account…" : "Create account"}
-            </button>
-          </form>
-        )}
-
-        {step === "apikey" && (
-          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-6 flex flex-col gap-4">
-            <div className="text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
-              This API key will not be shown again. Copy it now and store it securely.
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label
-                htmlFor="api-key"
-                className="text-sm font-medium text-gray-700 dark:text-gray-300"
-              >
-                API key
-              </label>
-              <div className="flex gap-2">
-                <input
-                  id="api-key"
-                  type="text"
-                  readOnly
-                  value={apiKey}
-                  className="flex-1 min-w-0 px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-mono focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={handleCopy}
-                  className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer flex-shrink-0"
-                >
-                  {copied ? "Copied!" : "Copy"}
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => finishSetup(username)}
-              className="mt-2 w-full py-2 px-4 rounded-lg bg-primary text-white text-sm font-medium hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors cursor-pointer border-0"
-            >
-              Go to dashboard
-            </button>
+          <TextField
+            label="API key"
+            type="text"
+            readOnly
+            inputRef={keyRef}
+            value={apiKey}
+            onFocus={(e) => e.currentTarget.select()}
+            className="font-mono"
+          />
+          <div className="flex items-center gap-3">
+            <Button variant="secondary" onClick={() => copy(apiKey, keyRef.current)}>
+              {copyState === "copied" ? "Copied!" : "Copy key"}
+            </Button>
+            <span role="status" className="text-ui-sm text-mid">
+              {copyState === "copied" && "Copied to the clipboard."}
+              {copyState === "failed" &&
+                "Could not copy automatically. The key is selected: press Ctrl+C (or Cmd+C)."}
+            </span>
           </div>
-        )}
-      </div>
-    </div>
+
+          <Button size="lg" onClick={() => finishSetup(username)} className="mt-1">
+            Go to dashboard
+          </Button>
+        </div>
+      )}
+    </AuthShell>
   );
 }

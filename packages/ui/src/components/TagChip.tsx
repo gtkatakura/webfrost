@@ -1,38 +1,31 @@
 import type { Tag } from "@webfrost/sdk";
 
-export function TagChip({
-  tag,
-  onRemove,
-}: {
-  tag: Tag;
-  onRemove?: () => void;
-}) {
-  const bg = tag.color ?? "#e5e7eb";
-  const hex = bg.replace("#", "");
-  let textColor = "#111";
-  if (hex.length === 6) {
-    const r = Number.parseInt(hex.slice(0, 2), 16);
-    const g = Number.parseInt(hex.slice(2, 4), 16);
-    const b = Number.parseInt(hex.slice(4, 6), 16);
-    const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    textColor = lum > 0.55 ? "#111" : "#fff";
-  }
+/** Pick black or white text for a hex background by its luminance. */
+function readableOn(hex: string): string {
+  const h = hex.replace("#", "");
+  if (h.length !== 6) return "#111111";
+  const r = Number.parseInt(h.slice(0, 2), 16);
+  const g = Number.parseInt(h.slice(2, 4), 16);
+  const b = Number.parseInt(h.slice(4, 6), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.55 ? "#111111" : "#ffffff";
+}
+
+export function TagChip({ tag, onRemove }: { tag: Tag; onRemove?: () => void }) {
+  // User-chosen tag colors are data, not theme: they stay as inline hex. Untinted tags use tokens.
+  const custom = tag.color ? { background: tag.color, color: readableOn(tag.color) } : undefined;
   return (
     <span
-      className="inline-flex items-center gap-0.5 py-0.5 px-[0.45rem] rounded-full text-[0.7rem] font-semibold mr-0.5"
-      style={{ background: bg, color: textColor }}
+      className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[0.7rem] font-semibold ${
+        custom ? "" : "bg-overlay text-high border border-border"
+      }`}
+      style={custom}
     >
       {tag.name}
       {onRemove && (
         <button
           type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onRemove();
-          }}
-          className="bg-transparent border-0 cursor-pointer p-0 leading-none text-[0.75rem]"
-          style={{ color: textColor }}
+          onClick={onRemove}
+          className="border-0 bg-transparent p-0 text-[0.75rem] leading-none text-inherit"
           aria-label={`Remove tag ${tag.name}`}
         >
           ×

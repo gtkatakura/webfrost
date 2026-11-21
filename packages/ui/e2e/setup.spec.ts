@@ -29,10 +29,14 @@ test("setup: mismatched or short passwords are rejected", async ({ page }) => {
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page.getByText("Passwords do not match.")).toBeVisible();
 
+  // The password fields carry minLength=8, so the browser itself blocks a short password.
   await page.getByLabel("Password", { exact: true }).fill("short");
   await page.getByLabel("Confirm password").fill("short");
+  const tooShort = await page
+    .getByLabel("Password", { exact: true })
+    .evaluate((el) => (el as HTMLInputElement).validity.tooShort);
+  expect(tooShort).toBe(true);
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByText("Password must be at least 8 characters.")).toBeVisible();
 
   await expect(page).toHaveURL(/#\/setup/);
 });

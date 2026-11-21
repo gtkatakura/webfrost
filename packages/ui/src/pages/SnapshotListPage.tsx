@@ -1,493 +1,45 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { WebFrostError } from "@webfrost/sdk";
-import type { Snapshot, Tag } from "@webfrost/sdk";
-import {
-  AlignJustify,
-  Camera,
-  ChevronDown,
-  Clock,
-  LayoutList,
-  Plus,
-  SlidersHorizontal,
-  Trash2,
-  Upload,
-  X,
-} from "lucide-react";
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { toast } from "sonner";
+import { AlignJustify, LayoutList, SlidersHorizontal } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Pagination } from "../components/Pagination";
-import { useClient } from "../context";
+import { EmptyState, ErrorState, Skeleton } from "../components/ui/StateViews";
 import { useAuth } from "../context/auth";
-import { useBulkSnapshots, useSnapshots, useTags } from "../hooks";
-import { snapshotKeys } from "../hooks/useSnapshots";
-import { SnapshotDetailPanel } from "./SnapshotDetailPanel";
+import { BulkBar } from "../features/snapshots/BulkBar";
+import { NewSnapshotMenu } from "../features/snapshots/NewSnapshotMenu";
+import { type Density, SnapshotRow } from "../features/snapshots/SnapshotRow";
+import { SnapshotDetailPanel } from "../features/snapshots/detail/SnapshotDetailPanel";
+import { useBulkSnapshots } from "../hooks/useBulkSnapshots";
+import { useCreateSnapshot, useSnapshots } from "../hooks/useSnapshots";
+import { useTags } from "../hooks/useTags";
+import { STORAGE_KEYS, readStorage, writeStorage } from "../lib/storage";
+import { parsePositiveInt } from "../lib/url";
 
-// ─── Constants ────────────────────────────────────────────────
-
-const DENSITY_KEY = "webfrost-snapshot-density";
 const PAGE_SIZE = 20;
-const KNOWN_EXTRACTORS = [
-  "screenshot",
-  "warc",
-  "html",
-  "pdf",
-  "readability",
-  "dom-snapshot",
-  "singlefile",
-  "media",
-];
-
-// ─── Types ────────────────────────────────────────────────────
-
-type Density = "comfortable" | "compact";
-
-const ROW_HEIGHT: Record<Density, number> = {
-  comfortable: 56,
-  compact: 36,
-};
-
-// ─── Extractor chip ───────────────────────────────────────────
-
-function ExtractorChip({ name, active }: { name: string; active: boolean }) {
-  const short = name.slice(0, 3).toUpperCase();
-  return (
-    <span
-      title={name}
-      className="inline-flex items-center px-1.5 rounded text-ui-xs font-mono font-medium border"
-      style={{
-        background: active
-          ? "color-mix(in srgb, var(--status-success) 12%, transparent)"
-          : "color-mix(in srgb, var(--status-danger) 10%, transparent)",
-        color: active ? "var(--status-success)" : "var(--status-danger)",
-        borderColor: active
-          ? "color-mix(in srgb, var(--status-success) 25%, transparent)"
-          : "color-mix(in srgb, var(--status-danger) 20%, transparent)",
-      }}
-    >
-      {short}
-    </span>
-  );
-}
-
-// ─── Status chip ──────────────────────────────────────────────
-
-function StatusChip({ status }: { status: string }) {
-  const isDone = status === "done";
-  const isFailed = status === "failed";
-  return (
-    <span
-      className="inline-flex items-center px-1.5 py-0.5 rounded text-ui-xs font-medium border whitespace-nowrap"
-      style={{
-        background: isDone
-          ? "color-mix(in srgb, var(--status-success) 12%, transparent)"
-          : isFailed
-            ? "color-mix(in srgb, var(--status-danger) 12%, transparent)"
-            : "color-mix(in srgb, var(--status-warning) 12%, transparent)",
-        color: isDone
-          ? "var(--status-success)"
-          : isFailed
-            ? "var(--status-danger)"
-            : "var(--status-warning)",
-        borderColor: isDone
-          ? "color-mix(in srgb, var(--status-success) 25%, transparent)"
-          : isFailed
-            ? "color-mix(in srgb, var(--status-danger) 20%, transparent)"
-            : "color-mix(in srgb, var(--status-warning) 20%, transparent)",
-      }}
-    >
-      {status}
-    </span>
-  );
-}
-
-// ─── Snapshot row ─────────────────────────────────────────────
-
-interface SnapshotRowProps {
-  snapshot: Snapshot;
-  selected: boolean;
-  /** Omitted for read-only guests: no checkbox is rendered. */
-  onToggle?: (id: number) => void;
-  density: Density;
-  height: number;
-  style?: CSSProperties;
-}
-
-function SnapshotRow({ snapshot, selected, onToggle, density, height, style }: SnapshotRowProps) {
-  const ts = new Date(snapshot.createdAt).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-  const extractorSet = new Set(snapshot.extractors);
-
-  return (
-    <li
-      style={{
-        ...style,
-        height,
-        display: "flex",
-        alignItems: "center",
-        borderBottom: "1px solid var(--border-default)",
-        background: selected ? "color-mix(in srgb, var(--accent) 6%, transparent)" : "transparent",
-        transition: "background 100ms ease",
-        listStyle: "none",
-      }}
-      onMouseEnter={(e) => {
-        if (!selected) (e.currentTarget as HTMLElement).style.background = "var(--bg-subtle)";
-      }}
-      onMouseLeave={(e) => {
-        if (!selected) (e.currentTarget as HTMLElement).style.background = "transparent";
-      }}
-    >
-      {/* Checkbox (write-only) */}
-      {onToggle ? (
-        <label
-          className="flex items-center justify-center shrink-0 cursor-pointer"
-          style={{ width: 40, height: "100%" }}
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-        >
-          <input
-            type="checkbox"
-            checked={selected}
-            onChange={() => onToggle(snapshot.id)}
-            className="cursor-pointer"
-            aria-label={`Select ${snapshot.url}`}
-            style={{ accentColor: "var(--accent)" }}
-          />
-        </label>
-      ) : (
-        <div className="shrink-0" style={{ width: 20 }} />
-      )}
-
-      {/* Thumbnail */}
-      {density === "comfortable" && (
-        <div
-          className="shrink-0 rounded overflow-hidden mr-3"
-          style={{
-            width: 56,
-            height: 40,
-            background: "var(--bg-overlay)",
-            border: "1px solid var(--border-default)",
-          }}
-        >
-          {snapshot.screenshotUrl ? (
-            <img
-              src={snapshot.screenshotUrl}
-              alt=""
-              loading="lazy"
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-          ) : (
-            <div
-              className="w-full h-full flex items-center justify-center"
-              style={{ color: "var(--text-low)" }}
-            >
-              <Camera size={14} />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* URL + title (main content) — rendered as a link for accessibility and test targeting */}
-      <Link
-        to={`?detail=${snapshot.id}`}
-        className="flex-1 min-w-0 flex flex-col justify-center text-left no-underline pr-3"
-        style={{ height: "100%", color: "inherit" }}
-      >
-        {density === "comfortable" && snapshot.title ? (
-          <>
-            <span className="text-ui-sm font-medium truncate" style={{ color: "var(--text-high)" }}>
-              {snapshot.title}
-            </span>
-            <span className="text-ui-xs font-mono truncate" style={{ color: "var(--text-mid)" }}>
-              {snapshot.url}
-            </span>
-          </>
-        ) : (
-          <span className="text-ui-sm font-mono truncate" style={{ color: "var(--text-high)" }}>
-            {snapshot.url}
-          </span>
-        )}
-      </Link>
-
-      {/* Extractor chips */}
-      <div className="hidden md:flex items-center gap-1 shrink-0 mr-3">
-        {KNOWN_EXTRACTORS.filter((e) => e !== "screenshot" && e !== "html").map((ext) => (
-          <ExtractorChip key={ext} name={ext} active={extractorSet.has(ext)} />
-        ))}
-      </div>
-
-      {/* Tags */}
-      {density === "comfortable" && snapshot.tags.length > 0 && (
-        <div className="hidden lg:flex items-center gap-1 shrink-0 mr-3 max-w-[120px] overflow-hidden">
-          {snapshot.tags.slice(0, 2).map((tag) => (
-            <span
-              key={tag.id}
-              className="text-ui-xs px-1.5 py-0.5 rounded truncate"
-              style={{
-                background: tag.color ? `${tag.color}22` : "var(--bg-overlay)",
-                color: tag.color ?? "var(--text-mid)",
-                border: `1px solid ${tag.color ? `${tag.color}44` : "var(--border-default)"}`,
-              }}
-            >
-              {tag.name}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Status */}
-      <div className="shrink-0 mr-3" style={{ width: 72 }}>
-        <StatusChip status={snapshot.status} />
-      </div>
-
-      {/* Timestamp */}
-      <div
-        className="shrink-0 flex items-center gap-1 text-ui-xs mr-3"
-        style={{
-          color: "var(--text-low)",
-          width: 100,
-          justifyContent: "flex-end",
-        }}
-      >
-        <Clock size={10} />
-        <span className="truncate">{ts}</span>
-      </div>
-    </li>
-  );
-}
-
-// ─── New Snapshot Dropdown ─────────────────────────────────────
-
-function NewSnapshotDropdown({
-  onArchiveUrl,
-  submitting,
-}: {
-  onArchiveUrl: (url: string) => void;
-  submitting: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [url, setUrl] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (open) inputRef.current?.focus();
-  }, [open]);
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!url.trim()) return;
-    onArchiveUrl(url);
-    setUrl("");
-    setOpen(false);
-  }
-
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border text-ui-sm font-medium cursor-pointer transition-colors"
-        style={{
-          background: "var(--accent)",
-          color: "var(--accent-fg)",
-          borderColor: "transparent",
-        }}
-      >
-        <Plus size={14} />
-        New Snapshot
-        <ChevronDown size={12} style={{ opacity: 0.7 }} />
-      </button>
-
-      {open && (
-        <>
-          <div
-            className="fixed inset-0 z-10"
-            onClick={() => setOpen(false)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setOpen(false);
-            }}
-            role="presentation"
-          />
-          <div
-            className="absolute right-0 top-full mt-1 rounded-lg border shadow-xl z-20 p-3"
-            style={{
-              background: "var(--bg-surface)",
-              borderColor: "var(--border-default)",
-              width: 360,
-            }}
-          >
-            <p className="text-ui-xs mb-2" style={{ color: "var(--text-mid)" }}>
-              Archive a URL
-            </p>
-            <form onSubmit={handleSubmit} className="flex gap-2">
-              <input
-                ref={inputRef}
-                type="url"
-                placeholder="https://example.com"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                required
-                className="flex-1 px-3 py-1.5 rounded border text-ui-sm font-mono"
-                style={{
-                  background: "var(--bg-overlay)",
-                  borderColor: "var(--border-default)",
-                  color: "var(--text-high)",
-                  outline: "none",
-                }}
-              />
-              <button
-                type="submit"
-                disabled={submitting}
-                className="px-3 py-1.5 rounded border-0 text-ui-sm font-medium cursor-pointer disabled:opacity-50"
-                style={{
-                  background: "var(--accent)",
-                  color: "var(--accent-fg)",
-                }}
-              >
-                {submitting ? "…" : "Archive"}
-              </button>
-            </form>
-            <div className="mt-2 pt-2" style={{ borderTop: "1px solid var(--border-default)" }}>
-              <Link
-                to="/import"
-                onClick={() => setOpen(false)}
-                className="flex items-center gap-2 px-2 py-1.5 rounded text-ui-sm no-underline transition-colors"
-                style={{ color: "var(--text-mid)" }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.background = "var(--bg-overlay)";
-                  (e.currentTarget as HTMLElement).style.color = "var(--text-high)";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.background = "transparent";
-                  (e.currentTarget as HTMLElement).style.color = "var(--text-mid)";
-                }}
-              >
-                <Upload size={13} />
-                Import from RSS / Bookmarks
-              </Link>
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ─── Bulk action bar ──────────────────────────────────────────
-
-function BulkBar({
-  count,
-  status,
-  allTags,
-  onDelete,
-  onTag,
-  onClear,
-}: {
-  count: number;
-  status: string | null;
-  allTags: Tag[];
-  onDelete: () => void;
-  onTag: (tagId: number) => void;
-  onClear: () => void;
-}) {
-  const busy = status !== null;
-  return (
-    <div
-      className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2.5 rounded-xl shadow-2xl text-ui-sm"
-      style={{
-        background: "var(--bg-overlay)",
-        border: "1px solid var(--border-strong)",
-        color: "var(--text-high)",
-      }}
-    >
-      <span className="font-medium" style={{ color: "var(--text-mid)" }}>
-        {status ?? `${count} selected`}
-      </span>
-      <button
-        type="button"
-        onClick={onDelete}
-        disabled={busy}
-        className="inline-flex items-center gap-1.5 px-3 py-1 rounded border-0 cursor-pointer disabled:opacity-50 font-medium text-ui-xs"
-        style={{ background: "var(--status-danger)", color: "#fff" }}
-      >
-        <Trash2 size={12} />
-        Delete
-      </button>
-      {allTags.length > 0 && (
-        <select
-          disabled={busy}
-          className="px-2 py-1 rounded text-ui-xs cursor-pointer disabled:opacity-50 border"
-          style={{
-            background: "var(--bg-surface)",
-            color: "var(--text-high)",
-            borderColor: "var(--border-default)",
-          }}
-          value=""
-          onChange={(e) => {
-            const id = Number(e.target.value);
-            if (id) onTag(id);
-          }}
-        >
-          <option value="">Tag…</option>
-          {allTags.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-      )}
-      <button
-        type="button"
-        onClick={onClear}
-        className="p-1 rounded border-0 cursor-pointer"
-        style={{ background: "transparent", color: "var(--text-mid)" }}
-        aria-label="Clear selection"
-      >
-        <X size={14} />
-      </button>
-    </div>
-  );
-}
-
-// ─── Main page ────────────────────────────────────────────────
 
 export function SnapshotListPage() {
-  const client = useClient();
   const { canWrite } = useAuth();
-  const queryClient = useQueryClient();
-  const [page, setPage] = useState(1);
-  const {
-    snapshots,
-    total,
-    loading,
-    error: snapshotsError,
-    refetch,
-  } = useSnapshots(page, PAGE_SIZE);
-  const { tags: allTags } = useTags();
-  const totalPages = Math.ceil(total / PAGE_SIZE);
-
+  const navigate = useNavigate();
+  const params = useParams<{ id?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const detailId = searchParams.get("detail") ? Number(searchParams.get("detail")) : null;
+
+  // The detail panel opens over the list from /snapshots/:id; ?detail= is the older spelling
+  // of the same thing and keeps working. A malformed id (abc, 0, -1) simply opens nothing.
+  const detailId = parsePositiveInt(params.id ?? searchParams.get("detail"));
+  const page = parsePositiveInt(searchParams.get("page")) ?? 1;
+
+  const { snapshots, total, loading, isError, error, refetch } = useSnapshots(page, PAGE_SIZE);
+  const { tags: allTags } = useTags();
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const [search, setSearch] = useState("");
-  const [density, setDensity] = useState<Density>(() => {
-    try {
-      const stored = localStorage.getItem(DENSITY_KEY);
-      return stored === "compact" ? "compact" : "comfortable";
-    } catch {
-      return "comfortable";
-    }
-  });
+  const [density, setDensity] = useState<Density>(() =>
+    readStorage(STORAGE_KEYS.snapshotDensity) === "compact" ? "compact" : "comfortable",
+  );
 
-  // Client-side search filters within the current page
+  // Client-side filter: it narrows the rows of the current page only.
   const filtered = useMemo(() => {
-    if (!search.trim()) return snapshots;
-    const q = search.toLowerCase();
+    const q = search.trim().toLowerCase();
+    if (!q) return snapshots;
     return snapshots.filter(
       (s) => s.url.toLowerCase().includes(q) || s.title?.toLowerCase().includes(q),
     );
@@ -498,42 +50,52 @@ export function SnapshotListPage() {
     canWrite,
   );
 
-  const archiveMutation = useMutation({
-    mutationFn: (url: string) => client.createSnapshot(url),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: snapshotKeys.all });
-      toast.success("Snapshot queued");
-    },
-    onError: (e) => toast.error(e instanceof WebFrostError ? e.message : String(e)),
-  });
+  const archive = useCreateSnapshot();
 
+  // A page past the end (the last rows were deleted, or a stale link) steps back to the last one.
   useEffect(() => {
-    if (snapshotsError) toast.error(snapshotsError);
-  }, [snapshotsError]);
+    if (loading || isError || page <= totalPages) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (totalPages <= 1) next.delete("page");
+        else next.set("page", String(totalPages));
+        return next;
+      },
+      { replace: true },
+    );
+  }, [loading, isError, page, totalPages, setSearchParams]);
+
+  function goToPage(p: number) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (p <= 1) next.delete("page");
+      else next.set("page", String(p));
+      return next;
+    });
+    bulk.clearSelection();
+  }
 
   function setDensityAndPersist(d: Density) {
     setDensity(d);
-    try {
-      localStorage.setItem(DENSITY_KEY, d);
-    } catch {}
+    writeStorage(STORAGE_KEYS.snapshotDensity, d);
   }
 
-  function handleArchiveUrl(url: string) {
-    if (!canWrite) return;
-    archiveMutation.mutate(url);
+  /** Query string kept while the panel opens and closes: the page number, never the panel id. */
+  function listSearch(): string {
+    const next = new URLSearchParams(searchParams);
+    next.delete("detail");
+    const s = next.toString();
+    return s ? `?${s}` : "";
   }
 
-  const submitting = archiveMutation.isPending;
-
-  function openDetail(id: number) {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("detail", String(id));
-      return next;
-    });
-  }
+  const rowTo = (id: number) => `/snapshots/${id}${listSearch()}`;
 
   function closeDetail() {
+    if (params.id !== undefined) {
+      navigate(`/snapshots${listSearch()}`);
+      return;
+    }
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.delete("detail");
@@ -541,54 +103,42 @@ export function SnapshotListPage() {
     });
   }
 
-  const rowHeight = ROW_HEIGHT[density];
-  const skeletonCount = 10;
+  const filtering = search.trim().length > 0;
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden" style={{ background: "var(--bg-app)" }}>
+    <div className="flex h-[calc(100dvh-3rem)] flex-col overflow-hidden bg-app lg:h-dvh">
       {/* ── Header ─────────────────────────────────────────── */}
-      <div
-        className="flex items-center justify-between px-5 py-3 border-b shrink-0"
-        style={{ borderColor: "var(--border-default)" }}
-      >
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-4 py-3 sm:px-5">
         <div className="flex items-center gap-3">
-          <h1 className="text-ui-lg font-semibold m-0" style={{ color: "var(--text-high)" }}>
-            Snapshots
-          </h1>
-          {!loading && (
+          <h1 className="m-0 text-ui-lg font-semibold text-high">Snapshots</h1>
+          {!loading && !isError && (
             <span
-              className="text-ui-xs px-1.5 py-0.5 rounded"
-              style={{
-                background: "var(--bg-overlay)",
-                color: "var(--text-mid)",
-              }}
+              className="rounded bg-overlay px-1.5 py-0.5 text-ui-xs text-mid"
+              title={filtering ? "Matches on this page" : "Total snapshots"}
             >
-              {search.trim() ? filtered.length : total}
+              {filtering ? filtered.length : total}
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Search */}
+        <div className="flex flex-wrap items-center gap-2">
           <input
             type="search"
+            aria-label="Filter this page by URL or title"
             placeholder="Filter by URL or title…"
+            title="Filters the snapshots on this page"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="px-3 py-1.5 rounded border text-ui-sm"
-            style={{
-              background: "var(--bg-overlay)",
-              borderColor: "var(--border-default)",
-              color: "var(--text-high)",
-              width: 220,
-              outline: "none",
+            onChange={(e) => {
+              setSearch(e.target.value);
+              bulk.clearSelection();
             }}
+            className="field !w-full sm:!w-56"
           />
 
-          {/* Density toggle */}
           <div
-            className="flex rounded border overflow-hidden"
-            style={{ borderColor: "var(--border-default)" }}
+            role="group"
+            aria-label="Row density"
+            className="flex overflow-hidden rounded-md border border-border"
           >
             {(["comfortable", "compact"] as const).map((d) => (
               <button
@@ -596,152 +146,94 @@ export function SnapshotListPage() {
                 type="button"
                 onClick={() => setDensityAndPersist(d)}
                 title={d}
-                className="flex items-center justify-center p-1.5 cursor-pointer border-0 transition-colors"
-                style={{
-                  background: density === d ? "var(--bg-overlay)" : "transparent",
-                  color: density === d ? "var(--text-high)" : "var(--text-low)",
-                }}
+                aria-label={`${d} rows`}
+                aria-pressed={density === d}
+                className={`flex items-center justify-center border-0 p-1.5 transition-colors ${
+                  density === d
+                    ? "bg-overlay text-high"
+                    : "bg-transparent text-low hover:bg-subtle hover:text-high"
+                }`}
               >
-                {d === "comfortable" ? <AlignJustify size={14} /> : <LayoutList size={14} />}
+                {d === "comfortable" ? (
+                  <AlignJustify size={14} aria-hidden="true" />
+                ) : (
+                  <LayoutList size={14} aria-hidden="true" />
+                )}
               </button>
             ))}
           </div>
 
           {canWrite && (
-            <NewSnapshotDropdown onArchiveUrl={handleArchiveUrl} submitting={submitting} />
+            <NewSnapshotMenu
+              onArchiveUrl={(url) => archive.mutate(url)}
+              submitting={archive.isPending}
+            />
           )}
         </div>
       </div>
 
       {/* ── Table header ────────────────────────────────────── */}
       <div
-        className="flex items-center shrink-0 px-0 border-b text-ui-xs"
-        style={{
-          height: 32,
-          borderColor: "var(--border-default)",
-          color: "var(--text-low)",
-          background: "var(--bg-surface)",
-        }}
+        aria-hidden={loading || isError || filtered.length === 0 ? true : undefined}
+        className="flex h-8 shrink-0 items-center border-b border-border bg-surface text-ui-xs text-low"
       >
-        {/* Checkbox + select all (write-only; guests get a plain gutter) */}
-        <div style={{ width: canWrite ? 40 : 20 }} className="flex items-center justify-center">
+        <div className={`flex shrink-0 items-center justify-center ${canWrite ? "w-10" : "w-5"}`}>
           {canWrite && (
             <input
               type="checkbox"
               checked={bulk.allSelected}
               onChange={bulk.toggleAll}
-              className="cursor-pointer"
               aria-label="Select all"
-              style={{ accentColor: "var(--accent)" }}
+              className="accent-accent"
             />
           )}
         </div>
-        {density === "comfortable" && <div style={{ width: 56 + 12 }} className="shrink-0" />}
+        {density === "comfortable" && <div className="mr-3 hidden w-14 shrink-0 sm:block" />}
         <div className="flex-1 px-2">URL</div>
-        <div className="hidden md:block shrink-0 mr-3" style={{ width: 168 }}>
-          Extractors
-        </div>
-        <div className="shrink-0 mr-3" style={{ width: 72 }}>
-          Status
-        </div>
-        <div className="shrink-0 mr-3 text-right" style={{ width: 100 }}>
-          Captured
-        </div>
+        <div className="mr-3 hidden w-60 shrink-0 md:block">Extractors</div>
+        <div className="mr-3 w-20 shrink-0 text-right md:w-[4.5rem] md:text-left">Status</div>
+        <div className="mr-3 hidden w-28 shrink-0 text-right md:block">Captured</div>
       </div>
 
       {/* ── List ─────────────────────────────────────────────── */}
-      <div
-        className="flex-1 overflow-y-auto overflow-x-hidden"
-        style={{ background: "var(--bg-app)" }}
-      >
+      <div className="flex-1 overflow-y-auto overflow-x-hidden">
         {loading ? (
-          // Skeleton rows — rendered as <li> without child <a> so tests can
-          // distinguish them from real data rows via the "li a" selector.
-          <ul style={{ margin: 0, padding: 0 }}>
-            {Array.from({ length: skeletonCount }).map((_, i) => (
+          // Skeleton rows are <li> without a link, so they are never mistaken for data rows.
+          <ul className="m-0 list-none p-0" role="status" aria-label="Loading snapshots">
+            {Array.from({ length: 10 }, (_, i) => (
               <li
-                // biome-ignore lint/suspicious/noArrayIndexKey: skeleton rows
+                // biome-ignore lint/suspicious/noArrayIndexKey: placeholders
                 key={i}
-                className="flex items-center gap-3 px-5 border-b"
-                style={{
-                  height: rowHeight,
-                  borderColor: "var(--border-default)",
-                  listStyle: "none",
-                }}
+                className={`flex items-center gap-3 border-b border-border px-5 ${
+                  density === "comfortable" ? "h-14" : "h-9"
+                }`}
               >
-                <div
-                  className="rounded animate-pulse"
-                  style={{
-                    width: 12,
-                    height: 12,
-                    background: "var(--bg-overlay)",
-                  }}
-                />
-                {density === "comfortable" && (
-                  <div
-                    className="rounded animate-pulse"
-                    style={{
-                      width: 56,
-                      height: 40,
-                      background: "var(--bg-overlay)",
-                    }}
-                  />
-                )}
-                <div className="flex-1 flex flex-col gap-1.5">
-                  <div
-                    className="rounded animate-pulse"
-                    style={{
-                      width: "60%",
-                      height: 10,
-                      background: "var(--bg-overlay)",
-                    }}
-                  />
-                  {density === "comfortable" && (
-                    <div
-                      className="rounded animate-pulse"
-                      style={{
-                        width: "40%",
-                        height: 8,
-                        background: "var(--bg-overlay)",
-                      }}
-                    />
-                  )}
+                <Skeleton className="size-3" />
+                {density === "comfortable" && <Skeleton className="hidden h-10 w-14 sm:block" />}
+                <div className="flex flex-1 flex-col gap-1.5">
+                  <Skeleton className="h-2.5 w-3/5" />
+                  {density === "comfortable" && <Skeleton className="h-2 w-2/5" />}
                 </div>
               </li>
             ))}
           </ul>
+        ) : isError ? (
+          <ErrorState title="Could not load snapshots" error={error} onRetry={() => refetch()} />
         ) : filtered.length === 0 ? (
-          // Empty state
-          <div
-            className="flex flex-col items-center justify-center gap-4 py-24"
-            style={{ color: "var(--text-mid)" }}
-          >
-            <div
-              className="w-14 h-14 rounded-full flex items-center justify-center"
-              style={{ background: "var(--bg-overlay)" }}
-            >
-              {snapshots.length === 0 ? (
-                <Camera size={24} style={{ color: "var(--text-low)" }} />
-              ) : (
-                <SlidersHorizontal size={24} style={{ color: "var(--text-low)" }} />
-              )}
-            </div>
-            <div className="text-center">
-              <p className="text-ui-base font-medium" style={{ color: "var(--text-high)" }}>
-                {snapshots.length === 0 ? "No snapshots yet" : "No results match your filter"}
-              </p>
-              <p className="text-ui-sm mt-1" style={{ color: "var(--text-mid)" }}>
-                {snapshots.length === 0
-                  ? canWrite
-                    ? "Use the New Snapshot button to archive your first URL."
-                    : "Nothing has been archived here yet."
-                  : "Try a different search term."}
-              </p>
-            </div>
-          </div>
+          snapshots.length === 0 ? (
+            <EmptyState mascot title="No snapshots yet">
+              {canWrite
+                ? "Use the New Snapshot button to archive your first URL."
+                : "Nothing has been archived here yet."}
+            </EmptyState>
+          ) : (
+            <EmptyState icon={<SlidersHorizontal size={24} />} title="No results match your filter">
+              Try a different search term. The filter only looks at the {snapshots.length} snapshots
+              on this page.
+            </EmptyState>
+          )
         ) : (
-          // Paginated rows — <ul> > <li> > <Link> structure
-          <ul style={{ margin: 0, padding: 0 }}>
+          <ul className="m-0 list-none p-0">
             {filtered.map((snapshot) => (
               <SnapshotRow
                 key={snapshot.id}
@@ -749,25 +241,25 @@ export function SnapshotListPage() {
                 selected={canWrite && bulk.selectedIds.has(snapshot.id)}
                 onToggle={canWrite ? bulk.toggle : undefined}
                 density={density}
-                height={rowHeight}
+                to={rowTo(snapshot.id)}
               />
             ))}
           </ul>
         )}
 
-        {/* ── Pagination ────────────────────────────────────── */}
-        {!loading && totalPages > 1 && (
+        {!loading && !isError && (
           <Pagination
-            page={page}
+            page={Math.min(page, totalPages)}
             totalPages={totalPages}
-            onPrev={() => setPage((p) => Math.max(1, p - 1))}
-            onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
-            onPage={setPage}
+            onPrev={() => goToPage(Math.max(1, page - 1))}
+            onNext={() => goToPage(Math.min(totalPages, page + 1))}
+            onPage={goToPage}
           />
         )}
+        {/* Room for the floating bulk bar so it never covers the last row. */}
+        {canWrite && bulk.someSelected && <div className="h-16" />}
       </div>
 
-      {/* ── Bulk action bar ───────────────────────────────────── */}
       {canWrite && bulk.someSelected && (
         <BulkBar
           count={bulk.selectedIds.size}
@@ -779,12 +271,12 @@ export function SnapshotListPage() {
         />
       )}
 
-      {/* ── Detail slide-in panel ─────────────────────────────── */}
       {detailId !== null && (
         <SnapshotDetailPanel
+          key={detailId}
           snapshotId={detailId}
           onClose={closeDetail}
-          onDelete={async () => {
+          onDeleted={async () => {
             await refetch();
             closeDetail();
           }}

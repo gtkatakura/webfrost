@@ -1,6 +1,6 @@
 import type { WebFrostClient } from "@webfrost/sdk";
-import { WebFrostError } from "@webfrost/sdk";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { isStatus } from "../lib/errors";
 
 interface AuthState {
   /** Whether we have verified the session state with the server (true after first check). */
@@ -16,6 +16,10 @@ interface AuthState {
 }
 
 interface AuthContextValue extends AuthState {
+  /** Set when the first status check failed for a reason other than "not signed in". */
+  bootError: unknown;
+  /** Runs the first status check again. */
+  retryBootstrap: () => void;
   /** Anonymous visitor on a public-read instance: browse only, no writes. */
   isGuest: boolean;
   /** Whether write controls may be shown / write handlers may run. */
@@ -31,6 +35,8 @@ interface AuthContextValue extends AuthState {
 }
 
 const AuthContext = createContext<AuthContextValue>({
+  bootError: null,
+  retryBootstrap: () => {},
   ready: false,
   needsSetup: false,
   isAuthenticated: false,
@@ -60,14 +66,28 @@ export function AuthProvider({
     publicRead: false,
   });
 
-  // Check setup status and session on mount
+  // Set when the server could not be asked (down, 5xx, network): that is not "signed out".
+  const [bootError, setBootError] = useState<unknown>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  const retryBootstrap = useCallback(() => {
+    setBootError(null);
+    setAttempt((n) => n + 1);
+  }, []);
+
+  // Check setup status and session on mount (and again on Retry).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt re-runs the check on Retry
   useEffect(() => {
+    let cancelled = false;
+    const settle = (next: AuthState) => {
+      if (!cancelled) setState(next);
+    };
     client
       .getSetupStatus()
-      .then(({ needsSetup, publicRead }) => {
+      .then(async ({ needsSetup, publicRead }) => {
         const pub = publicRead === true;
         if (needsSetup) {
-          setState({
+          settle({
             ready: true,
             needsSetup: true,
             isAuthenticated: false,
@@ -76,40 +96,45 @@ export function AuthProvider({
           });
           return;
         }
-        return client
-          .getMe()
-          .then(({ username }) => {
-            setState({
-              ready: true,
-              needsSetup: false,
-              isAuthenticated: true,
-              username,
-              publicRead: pub,
-            });
-          })
-          .catch((err) => {
-            const isUnauth = err instanceof WebFrostError && err.status === 401;
-            if (!isUnauth) console.error("[auth] getMe error:", err);
-            setState({
-              ready: true,
-              needsSetup: false,
-              isAuthenticated: false,
-              username: null,
-              publicRead: pub,
-            });
+        try {
+          const { username } = await client.getMe();
+          settle({
+            ready: true,
+            needsSetup: false,
+            isAuthenticated: true,
+            username,
+            publicRead: pub,
           });
+        } catch (err) {
+          if (!isStatus(err, 401)) throw err;
+          settle({
+            ready: true,
+            needsSetup: false,
+            isAuthenticated: false,
+            username: null,
+            publicRead: pub,
+          });
+        }
       })
       .catch((err) => {
-        console.error("[auth] getSetupStatus error:", err);
-        setState({
-          ready: true,
-          needsSetup: false,
-          isAuthenticated: false,
-          username: null,
-          publicRead: false,
-        });
+        if (cancelled) return;
+        if (isStatus(err, 401)) {
+          setState({
+            ready: true,
+            needsSetup: false,
+            isAuthenticated: false,
+            username: null,
+            publicRead: false,
+          });
+          return;
+        }
+        console.error("[auth] could not reach the server:", err);
+        setBootError(err);
       });
-  }, [client]);
+    return () => {
+      cancelled = true;
+    };
+  }, [client, attempt]);
 
   const login = useCallback(
     async (username: string, password: string) => {
@@ -176,6 +201,8 @@ export function AuthProvider({
     <AuthContext.Provider
       value={{
         ...state,
+        bootError,
+        retryBootstrap,
         isGuest: state.publicRead && !state.isAuthenticated,
         canWrite: state.isAuthenticated,
         login,

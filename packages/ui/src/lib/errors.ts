@@ -33,6 +33,13 @@ export function setupErrorMessage(err: unknown): string {
   return commonMessage(err, "Setup failed.");
 }
 
+/** Human-readable message for any thrown value, for toasts and inline errors. */
+export function errorMessage(err: unknown): string {
+  if (err instanceof WebFrostError) return err.message || `Request failed (${err.status})`;
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
 /** Retry policy for queries: never retry auth/not-found/rate-limit errors. */
 export function shouldRetry(failureCount: number, err: unknown): boolean {
   if (err instanceof WebFrostError && [401, 403, 404, 429].includes(err.status)) return false;

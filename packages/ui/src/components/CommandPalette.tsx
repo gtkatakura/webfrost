@@ -1,298 +1,175 @@
 import { Search, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/auth";
 import { useSearch } from "../hooks/useSearch";
 import { Snippet } from "./Snippet";
+import { Modal } from "./ui/Modal";
 
-interface CommandPaletteProps {
-  onClose: () => void;
-}
+const MAX_RESULTS = 8;
 
-export function CommandPalette({ onClose }: CommandPaletteProps) {
+export function CommandPalette({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { canWrite } = useAuth();
-  const { results, loading } = useSearch(query);
+  const { results: allResults, loading } = useSearch(query);
+  const results = allResults.slice(0, MAX_RESULTS);
+  const uid = useId().replace(/:/g, "");
+  const listId = `${uid}-list`;
+  const optionId = (i: number) => `${uid}-opt-${i}`;
+  const trimmed = query.trim();
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  // Reset active index when results change
-  // biome-ignore lint/correctness/useExhaustiveDependencies: results triggers the reset intentionally
+  // Reset the active option when the result set changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: allResults triggers the reset
   useEffect(() => {
     setActiveIdx(0);
-  }, [results]);
+  }, [allResults]);
+
+  const open = (id: number) => {
+    navigate(`/snapshots/${id}`);
+    onClose();
+  };
+  const goToSearch = () => {
+    if (!trimmed) return;
+    navigate(`/search?q=${encodeURIComponent(trimmed)}`);
+    onClose();
+  };
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Escape") {
-      onClose();
-      return;
-    }
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActiveIdx((i) => Math.min(i + 1, results.length));
+      setActiveIdx((i) => Math.min(i + 1, Math.max(results.length - 1, 0)));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActiveIdx((i) => Math.max(i - 1, 0));
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (results.length > 0 && activeIdx < results.length) {
-        navigate(`/snapshots/${results[activeIdx].id}`);
-        onClose();
-      } else if (query.trim()) {
-        navigate(`/search?q=${encodeURIComponent(query.trim())}`);
-        onClose();
-      }
+      const active = results[activeIdx];
+      if (active) open(active.id);
+      else goToSearch();
     }
   }
 
-  function goToSearch() {
-    if (query.trim()) {
-      navigate(`/search?q=${encodeURIComponent(query.trim())}`);
-      onClose();
-    }
-  }
+  const showList = trimmed && !loading && results.length > 0;
+  const hints = [
+    { key: "g h", label: "Home / Dashboard" },
+    { key: "g s", label: "Snapshots" },
+    { key: "g t", label: "Tags" },
+    ...(canWrite ? [{ key: "g i", label: "Import" }] : []),
+    { key: "?", label: "Keyboard shortcuts" },
+  ];
 
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard handled via onKeyDown on inner input
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] animate-fade-in"
-      style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
-      onClick={onClose}
-    >
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation only */}
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 580,
-          margin: "0 16px",
-          background: "var(--bg-surface)",
-          border: "1px solid var(--border-strong)",
-          borderRadius: 12,
-          boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
-          overflow: "hidden",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Search input row */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            padding: "12px 16px",
-            borderBottom: "1px solid var(--border-default)",
-            gap: 10,
-          }}
-        >
-          <Search size={16} style={{ color: "var(--text-low)", flexShrink: 0 }} />
-          <input
-            ref={inputRef}
-            type="text"
-            placeholder="Search snapshots…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-            style={{
-              flex: 1,
-              background: "none",
-              border: "none",
-              outline: "none",
-              fontSize: 14,
-              color: "var(--text-high)",
+    <Modal onClose={onClose} label="Search snapshots" variant="top">
+      <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
+        <Search size={16} className="shrink-0 text-low" aria-hidden="true" />
+        <input
+          ref={inputRef}
+          type="text"
+          role="combobox"
+          aria-expanded={Boolean(showList)}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-activedescendant={showList ? optionId(activeIdx) : undefined}
+          aria-label="Search snapshots"
+          placeholder="Search snapshots…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
+          className="flex-1 border-0 bg-transparent text-ui-base text-high placeholder:text-low"
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery("");
+              inputRef.current?.focus();
             }}
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery("")}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                color: "var(--text-low)",
-                padding: 2,
-                display: "flex",
-              }}
-            >
-              <X size={14} />
-            </button>
-          )}
-          <kbd
-            style={{
-              fontSize: 10,
-              padding: "2px 5px",
-              borderRadius: 4,
-              background: "var(--bg-overlay)",
-              border: "1px solid var(--border-strong)",
-              color: "var(--text-low)",
-              fontFamily: "ui-monospace, monospace",
-              whiteSpace: "nowrap",
-            }}
+            aria-label="Clear search"
+            className="flex rounded border-0 bg-transparent p-0.5 text-low hover:text-high"
           >
-            esc
-          </kbd>
-        </div>
+            <X size={14} aria-hidden="true" />
+          </button>
+        )}
+        <kbd className="kbd">esc</kbd>
+      </div>
 
-        {/* Results */}
-        {query.trim() && (
-          <div style={{ maxHeight: 360, overflowY: "auto" }}>
-            {loading && (
-              <div
-                style={{
-                  padding: "12px 16px",
-                  fontSize: 12,
-                  color: "var(--text-low)",
-                  textAlign: "center",
-                }}
-              >
-                Searching…
-              </div>
-            )}
-
+      {trimmed && (
+        <div className="max-h-[22rem] overflow-y-auto">
+          <div role="status" className="empty:hidden">
+            {loading && <p className="m-0 px-4 py-3 text-center text-ui-sm text-low">Searching…</p>}
             {!loading && results.length === 0 && (
-              <div
-                style={{
-                  padding: "12px 16px",
-                  fontSize: 12,
-                  color: "var(--text-low)",
-                  textAlign: "center",
-                }}
-              >
-                No results. Press Enter to see full search page.
-              </div>
-            )}
-
-            {!loading && results.length > 0 && (
-              <ul style={{ listStyle: "none", margin: 0, padding: "6px 0" }}>
-                {results.slice(0, 8).map((r, i) => (
-                  <li key={r.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigate(`/snapshots/${r.id}`);
-                        onClose();
-                      }}
-                      style={{
-                        width: "100%",
-                        padding: "8px 16px",
-                        textAlign: "left",
-                        background:
-                          i === activeIdx
-                            ? "color-mix(in srgb, var(--accent) 8%, transparent)"
-                            : "none",
-                        border: "none",
-                        cursor: "pointer",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 3,
-                        borderLeft:
-                          i === activeIdx ? "2px solid var(--accent)" : "2px solid transparent",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 500,
-                          color: "var(--text-high)",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {r.url}
-                      </div>
-                      {r.snippet && (
-                        <div style={{ fontSize: 11, color: "var(--text-mid)", lineHeight: 1.5 }}>
-                          <Snippet text={r.snippet} />
-                        </div>
-                      )}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {/* "See all results" footer */}
-            {!loading && results.length > 0 && (
-              <button
-                type="button"
-                onClick={goToSearch}
-                style={{
-                  width: "100%",
-                  padding: "10px 16px",
-                  background: "var(--bg-overlay)",
-                  border: "none",
-                  borderTop: "1px solid var(--border-default)",
-                  cursor: "pointer",
-                  fontSize: 12,
-                  color: "var(--text-mid)",
-                  textAlign: "left",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-              >
-                <Search size={12} />
-                See all results for "{query}"
-              </button>
+              <p className="m-0 px-4 py-3 text-center text-ui-sm text-low">
+                No results. Press Enter to see the full search page.
+              </p>
             )}
           </div>
-        )}
 
-        {/* Empty state hints */}
-        {!query.trim() && (
-          <div style={{ padding: "12px 16px 16px" }}>
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 600,
-                color: "var(--text-low)",
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-                marginBottom: 8,
-              }}
-            >
-              Quick navigation
-            </div>
-            {[
-              { key: "g h", label: "Home / Dashboard" },
-              { key: "g s", label: "Snapshots" },
-              { key: "g t", label: "Tags" },
-              ...(canWrite ? [{ key: "g i", label: "Import" }] : []),
-              { key: "?", label: "Keyboard shortcuts" },
-            ].map(({ key, label }) => (
+          {/* Options are links in spirit (they navigate) but live in a listbox so the input keeps focus. */}
+          <div
+            id={listId}
+            role="listbox"
+            tabIndex={-1}
+            aria-label="Results"
+            hidden={!showList}
+            className="m-0 list-none py-1.5 px-0"
+          >
+            {results.map((r, i) => (
               <div
-                key={key}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "4px 0",
-                }}
+                key={r.id}
+                id={optionId(i)}
+                role="option"
+                aria-selected={i === activeIdx}
+                tabIndex={-1}
+                onClick={() => open(r.id)}
+                onKeyDown={(e) => e.key === "Enter" && open(r.id)}
+                onMouseMove={() => setActiveIdx(i)}
+                className={`flex flex-col gap-0.5 border-l-2 px-4 py-2 ${
+                  i === activeIdx ? "border-accent bg-subtle" : "border-transparent"
+                }`}
               >
-                <span style={{ fontSize: 12, color: "var(--text-mid)" }}>{label}</span>
-                <kbd
-                  style={{
-                    fontSize: 10,
-                    padding: "2px 6px",
-                    borderRadius: 4,
-                    background: "var(--bg-overlay)",
-                    border: "1px solid var(--border-strong)",
-                    color: "var(--text-low)",
-                    fontFamily: "ui-monospace, monospace",
-                  }}
-                >
-                  {key}
-                </kbd>
+                <span className="truncate text-ui-base font-medium text-high">{r.url}</span>
+                {r.snippet && (
+                  <span className="text-ui-sm leading-normal text-mid">
+                    <Snippet text={r.snippet} />
+                  </span>
+                )}
               </div>
             ))}
           </div>
-        )}
-      </div>
-    </div>
+
+          {showList && (
+            <button
+              type="button"
+              onClick={goToSearch}
+              className="flex w-full items-center gap-1.5 border-0 border-t border-border bg-overlay px-4 py-2.5 text-left text-ui-sm text-mid hover:text-high"
+            >
+              <Search size={12} aria-hidden="true" />
+              See all results for "{trimmed}"
+            </button>
+          )}
+        </div>
+      )}
+
+      {!trimmed && (
+        <div className="px-4 pt-3 pb-4">
+          <div className="mb-2 text-ui-xs font-semibold tracking-wider text-low uppercase">
+            Quick navigation
+          </div>
+          {hints.map(({ key, label }) => (
+            <div key={key} className="flex items-center justify-between py-1">
+              <span className="text-ui-sm text-mid">{label}</span>
+              <kbd className="kbd">{key}</kbd>
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
   );
 }

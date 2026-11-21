@@ -156,7 +156,7 @@ describe("guest mode (publicRead + no session)", () => {
     await screen.findByText("alpha-tag");
     expect(screen.queryByLabelText(/Remove tag/)).toBeNull();
     expect(screen.queryByRole("combobox")).toBeNull();
-    expect(screen.queryByText(/Delete snapshot/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
     expect(calls).toEqual([]);
   });
 
@@ -221,7 +221,7 @@ describe("signed in on a public-read instance", () => {
 
     await screen.findByText("alpha-tag");
     expect(screen.getByLabelText("Remove tag alpha-tag")).toBeTruthy();
-    expect(screen.getByText("Delete snapshot")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
   });
 
   test("signing out lands on the dashboard as a guest, not on /login", async () => {

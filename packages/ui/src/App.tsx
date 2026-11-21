@@ -9,6 +9,7 @@ import type { WebFrostClient, WebFrostError } from "@webfrost/sdk";
 import { useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster, toast } from "sonner";
+import { ServerUnreachable } from "./components/ServerUnreachable";
 import { ClientContext, defaultClient } from "./context";
 import { AuthProvider, useAuth } from "./context/auth";
 import { ThemeProvider } from "./context/theme";
@@ -23,7 +24,6 @@ import { SchedulesPage } from "./pages/SchedulesPage";
 import { SearchPage } from "./pages/SearchPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SetupPage } from "./pages/SetupPage";
-import { SnapshotDetailPage } from "./pages/SnapshotDetailPage";
 import { SnapshotListPage } from "./pages/SnapshotListPage";
 import { TagsPage } from "./pages/TagsPage";
 
@@ -51,7 +51,10 @@ function LoginRoute() {
 }
 
 function AppRoutes() {
-  const { ready, needsSetup, isAuthenticated, publicRead } = useAuth();
+  const { ready, needsSetup, isAuthenticated, publicRead, bootError, retryBootstrap } = useAuth();
+
+  // The server could not be asked at all: a login form would be a lie.
+  if (bootError) return <ServerUnreachable error={bootError} onRetry={retryBootstrap} />;
 
   // Wait for session check before rendering routes to avoid flash
   if (!ready) return null;
@@ -76,8 +79,8 @@ function AppRoutes() {
         <>
           <Route element={<Layout />}>
             <Route index element={<DashboardPage />} />
-            <Route path="snapshots" element={<SnapshotListPage />} />
-            <Route path="snapshots/:id" element={<SnapshotDetailPage />} />
+            {/* One route for the list and the detail panel over it (/snapshots/:id). */}
+            <Route path="snapshots/:id?" element={<SnapshotListPage />} />
             <Route path="search" element={<SearchPage />} />
             <Route path="tags" element={<TagsPage />} />
             <Route

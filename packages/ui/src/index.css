@@ -3,78 +3,66 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ─────────────────────────────────────────────────────────────
-   Primitive color tokens
+   Design tokens: the "Ice Blue" palette shared with the docs site
+   (apps/docs/app/app.css). Components use the semantic names below,
+   either as Tailwind utilities (bg-surface, text-mid, border-border …)
+   or as var(--…) in the rare inline style. No raw palette colors in
+   components, so light and dark both follow from here.
    ───────────────────────────────────────────────────────────── */
 :root {
-  /* Zinc scale */
-  --color-zinc-50: #fafafa;
-  --color-zinc-100: #f4f4f5;
-  --color-zinc-200: #e4e4e7;
-  --color-zinc-300: #d4d4d8;
-  --color-zinc-400: #a1a1aa;
-  --color-zinc-500: #71717a;
-  --color-zinc-600: #52525b;
-  --color-zinc-700: #3f3f46;
-  --color-zinc-800: #27272a;
-  --color-zinc-900: #18181b;
-  --color-zinc-950: #09090b;
-
-  /* Violet scale */
-  --color-violet-200: #ddd6fe;
-  --color-violet-300: #c4b5fd;
-  --color-violet-400: #a78bfa;
-  --color-violet-500: #8b5cf6;
-  --color-violet-600: #7c3aed;
-  --color-violet-700: #6d28d9;
-}
-
-/* ─────────────────────────────────────────────────────────────
-   Semantic tokens — light mode (default)
-   ───────────────────────────────────────────────────────────── */
-:root {
-  --bg-app: var(--color-zinc-50);
+  color-scheme: light;
+  --bg-app: #f7f9fd;
   --bg-surface: #ffffff;
-  --bg-overlay: var(--color-zinc-100);
-  --bg-subtle: color-mix(in srgb, var(--color-zinc-100) 70%, transparent);
-  --border-default: var(--color-zinc-200);
-  --border-strong: var(--color-zinc-300);
-  --text-high: var(--color-zinc-900);
-  --text-mid: var(--color-zinc-500);
-  --text-low: var(--color-zinc-400);
-  --accent: var(--color-violet-600);
-  --accent-hover: var(--color-violet-700);
+  --bg-overlay: #edf2fa;
+  --bg-subtle: #e6efff;
+  --border-default: #dbe3f0;
+  --border-strong: #c0cce1;
+  --text-high: #0c1424;
+  --text-mid: #4d5b72;
+  /* >= 4.5:1 on app, surface and overlay backgrounds (WCAG AA for text). */
+  --text-low: #5f6d85;
+  --accent: #1d64d8;
+  --accent-hover: #1a56bb;
   --accent-fg: #ffffff;
-  --status-success: #059669;
-  --status-warning: #d97706;
-  --status-danger: #dc2626;
-  --status-pending: var(--color-zinc-500);
+  --accent-soft: #e6efff;
+  --status-success: #047857;
+  --status-warning: #a94a07;
+  --status-danger: #c62828;
+  --status-pending: #5f6d85;
+  --danger-fg: #ffffff;
+  --frost-from: #1d64d8;
+  --frost-to: #0891b2;
+  --scrim: rgb(8 12 22 / 0.5);
 }
 
-/* ─────────────────────────────────────────────────────────────
-   Semantic tokens — dark mode
-   ───────────────────────────────────────────────────────────── */
 .dark {
-  --bg-app: var(--color-zinc-950);
-  --bg-surface: var(--color-zinc-900);
-  --bg-overlay: var(--color-zinc-800);
-  --bg-subtle: color-mix(in srgb, var(--color-zinc-800) 60%, transparent);
-  --border-default: var(--color-zinc-800);
-  --border-strong: var(--color-zinc-700);
-  --text-high: var(--color-zinc-50);
-  --text-mid: var(--color-zinc-400);
-  --text-low: var(--color-zinc-600);
-  --accent: var(--color-violet-500);
-  --accent-hover: var(--color-violet-400);
-  --accent-fg: #ffffff;
-  --status-success: #10b981;
-  --status-warning: #f59e0b;
-  --status-danger: #ef4444;
-  --status-pending: var(--color-zinc-400);
+  color-scheme: dark;
+  --bg-app: #080c16;
+  --bg-surface: #0e1422;
+  --bg-overlay: #111a2a;
+  --bg-subtle: #12223a;
+  --border-default: #1b2538;
+  --border-strong: #2a3753;
+  --text-high: #e9eef8;
+  --text-mid: #97a3b8;
+  --text-low: #8592a8;
+  --accent: #7cc4ff;
+  --accent-hover: #a9d6ff;
+  --accent-fg: #06101e;
+  --accent-soft: #12223a;
+  --status-success: #34d399;
+  --status-warning: #fbbf24;
+  --status-danger: #f87171;
+  --status-pending: #8592a8;
+  --danger-fg: #06101e;
+  --frost-from: #4f9dff;
+  --frost-to: #7ee0ff;
+  --scrim: rgb(2 4 10 / 0.65);
 }
 
 /* ─────────────────────────────────────────────────────────────
-   Tailwind theme — semantic tokens as utilities
-   bg-app, bg-surface, text-high, border-border, etc.
+   Tailwind theme: semantic tokens as utilities
+   bg-app, bg-surface, text-high, border-border, ring-accent …
    ───────────────────────────────────────────────────────────── */
 @theme inline {
   --color-app: var(--bg-app);
@@ -89,13 +77,16 @@
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
   --color-success: var(--status-success);
   --color-warning: var(--status-warning);
   --color-danger: var(--status-danger);
   --color-pending: var(--status-pending);
-
-  /* Keep --color-primary as alias for accent (backward compat) */
+  --color-danger-fg: var(--danger-fg);
+  --color-scrim: var(--scrim);
   --color-primary: var(--accent);
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "Fira Code", "JetBrains Mono", monospace;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -130,31 +121,57 @@
   line-height: 1.6;
 }
 
+/* "Frost" in the wordmark, and any text that should read as ice. */
+@utility text-frost {
+  background: linear-gradient(90deg, var(--frost-from), var(--frost-to));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
 /* ─────────────────────────────────────────────────────────────
-   Motion utilities
+   Shared component styles
    ───────────────────────────────────────────────────────────── */
-@keyframes chip-in {
-  from {
-    opacity: 0;
-    transform: scale(0.85) translateY(-2px);
+@utility field {
+  width: 100%;
+  border: 1px solid var(--border-default);
+  border-radius: 0.375rem;
+  background: var(--bg-surface);
+  color: var(--text-high);
+  padding: 0.4rem 0.7rem;
+  font-size: 13px;
+  line-height: 1.4;
+  &::placeholder {
+    color: var(--text-low);
   }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
+  &:hover:not(:disabled) {
+    border-color: var(--border-strong);
+  }
+  &:focus-visible {
+    border-color: var(--accent);
+  }
+  &:disabled {
+    opacity: 0.6;
+  }
+  &[aria-invalid="true"] {
+    border-color: var(--status-danger);
   }
 }
 
-@keyframes chip-out {
-  from {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-  to {
-    opacity: 0;
-    transform: scale(0.85) translateY(-2px);
-  }
+@utility kbd {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-strong);
+  color: var(--text-mid);
+  white-space: nowrap;
 }
 
+/* ─────────────────────────────────────────────────────────────
+   Motion
+   ───────────────────────────────────────────────────────────── */
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -164,38 +181,40 @@
   }
 }
 
-@keyframes slide-in-left {
+@keyframes slide-in-right {
   from {
-    transform: translateX(-100%);
+    transform: translateX(100%);
   }
   to {
     transform: translateX(0);
   }
 }
 
-@utility transition-panel {
-  transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1), transform 220ms cubic-bezier(0.4, 0, 0.2, 1),
-    margin 220ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-@utility transition-dropdown {
-  transition: opacity 150ms ease, transform 150ms ease;
-}
-
-@utility transition-fade {
-  transition: opacity 150ms ease;
-}
-
-@utility animate-chip-in {
-  animation: chip-in 150ms ease forwards;
-}
-
-@utility animate-chip-out {
-  animation: chip-out 150ms ease forwards;
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @utility animate-fade-in {
-  animation: fade-in 200ms ease forwards;
+  animation: fade-in 160ms ease both;
+}
+
+@utility animate-slide-in-right {
+  animation: slide-in-right 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@utility animate-pop-in {
+  animation: pop-in 140ms ease both;
+}
+
+@utility transition-panel {
+  transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1), transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -211,15 +230,21 @@
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
   }
 
   body {
     margin: 0;
     background-color: var(--bg-app);
     color: var(--text-high);
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: var(--font-sans);
     font-size: 14px;
     line-height: 1.5;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--accent) 24%, transparent);
   }
 
   a {
@@ -231,37 +256,74 @@
     text-decoration: underline;
   }
 
+  /* One keyboard focus ring for everything interactive. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* Text fields get the ring inside their border so it is never clipped. */
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline-offset: 0;
+  }
+
   /* Monospace for URL-like content */
   .font-mono,
   [data-url],
   code,
   kbd,
   pre {
-    font-family: ui-monospace, "Cascadia Code", "Fira Code", "JetBrains Mono", monospace;
+    font-family: var(--font-mono);
   }
 
   /* FTS5 highlighted snippets */
   mark {
     background: color-mix(in srgb, var(--accent) 20%, transparent);
-    color: var(--accent);
+    color: inherit;
     border-radius: 2px;
     padding: 0 2px;
-    font-weight: 500;
+    font-weight: 600;
   }
-}
 
-/* Tailwind 4 no longer gives buttons a pointer cursor; everything clickable gets one back. */
-@layer base {
-  button:not(:disabled),
-  [role="button"]:not([aria-disabled="true"]),
+  dialog {
+    color: var(--text-high);
+  }
+
+  dialog::backdrop {
+    background: var(--scrim);
+    backdrop-filter: blur(3px);
+  }
+
+  button,
+  [role="button"],
   [role="tab"],
   [role="option"],
-  [role="menuitem"],
   summary,
   select,
   label[for],
-  input[type="checkbox"]:not(:disabled),
-  input[type="radio"]:not(:disabled) {
+  input[type="checkbox"],
+  input[type="radio"] {
     cursor: pointer;
+  }
+
+  button:disabled,
+  [aria-disabled="true"],
+  input:disabled,
+  select:disabled {
+    cursor: not-allowed;
+  }
+}
+
+/* Respect the user's motion preference: no entrance animations, no sliding drawers. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

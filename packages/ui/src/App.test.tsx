@@ -13,7 +13,7 @@ import { WebFrostError } from "@webfrost/sdk";
 import { MemoryRouter } from "react-router-dom";
 import App from "./App";
 import { ClientContext } from "./context";
-import { SnapshotDetailPanel } from "./pages/SnapshotDetailPanel";
+import { SnapshotDetailPanel } from "./features/snapshots/detail/SnapshotDetailPanel";
 
 afterEach(() => {
   cleanup();
@@ -149,8 +149,8 @@ describe("ListPage — data renders", () => {
     renderApp(client);
 
     await screen.findByText("https://example.com");
-    const btn = screen.getByRole("button", { name: /example\.com/ });
-    expect(btn).toBeTruthy();
+    const link = screen.getByRole("link", { name: /example\.com/ });
+    expect(link.getAttribute("href")).toBe("/snapshots/42");
   });
 });
 
@@ -251,10 +251,10 @@ describe("DetailPage — renders results", () => {
     renderApp(client, "/snapshots/8");
 
     await screen.findByRole("link", { name: /empty\.com/ });
-    expect(screen.getByText("No extractor results yet. Check back soon.")).toBeTruthy();
+    expect(screen.getByText("None yet")).toBeTruthy();
   });
 
-  test("renders readability result with title and excerpt", async () => {
+  test("renders the readability result with title, byline and text", async () => {
     const readabilityContent = JSON.stringify({
       title: "Test Article Title",
       byline: "By Test Author",
@@ -279,7 +279,7 @@ describe("DetailPage — renders results", () => {
     await screen.findByRole("link", { name: /readable\.com/ });
     expect(screen.getByText("Test Article Title")).toBeTruthy();
     expect(screen.getByText("By Test Author")).toBeTruthy();
-    expect(screen.getByText("This is the excerpt.")).toBeTruthy();
+    expect(screen.getByText("Full text content here.")).toBeTruthy();
   });
 });
 
@@ -319,7 +319,7 @@ describe("Reader tab", () => {
       <QueryClientProvider client={queryClient}>
         <ClientContext.Provider value={client}>
           <MemoryRouter>
-            <SnapshotDetailPanel snapshotId={30} onClose={() => {}} onDelete={async () => {}} />
+            <SnapshotDetailPanel snapshotId={30} onClose={() => {}} onDeleted={async () => {}} />
           </MemoryRouter>
         </ClientContext.Provider>
       </QueryClientProvider>,
@@ -330,6 +330,63 @@ describe("Reader tab", () => {
     expect(screen.getByText("By Someone")).toBeTruthy();
     expect(screen.getByText("Second <b>paragraph</b>.")).toBeTruthy();
     expect(container.querySelector("b")).toBeNull();
+  });
+});
+
+describe("Auth bootstrap failures", () => {
+  test("a failing status check shows the unreachable screen, not the login form", async () => {
+    let calls = 0;
+    const client = mockClient({});
+    (client as unknown as { getSetupStatus: () => Promise<unknown> }).getSetupStatus = () => {
+      calls++;
+      return calls === 1
+        ? Promise.reject(new WebFrostError(500, "boom"))
+        : Promise.resolve({ needsSetup: false });
+    };
+    renderApp(client, "/");
+
+    await screen.findByText("Can't reach the WebFrost server");
+    expect(screen.queryByText("Sign in to continue")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByRole("heading", { name: "Dashboard" });
+  });
+
+  test("a 503 from getMe also shows the unreachable screen", async () => {
+    const client = mockClient({});
+    (client as unknown as { getMe: () => Promise<unknown> }).getMe = () =>
+      Promise.reject(new WebFrostError(503, "down"));
+    renderApp(client, "/");
+    await screen.findByText("Can't reach the WebFrost server");
+  });
+});
+
+describe("ListPage — failures are not empty", () => {
+  test("a failed snapshot query shows an error with Retry instead of the empty state", async () => {
+    let fail = true;
+    const client = mockClient({
+      listSnapshots: () =>
+        fail
+          ? Promise.reject(new WebFrostError(500, "db down"))
+          : Promise.resolve(snapshotPage([makeSnapshot({ url: "https://back.example" })])),
+    });
+    renderApp(client, "/snapshots");
+
+    await screen.findByText("Could not load snapshots", {}, { timeout: 3000 });
+    expect(screen.queryByText("No snapshots yet")).toBeNull();
+
+    fail = false;
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByText("https://back.example");
+  });
+
+  test("a malformed ?detail= opens no panel", async () => {
+    const client = mockClient({
+      listSnapshots: () => Promise.resolve(snapshotPage([makeSnapshot({ id: 1 })])),
+    });
+    renderApp(client, "/snapshots?detail=abc");
+    await screen.findByText("https://example.com");
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
 

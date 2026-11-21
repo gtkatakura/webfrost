@@ -1,47 +1,27 @@
 import { useQuery } from "@tanstack/react-query";
 import type { SearchResult, Tag } from "@webfrost/sdk";
-import { Bookmark, BookmarkCheck, Search, X } from "lucide-react";
+import { Search, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { ErrorBanner } from "../components/ErrorBanner";
+import { Link, useSearchParams } from "react-router-dom";
 import { Pagination } from "../components/Pagination";
 import { Snippet } from "../components/Snippet";
+import { StatusBadge } from "../components/StatusBadge";
+import { EmptyState, ErrorState, Skeleton } from "../components/ui/StateViews";
 import { useClient } from "../context";
+import { MOD_KEY } from "../features/layout/Sidebar";
+import {
+  FilterSidebar,
+  type Filters,
+  NO_FILTERS,
+  hasFilters,
+} from "../features/search/FilterSidebar";
+import { SavedSearches } from "../features/search/SavedSearches";
 import { useSearchPage } from "../hooks/useSearch";
 import { tagKeys } from "../hooks/useTags";
+import { parsePositiveInt } from "../lib/url";
 
-// ─── Saved searches ────────────────────────────────────────────────────────────
-
-const SAVED_KEY = "webfrost-saved-searches";
-const MAX_SAVED = 10;
-
-interface SavedSearch {
-  name: string;
-  q: string;
-}
-
-function loadSaved(): SavedSearch[] {
-  try {
-    return JSON.parse(localStorage.getItem(SAVED_KEY) ?? "[]") as SavedSearch[];
-  } catch {
-    return [];
-  }
-}
-
-function saveSaved(list: SavedSearch[]) {
-  try {
-    localStorage.setItem(SAVED_KEY, JSON.stringify(list.slice(0, MAX_SAVED)));
-  } catch {}
-}
-
-// ─── Date presets ─────────────────────────────────────────────────────────────
-
-const DATE_PRESETS = [
-  { label: "Any time", days: null },
-  { label: "Last 7 days", days: 7 },
-  { label: "Last 30 days", days: 30 },
-  { label: "Last 90 days", days: 90 },
-] as const;
+const PAGE_SIZE = 20;
+const DEBOUNCE_MS = 350;
 
 function dateFromDays(days: number): string {
   const d = new Date();
@@ -49,176 +29,76 @@ function dateFromDays(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const KNOWN_EXTRACTORS = ["warc", "readability", "pdf", "screenshot", "dom-snapshot"];
-const PAGE_SIZE = 20;
-// The snapshot statuses the server stores (see packages/core/src/pipeline.ts).
-const STATUSES = ["done", "failed", "pending"] as const;
-
-const statusColors: Record<string, string> = {
-  done: "var(--status-success)",
-  failed: "var(--status-danger)",
-  pending: "var(--status-pending)",
-};
-
-// ─── Small UI helpers ─────────────────────────────────────────────────────────
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        fontSize: 10,
-        fontWeight: 700,
-        textTransform: "uppercase",
-        letterSpacing: "0.07em",
-        color: "var(--text-low)",
-        marginBottom: 6,
-        marginTop: 16,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function FilterChip({
-  active,
-  onClick,
-  children,
-  color,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-  color?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 5,
-        padding: "4px 8px",
-        borderRadius: 5,
-        border: active
-          ? `1px solid ${color ?? "var(--accent)"}`
-          : "1px solid var(--border-default)",
-        background: active
-          ? `color-mix(in srgb, ${color ?? "var(--accent)"} 12%, transparent)`
-          : "none",
-        color: active ? (color ?? "var(--accent)") : "var(--text-mid)",
-        fontSize: 12,
-        fontWeight: active ? 600 : 400,
-        cursor: "pointer",
-        transition: "all 120ms",
-        whiteSpace: "nowrap",
-      }}
-    >
-      {color && (
-        <span
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            background: color,
-            flexShrink: 0,
-          }}
-        />
-      )}
-      {children}
-    </button>
-  );
-}
-
-// ─── Search result card ────────────────────────────────────────────────────────
-
 function ResultCard({ result }: { result: SearchResult }) {
-  const navigate = useNavigate();
   return (
-    <button
-      type="button"
-      onClick={() => navigate(`/snapshots/${result.id}`)}
-      style={{
-        width: "100%",
-        textAlign: "left",
-        background: "var(--bg-surface)",
-        border: "1px solid var(--border-default)",
-        borderRadius: 8,
-        padding: "12px 16px",
-        cursor: "pointer",
-        display: "flex",
-        flexDirection: "column",
-        gap: 6,
-        transition: "border-color 120ms, box-shadow 120ms",
-      }}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLElement).style.borderColor = "var(--accent)";
-        (e.currentTarget as HTMLElement).style.boxShadow =
-          "0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent)";
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLElement).style.borderColor = "var(--border-default)";
-        (e.currentTarget as HTMLElement).style.boxShadow = "none";
-      }}
+    <Link
+      to={`/snapshots/${result.id}`}
+      className="flex flex-col gap-1.5 rounded-lg border border-border bg-surface px-4 py-3 text-inherit no-underline transition-colors hover:border-accent hover:no-underline hover:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent)_15%,transparent)]"
     >
-      <div
-        style={{
-          fontSize: 13,
-          fontWeight: 500,
-          color: "var(--accent)",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {result.url}
+      <div className="flex items-center justify-between gap-3">
+        <span className="truncate text-ui-base font-medium text-accent">{result.url}</span>
+        <StatusBadge status={result.status} />
       </div>
       {result.snippet && (
-        <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.6 }}>
+        <div className="text-ui-sm leading-relaxed text-mid">
           <Snippet text={result.snippet} />
         </div>
       )}
-    </button>
+    </Link>
   );
 }
-
-// ─── Main page ─────────────────────────────────────────────────────────────────
 
 export function SearchPage() {
   const client = useClient();
   const [params, setParams] = useSearchParams();
-  const navigate = useNavigate();
-
-  const initialQ = params.get("q") ?? "";
-  const [inputVal, setInputVal] = useState(initialQ);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Sync input with URL
-  useEffect(() => {
-    setInputVal(params.get("q") ?? "");
-  }, [params]);
-
-  function setQ(q: string) {
-    setInputVal(q);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      const next = new URLSearchParams(params);
-      if (q.trim()) {
-        next.set("q", q.trim());
-      } else {
-        next.delete("q");
-      }
-      if (q.trim() !== (params.get("q") ?? "")) next.delete("page");
-      setParams(next, { replace: true });
-    }, 350);
-  }
 
   const ftsQuery = params.get("q") ?? "";
-  const pageParam = Number.parseInt(params.get("page") ?? "1", 10);
-  const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+  const page = parsePositiveInt(params.get("page")) ?? 1;
+
+  // The input is the user's draft; the URL (q) is the committed query. They are reconciled in
+  // one direction at a time: typing commits to the URL after a pause, and the URL only pushes
+  // into the input when q changed from somewhere else (saved search, back button, palette).
+  const [inputVal, setInputVal] = useState(ftsQuery);
+  const committed = useRef(ftsQuery);
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (ftsQuery !== committed.current) {
+      committed.current = ftsQuery;
+      setInputVal(ftsQuery);
+    }
+  }, [ftsQuery]);
+
+  useEffect(
+    () => () => {
+      if (debounce.current) clearTimeout(debounce.current);
+    },
+    [],
+  );
+
+  function commitQuery(q: string) {
+    const trimmed = q.trim();
+    committed.current = trimmed;
+    // Functional update: other params (page) are read at commit time, not captured from render.
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (trimmed) next.set("q", trimmed);
+        else next.delete("q");
+        if (trimmed !== (prev.get("q") ?? "")) next.delete("page");
+        return next;
+      },
+      { replace: true },
+    );
+  }
+
+  function setQ(q: string, immediate = false) {
+    setInputVal(q);
+    if (debounce.current) clearTimeout(debounce.current);
+    if (immediate) commitQuery(q);
+    else debounce.current = setTimeout(() => commitQuery(q), DEBOUNCE_MS);
+  }
+
   const {
     results: rawResults,
     total,
@@ -229,97 +109,40 @@ export function SearchPage() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   function goToPage(p: number) {
-    const next = new URLSearchParams(params);
-    if (p <= 1) next.delete("page");
-    else next.set("page", String(p));
-    setParams(next);
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (p <= 1) next.delete("page");
+      else next.set("page", String(p));
+      return next;
+    });
   }
 
-  // ── Sidebar filters state ─────────────────────────────────────────────────
-  const [activeStatuses, setActiveStatuses] = useState<Set<string>>(new Set());
-  const [activeDays, setActiveDays] = useState<number | null>(null);
-  const [activeExtractors, setActiveExtractors] = useState<Set<string>>(new Set());
-  const [activeTags, setActiveTags] = useState<Set<number>>(new Set());
+  // ── Filters (applied to the page of results already loaded) ────────────────
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtering = hasFilters(filters);
 
   const { data: allTags = [] } = useQuery<Tag[]>({
     queryKey: tagKeys.list(),
     queryFn: () => client.listTags(),
   });
 
-  // ── Apply filters to FTS results ──────────────────────────────────────────
-  const dateThreshold = activeDays ? dateFromDays(activeDays) : null;
-
   const results = useMemo(() => {
-    if (
-      activeStatuses.size === 0 &&
-      activeDays === null &&
-      activeExtractors.size === 0 &&
-      activeTags.size === 0
-    ) {
-      return rawResults;
-    }
+    if (!hasFilters(filters)) return rawResults;
+    const threshold = filters.days ? dateFromDays(filters.days) : null;
     return rawResults.filter((r) => {
-      const meta = r;
-      if (activeStatuses.size > 0 && !activeStatuses.has(meta.status)) return false;
-      if (dateThreshold && meta.createdAt < dateThreshold) return false;
-      if (activeExtractors.size > 0) {
-        for (const ext of activeExtractors) {
-          if (!meta.extractors.includes(ext)) return false;
-        }
-      }
-      if (activeTags.size > 0) {
-        const tagIds = new Set(meta.tags.map((t) => t.id));
-        for (const tid of activeTags) {
-          if (!tagIds.has(tid)) return false;
-        }
-      }
+      if (filters.statuses.size > 0 && !filters.statuses.has(r.status)) return false;
+      if (threshold && r.createdAt < threshold) return false;
+      for (const ext of filters.extractors) if (!r.extractors.includes(ext)) return false;
+      const tagIds = new Set(r.tags.map((t) => t.id));
+      for (const tid of filters.tags) if (!tagIds.has(tid)) return false;
       return true;
     });
-  }, [rawResults, activeStatuses, activeDays, dateThreshold, activeExtractors, activeTags]);
-
-  // ── Saved searches ────────────────────────────────────────────────────────
-  const [saved, setSaved] = useState<SavedSearch[]>(loadSaved);
-  const [saveNameInput, setSaveNameInput] = useState("");
-  const [showSaveInput, setShowSaveInput] = useState(false);
-
-  const isSaved = saved.some((s) => s.q === ftsQuery);
-
-  function handleSave() {
-    if (!ftsQuery.trim()) return;
-    if (isSaved) {
-      const next = saved.filter((s) => s.q !== ftsQuery);
-      setSaved(next);
-      saveSaved(next);
-      return;
-    }
-    setShowSaveInput(true);
-    setSaveNameInput(ftsQuery);
-  }
-
-  function confirmSave() {
-    const name = saveNameInput.trim() || ftsQuery;
-    const next = [{ name, q: ftsQuery }, ...saved.filter((s) => s.q !== ftsQuery)].slice(
-      0,
-      MAX_SAVED,
-    );
-    setSaved(next);
-    saveSaved(next);
-    setShowSaveInput(false);
-  }
-
-  function removeSaved(q: string) {
-    const next = saved.filter((s) => s.q !== q);
-    setSaved(next);
-    saveSaved(next);
-  }
-
-  function applySaved(s: SavedSearch) {
-    navigate(`/search?q=${encodeURIComponent(s.q)}`);
-  }
+  }, [rawResults, filters]);
 
   const pager = (
     <Pagination
-      page={page}
+      page={Math.min(page, totalPages)}
       totalPages={totalPages}
       onPrev={() => goToPage(page - 1)}
       onNext={() => goToPage(page + 1)}
@@ -327,501 +150,105 @@ export function SearchPage() {
     />
   );
 
-  const hasFilters =
-    activeStatuses.size > 0 ||
-    activeDays !== null ||
-    activeExtractors.size > 0 ||
-    activeTags.size > 0;
-
   return (
-    <div
-      style={{
-        display: "flex",
-        minHeight: "100vh",
-        background: "var(--bg-app)",
-      }}
-    >
-      {/* ── Sidebar filters ─────────────────────────────────────────────── */}
+    <div className="flex min-h-[calc(100dvh-3rem)] flex-col bg-app lg:min-h-dvh lg:flex-row">
+      {/* ── Filters: a column on desktop, a collapsible block above the results on mobile ── */}
       <aside
-        style={{
-          width: 220,
-          minWidth: 220,
-          padding: "24px 16px",
-          borderRight: "1px solid var(--border-default)",
-          background: "var(--bg-surface)",
-          position: "sticky",
-          top: 0,
-          height: "100vh",
-          overflowY: "auto",
-        }}
+        aria-label="Filters"
+        className="border-b border-border bg-surface lg:sticky lg:top-0 lg:h-dvh lg:w-60 lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-b-0"
       >
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 700,
-            textTransform: "uppercase",
-            letterSpacing: "0.07em",
-            color: "var(--text-low)",
-            marginBottom: 16,
-          }}
+        <button
+          type="button"
+          onClick={() => setFiltersOpen((v) => !v)}
+          aria-expanded={filtersOpen}
+          aria-controls="search-filters"
+          className="flex w-full items-center justify-between border-0 bg-transparent px-4 py-3 text-ui-base font-medium text-high lg:hidden"
         >
-          Filters
+          <span className="inline-flex items-center gap-2">
+            <SlidersHorizontal size={14} aria-hidden="true" />
+            Filter this page{filtering ? " (active)" : ""}
+          </span>
+          <span className="text-mid">{filtersOpen ? "Hide" : "Show"}</span>
+        </button>
+        <div
+          id="search-filters"
+          className={`${filtersOpen ? "block" : "hidden"} px-4 pb-4 lg:block lg:px-4 lg:py-6`}
+        >
+          <FilterSidebar filters={filters} onChange={setFilters} allTags={allTags} />
         </div>
-
-        {hasFilters && (
-          <button
-            type="button"
-            onClick={() => {
-              setActiveStatuses(new Set());
-              setActiveDays(null);
-              setActiveExtractors(new Set());
-              setActiveTags(new Set());
-            }}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: "var(--text-low)",
-              fontSize: 11,
-              padding: 0,
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-              marginBottom: 8,
-            }}
-          >
-            <X size={10} />
-            Clear all filters
-          </button>
-        )}
-
-        <div style={{ fontSize: 11, color: "var(--text-low)", lineHeight: 1.4 }}>
-          Filters apply to the current page of results only.
-        </div>
-
-        {/* Status */}
-        <SectionLabel>Status</SectionLabel>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {STATUSES.map((s) => (
-            <FilterChip
-              key={s}
-              active={activeStatuses.has(s)}
-              color={statusColors[s]}
-              onClick={() =>
-                setActiveStatuses((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(s)) next.delete(s);
-                  else next.add(s);
-                  return next;
-                })
-              }
-            >
-              {s}
-            </FilterChip>
-          ))}
-        </div>
-
-        {/* Date range */}
-        <SectionLabel>Date</SectionLabel>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {DATE_PRESETS.map(({ label, days }) => (
-            <FilterChip
-              key={label}
-              active={activeDays === days}
-              onClick={() => setActiveDays(days)}
-            >
-              {label}
-            </FilterChip>
-          ))}
-        </div>
-
-        {/* Extractors */}
-        <SectionLabel>Has extractor</SectionLabel>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {KNOWN_EXTRACTORS.map((ext) => (
-            <FilterChip
-              key={ext}
-              active={activeExtractors.has(ext)}
-              onClick={() =>
-                setActiveExtractors((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(ext)) next.delete(ext);
-                  else next.add(ext);
-                  return next;
-                })
-              }
-            >
-              {ext}
-            </FilterChip>
-          ))}
-        </div>
-
-        {/* Tags */}
-        {allTags.length > 0 && (
-          <>
-            <SectionLabel>Tags</SectionLabel>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {allTags.map((tag) => (
-                <FilterChip
-                  key={tag.id}
-                  active={activeTags.has(tag.id)}
-                  color={tag.color ?? undefined}
-                  onClick={() =>
-                    setActiveTags((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(tag.id)) next.delete(tag.id);
-                      else next.add(tag.id);
-                      return next;
-                    })
-                  }
-                >
-                  {tag.name}
-                </FilterChip>
-              ))}
-            </div>
-          </>
-        )}
       </aside>
 
-      {/* ── Main content ────────────────────────────────────────────────── */}
-      <main style={{ flex: 1, padding: "24px 28px", minWidth: 0 }}>
-        {/* Search input + save */}
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            alignItems: "center",
-            marginBottom: 16,
-          }}
-        >
-          <div
-            style={{
-              flex: 1,
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border-default)",
-              borderRadius: 8,
-              padding: "8px 12px",
-            }}
-          >
-            <Search size={15} style={{ color: "var(--text-low)", flexShrink: 0 }} />
+      <main className="min-w-0 flex-1 px-4 py-5 sm:px-7 sm:py-6">
+        <h1 className="sr-only">Search</h1>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 focus-within:border-accent">
+            <Search size={15} className="shrink-0 text-low" aria-hidden="true" />
             <input
               type="text"
+              aria-label="Search snapshots"
               placeholder="Search…"
               value={inputVal}
               onChange={(e) => setQ(e.target.value)}
-              style={{
-                flex: 1,
-                background: "none",
-                border: "none",
-                outline: "none",
-                fontSize: 14,
-                color: "var(--text-high)",
-              }}
+              onKeyDown={(e) => e.key === "Enter" && setQ(inputVal, true)}
+              className="min-w-0 flex-1 border-0 bg-transparent text-ui-base text-high placeholder:text-low"
             />
             {inputVal && (
               <button
                 type="button"
-                onClick={() => setQ("")}
-                style={{
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  color: "var(--text-low)",
-                  display: "flex",
-                }}
+                onClick={() => setQ("", true)}
+                aria-label="Clear search"
+                className="flex border-0 bg-transparent p-0 text-low hover:text-high"
               >
-                <X size={14} />
+                <X size={14} aria-hidden="true" />
               </button>
             )}
           </div>
-
-          {ftsQuery && (
-            <button
-              type="button"
-              onClick={handleSave}
-              title={isSaved ? "Remove saved search" : "Save this search"}
-              style={{
-                background: isSaved
-                  ? "color-mix(in srgb, var(--accent) 12%, transparent)"
-                  : "var(--bg-surface)",
-                border: "1px solid var(--border-default)",
-                borderRadius: 8,
-                padding: "8px 12px",
-                cursor: "pointer",
-                color: isSaved ? "var(--accent)" : "var(--text-mid)",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                fontSize: 12,
-                fontWeight: 500,
-                whiteSpace: "nowrap",
-              }}
-            >
-              {isSaved ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
-              {isSaved ? "Saved" : "Save"}
-            </button>
-          )}
+          <SavedSearches query={ftsQuery} onApply={(q) => setQ(q, true)} />
         </div>
 
-        {/* Save name input */}
-        {showSaveInput && (
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              alignItems: "center",
-              marginBottom: 12,
-              padding: "10px 12px",
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border-default)",
-              borderRadius: 8,
-            }}
-          >
-            <input
-              type="text"
-              placeholder="Name this search…"
-              value={saveNameInput}
-              onChange={(e) => setSaveNameInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") confirmSave();
-                if (e.key === "Escape") setShowSaveInput(false);
-              }}
-              style={{
-                flex: 1,
-                background: "none",
-                border: "none",
-                outline: "none",
-                fontSize: 13,
-                color: "var(--text-high)",
-              }}
-              // biome-ignore lint/a11y/noAutofocus: intentional focus for user confirmation
-              autoFocus
-            />
-            <button
-              type="button"
-              onClick={confirmSave}
-              style={{
-                padding: "4px 10px",
-                background: "var(--accent)",
-                color: "var(--accent-fg)",
-                border: "none",
-                borderRadius: 5,
-                cursor: "pointer",
-                fontSize: 12,
-                fontWeight: 500,
-              }}
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowSaveInput(false)}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                color: "var(--text-low)",
-                display: "flex",
-              }}
-            >
-              <X size={14} />
-            </button>
-          </div>
-        )}
+        <div className="mt-4">
+          {ftsQuery && !loading && !searchError && (
+            <p role="status" className="mb-3.5 mt-0 text-ui-sm text-mid">
+              {total === 0
+                ? "No results"
+                : filtering
+                  ? `${results.length} of ${rawResults.length} result${rawResults.length !== 1 ? "s" : ""} on this page match the filters (${total} total)`
+                  : `${total} result${total !== 1 ? "s" : ""}`}
+            </p>
+          )}
 
-        {/* Saved searches chips */}
-        {saved.length > 0 && (
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 6,
-              marginBottom: 16,
-            }}
-          >
-            {saved.map((s) => (
-              <span
-                key={s.q}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  padding: "3px 8px 3px 10px",
-                  borderRadius: 20,
-                  background:
-                    s.q === ftsQuery
-                      ? "color-mix(in srgb, var(--accent) 12%, transparent)"
-                      : "var(--bg-overlay)",
-                  border:
-                    s.q === ftsQuery
-                      ? "1px solid color-mix(in srgb, var(--accent) 30%, transparent)"
-                      : "1px solid var(--border-default)",
-                  color: s.q === ftsQuery ? "var(--accent)" : "var(--text-mid)",
-                  fontSize: 12,
-                  fontWeight: 500,
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => applySaved(s)}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    padding: 0,
-                    color: "inherit",
-                    fontSize: 12,
-                    fontWeight: 500,
-                  }}
-                >
-                  {s.name}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => removeSaved(s.q)}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    padding: 0,
-                    color: "var(--text-low)",
-                    display: "flex",
-                    marginLeft: 2,
-                  }}
-                >
-                  <X size={10} />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Results count */}
-        {ftsQuery && !loading && !searchError && (
-          <div style={{ fontSize: 12, color: "var(--text-low)", marginBottom: 14 }}>
-            {total === 0
-              ? "No results"
-              : hasFilters
-                ? `${results.length} of ${rawResults.length} result${rawResults.length !== 1 ? "s" : ""} on this page match filters (${total} total)`
-                : `${total} result${total !== 1 ? "s" : ""}`}
-          </div>
-        )}
-
-        {/* Results */}
-        {ftsQuery && searchError ? (
-          <div role="alert">
-            <ErrorBanner
-              message={`Search failed: ${searchError instanceof Error ? searchError.message : String(searchError)}`}
-            />
-            <button
-              type="button"
-              onClick={() => refetch()}
-              style={{
-                padding: "4px 10px",
-                background: "var(--bg-surface)",
-                border: "1px solid var(--border-default)",
-                borderRadius: 5,
-                cursor: "pointer",
-                fontSize: 12,
-                color: "var(--text-mid)",
-              }}
-            >
-              Retry
-            </button>
-          </div>
-        ) : ftsQuery ? (
-          loading ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  style={{
-                    height: 72,
-                    borderRadius: 8,
-                    background: "var(--bg-overlay)",
-                    opacity: 0.6,
-                  }}
-                />
-              ))}
-            </div>
-          ) : results.length === 0 ? (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 10,
-                padding: "48px 0",
-                color: "var(--text-low)",
-              }}
-            >
-              <Search size={28} style={{ opacity: 0.4 }} />
-              <div style={{ textAlign: "center" }}>
-                <div
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 600,
-                    color: "var(--text-mid)",
-                  }}
-                >
-                  No results for "{ftsQuery}"
-                </div>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: "var(--text-low)",
-                    marginTop: 4,
-                  }}
-                >
-                  Try different keywords or clear some filters.
-                </div>
+          {ftsQuery && searchError ? (
+            <ErrorState title="Search failed" error={searchError} onRetry={() => refetch()} />
+          ) : ftsQuery ? (
+            loading ? (
+              <div className="flex flex-col gap-2" role="status" aria-label="Searching">
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-[4.5rem] rounded-lg" />
+                ))}
               </div>
-              {pager}
-            </div>
+            ) : results.length === 0 ? (
+              <div>
+                <EmptyState icon={<Search size={26} />} title={`No results for "${ftsQuery}"`}>
+                  {filtering && rawResults.length > 0
+                    ? "No result on this page matches the filters. Clear them to see the other results."
+                    : "Try different keywords."}
+                </EmptyState>
+                {pager}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {results.map((r) => (
+                  <ResultCard key={r.id} result={r} />
+                ))}
+                {pager}
+              </div>
+            )
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {results.map((r) => (
-                <ResultCard key={r.id} result={r} />
-              ))}
-              {pager}
-            </div>
-          )
-        ) : (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 10,
-              padding: "64px 0",
-              color: "var(--text-low)",
-            }}
-          >
-            <Search size={32} style={{ opacity: 0.3 }} />
-            <div style={{ fontSize: 14, color: "var(--text-mid)" }}>
-              Start typing to search your snapshots
-            </div>
-            <div style={{ fontSize: 12, color: "var(--text-low)" }}>
-              Press{" "}
-              <kbd
-                style={{
-                  padding: "1px 5px",
-                  borderRadius: 4,
-                  background: "var(--bg-overlay)",
-                  border: "1px solid var(--border-strong)",
-                  fontFamily: "monospace",
-                  fontSize: 11,
-                }}
-              >
-                ⌘K
-              </kbd>{" "}
-              for quick search from anywhere
-            </div>
-          </div>
-        )}
+            <EmptyState icon={<Search size={28} />} title="Start typing to search your snapshots">
+              Press <kbd className="kbd">{MOD_KEY} K</kbd> for quick search from anywhere
+            </EmptyState>
+          )}
+        </div>
       </main>
     </div>
   );

@@ -1,123 +1,94 @@
 import { ArrowLeft, Tag } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
-import { TagChip } from "../components";
+import { TagChip } from "../components/TagChip";
+import { Button } from "../components/ui/Button";
+import { EmptyState, ErrorState, LoadingRows } from "../components/ui/StateViews";
 import { useAuth } from "../context/auth";
-import { useTags } from "../hooks";
-
-const inputCls =
-  "py-2 px-3 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500";
+import { useTags } from "../hooks/useTags";
 
 export function TagsPage() {
   const navigate = useNavigate();
   const { canWrite } = useAuth();
-  const { tags, loading, createTag, deleteTag } = useTags();
+  const { tags, loading, isError, error, refetch, createTag, deleteTag } = useTags();
 
   const [newName, setNewName] = useState("");
-  const [newColor, setNewColor] = useState("#6b7280");
-  const [creating, setCreating] = useState(false);
+  const [newColor, setNewColor] = useState("#3d8bff");
 
-  async function handleCreate(e: React.FormEvent) {
+  function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!canWrite || !newName.trim()) return;
-    setCreating(true);
-    try {
-      await createTag({ name: newName.trim(), color: newColor });
-      toast.success(`Tag "${newName.trim()}" created`);
-      setNewName("");
-    } catch {
-      // error handled in hook
-    } finally {
-      setCreating(false);
-    }
-  }
-
-  async function handleDelete(tagId: number, tagName: string) {
-    if (!canWrite) return;
-    try {
-      await deleteTag(tagId);
-      toast.success(`Tag "${tagName}" deleted`);
-    } catch {
-      // error handled in hook
-    }
+    const name = newName.trim();
+    if (!canWrite || !name) return;
+    createTag.mutate({ name, color: newColor }, { onSuccess: () => setNewName("") });
   }
 
   return (
-    <main className="max-w-[760px] mx-auto py-8 px-4">
+    <main className="mx-auto max-w-[760px] px-4 py-8">
       <button
         type="button"
         onClick={() => navigate(-1)}
-        className="bg-transparent border-0 text-primary cursor-pointer text-sm p-0 mb-6 inline-flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+        className="mb-6 inline-flex items-center gap-1.5 border-0 bg-transparent p-0 text-ui-base text-accent hover:underline"
       >
-        <ArrowLeft size={14} /> Back
+        <ArrowLeft size={14} aria-hidden="true" /> Back
       </button>
 
-      <h1 className="text-2xl font-bold mb-6 text-gray-900 dark:text-gray-100">Tags</h1>
+      <h1 className="mb-6 mt-0 text-2xl font-bold text-high">Tags</h1>
 
       {canWrite && (
-        <form onSubmit={handleCreate} className="flex gap-2 mb-6 items-center">
+        <form onSubmit={handleCreate} className="mb-6 flex flex-wrap items-center gap-2">
           <input
             type="text"
+            aria-label="New tag name"
             placeholder="New tag name"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             required
-            className={`flex-1 ${inputCls}`}
+            className="field min-w-40 flex-1"
           />
-          <label className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300">
+          <label className="flex items-center gap-1.5 text-ui-base text-mid">
             Color
             <input
               type="color"
               value={newColor}
               onChange={(e) => setNewColor(e.target.value)}
-              className="w-9 h-8 p-0.5 border border-gray-300 dark:border-gray-600 rounded cursor-pointer bg-transparent"
+              className="h-8 w-9 rounded border border-border bg-transparent p-0.5"
             />
           </label>
-          <button
-            type="submit"
-            disabled={creating}
-            className={`py-2 px-5 bg-primary text-white border-0 rounded font-semibold ${
-              creating ? "cursor-not-allowed opacity-70" : "cursor-pointer"
-            }`}
-          >
-            {creating ? "Creating…" : "Create"}
-          </button>
+          <Button type="submit" disabled={createTag.isPending}>
+            {createTag.isPending ? "Creating…" : "Create"}
+          </Button>
         </form>
       )}
 
       {loading ? (
-        <p className="text-gray-400 dark:text-gray-500">Loading…</p>
+        <LoadingRows rows={3} rowClass="h-12" />
+      ) : isError ? (
+        <ErrorState title="Could not load tags" error={error} onRetry={() => refetch()} />
       ) : tags.length === 0 ? (
-        <div className="text-center mt-16 flex flex-col items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-            <Tag size={28} className="text-gray-400 dark:text-gray-500" />
-          </div>
-          <div>
-            <p className="text-gray-700 dark:text-gray-300 font-semibold">No tags yet</p>
-            <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">
-              {canWrite
-                ? "Create a tag above to organize your snapshots."
-                : "No tags have been created."}
-            </p>
-          </div>
-        </div>
+        <EmptyState icon={<Tag size={26} />} title="No tags yet">
+          {canWrite
+            ? "Create a tag above to organize your snapshots."
+            : "No tags have been created."}
+        </EmptyState>
       ) : (
-        <ul className="list-none p-0 flex flex-col gap-2">
+        <ul className="m-0 flex list-none flex-col gap-2 p-0">
           {tags.map((tag) => (
             <li
               key={tag.id}
-              className="flex justify-between items-center py-2.5 px-4 border border-gray-200 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800"
+              className="flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-2.5"
             >
               <TagChip tag={tag} />
               {canWrite && (
-                <button
-                  type="button"
-                  onClick={() => handleDelete(tag.id, tag.name)}
-                  className="bg-transparent border border-red-300 dark:border-red-700 text-red-700 dark:text-red-400 rounded cursor-pointer py-1 px-2.5 text-xs hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="!border-danger/40 !text-danger hover:!bg-danger/10"
+                  disabled={deleteTag.isPending}
+                  onClick={() => deleteTag.mutate({ id: tag.id, name: tag.name })}
+                  aria-label={`Delete tag ${tag.name}`}
                 >
                   Delete
-                </button>
+                </Button>
               )}
             </li>
           ))}

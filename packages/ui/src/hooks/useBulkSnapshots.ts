@@ -1,9 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { WebFrostError } from "@webfrost/sdk";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useClient } from "../context";
-import { snapshotKeys } from "./useSnapshots";
+import { errorMessage } from "../lib/errors";
+import { snapshotKeys, useDeleteSnapshot } from "./useSnapshots";
 
 export interface BulkOutcome {
   succeeded: number[];
@@ -32,7 +32,7 @@ export async function runBulk(
       else outcome.succeeded.push(id);
     } catch (e) {
       outcome.failed.push(id);
-      outcome.firstError ??= e instanceof WebFrostError ? e.message : String(e);
+      outcome.firstError ??= errorMessage(e);
     }
   }
   return outcome;
@@ -52,8 +52,30 @@ export function formatBulkSummary(doneVerb: string, o: BulkOutcome): string {
 export function useBulkSnapshots(visibleIds: number[], canWrite = true) {
   const client = useClient();
   const queryClient = useQueryClient();
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [picked, setPicked] = useState<Set<number>>(new Set());
   const [status, setStatus] = useState<string | null>(null);
+  const deleteOne = useDeleteSnapshot({ silent: true });
+
+  // Only ids the user can see count: a selection never reaches rows on another page or rows
+  // hidden by a filter, so "N selected" is always exactly what an action will touch.
+  const visibleKey = visibleIds.join(",");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: visibleKey stands for visibleIds
+  const selectedIds = useMemo(() => {
+    const visible = new Set(visibleIds);
+    return new Set([...picked].filter((id) => visible.has(id)));
+  }, [picked, visibleKey]);
+
+  // Forget selections that scrolled out of view (page change, filter), so they cannot come back.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the visible set changes
+  useEffect(() => {
+    setPicked((prev) => {
+      const visible = new Set(visibleIds);
+      const next = new Set([...prev].filter((id) => visible.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [visibleKey]);
+
+  const setSelectedIds = setPicked;
 
   function toggle(id: number) {
     if (!canWrite) return;
@@ -109,10 +131,12 @@ export function useBulkSnapshots(visibleIds: number[], canWrite = true) {
   async function bulkDelete() {
     if (!canWrite) return;
     const ids = [...selectedIds];
-    if (!window.confirm(`Delete ${ids.length} snapshot(s)? This cannot be undone.`)) return;
+    if (ids.length === 0) return;
+    const noun = ids.length === 1 ? "snapshot" : "snapshots";
+    if (!window.confirm(`Delete ${ids.length} selected ${noun}? This cannot be undone.`)) return;
     await runAndReport(
       { progress: "Deleting", done: "Deleted" },
-      (id) => client.deleteSnapshot(id),
+      (id) => deleteOne.mutateAsync(id),
       ids,
     );
   }

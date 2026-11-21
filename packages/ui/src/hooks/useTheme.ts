@@ -1,15 +1,12 @@
 import { useEffect, useState } from "react";
+import { STORAGE_KEYS, readStorage, writeStorage } from "../lib/storage";
 
 type Theme = "light" | "dark";
 
 function getInitialTheme(): Theme {
-  try {
-    const saved = localStorage.getItem("webfrost-theme");
-    if (saved === "dark" || saved === "light") return saved;
-  } catch {
-    // ignore
-  }
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  const saved = readStorage(STORAGE_KEYS.theme);
+  if (saved === "dark" || saved === "light") return saved;
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 export function useTheme() {
@@ -17,11 +14,7 @@ export function useTheme() {
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
-    try {
-      localStorage.setItem("webfrost-theme", theme);
-    } catch {
-      // ignore
-    }
+    writeStorage(STORAGE_KEYS.theme, theme);
   }, [theme]);
 
   function toggle() {
