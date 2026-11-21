@@ -30,9 +30,28 @@ const share = await full
   .toBuffer();
 await sharp(share).toFile(resolve(brand, "share.webp"));
 
-await sharp(share)
-  .resize(1280)
-  .webp({ quality: 82 })
+// The README cannot style an image, so the banner carries its own frame: rounded corners (transparent
+// outside) and a thin light border, so it reads as a card on GitHub's light and dark themes alike.
+const banner = await sharp(share).resize(1280).toBuffer({ resolveWithObject: true });
+const { width: bw, height: bh } = banner.info;
+const radius = 28;
+const frame = (inner: string) =>
+  Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${bw}" height="${bh}">${inner}</svg>`,
+  );
+await sharp(banner.data)
+  .composite([
+    {
+      input: frame(`<rect width="${bw}" height="${bh}" rx="${radius}" fill="#fff"/>`),
+      blend: "dest-in",
+    },
+    {
+      input: frame(
+        `<rect x="1.5" y="1.5" width="${bw - 3}" height="${bh - 3}" rx="${radius - 1.5}" fill="none" stroke="#9fc4ff" stroke-opacity="0.35" stroke-width="3"/>`,
+      ),
+    },
+  ])
+  .webp({ quality: 82, alphaQuality: 90 })
   .toFile(await out(resolve(repo, ".github/assets/banner.webp")));
 await sharp(share)
   .resize(1280, 640, { fit: "cover" })
