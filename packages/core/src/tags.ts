@@ -40,24 +40,46 @@ export function getTag(db: Database, id: number): Tag | null {
     .get(id);
 }
 
+/**
+ * Rewrite the `tags` column of a snapshot's full-text index entry from its
+ * current tags, so searching by tag name reflects tags added or removed after
+ * the snapshot was archived. A snapshot that is not indexed yet is left alone —
+ * the pipeline indexes it, tags included, when it finishes.
+ */
+function syncIndexTags(db: Database, snapshotId: number): void {
+  const names = listSnapshotTags(db, snapshotId)
+    .map((t) => t.name)
+    .join(" ");
+  db.query<null, [string, number]>("UPDATE snapshots_fts SET tags = ? WHERE rowid = ?").run(
+    names,
+    snapshotId,
+  );
+}
+
 export function deleteTag(db: Database, id: number): boolean {
-  const result = db.query<unknown, [number]>("DELETE FROM tags WHERE id = ?").run(id);
-  return (result as { changes: number }).changes > 0;
+  const tagged = db
+    .query<{ snapshot_id: number }, [number]>(
+      "SELECT snapshot_id FROM snapshot_tags WHERE tag_id = ?",
+    )
+    .all(id);
+  const result = db.query<null, [number]>("DELETE FROM tags WHERE id = ?").run(id);
+  for (const { snapshot_id } of tagged) syncIndexTags(db, snapshot_id);
+  return result.changes > 0;
 }
 
 export function addTagToSnapshot(db: Database, snapshotId: number, tagId: number): void {
-  db.query<unknown, [number, number]>(
+  db.query<null, [number, number]>(
     "INSERT OR IGNORE INTO snapshot_tags (snapshot_id, tag_id) VALUES (?, ?)",
   ).run(snapshotId, tagId);
+  syncIndexTags(db, snapshotId);
 }
 
 export function removeTagFromSnapshot(db: Database, snapshotId: number, tagId: number): boolean {
   const result = db
-    .query<unknown, [number, number]>(
-      "DELETE FROM snapshot_tags WHERE snapshot_id = ? AND tag_id = ?",
-    )
+    .query<null, [number, number]>("DELETE FROM snapshot_tags WHERE snapshot_id = ? AND tag_id = ?")
     .run(snapshotId, tagId);
-  return (result as { changes: number }).changes > 0;
+  syncIndexTags(db, snapshotId);
+  return result.changes > 0;
 }
 
 export function listSnapshotTags(db: Database, snapshotId: number): Tag[] {

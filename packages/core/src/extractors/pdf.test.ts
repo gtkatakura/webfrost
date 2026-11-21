@@ -41,16 +41,18 @@ function makeStorage() {
 }
 
 describe("pdfExtractor", () => {
-  test("does not throw when page.pdf() fails (graceful degradation)", async () => {
+  test("rejects when page.pdf() fails so the pipeline can record the failure", async () => {
     const page = makeFailingPage();
 
-    await expect(pdfExtractor(db, 1, makeStorage(), page)).resolves.toBeUndefined();
+    await expect(pdfExtractor(db, 1, makeStorage(), page)).rejects.toThrow(
+      "Playwright unavailable",
+    );
   });
 
   test("does not insert archive_result row when extraction fails", async () => {
     const page = makeFailingPage();
 
-    await pdfExtractor(db, 1, makeStorage(), page);
+    await pdfExtractor(db, 1, makeStorage(), page).catch(() => {});
 
     const rows = db
       .query<{ extractor: string }, []>(

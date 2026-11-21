@@ -1,6 +1,16 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { Elysia } from "elysia";
-import { createRateLimiter, rateLimiterPlugin } from "./rateLimiter";
+import { createRateLimiter, getClientIp, rateLimiterPlugin } from "./rateLimiter";
+
+// Most tests below tell clients apart with X-Forwarded-For, which is only honoured
+// behind a trusted proxy. The "client identity" block covers the default.
+beforeAll(() => {
+  process.env.WEBFROST_TRUST_PROXY = "true";
+});
+
+afterAll(() => {
+  process.env.WEBFROST_TRUST_PROXY = undefined;
+});
 
 function makeRequest(ip: string, method = "GET", path = "/"): Request {
   return new Request(`http://localhost${path}`, {
@@ -93,5 +103,73 @@ describe("rateLimiterPlugin", () => {
     expect(post1.status).toBe(200);
     const post2 = await app.handle(makeRequest(ip, "POST"));
     expect(post2.status).toBe(429);
+  });
+});
+
+describe("client identity", () => {
+  const peer = (address: string) => ({ requestIP: () => ({ address }) });
+
+  it("ignores X-Forwarded-For unless a proxy is trusted", () => {
+    process.env.WEBFROST_TRUST_PROXY = undefined;
+    try {
+      const limiter = createRateLimiter({ limit: 1, windowMs: 60_000 });
+      // Same TCP peer, a different spoofed header on every request: still one bucket.
+      expect(limiter.check(makeRequest("1.1.1.1"), peer("203.0.113.7")).allowed).toBe(true);
+      expect(limiter.check(makeRequest("2.2.2.2"), peer("203.0.113.7")).allowed).toBe(false);
+      // A different peer gets its own bucket.
+      expect(limiter.check(makeRequest("1.1.1.1"), peer("203.0.113.8")).allowed).toBe(true);
+    } finally {
+      process.env.WEBFROST_TRUST_PROXY = "true";
+    }
+  });
+
+  it("uses the socket address when there is no forwarded header", () => {
+    expect(getClientIp(new Request("http://localhost/"), peer("198.51.100.4"))).toBe(
+      "198.51.100.4",
+    );
+  });
+
+  it("uses the forwarded address behind a trusted proxy", () => {
+    expect(getClientIp(makeRequest("9.9.9.9"), peer("10.0.0.1"))).toBe("9.9.9.9");
+  });
+
+  it("forgets clients once their window has passed", async () => {
+    const limiter = createRateLimiter({ limit: 5, windowMs: 20 });
+    for (let i = 0; i < 400; i++) limiter.check(makeRequest(`10.1.${i >> 8}.${i & 255}`));
+    expect(limiter.size).toBe(400);
+    await Bun.sleep(40);
+    // The sweep runs every 500 checks; these push it over the threshold.
+    for (let i = 0; i < 150; i++) limiter.check(makeRequest("10.9.9.9"));
+    expect(limiter.size).toBe(1);
+  });
+});
+
+describe("rateLimiterPlugin path scoping", () => {
+  it("only counts requests whose path matches", async () => {
+    const app = new Elysia()
+      .use(rateLimiterPlugin({ limit: 1, windowMs: 60_000, methods: ["POST"], path: /^\/login$/ }))
+      .post("/login", () => ({ ok: true }))
+      .post("/other", () => ({ ok: true }));
+
+    const ip = "42.0.0.3";
+    for (let i = 0; i < 5; i++) {
+      expect((await app.handle(makeRequest(ip, "POST", "/other"))).status).toBe(200);
+    }
+    expect((await app.handle(makeRequest(ip, "POST", "/login"))).status).toBe(200);
+    expect((await app.handle(makeRequest(ip, "POST", "/login"))).status).toBe(429);
+  });
+
+  it("two limiters with different scopes do not share a bucket", async () => {
+    const app = new Elysia()
+      .use(rateLimiterPlugin({ limit: 1, windowMs: 60_000, methods: ["POST"], path: /^\/a$/ }))
+      .use(rateLimiterPlugin({ limit: 1, windowMs: 60_000, methods: ["POST"], path: /^\/b$/ }))
+      .post("/a", () => ({ ok: true }))
+      .post("/b", () => ({ ok: true }));
+
+    const ip = "42.0.0.4";
+    expect((await app.handle(makeRequest(ip, "POST", "/a"))).status).toBe(200);
+    expect((await app.handle(makeRequest(ip, "POST", "/b"))).status).toBe(200);
+    expect((await app.handle(makeRequest(ip, "POST", "/a"))).status).toBe(429);
+    expect((await app.handle(makeRequest(ip, "POST", "/b"))).status).toBe(429);
   });
 });

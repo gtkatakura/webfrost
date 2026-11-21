@@ -1,23 +1,21 @@
 import type Database from "bun:sqlite";
 import type { Logger } from "../pipeline";
+import { envInt } from "../ssrf-guard";
 import type { StorageBackend } from "../storage";
+import { runProcess } from "../subprocess";
+
+/** Hard cap for a single yt-dlp invocation; the process is killed when it is exceeded. */
+const DEFAULT_MEDIA_TIMEOUT_MS = 10 * 60_000;
 
 type SpawnResult = { exitCode: number | null; stdout: string; stderr: string };
 
 // Exported for testing — allows injecting a fake spawner via options._spawner
 export type YtDlpSpawner = (args: string[]) => Promise<SpawnResult>;
 
-async function defaultSpawner(args: string[]): Promise<SpawnResult> {
-  const proc = Bun.spawn(["yt-dlp", ...args], {
-    stdout: "pipe",
-    stderr: "pipe",
+function defaultSpawner(args: string[]): Promise<SpawnResult> {
+  return runProcess(["yt-dlp", ...args], {
+    timeoutMs: envInt("WEBFROST_MEDIA_TIMEOUT_MS", DEFAULT_MEDIA_TIMEOUT_MS),
   });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  return { exitCode, stdout, stderr };
 }
 
 /**
@@ -34,11 +32,18 @@ export async function mediaExtractor(
   snapshotId: number,
   storage: StorageBackend,
   url: string,
-  options?: { maxFileSize?: string; _spawner?: YtDlpSpawner; logger?: Logger },
+  options?: {
+    maxFileSize?: string;
+    _spawner?: YtDlpSpawner;
+    logger?: Logger;
+    /** Aborted when the pipeline has given up on this extractor; nothing is recorded after that. */
+    signal?: AbortSignal;
+  },
 ): Promise<void> {
   const maxFileSize = options?.maxFileSize ?? "500m";
   const spawner = options?._spawner ?? defaultSpawner;
   const logger = options?.logger;
+  const signal = options?.signal;
 
   // Step 1: Detect whether yt-dlp is installed and the URL is extractable
   let detectResult: SpawnResult;
@@ -66,6 +71,7 @@ export async function mediaExtractor(
     metadataJson = "{}";
   }
 
+  signal?.throwIfAborted();
   const metadataRef = await storage.putText(snapshotId, "media/media-metadata.json", metadataJson);
   db.query<null, [number, string]>(
     "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'media-metadata', ?)",
@@ -94,6 +100,7 @@ export async function mediaExtractor(
     throw err;
   }
 
+  signal?.throwIfAborted();
   if (videoResult.exitCode === 0) {
     const videoRef = await storage.finalize(snapshotId, "media/media.mp4");
     db.query<null, [number, string]>(
@@ -122,6 +129,7 @@ export async function mediaExtractor(
     return;
   }
 
+  signal?.throwIfAborted();
   if (audioResult.exitCode === 0) {
     const audioRef = await storage.finalize(snapshotId, "media/media.mp3");
     db.query<null, [number, string]>(

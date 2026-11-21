@@ -253,3 +253,123 @@ describe("authPlugin — API key validation", () => {
     expect(body.error).toBe("invalid credentials");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Session revocation
+// ---------------------------------------------------------------------------
+
+describe("session revocation", () => {
+  const SECRET = "test-secret-32-chars-long-enough!!";
+
+  async function seed() {
+    const { openDb, createAdminUser } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    await createAdminUser(db, "admin", "password123");
+    db.close();
+    process.env.SESSION_SECRET = SECRET;
+    process.env.AUTH_DISABLED = undefined;
+    process.env.NODE_ENV = "development";
+  }
+
+  function json(path: string, body: unknown, cookie?: string) {
+    return new Request(`http://localhost${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
+      body: JSON.stringify(body),
+    });
+  }
+
+  async function login(
+    app: Awaited<ReturnType<typeof getAppWithPlugin>>,
+    password = "password123",
+  ) {
+    const res = await app.handle(json("/auth/login", { username: "admin", password }));
+    expect(res.status).toBe(200);
+    const cookie = res.headers.get("set-cookie")?.split(";")[0];
+    if (!cookie) throw new Error("no session cookie");
+    return cookie;
+  }
+
+  const protectedStatus = async (
+    app: Awaited<ReturnType<typeof getAppWithPlugin>>,
+    cookie: string,
+  ) =>
+    (await app.handle(new Request("http://localhost/protected", { headers: { cookie } }))).status;
+
+  test("logout invalidates the session server-side", async () => {
+    await seed();
+    const app = await getAppWithPlugin();
+    const cookie = await login(app);
+    expect(await protectedStatus(app, cookie)).toBe(200);
+
+    const out = await app.handle(
+      new Request("http://localhost/auth/logout", { method: "POST", headers: { cookie } }),
+    );
+    expect(out.status).toBe(200);
+
+    // The same cookie replayed after logout no longer works.
+    expect(await protectedStatus(app, cookie)).toBe(401);
+  });
+
+  test("logging out one browser leaves the other signed in", async () => {
+    await seed();
+    const app = await getAppWithPlugin();
+    const laptop = await login(app);
+    const phone = await login(app);
+
+    await app.handle(
+      new Request("http://localhost/auth/logout", { method: "POST", headers: { cookie: laptop } }),
+    );
+
+    expect(await protectedStatus(app, laptop)).toBe(401);
+    expect(await protectedStatus(app, phone)).toBe(200);
+  });
+
+  test("changing the password signs out other sessions and keeps the caller signed in", async () => {
+    await seed();
+    const app = await getAppWithPlugin();
+    const mine = await login(app);
+    const stolen = await login(app);
+
+    const res = await app.handle(
+      json(
+        "/auth/change-password",
+        { currentPassword: "password123", newPassword: "a-much-better-password" },
+        mine,
+      ),
+    );
+    expect(res.status).toBe(200);
+    const renewed = res.headers.get("set-cookie")?.split(";")[0];
+    if (!renewed) throw new Error("expected a renewed session cookie");
+
+    expect(await protectedStatus(app, stolen)).toBe(401);
+    expect(await protectedStatus(app, mine)).toBe(401);
+    expect(await protectedStatus(app, renewed)).toBe(200);
+    await login(app, "a-much-better-password");
+  });
+
+  test("a wrong current password is 403, not 401, and changes nothing", async () => {
+    await seed();
+    const app = await getAppWithPlugin();
+    const cookie = await login(app);
+
+    const res = await app.handle(
+      json(
+        "/auth/change-password",
+        { currentPassword: "nope", newPassword: "a-much-better-password" },
+        cookie,
+      ),
+    );
+
+    expect(res.status).toBe(403);
+    expect(await protectedStatus(app, cookie)).toBe(200);
+  });
+
+  test("a signed cookie that was never issued by login is rejected", async () => {
+    await seed();
+    const { createSessionToken } = await import("@webfrost/core");
+    const app = await getAppWithPlugin();
+    const forged = `session=${encodeURIComponent(createSessionToken(SECRET, "admin"))}`;
+    expect(await protectedStatus(app, forged)).toBe(401);
+  });
+});

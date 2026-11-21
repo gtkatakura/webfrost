@@ -15,24 +15,25 @@ import type { StorageBackend } from "../storage";
  * Background images in inline style attributes are left as-is.
  *
  * The page must already have called page.goto() before this extractor runs.
+ *
+ * Throws if the page content cannot be read; the pipeline records that as a
+ * failed extractor without failing the snapshot. Individual assets that fail
+ * to download are left as external references.
  */
 export async function singleFileExtractor(
   db: Database,
   snapshotId: number,
   storage: StorageBackend,
   page: import("playwright").Page,
+  signal?: AbortSignal,
 ): Promise<void> {
-  let html: string;
   const pageUrl = page.url();
-
-  try {
-    html = await page.content();
-  } catch (err) {
-    console.warn("[singlefile] extraction failed:", err);
-    return;
-  }
+  const html = await page.content();
 
   const inlined = await inlineAssets(html, pageUrl);
+  // Inlining fetches every asset and can outlive the pipeline's timeout for this
+  // extractor: if it was given up on, do not store or record a late result.
+  signal?.throwIfAborted();
 
   const ref = await storage.putText(snapshotId, "singlefile.html", inlined);
 

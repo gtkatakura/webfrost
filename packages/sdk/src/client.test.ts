@@ -231,3 +231,98 @@ describe("WebFrostClient.getSnapshot", () => {
     await expect(client.getSnapshot(1)).rejects.toBeInstanceOf(WebFrostError);
   });
 });
+
+describe("WebFrostClient.searchSnapshotsPage", () => {
+  const hit = {
+    id: 1,
+    url: "https://a.com",
+    snippet: "hello <mark>world</mark>",
+    rank: -1.5,
+    status: "done",
+    createdAt: "2024-01-01T00:00:00.000Z",
+    title: "A",
+    extractors: ["readability"],
+    tags: [{ id: 2, name: "x", slug: "x", color: null, createdAt: "2024-01-01T00:00:00.000Z" }],
+  };
+
+  test("sends q/page/limit and returns total", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ items: [hit], total: 42, page: 3, limit: 10 }));
+    const client = new WebFrostClient({ baseUrl: BASE });
+    const result = await client.searchSnapshotsPage("a b", { page: 3, limit: 10 });
+
+    const calledUrl = (fetchSpy.mock.calls[0] as unknown[])[0] as string;
+    const params = new URL(calledUrl).searchParams;
+    expect(params.get("q")).toBe("a b");
+    expect(params.get("page")).toBe("3");
+    expect(params.get("limit")).toBe("10");
+    expect(result.total).toBe(42);
+    expect(result.page).toBe(3);
+    expect(result.limit).toBe(10);
+    expect(result.items[0]?.title).toBe("A");
+    expect(result.items[0]?.tags[0]?.slug).toBe("x");
+    expect(result.items[0]?.extractors).toEqual(["readability"]);
+  });
+
+  test("fills defaults for legacy hits", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ items: [{ id: 1, url: "u", snippet: "s", rank: 0 }] }),
+    );
+    const client = new WebFrostClient({ baseUrl: BASE });
+    const result = await client.searchSnapshotsPage("q");
+    expect(result.items[0]).toMatchObject({ status: "", title: null, extractors: [], tags: [] });
+    expect(result.total).toBe(1);
+  });
+
+  test("searchSnapshots still returns an array", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ items: [hit], total: 1, page: 1, limit: 20 }));
+    const client = new WebFrostClient({ baseUrl: BASE });
+    const result = await client.searchSnapshots("q");
+    expect(Array.isArray(result)).toBe(true);
+    expect(result[0]?.id).toBe(1);
+  });
+});
+
+describe("WebFrostError.retryAfter", () => {
+  test("parsed from Retry-After header on 429", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "slow down" }), {
+        status: 429,
+        headers: { "Retry-After": "17" },
+      }),
+    );
+    const client = new WebFrostClient({ baseUrl: BASE });
+    let caught: unknown;
+    try {
+      await client.login("a", "b");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(WebFrostError);
+    expect((caught as WebFrostError).status).toBe(429);
+    expect((caught as WebFrostError).retryAfter).toBe(17);
+  });
+
+  test("undefined without header and constructor stays compatible", async () => {
+    expect(new WebFrostError(500, "x").retryAfter).toBeUndefined();
+    fetchSpy.mockResolvedValueOnce(new Response(null, { status: 429 }));
+    const client = new WebFrostClient({ baseUrl: BASE });
+    const err = await client.listSnapshots().catch((e) => e);
+    expect((err as WebFrostError).retryAfter).toBeUndefined();
+  });
+});
+
+describe("WebFrostClient.getSetupStatus", () => {
+  test("passes publicRead through", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ needsSetup: false, publicRead: true }));
+    const client = new WebFrostClient({ baseUrl: BASE });
+    expect(await client.getSetupStatus()).toEqual({ needsSetup: false, publicRead: true });
+    const [calledUrl] = fetchSpy.mock.calls[0] as [string];
+    expect(calledUrl).toBe(`${BASE}/setup/status`);
+  });
+
+  test("normalises a missing publicRead (older server) to false", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ needsSetup: true }));
+    const client = new WebFrostClient({ baseUrl: BASE });
+    expect(await client.getSetupStatus()).toEqual({ needsSetup: true, publicRead: false });
+  });
+});

@@ -1,22 +1,12 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
 import {
   addSchedule,
   getSchedule,
   listSchedules,
-  openDb,
   pauseSchedule,
   removeSchedule,
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
-
-function getWebfrostDir(): string {
-  return process.env.WEBFROST_DIR ?? join(homedir(), ".webfrost");
-}
-
-function getDb() {
-  return openDb(getWebfrostDir());
-}
+import { getDb } from "../context";
 
 function mapSchedule(s: ReturnType<typeof getSchedule>) {
   if (!s) return null;

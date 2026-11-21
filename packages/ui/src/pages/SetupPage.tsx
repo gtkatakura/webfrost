@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/auth";
+import { setupErrorMessage } from "../lib/errors";
 
 type Step = "credentials" | "apikey";
 
@@ -35,8 +36,8 @@ export function SetupPage() {
       const key = await completeSetup(username, password);
       setApiKey(key);
       setStep("apikey");
-    } catch {
-      setError("Setup failed. Please try again.");
+    } catch (err) {
+      setError(setupErrorMessage(err));
     } finally {
       setLoading(false);
     }

@@ -8,11 +8,16 @@ export const snapshotKeys = {
   detail: (id: number) => ["snapshots", "detail", id] as const,
 };
 
+/** Poll interval while any snapshot in view is still pending. */
+export const PENDING_POLL_MS = 5000;
+
 export function useSnapshots(page = 1, limit = 20) {
   const client = useClient();
   const query = useQuery<SnapshotPage>({
     queryKey: snapshotKeys.list(page, limit),
     queryFn: () => client.listSnapshots({ page, limit }),
+    refetchInterval: (q) =>
+      q.state.data?.items.some((s) => s.status === "pending") ? PENDING_POLL_MS : false,
   });
 
   return {

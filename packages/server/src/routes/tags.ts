@@ -1,5 +1,3 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
 import {
   addTagToSnapshot,
   createTag,
@@ -8,18 +6,10 @@ import {
   getTag,
   listSnapshotTags,
   listTags,
-  openDb,
   removeTagFromSnapshot,
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
-
-function getWebfrostDir(): string {
-  return process.env.WEBFROST_DIR ?? join(homedir(), ".webfrost");
-}
-
-function getDb() {
-  return openDb(getWebfrostDir());
-}
+import { getDb } from "../context";
 
 // GET/POST/DELETE /api/tags
 export const tagsRouter = new Elysia({ prefix: "/tags" })

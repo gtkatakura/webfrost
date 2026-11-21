@@ -1,6 +1,9 @@
-import { existsSync } from "node:fs";
-import { extname, resolve } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { extname, resolve, sep } from "node:path";
+import { startScheduler } from "@webfrost/core";
 import { Elysia } from "elysia";
+import { getRunner, getWebfrostDir } from "./context";
+import { appContentSecurityPolicy } from "./csp";
 import { logger } from "./logger";
 import { rateLimiterPlugin } from "./middleware/rateLimiter";
 import { authPlugin, authRouter } from "./routes/auth";
@@ -13,6 +16,9 @@ import { statsRouter } from "./routes/stats";
 import { snapshotTagsRouter, tagsRouter } from "./routes/tags";
 
 const PORT = Number(process.env.PORT ?? "3000");
+
+/** How often the server looks for snapshots orphaned by an interrupted run. */
+const RECOVERY_INTERVAL_MS = 60_000;
 
 // Resolve UI assets: prefer packages/ui/dist (monorepo dev), fall back to ./public (Docker/production)
 const uiDistPath = resolve(import.meta.dir, "../../ui/dist");
@@ -49,6 +55,11 @@ if (process.env.AUTH_DISABLED !== "true" && !process.env.SESSION_SECRET) {
   );
   process.exit(1);
 }
+if (process.env.SESSION_SECRET && process.env.SESSION_SECRET.length < 32) {
+  logger.warn(
+    "SESSION_SECRET is shorter than 32 characters. Generate a strong one with: openssl rand -hex 32",
+  );
+}
 
 /** Serve a static file from the UI assets directory. Returns null if not found. */
 async function serveStaticFile(pathname: string): Promise<Response | null> {
@@ -61,7 +72,7 @@ async function serveStaticFile(pathname: string): Promise<Response | null> {
   );
 
   // Sandbox: must be within the assets directory
-  if (!filePath.startsWith(staticAssetsPath)) return null;
+  if (!filePath.startsWith(staticAssetsPath + sep)) return null;
 
   const file = Bun.file(filePath);
   if (!(await file.exists())) return null;
@@ -92,18 +103,46 @@ export const app = new Elysia()
     );
   })
   .onAfterHandle(({ set }) => {
-    set.headers["content-security-policy"] =
-      "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+    // `??=` so a route can ship a stricter policy of its own — the archive preview
+    // does, to render untrusted HTML in an opaque, script-less sandbox.
+    set.headers["content-security-policy"] ??= appContentSecurityPolicy();
     set.headers["x-content-type-options"] = "nosniff";
-    set.headers["x-frame-options"] = "DENY";
-    set.headers["referrer-policy"] = "strict-origin-when-cross-origin";
+    set.headers["x-frame-options"] ??= "DENY";
+    set.headers["referrer-policy"] ??= "strict-origin-when-cross-origin";
   })
   .get("/health", () => ({ status: "ok" }))
   .group("/api", (app) =>
     app
       .use(authPlugin)
-      // 300 req/min per IP for read (GET) endpoints across the entire API
-      .use(rateLimiterPlugin({ limit: 300, windowMs: 60_000, methods: ["GET", "HEAD"] }))
+      // Limits are per client IP and scoped by path, because a rate-limiter hook is
+      // global: without `path` it would also count requests to unrelated routes.
+      // 300 req/min for reads across the API.
+      .use(
+        rateLimiterPlugin({
+          limit: 300,
+          windowMs: 60_000,
+          methods: ["GET", "HEAD"],
+          path: /^\/api\//,
+        }),
+      )
+      // 60 req/min for the endpoints that start archive pipelines.
+      .use(
+        rateLimiterPlugin({
+          limit: 60,
+          windowMs: 60_000,
+          methods: ["POST"],
+          path: /^\/api\/(snapshots|import(\/file)?)\/?$/,
+        }),
+      )
+      // 10 req/min for anything that checks a password — slows down brute force.
+      .use(
+        rateLimiterPlugin({
+          limit: 10,
+          windowMs: 60_000,
+          methods: ["POST"],
+          path: /^\/api\/(auth\/login|auth\/change-password|setup)\/?$/,
+        }),
+      )
       .use(setupRouter)
       .use(authRouter)
       .use(snapshotsRouter)
@@ -137,7 +176,53 @@ export const app = new Elysia()
     return "Not Found";
   });
 
+/**
+ * Start the background work the HTTP API depends on:
+ * - re-queue snapshots an interrupted process left `pending` (crash, deploy, restart),
+ *   at startup and every minute after;
+ * - run due schedules, so schedules created in the UI fire without a separate
+ *   `webfrost schedule worker` process. Set WEBFROST_SCHEDULER=false to disable
+ *   it when a dedicated worker already polls the same archive.
+ */
+export function startBackgroundWork(): { stop: () => void } {
+  const dir = getWebfrostDir();
+  mkdirSync(dir, { recursive: true });
+
+  const runner = getRunner();
+  // A job is only adopted once its heartbeat has gone stale, so that a job another
+  // process is still running (a CLI worker, a rolling restart) is left alone. Right
+  // after a crash the dead process's jobs still look alive for a few seconds —
+  // hence the periodic sweep rather than a single pass at startup.
+  const recover = () => {
+    try {
+      const recovered = runner.recoverPending();
+      if (recovered > 0) {
+        logger.info({ recovered }, "re-queued snapshots left pending by an interrupted run");
+      }
+    } catch (err) {
+      logger.error({ err }, "pending-snapshot recovery failed");
+    }
+  };
+  recover();
+  const recovery = setInterval(recover, RECOVERY_INTERVAL_MS);
+
+  if (process.env.WEBFROST_SCHEDULER === "false") {
+    logger.info("WEBFROST_SCHEDULER=false — schedules are not run by this process");
+    return { stop: () => clearInterval(recovery) };
+  }
+
+  const scheduler = startScheduler({ dir, runner, logger });
+  logger.info({ concurrency: runner.concurrency }, "scheduler started");
+  return {
+    stop: () => {
+      clearInterval(recovery);
+      scheduler.stop();
+    },
+  };
+}
+
 if (import.meta.main) {
+  startBackgroundWork();
   app.listen(PORT);
   logger.info({ port: PORT }, "@webfrost/server listening");
 }

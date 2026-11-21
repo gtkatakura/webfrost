@@ -3,8 +3,11 @@ import type { SearchResult, Tag } from "@webfrost/sdk";
 import { Bookmark, BookmarkCheck, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { ErrorBanner } from "../components/ErrorBanner";
+import { Pagination } from "../components/Pagination";
+import { Snippet } from "../components/Snippet";
 import { useClient } from "../context";
-import { useSearch } from "../hooks/useSearch";
+import { useSearchPage } from "../hooks/useSearch";
 import { tagKeys } from "../hooks/useTags";
 
 // ─── Saved searches ────────────────────────────────────────────────────────────
@@ -49,13 +52,14 @@ function dateFromDays(days: number): string {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const KNOWN_EXTRACTORS = ["warc", "readability", "pdf", "screenshot", "dom-snapshot"];
-const STATUSES = ["done", "failed", "processing", "queued"] as const;
+const PAGE_SIZE = 20;
+// The snapshot statuses the server stores (see packages/core/src/pipeline.ts).
+const STATUSES = ["done", "failed", "pending"] as const;
 
 const statusColors: Record<string, string> = {
   done: "var(--status-success)",
   failed: "var(--status-danger)",
-  processing: "var(--status-warning)",
-  queued: "var(--status-pending)",
+  pending: "var(--status-pending)",
 };
 
 // ─── Small UI helpers ─────────────────────────────────────────────────────────
@@ -173,11 +177,9 @@ function ResultCard({ result }: { result: SearchResult }) {
         {result.url}
       </div>
       {result.snippet && (
-        <div
-          style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.6 }}
-          // biome-ignore lint/security/noDangerouslySetInnerHtml: controlled server snippet with <mark> tags
-          dangerouslySetInnerHTML={{ __html: result.snippet }}
-        />
+        <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.6 }}>
+          <Snippet text={result.snippet} />
+        </div>
       )}
     </button>
   );
@@ -209,12 +211,29 @@ export function SearchPage() {
       } else {
         next.delete("q");
       }
+      if (q.trim() !== (params.get("q") ?? "")) next.delete("page");
       setParams(next, { replace: true });
     }, 350);
   }
 
   const ftsQuery = params.get("q") ?? "";
-  const { results: rawResults, loading } = useSearch(ftsQuery);
+  const pageParam = Number.parseInt(params.get("page") ?? "1", 10);
+  const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+  const {
+    results: rawResults,
+    total,
+    loading,
+    error: searchError,
+    refetch,
+  } = useSearchPage(ftsQuery, page, PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  function goToPage(p: number) {
+    const next = new URLSearchParams(params);
+    if (p <= 1) next.delete("page");
+    else next.set("page", String(p));
+    setParams(next);
+  }
 
   // ── Sidebar filters state ─────────────────────────────────────────────────
   const [activeStatuses, setActiveStatuses] = useState<Set<string>>(new Set());
@@ -226,30 +245,6 @@ export function SearchPage() {
     queryKey: tagKeys.list(),
     queryFn: () => client.listTags(),
   });
-
-  // ── Snapshot metadata for filter cross-reference ──────────────────────────
-  const { data: snapshotMetaPage } = useQuery({
-    queryKey: ["snapshots", "meta-for-search"],
-    queryFn: () => client.listSnapshots({ limit: 100 }),
-    enabled: rawResults.length > 0,
-    staleTime: 60_000,
-  });
-
-  const snapshotMeta = useMemo(() => {
-    const map = new Map<
-      number,
-      { status: string; createdAt: string; extractors: string[]; tags: Tag[] }
-    >();
-    for (const s of snapshotMetaPage?.items ?? []) {
-      map.set(s.id, {
-        status: s.status,
-        createdAt: s.createdAt,
-        extractors: s.extractors,
-        tags: s.tags,
-      });
-    }
-    return map;
-  }, [snapshotMetaPage]);
 
   // ── Apply filters to FTS results ──────────────────────────────────────────
   const dateThreshold = activeDays ? dateFromDays(activeDays) : null;
@@ -264,9 +259,7 @@ export function SearchPage() {
       return rawResults;
     }
     return rawResults.filter((r) => {
-      const meta = snapshotMeta.get(r.id);
-      if (!meta) return true; // no metadata to filter on yet
-
+      const meta = r;
       if (activeStatuses.size > 0 && !activeStatuses.has(meta.status)) return false;
       if (dateThreshold && meta.createdAt < dateThreshold) return false;
       if (activeExtractors.size > 0) {
@@ -282,15 +275,7 @@ export function SearchPage() {
       }
       return true;
     });
-  }, [
-    rawResults,
-    snapshotMeta,
-    activeStatuses,
-    activeDays,
-    dateThreshold,
-    activeExtractors,
-    activeTags,
-  ]);
+  }, [rawResults, activeStatuses, activeDays, dateThreshold, activeExtractors, activeTags]);
 
   // ── Saved searches ────────────────────────────────────────────────────────
   const [saved, setSaved] = useState<SavedSearch[]>(loadSaved);
@@ -331,6 +316,16 @@ export function SearchPage() {
   function applySaved(s: SavedSearch) {
     navigate(`/search?q=${encodeURIComponent(s.q)}`);
   }
+
+  const pager = (
+    <Pagination
+      page={page}
+      totalPages={totalPages}
+      onPrev={() => goToPage(page - 1)}
+      onNext={() => goToPage(page + 1)}
+      onPage={goToPage}
+    />
+  );
 
   const hasFilters =
     activeStatuses.size > 0 ||
@@ -399,6 +394,10 @@ export function SearchPage() {
             Clear all filters
           </button>
         )}
+
+        <div style={{ fontSize: 11, color: "var(--text-low)", lineHeight: 1.4 }}>
+          Filters apply to the current page of results only.
+        </div>
 
         {/* Status */}
         <SectionLabel>Status</SectionLabel>
@@ -701,17 +700,39 @@ export function SearchPage() {
         )}
 
         {/* Results count */}
-        {ftsQuery && !loading && (
+        {ftsQuery && !loading && !searchError && (
           <div style={{ fontSize: 12, color: "var(--text-low)", marginBottom: 14 }}>
-            {results.length === 0
+            {total === 0
               ? "No results"
-              : `${results.length} result${results.length !== 1 ? "s" : ""}`}
-            {hasFilters && " (filtered)"}
+              : hasFilters
+                ? `${results.length} of ${rawResults.length} result${rawResults.length !== 1 ? "s" : ""} on this page match filters (${total} total)`
+                : `${total} result${total !== 1 ? "s" : ""}`}
           </div>
         )}
 
         {/* Results */}
-        {ftsQuery ? (
+        {ftsQuery && searchError ? (
+          <div role="alert">
+            <ErrorBanner
+              message={`Search failed: ${searchError instanceof Error ? searchError.message : String(searchError)}`}
+            />
+            <button
+              type="button"
+              onClick={() => refetch()}
+              style={{
+                padding: "4px 10px",
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border-default)",
+                borderRadius: 5,
+                cursor: "pointer",
+                fontSize: 12,
+                color: "var(--text-mid)",
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        ) : ftsQuery ? (
           loading ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {[1, 2, 3].map((i) => (
@@ -758,12 +779,14 @@ export function SearchPage() {
                   Try different keywords or clear some filters.
                 </div>
               </div>
+              {pager}
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {results.map((r) => (
                 <ResultCard key={r.id} result={r} />
               ))}
+              {pager}
             </div>
           )
         ) : (

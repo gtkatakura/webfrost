@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type {
   DashboardStats,
@@ -8,8 +9,11 @@ import type {
   SnapshotPage,
   WebFrostClient,
 } from "@webfrost/sdk";
+import { WebFrostError } from "@webfrost/sdk";
 import { MemoryRouter } from "react-router-dom";
 import App from "./App";
+import { ClientContext } from "./context";
+import { SnapshotDetailPanel } from "./pages/SnapshotDetailPanel";
 
 afterEach(() => {
   cleanup();
@@ -82,6 +86,7 @@ function makeDetail(overrides: Partial<SnapshotDetail> = {}): SnapshotDetail {
     title: null,
     excerpt: null,
     screenshotUrl: null,
+    extractorMeta: {},
     ...overrides,
   };
 }
@@ -285,5 +290,56 @@ describe("DetailPage — 404 / error state", () => {
 
     const err = await screen.findByText("Snapshot not found.");
     expect(err).toBeTruthy();
+  });
+});
+
+describe("Reader tab", () => {
+  test("renders textContent from the real readability shape as plain-text paragraphs", async () => {
+    const detail = makeDetail({
+      id: 30,
+      url: "https://reader.test",
+      extractors: ["readability"],
+      archiveResults: [
+        {
+          id: 40,
+          extractor: "readability",
+          content: JSON.stringify({
+            title: "Reader Title",
+            byline: "By Someone",
+            textContent: "First paragraph.\n\nSecond <b>paragraph</b>.",
+            excerpt: null,
+          }),
+          createdAt: "2024-01-15T10:03:00.000Z",
+        },
+      ],
+    });
+    const client = mockClient({ getSnapshot: () => Promise.resolve(detail) });
+    const queryClient = new QueryClient();
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <ClientContext.Provider value={client}>
+          <MemoryRouter>
+            <SnapshotDetailPanel snapshotId={30} onClose={() => {}} onDelete={async () => {}} />
+          </MemoryRouter>
+        </ClientContext.Provider>
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText("First paragraph.");
+    expect(screen.getByText("Reader Title")).toBeTruthy();
+    expect(screen.getByText("By Someone")).toBeTruthy();
+    expect(screen.getByText("Second <b>paragraph</b>.")).toBeTruthy();
+    expect(container.querySelector("b")).toBeNull();
+  });
+});
+
+describe("Global 401 handling", () => {
+  test("a query failing with 401 redirects to /login", async () => {
+    const client = mockClient({
+      listSnapshots: () => Promise.reject(new WebFrostError(401, "Unauthorized")),
+    });
+    renderApp(client, "/snapshots");
+
+    await screen.findByText("Sign in to continue");
   });
 });

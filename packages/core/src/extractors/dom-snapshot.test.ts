@@ -51,16 +51,18 @@ function makeStorage() {
 }
 
 describe("domSnapshotExtractor", () => {
-  test("does not throw when page.content() fails (graceful degradation)", async () => {
+  test("rejects when page.content() fails so the pipeline can record the failure", async () => {
     const page = makeFailingPage();
 
-    await expect(domSnapshotExtractor(db, 1, makeStorage(), page)).resolves.toBeUndefined();
+    await expect(domSnapshotExtractor(db, 1, makeStorage(), page)).rejects.toThrow(
+      "Playwright unavailable",
+    );
   });
 
   test("does not insert archive_result row when extraction fails", async () => {
     const page = makeFailingPage();
 
-    await domSnapshotExtractor(db, 1, makeStorage(), page);
+    await domSnapshotExtractor(db, 1, makeStorage(), page).catch(() => {});
 
     const rows = db
       .query<{ extractor: string }, []>(

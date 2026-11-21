@@ -4,9 +4,15 @@ import { useNavigate } from "react-router-dom";
 interface ShortcutOptions {
   onToggleHelp: () => void;
   onOpenSearch?: () => void;
+  /** Guests cannot reach write-only pages, so their shortcuts are not bound. */
+  canWrite?: boolean;
 }
 
-export function useKeyboardShortcuts({ onToggleHelp, onOpenSearch }: ShortcutOptions) {
+export function useKeyboardShortcuts({
+  onToggleHelp,
+  onOpenSearch,
+  canWrite = true,
+}: ShortcutOptions) {
   const navigate = useNavigate();
   const seqRef = useRef("");
   const seqTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -51,6 +57,7 @@ export function useKeyboardShortcuts({ onToggleHelp, onOpenSearch }: ShortcutOpt
               navigate("/tags");
               break;
             case "i":
+              if (!canWrite) break;
               e.preventDefault();
               navigate("/import");
               break;
@@ -75,7 +82,7 @@ export function useKeyboardShortcuts({ onToggleHelp, onOpenSearch }: ShortcutOpt
       window.removeEventListener("keydown", handleKeyDown);
       if (seqTimerRef.current) clearTimeout(seqTimerRef.current);
     };
-  }, [navigate, onToggleHelp, onOpenSearch]);
+  }, [navigate, onToggleHelp, onOpenSearch, canWrite]);
 }
 
 export const SHORTCUTS = [
@@ -86,3 +93,8 @@ export const SHORTCUTS = [
   { keys: ["g", "t"], description: "Go to tags" },
   { keys: ["g", "i"], description: "Go to import" },
 ];
+
+/** Shortcuts shown in the help modal; "go to import" is hidden for read-only guests. */
+export function shortcutsFor(canWrite: boolean) {
+  return canWrite ? SHORTCUTS : SHORTCUTS.filter((s) => s.keys.join("") !== "gi");
+}

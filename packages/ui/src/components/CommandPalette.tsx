@@ -1,7 +1,9 @@
 import { Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/auth";
 import { useSearch } from "../hooks/useSearch";
+import { Snippet } from "./Snippet";
 
 interface CommandPaletteProps {
   onClose: () => void;
@@ -12,6 +14,7 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const { canWrite } = useAuth();
   const { results, loading } = useSearch(query);
 
   useEffect(() => {
@@ -203,11 +206,9 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
                         {r.url}
                       </div>
                       {r.snippet && (
-                        <div
-                          style={{ fontSize: 11, color: "var(--text-mid)", lineHeight: 1.5 }}
-                          // biome-ignore lint/security/noDangerouslySetInnerHtml: controlled server snippet with <mark> tags
-                          dangerouslySetInnerHTML={{ __html: r.snippet }}
-                        />
+                        <div style={{ fontSize: 11, color: "var(--text-mid)", lineHeight: 1.5 }}>
+                          <Snippet text={r.snippet} />
+                        </div>
                       )}
                     </button>
                   </li>
@@ -261,7 +262,7 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
               { key: "g h", label: "Home / Dashboard" },
               { key: "g s", label: "Snapshots" },
               { key: "g t", label: "Tags" },
-              { key: "g i", label: "Import" },
+              ...(canWrite ? [{ key: "g i", label: "Import" }] : []),
               { key: "?", label: "Keyboard shortcuts" },
             ].map(({ key, label }) => (
               <div

@@ -6,20 +6,20 @@ import type { StorageBackend } from "../storage";
  * Unlike the raw HTML extractor (which captures the server response), this
  * captures the live DOM after client-side JavaScript has run.
  * The page must already have called page.goto() before this extractor runs.
+ *
+ * Throws if the DOM cannot be read; the pipeline records that as a failed
+ * extractor without failing the snapshot.
  */
 export async function domSnapshotExtractor(
   db: Database,
   snapshotId: number,
   storage: StorageBackend,
   page: import("playwright").Page,
+  signal?: AbortSignal,
 ): Promise<void> {
-  let dom: string;
-  try {
-    dom = await page.content();
-  } catch (err) {
-    console.warn("[dom-snapshot] extraction failed:", err);
-    return;
-  }
+  const dom = await page.content();
+  // The pipeline gave up on this extractor (timeout): do not record a late result.
+  signal?.throwIfAborted();
 
   const ref = await storage.putText(snapshotId, "dom.html", dom);
 

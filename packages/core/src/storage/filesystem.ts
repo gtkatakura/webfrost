@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import type { StorageBackend } from "./interface";
 
 /**
@@ -71,13 +71,10 @@ export class FilesystemBackend implements StorageBackend {
   }
 
   validateRef(ref: string): boolean {
-    // Resolve both to catch symlink tricks; normalize trailing separator
-    const normalized = `${this.snapshotsDir.replace(/\/?$/, "")}/`;
-    try {
-      return ref.startsWith(normalized) || ref === this.snapshotsDir;
-    } catch {
-      return false;
-    }
+    // Normalise both sides so "snapshots/../../etc/passwd" cannot pass a prefix check.
+    const root = resolve(this.snapshotsDir);
+    const target = resolve(ref);
+    return target === root || target.startsWith(root + sep);
   }
 
   presignedDownloadUrl(_ref: string, _expiresIn?: number): null {

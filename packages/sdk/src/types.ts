@@ -56,7 +56,7 @@ export interface SnapshotDetail extends Snapshot {
 }
 
 export interface WebFrostClientOptions {
-  /** Base URL of the WebFrost server, e.g. "http://localhost:3000" */
+  /** API base URL including the `/api` prefix, e.g. "http://localhost:3000/api" */
   baseUrl: string;
   /** API key for Bearer authentication. All requests will include Authorization: Bearer <apiKey>. */
   apiKey?: string;
@@ -122,6 +122,8 @@ export interface MeResult {
 /** Response from GET /setup/status */
 export interface SetupStatusResult {
   needsSetup: boolean;
+  /** True when anonymous visitors may read the archive (older servers omit it; normalised to false). */
+  publicRead: boolean;
 }
 
 /** Response from POST /setup */
@@ -177,4 +179,19 @@ export interface SearchResult {
   /** HTML snippet with <mark> highlights around matching terms */
   snippet: string;
   rank: number;
+  /** Snapshot status ("" when the server did not report one). */
+  status: string;
+  /** ISO creation timestamp ("" when the server did not report one). */
+  createdAt: string;
+  title: string | null;
+  extractors: string[];
+  tags: Tag[];
+}
+
+/** Paginated search results from GET /snapshots?q=term&page=&limit= */
+export interface SearchPage {
+  items: SearchResult[];
+  total: number;
+  page: number;
+  limit: number;
 }

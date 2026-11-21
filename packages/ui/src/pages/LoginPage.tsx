@@ -1,10 +1,13 @@
 import { type FormEvent, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/auth";
+import { loginErrorMessage } from "../lib/errors";
+import { returnToPath } from "../lib/returnTo";
 
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -17,9 +20,9 @@ export function LoginPage() {
     setLoading(true);
     try {
       await login(username, password);
-      navigate("/", { replace: true });
-    } catch {
-      setError("Invalid username or password.");
+      navigate(returnToPath(location.state), { replace: true });
+    } catch (err) {
+      setError(loginErrorMessage(err));
     } finally {
       setLoading(false);
     }

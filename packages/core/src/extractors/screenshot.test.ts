@@ -41,16 +41,18 @@ function makeStorage() {
 }
 
 describe("screenshotExtractor", () => {
-  test("does not throw when page.screenshot() fails (graceful degradation)", async () => {
+  test("rejects when page.screenshot() fails so the pipeline can record the failure", async () => {
     const page = makeFailingPage();
 
-    await expect(screenshotExtractor(db, 1, makeStorage(), page)).resolves.toBeUndefined();
+    await expect(screenshotExtractor(db, 1, makeStorage(), page)).rejects.toThrow(
+      "Playwright unavailable",
+    );
   });
 
   test("does not insert archive_result row when extraction fails", async () => {
     const page = makeFailingPage();
 
-    await screenshotExtractor(db, 1, makeStorage(), page);
+    await screenshotExtractor(db, 1, makeStorage(), page).catch(() => {});
 
     const rows = db
       .query<{ extractor: string }, []>(

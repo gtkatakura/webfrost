@@ -3,15 +3,18 @@ import type { Tag } from "@webfrost/sdk";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useClient } from "../context";
+import { useAuth } from "../context/auth";
 import { TagChip } from "./TagChip";
 
 export function SnapshotTagSection({ snapshotId }: { snapshotId: number }) {
   const client = useClient();
+  const { canWrite } = useAuth();
   const [snapshotTags, setSnapshotTags] = useState<Tag[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
 
   useEffect(() => {
-    Promise.all([client.listSnapshotTags(snapshotId), client.listTags()])
+    // The full tag list is only needed for the add-tag picker (write-only).
+    Promise.all([client.listSnapshotTags(snapshotId), canWrite ? client.listTags() : []])
       .then(([st, all]) => {
         setSnapshotTags(st);
         setAllTags(all);
@@ -19,9 +22,10 @@ export function SnapshotTagSection({ snapshotId }: { snapshotId: number }) {
       .catch((e: unknown) => {
         toast.error(e instanceof WebFrostError ? e.message : String(e));
       });
-  }, [snapshotId, client]);
+  }, [snapshotId, client, canWrite]);
 
   async function handleRemove(tagId: number) {
+    if (!canWrite) return;
     // Optimistic update
     setSnapshotTags((prev) => prev.filter((t) => t.id !== tagId));
     try {
@@ -35,6 +39,7 @@ export function SnapshotTagSection({ snapshotId }: { snapshotId: number }) {
   }
 
   async function handleAdd(tagId: number) {
+    if (!canWrite) return;
     const tag = allTags.find((t) => t.id === tagId);
     if (!tag) return;
     // Optimistic update
@@ -59,10 +64,14 @@ export function SnapshotTagSection({ snapshotId }: { snapshotId: number }) {
           <span className="text-gray-400 dark:text-gray-500 text-sm">No tags assigned.</span>
         )}
         {snapshotTags.map((tag) => (
-          <TagChip key={tag.id} tag={tag} onRemove={() => handleRemove(tag.id)} />
+          <TagChip
+            key={tag.id}
+            tag={tag}
+            onRemove={canWrite ? () => handleRemove(tag.id) : undefined}
+          />
         ))}
       </div>
-      {availableTags.length > 0 && (
+      {canWrite && availableTags.length > 0 && (
         <select
           className="border border-gray-300 dark:border-gray-600 rounded-md text-sm py-1 px-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 cursor-pointer"
           value=""

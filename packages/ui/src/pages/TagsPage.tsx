@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { TagChip } from "../components";
+import { useAuth } from "../context/auth";
 import { useTags } from "../hooks";
 
 const inputCls =
@@ -10,6 +11,7 @@ const inputCls =
 
 export function TagsPage() {
   const navigate = useNavigate();
+  const { canWrite } = useAuth();
   const { tags, loading, createTag, deleteTag } = useTags();
 
   const [newName, setNewName] = useState("");
@@ -18,7 +20,7 @@ export function TagsPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!newName.trim()) return;
+    if (!canWrite || !newName.trim()) return;
     setCreating(true);
     try {
       await createTag({ name: newName.trim(), color: newColor });
@@ -32,6 +34,7 @@ export function TagsPage() {
   }
 
   async function handleDelete(tagId: number, tagName: string) {
+    if (!canWrite) return;
     try {
       await deleteTag(tagId);
       toast.success(`Tag "${tagName}" deleted`);
@@ -52,34 +55,36 @@ export function TagsPage() {
 
       <h1 className="text-2xl font-bold mb-6 text-gray-900 dark:text-gray-100">Tags</h1>
 
-      <form onSubmit={handleCreate} className="flex gap-2 mb-6 items-center">
-        <input
-          type="text"
-          placeholder="New tag name"
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          required
-          className={`flex-1 ${inputCls}`}
-        />
-        <label className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300">
-          Color
+      {canWrite && (
+        <form onSubmit={handleCreate} className="flex gap-2 mb-6 items-center">
           <input
-            type="color"
-            value={newColor}
-            onChange={(e) => setNewColor(e.target.value)}
-            className="w-9 h-8 p-0.5 border border-gray-300 dark:border-gray-600 rounded cursor-pointer bg-transparent"
+            type="text"
+            placeholder="New tag name"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            required
+            className={`flex-1 ${inputCls}`}
           />
-        </label>
-        <button
-          type="submit"
-          disabled={creating}
-          className={`py-2 px-5 bg-primary text-white border-0 rounded font-semibold ${
-            creating ? "cursor-not-allowed opacity-70" : "cursor-pointer"
-          }`}
-        >
-          {creating ? "Creating…" : "Create"}
-        </button>
-      </form>
+          <label className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300">
+            Color
+            <input
+              type="color"
+              value={newColor}
+              onChange={(e) => setNewColor(e.target.value)}
+              className="w-9 h-8 p-0.5 border border-gray-300 dark:border-gray-600 rounded cursor-pointer bg-transparent"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={creating}
+            className={`py-2 px-5 bg-primary text-white border-0 rounded font-semibold ${
+              creating ? "cursor-not-allowed opacity-70" : "cursor-pointer"
+            }`}
+          >
+            {creating ? "Creating…" : "Create"}
+          </button>
+        </form>
+      )}
 
       {loading ? (
         <p className="text-gray-400 dark:text-gray-500">Loading…</p>
@@ -91,7 +96,9 @@ export function TagsPage() {
           <div>
             <p className="text-gray-700 dark:text-gray-300 font-semibold">No tags yet</p>
             <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">
-              Create a tag above to organize your snapshots.
+              {canWrite
+                ? "Create a tag above to organize your snapshots."
+                : "No tags have been created."}
             </p>
           </div>
         </div>
@@ -103,13 +110,15 @@ export function TagsPage() {
               className="flex justify-between items-center py-2.5 px-4 border border-gray-200 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800"
             >
               <TagChip tag={tag} />
-              <button
-                type="button"
-                onClick={() => handleDelete(tag.id, tag.name)}
-                className="bg-transparent border border-red-300 dark:border-red-700 text-red-700 dark:text-red-400 rounded cursor-pointer py-1 px-2.5 text-xs hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-              >
-                Delete
-              </button>
+              {canWrite && (
+                <button
+                  type="button"
+                  onClick={() => handleDelete(tag.id, tag.name)}
+                  className="bg-transparent border border-red-300 dark:border-red-700 text-red-700 dark:text-red-400 rounded cursor-pointer py-1 px-2.5 text-xs hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                >
+                  Delete
+                </button>
+              )}
             </li>
           ))}
         </ul>

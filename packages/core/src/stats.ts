@@ -9,6 +9,7 @@ const FILE_BACKED_EXTRACTORS = new Set([
   "dom-snapshot",
   "singlefile",
   "media",
+  "media-metadata",
 ]);
 
 export interface Stats {
@@ -30,7 +31,7 @@ export async function getStats(db: Database, storage: StorageBackend): Promise<S
   // Storage: iterate archive_results, resolve real file sizes for file-backed extractors
   const archiveRows = db
     .query<{ extractor: string; content: string | null }, []>(
-      "SELECT extractor, content FROM archive_results",
+      "SELECT extractor, content FROM archive_results WHERE error IS NULL",
     )
     .all();
 
@@ -42,7 +43,7 @@ export async function getStats(db: Database, storage: StorageBackend): Promise<S
       if (FILE_BACKED_EXTRACTORS.has(row.extractor)) {
         bytes = await storage.fileSize(row.content);
       } else {
-        bytes = row.content.length;
+        bytes = Buffer.byteLength(row.content, "utf8");
       }
       storageByExtractor[row.extractor] = (storageByExtractor[row.extractor] ?? 0) + bytes;
     }),

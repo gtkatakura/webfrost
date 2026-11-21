@@ -1,45 +1,58 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
 import {
-  createSessionToken,
+  createSession,
   getAdminUsername,
-  openDb,
+  revokeSession,
   updateAdminPassword,
   validateAdminCredentials,
   validateApiKey,
-  verifySessionToken,
+  verifySession,
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
+import { getDb, getSessionSecret, parseCookie, setSessionCookie } from "../context";
 import { logger } from "../logger";
 
-function getWebfrostDir(): string {
-  return process.env.WEBFROST_DIR ?? join(homedir(), ".webfrost");
+/** WEBFROST_PUBLIC_READ=true lets anonymous visitors browse the archive (never change it). */
+export function isPublicRead(): boolean {
+  return process.env.WEBFROST_PUBLIC_READ === "true";
 }
 
-function getDb() {
-  return openDb(getWebfrostDir());
-}
+/**
+ * The only routes an anonymous visitor may call when public read is on: listing,
+ * searching and viewing snapshots, their tags and files, and the stats card.
+ * Everything else — every write, schedules, imports, settings, API keys — stays
+ * private. The optional /api prefix covers routers mounted standalone in tests.
+ */
+const PUBLIC_READ_ROUTES = [
+  /^(?:\/api)?\/snapshots\/?$/,
+  /^(?:\/api)?\/snapshots\/\d+\/?$/,
+  /^(?:\/api)?\/snapshots\/\d+\/tags\/?$/,
+  /^(?:\/api)?\/snapshots\/\d+\/archives\/[a-z-]+\/(?:download|preview)$/,
+  /^(?:\/api)?\/tags\/?$/,
+  /^(?:\/api)?\/stats\/?$/,
+];
 
-function getSessionSecret(): string {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret) throw new Error("SESSION_SECRET env var not set");
-  return secret;
-}
+// Routes that never require credentials (the /api prefix is optional for the same reason).
+const LOGIN_ROUTE = /^(?:\/api)?\/auth\/login\/?$/;
+const SETUP_STATUS_ROUTE = /^(?:\/api)?\/setup\/status\/?$/;
+const SETUP_ROUTE = /^(?:\/api)?\/setup\/?$/;
 
-function parseCookie(cookieHeader: string | null, name: string): string | null {
-  if (!cookieHeader) return null;
-  for (const part of cookieHeader.split(";")) {
-    const [k, v] = part.trim().split("=");
-    if (k?.trim() === name && v) return decodeURIComponent(v.trim());
-  }
-  return null;
+// Requests let through as anonymous guests, so routes can hold back details
+// (such as storage paths) that only the admin should see.
+const guestRequests = new WeakSet<Request>();
+
+/** True when the request was admitted by public read rather than by credentials. */
+export function isGuestRequest(request: Request): boolean {
+  return guestRequests.has(request);
 }
 
 /**
  * Elysia plugin that adds Bearer + session auth to every route inside /api.
  * - AUTH_DISABLED=true bypasses all checks (dev only).
  * - Bearer token → validated against api_keys table.
- * - session cookie → verified with SESSION_SECRET HMAC signature.
+ * - session cookie → HMAC signature verified with SESSION_SECRET, then looked up
+ *   in the sessions table so logout and password changes take effect immediately.
+ * - WEBFROST_PUBLIC_READ=true additionally admits anonymous GETs on the read-only
+ *   routes listed above.
  */
 export function authPlugin(app: Elysia) {
   const authDisabled = process.env.AUTH_DISABLED === "true";
@@ -50,41 +63,42 @@ export function authPlugin(app: Elysia) {
   }
 
   return app.onBeforeHandle(({ request, set }) => {
-    // Public endpoints — allow unauthenticated access
+    // Public endpoints — allow unauthenticated access. Matched exactly: a suffix
+    // match would also wave through any future route that merely ends the same way.
     const url = new URL(request.url);
-    if (url.pathname.endsWith("/auth/login") && request.method === "POST") return;
-    if (url.pathname.endsWith("/setup/status") && request.method === "GET") return;
-    if (
-      (url.pathname.endsWith("/setup") || url.pathname.endsWith("/setup/")) &&
-      request.method === "POST"
-    )
-      return;
+    if (request.method === "POST" && LOGIN_ROUTE.test(url.pathname)) return;
+    if (request.method === "GET" && SETUP_STATUS_ROUTE.test(url.pathname)) return;
+    if (request.method === "POST" && SETUP_ROUTE.test(url.pathname)) return;
+
     const authHeader = request.headers.get("authorization");
-    if (authHeader?.startsWith("Bearer ")) {
-      const rawKey = authHeader.slice(7);
+    const bearer = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    const sessionToken = parseCookie(request.headers.get("cookie"), "session");
+
+    if (bearer || sessionToken) {
       const db = getDb();
-      let valid = false;
       try {
-        valid = validateApiKey(db, rawKey);
+        if (bearer && validateApiKey(db, bearer)) return;
+        if (sessionToken) {
+          let secret: string | null = null;
+          try {
+            secret = getSessionSecret();
+          } catch {
+            // SESSION_SECRET missing — treat as no valid session
+          }
+          if (secret && verifySession(db, secret, sessionToken)) return;
+        }
       } finally {
         db.close();
       }
-      if (valid) return;
     }
 
-    const cookieHeader = request.headers.get("cookie");
-    const sessionToken = parseCookie(cookieHeader, "session");
-    if (sessionToken) {
-      let secret: string;
-      try {
-        secret = getSessionSecret();
-      } catch {
-        // SESSION_SECRET missing — treat as no valid session
-        set.status = 401;
-        return { error: "unauthorized" };
-      }
-      const username = verifySessionToken(secret, sessionToken);
-      if (username) return;
+    if (
+      isPublicRead() &&
+      (request.method === "GET" || request.method === "HEAD") &&
+      PUBLIC_READ_ROUTES.some((route) => route.test(url.pathname))
+    ) {
+      guestRequests.add(request);
+      return;
     }
 
     set.status = 401;
@@ -107,35 +121,31 @@ export const authRouter = new Elysia({ prefix: "/auth" })
       }
 
       const db = getDb();
-      let validUsername: string | null = null;
       try {
-        validUsername = await validateAdminCredentials(db, username, password);
+        const validUsername = await validateAdminCredentials(db, username, password);
+        if (!validUsername) {
+          set.status = 401;
+          return { error: "invalid credentials" };
+        }
+        setSessionCookie(cookie.session, createSession(db, secret, validUsername));
+        return { ok: true };
       } finally {
         db.close();
       }
-
-      if (!validUsername) {
-        set.status = 401;
-        return { error: "invalid credentials" };
-      }
-
-      const token = createSessionToken(secret, validUsername);
-      const isSecure = process.env.NODE_ENV !== "development";
-
-      const sessionCookie = cookie.session;
-      if (sessionCookie) {
-        sessionCookie.value = token;
-        sessionCookie.httpOnly = true;
-        sessionCookie.sameSite = "strict";
-        sessionCookie.path = "/";
-        if (isSecure) sessionCookie.secure = true;
-      }
-
-      return { ok: true };
     },
     { body: t.Object({ username: t.String(), password: t.String() }) },
   )
-  .post("/logout", ({ cookie }) => {
+  .post("/logout", ({ request, cookie }) => {
+    // Remove the server-side session so the cookie is dead even if a copy survives.
+    const sessionToken = parseCookie(request.headers.get("cookie"), "session");
+    if (sessionToken && process.env.SESSION_SECRET) {
+      const db = getDb();
+      try {
+        revokeSession(db, process.env.SESSION_SECRET, sessionToken);
+      } finally {
+        db.close();
+      }
+    }
     cookie.session?.remove();
     return { ok: true };
   })
@@ -143,25 +153,23 @@ export const authRouter = new Elysia({ prefix: "/auth" })
     const authDisabled = process.env.AUTH_DISABLED === "true";
     if (authDisabled) return { username: "admin" };
 
-    // Extract username from Bearer or session (already validated by middleware)
-    const cookieHeader = request.headers.get("cookie");
-    const sessionToken = parseCookie(cookieHeader, "session");
-    if (sessionToken) {
-      let secret: string;
+    // Extract username from the session (the request was already authenticated by the plugin)
+    const sessionToken = parseCookie(request.headers.get("cookie"), "session");
+    if (sessionToken && process.env.SESSION_SECRET) {
+      const db = getDb();
       try {
-        secret = getSessionSecret();
-      } catch {
-        return { username: null };
+        const username = verifySession(db, process.env.SESSION_SECRET, sessionToken);
+        if (username) return { username };
+      } finally {
+        db.close();
       }
-      const username = verifySessionToken(secret, sessionToken);
-      if (username) return { username };
     }
     // API key auth — username not available from key alone
     return { username: null };
   })
   .post(
     "/change-password",
-    async ({ body, set }) => {
+    async ({ body, set, cookie, request }) => {
       const { currentPassword, newPassword } = body;
 
       if (newPassword.length < 8) {
@@ -179,11 +187,20 @@ export const authRouter = new Elysia({ prefix: "/auth" })
 
         const valid = await validateAdminCredentials(db, username, currentPassword);
         if (!valid) {
-          set.status = 401;
+          // 403, not 401: the caller is authenticated, it is the supplied password that is wrong.
+          // Clients treat 401 as "session expired" and would log the user out.
+          set.status = 403;
           return { error: "Current password is incorrect" };
         }
 
+        // Revokes every session for this user, including the caller's…
         await updateAdminPassword(db, username, newPassword);
+
+        // …so hand the caller a fresh one when they are logged in through the browser.
+        const hadSession = parseCookie(request.headers.get("cookie"), "session") !== null;
+        if (hadSession && process.env.SESSION_SECRET) {
+          setSessionCookie(cookie.session, createSession(db, process.env.SESSION_SECRET, username));
+        }
         return { ok: true };
       } finally {
         db.close();

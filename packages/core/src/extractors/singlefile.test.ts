@@ -53,16 +53,18 @@ function makeStorage() {
 }
 
 describe("singleFileExtractor", () => {
-  test("does not throw when page.content() fails (graceful degradation)", async () => {
+  test("rejects when page.content() fails so the pipeline can record the failure", async () => {
     const page = makeFailingPage();
 
-    await expect(singleFileExtractor(db, 1, makeStorage(), page)).resolves.toBeUndefined();
+    await expect(singleFileExtractor(db, 1, makeStorage(), page)).rejects.toThrow(
+      "Playwright unavailable",
+    );
   });
 
   test("does not insert archive_result row when extraction fails", async () => {
     const page = makeFailingPage();
 
-    await singleFileExtractor(db, 1, makeStorage(), page);
+    await singleFileExtractor(db, 1, makeStorage(), page).catch(() => {});
 
     const row = db
       .query<{ extractor: string }, []>(
@@ -217,5 +219,21 @@ describe("singleFileExtractor", () => {
     expect(row?.content).toBeDefined();
     const written = await Bun.file(row?.content ?? "").text();
     expect(written).toContain("nonexistent.invalid");
+  });
+});
+
+describe("singleFileExtractor — cancellation", () => {
+  test("stores nothing once the pipeline has given up on it", async () => {
+    const page = {
+      url: () => "https://example.com/",
+      content: async () => "<html><body>slow page</body></html>",
+    } as unknown as Page;
+
+    await expect(
+      singleFileExtractor(db, 1, makeStorage(), page, AbortSignal.abort()),
+    ).rejects.toThrow();
+
+    const rows = db.query<{ extractor: string }, []>("SELECT extractor FROM archive_results").all();
+    expect(rows).toHaveLength(0);
   });
 });

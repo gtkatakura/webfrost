@@ -1,21 +1,19 @@
 // @webfrost/cli entry point
 import { readFileSync } from "node:fs";
 import {
+  JobRunner,
+  SCHEDULER_INTERVAL_MS,
   addRssFeedSchedule,
   addSchedule,
   addTagToSnapshot,
   addUrl,
   createAdminUser,
   createApiKey,
-  createConcurrencyLimiter,
-  createSnapshot,
   createStorageBackend,
   createTag,
   deleteSnapshot,
   deleteTag,
   detectFormat,
-  fetchRssFeedUrls,
-  getDueSchedules,
   getSnapshot,
   getTag,
   isUrlArchived,
@@ -24,15 +22,14 @@ import {
   listSnapshotTags,
   listSnapshots,
   listTags,
-  markScheduleRun,
   openDb,
   parseUrls,
   rebuildIndex,
   removeSchedule,
   revokeApiKey,
-  runPipeline,
+  safeFetch,
   searchSnapshots,
-  updateScheduleStatus,
+  startScheduler,
 } from "@webfrost/core";
 import { createLogger, resolveLogLevel } from "./logger";
 
@@ -52,6 +49,17 @@ const logger = createLogger(resolveLogLevel({ verbose, quiet }));
 const { version } = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url).pathname, "utf8"),
 ) as { version: string };
+
+/** Search snippets are HTML (escaped text + <mark> highlights); the terminal wants plain text. */
+function plainSnippet(snippet: string): string {
+  return snippet
+    .replace(/<\/?mark>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+}
 
 function printHelp(): void {
   console.log(`webfrost v${version} — self-hosted web archiving toolkit
@@ -92,8 +100,10 @@ Flags:
   --quiet         Suppress info output (warn/error only)
 
 Environment:
-  WEBFROST_DIR        Archive directory (default: current working directory)
-  WEBFROST_LOG_LEVEL  Log level: debug | info | warn | error (default: info)
+  WEBFROST_DIR              Archive directory (default: current working directory)
+  WEBFROST_LOG_LEVEL        Log level: debug | info | warn | error (default: info)
+  WEBFROST_CONCURRENCY      Pipelines run in parallel by import / schedule worker (default: 3)
+  WEBFROST_DOMAIN_DELAY_MS  Minimum gap between two archives of the same host (default: 1000)
 
 Examples:
   webfrost init
@@ -295,96 +305,25 @@ switch (command) {
     }
 
     if (sub === "worker") {
-      // Polling worker: checks due schedules every 30 seconds
-      const intervalMs = 30_000;
+      // Polling worker: the same scheduler the HTTP server embeds. Due schedules are
+      // claimed atomically, so running this next to a server on the same archive is
+      // safe (set WEBFROST_SCHEDULER=false on the server to make this the only one).
+      const runner = new JobRunner({ dir: archiveDir, logger: () => logger });
+      // Adopt snapshots an interrupted run left pending. Only jobs whose heartbeat
+      // has gone stale are taken, so work a live server is doing is left alone; the
+      // sweep repeats because a freshly crashed process still looks alive for a while.
+      const recover = () => {
+        const recovered = runner.recoverPending();
+        if (recovered > 0) {
+          logger.info(`Re-queued ${recovered} snapshot(s) left pending by an interrupted run.`);
+        }
+      };
+      recover();
+      setInterval(recover, 60_000);
       logger.info(
-        `Schedule worker started (polling every ${intervalMs / 1000}s). Press Ctrl+C to stop.`,
+        `Schedule worker started (polling every ${SCHEDULER_INTERVAL_MS / 1000}s, concurrency ${runner.concurrency}). Press Ctrl+C to stop.`,
       );
-
-      const workerLimiter = createConcurrencyLimiter();
-
-      async function runDue(): Promise<void> {
-        logger.debug("Checking for due schedules...");
-        const db = openDb(archiveDir);
-        let due: ReturnType<typeof getDueSchedules>;
-        try {
-          due = getDueSchedules(db);
-        } finally {
-          db.close();
-        }
-
-        if (due.length === 0) {
-          logger.debug("No schedules due.");
-          return;
-        }
-
-        logger.info(`Found ${due.length} due schedule(s).`);
-
-        for (const schedule of due) {
-          const scheduleStart = Date.now();
-          if (schedule.kind === "rss_feed") {
-            logger.info(`Running RSS feed schedule ${schedule.id}: ${schedule.url}`);
-            const db2 = openDb(archiveDir);
-            try {
-              const feedUrls = await fetchRssFeedUrls(schedule.url);
-              let queued = 0;
-              const rssPromises: Promise<void>[] = [];
-              for (const url of feedUrls) {
-                if (isUrlArchived(db2, url)) continue;
-                const snapshotId = createSnapshot(db2, url);
-                rssPromises.push(
-                  workerLimiter
-                    .run(() => runPipeline(db2, snapshotId, url, archiveDir, undefined, logger))
-                    .catch((err: unknown) => {
-                      logger.error(
-                        `Pipeline error for ${url}: ${err instanceof Error ? err.message : String(err)}`,
-                      );
-                    }),
-                );
-                queued++;
-              }
-              await Promise.allSettled(rssPromises);
-              markScheduleRun(db2, schedule.id, schedule.cron);
-              updateScheduleStatus(db2, schedule.id, "success");
-              logger.info(
-                `RSS feed schedule ${schedule.id} done: ${feedUrls.length} items, ${queued} new (${Date.now() - scheduleStart}ms)`,
-              );
-            } catch (err) {
-              updateScheduleStatus(db2, schedule.id, "failed");
-              logger.error(
-                `RSS feed schedule ${schedule.id} failed: ${err instanceof Error ? err.message : String(err)}`,
-              );
-            } finally {
-              db2.close();
-            }
-          } else {
-            logger.info(`Running schedule ${schedule.id}: ${schedule.url}`);
-            const db2 = openDb(archiveDir);
-            try {
-              const snapshotId = createSnapshot(db2, schedule.url);
-              await runPipeline(db2, snapshotId, schedule.url, archiveDir, undefined, logger);
-              const snap = db2
-                .query<{ status: string }, [number]>("SELECT status FROM snapshots WHERE id = ?")
-                .get(snapshotId);
-              const runStatus = snap?.status === "done" ? "success" : "failed";
-              markScheduleRun(db2, schedule.id, schedule.cron);
-              updateScheduleStatus(db2, schedule.id, runStatus);
-              logger.info(
-                `Schedule ${schedule.id} done: snapshot ${snapshotId} status=${snap?.status} (${Date.now() - scheduleStart}ms)`,
-              );
-            } catch (err) {
-              logger.error(
-                `Schedule ${schedule.id} failed: ${err instanceof Error ? err.message : String(err)}`,
-              );
-            } finally {
-              db2.close();
-            }
-          }
-        }
-      }
-
-      await runDue();
-      setInterval(runDue, intervalMs);
+      startScheduler({ dir: archiveDir, runner, logger });
       break;
     }
 
@@ -419,10 +358,11 @@ switch (command) {
     }
 
     if (isSourceUrl) {
-      // Fetch from network (CLI context — user controls this machine)
+      // Same SSRF-safe fetcher as everywhere else (size cap, timeout, private ranges
+      // refused unless WEBFROST_ALLOW_PRIVATE_URLS=true).
       let response: Response;
       try {
-        response = await fetch(source);
+        response = await safeFetch(source);
       } catch (err) {
         logger.error(
           `Cannot fetch URL: ${source}: ${err instanceof Error ? err.message : String(err)}`,
@@ -458,50 +398,55 @@ switch (command) {
     let skipped = 0;
     let failed = 0;
 
-    const limiter = createConcurrencyLimiter();
+    const runner = new JobRunner({ dir: archiveDir, logger: () => logger });
     logger.info(
-      `Detected format: ${format}. Found ${total} URL(s). Concurrency: ${limiter.limit}.`,
+      `Detected format: ${format}. Found ${total} URL(s). Concurrency: ${runner.concurrency}.`,
     );
 
     const importStart = Date.now();
     const db = openDb(archiveDir);
-    const pipelines: Promise<void>[] = [];
-    for (const url of urls) {
-      if (deduplicate && isUrlArchived(db, url)) {
-        skipped++;
-        continue;
+    const snapshotIds: number[] = [];
+    try {
+      for (const url of urls) {
+        if (deduplicate && isUrlArchived(db, url)) {
+          skipped++;
+          continue;
+        }
+        try {
+          const snapshotId = runner.add(db, url);
+          snapshotIds.push(snapshotId);
+          queued++;
+          logger.debug(
+            `Enqueued ${queued + failed + skipped}/${total}: ${url} (snapshot ${snapshotId})`,
+          );
+        } catch {
+          failed++;
+          logger.warn(`Failed to enqueue ${queued + failed + skipped}/${total}: ${url}`);
+        }
       }
-      try {
-        const snapshotId = createSnapshot(db, url);
-        queued++;
-        logger.debug(
-          `Enqueued ${queued + failed + skipped}/${total}: ${url} (snapshot ${snapshotId})`,
-        );
-        pipelines.push(
-          limiter
-            .run(() => runPipeline(db, snapshotId, url, archiveDir, undefined, logger))
-            .catch((err: unknown) => {
-              logger.error(
-                `Pipeline error for ${url}: ${err instanceof Error ? err.message : String(err)}`,
-              );
-            }),
-        );
-      } catch {
-        failed++;
-        logger.warn(`Failed to enqueue ${queued + failed + skipped}/${total}: ${url}`);
+
+      if (queued > 0) {
+        logger.info(`Running ${queued} pipeline(s)...`);
+        await runner.onIdle();
       }
-    }
 
-    if (pipelines.length > 0) {
-      logger.info(`Running ${pipelines.length} pipeline(s)...`);
-      await Promise.allSettled(pipelines);
-    }
-    db.close();
+      // Report what actually happened, not just what was queued.
+      let done = 0;
+      for (const id of snapshotIds) {
+        const row = db
+          .query<{ status: string }, [number]>("SELECT status FROM snapshots WHERE id = ?")
+          .get(id);
+        if (row?.status === "done") done++;
+        else failed++;
+      }
 
-    const elapsed = ((Date.now() - importStart) / 1000).toFixed(1);
-    logger.info(
-      `Import complete: total=${total}, done=${queued}, skipped=${skipped}, failed=${failed} (${elapsed}s)`,
-    );
+      const elapsed = ((Date.now() - importStart) / 1000).toFixed(1);
+      logger.info(
+        `Import complete: total=${total}, done=${done}, skipped=${skipped}, failed=${failed} (${elapsed}s)`,
+      );
+    } finally {
+      db.close();
+    }
     break;
   }
 
@@ -661,6 +606,10 @@ switch (command) {
         logger.error("Usage: webfrost admin create --username <name> --password <pass>");
         process.exit(1);
       }
+      if (passwordArg.length < 8) {
+        logger.error("Password must be at least 8 characters.");
+        process.exit(1);
+      }
 
       const db = openDb(archiveDir);
       try {
@@ -771,7 +720,7 @@ switch (command) {
       for (const r of results.items) {
         console.log(`${r.id}\t${r.url}`);
         if (r.snippet) {
-          console.log(`  ${r.snippet.replace(/<\/?mark>/g, "")}`);
+          console.log(`  ${plainSnippet(r.snippet)}`);
         }
       }
     } finally {

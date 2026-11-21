@@ -7,14 +7,18 @@ export { openDb } from "./db";
 export {
   createAdminUser,
   createApiKey,
+  createSession,
   createSessionToken,
   getAdminUsername,
   hasAdminUser,
   listApiKeys,
+  revokeAllSessions,
   revokeApiKey,
+  revokeSession,
   updateAdminPassword,
   validateAdminCredentials,
   validateApiKey,
+  verifySession,
   verifySessionToken,
 } from "./auth";
 export type { ApiKey } from "./auth";
@@ -25,15 +29,32 @@ export type { ImportFormat } from "./import";
 export { listImports, recordImport } from "./import-history";
 export type { ImportRecord } from "./import-history";
 export { fetchRssFeedUrls, isUrlArchived } from "./rss";
-export { safeFetch } from "./ssrf-guard";
+export { assertPublicUrl, isPrivateIPv4, isPrivateIPv6, safeFetch } from "./ssrf-guard";
+export { guardBrowserContext } from "./browser-guard";
+export type { BrowserGuard, HostCheck } from "./browser-guard";
+export { HostThrottle, domainThrottle } from "./throttle";
+export { runProcess } from "./subprocess";
+export type { ProcessResult, RunProcessOptions } from "./subprocess";
+export { JobRunner } from "./jobs";
+export type { JobRunnerOptions } from "./jobs";
+export { SCHEDULER_INTERVAL_MS, claimSchedule, runDueSchedules, startScheduler } from "./scheduler";
+export type { Scheduler, SchedulerOptions } from "./scheduler";
 export {
+  getSnapshotsByIds,
   listSnapshots,
   listSnapshotsWithExtractors,
   listSnapshotsWithExtractorsPaginated,
 } from "./list";
 export type { Snapshot, SnapshotWithExtractors, PaginatedResult } from "./list";
-export { addUrl, createSnapshot, runPipeline } from "./pipeline";
-export type { Logger } from "./pipeline";
+export {
+  JOB_LEASE_SECONDS,
+  addUrl,
+  chromiumLaunchOptions,
+  createSnapshot,
+  runPipeline,
+  withTimeout,
+} from "./pipeline";
+export type { Logger, PipelineOptions } from "./pipeline";
 export { deleteSnapshot, getSnapshot } from "./snapshot";
 export type { SnapshotDetail } from "./snapshot";
 export {

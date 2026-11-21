@@ -1,6 +1,7 @@
 {
   "name": "@webfrost/sdk",
   "version": "0.0.0",
+  "license": "MIT",
   "private": false,
   "module": "src/index.ts",
   "main": "dist/index.js",

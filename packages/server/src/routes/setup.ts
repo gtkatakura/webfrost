@@ -1,35 +1,25 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
-import {
-  createAdminUser,
-  createApiKey,
-  createSessionToken,
-  hasAdminUser,
-  openDb,
-} from "@webfrost/core";
+import { createAdminUser, createApiKey, createSession, hasAdminUser } from "@webfrost/core";
 import { Elysia, t } from "elysia";
-
-function getWebfrostDir(): string {
-  return process.env.WEBFROST_DIR ?? join(homedir(), ".webfrost");
-}
-
-function getDb() {
-  return openDb(getWebfrostDir());
-}
-
-function getSessionSecret(): string {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret) throw new Error("SESSION_SECRET env var not set");
-  return secret;
-}
+import { getDb, getSessionSecret, setSessionCookie } from "../context";
+import { isPublicRead } from "./auth";
 
 export const setupRouter = new Elysia({ prefix: "/setup" })
+  .onError(({ code, set }) => {
+    if (code === "VALIDATION") {
+      set.status = 400;
+      return { error: "username is required and password must be at least 8 characters" };
+    }
+    return undefined;
+  })
   .get("/status", () => {
     // AUTH_DISABLED bypasses setup so E2E tests can run without seeding an admin user
-    if (process.env.AUTH_DISABLED === "true") return { needsSetup: false };
+    // publicRead tells the UI whether anonymous visitors get a read-only view.
+    if (process.env.AUTH_DISABLED === "true") {
+      return { needsSetup: false, publicRead: isPublicRead() };
+    }
     const db = getDb();
     try {
-      return { needsSetup: !hasAdminUser(db) };
+      return { needsSetup: !hasAdminUser(db), publicRead: isPublicRead() };
     } finally {
       db.close();
     }
@@ -37,6 +27,16 @@ export const setupRouter = new Elysia({ prefix: "/setup" })
   .post(
     "/",
     async ({ body, set, cookie }) => {
+      // Check the secret before creating anything: failing afterwards would leave an
+      // admin user behind with no way to finish (or repeat) the setup.
+      let secret: string;
+      try {
+        secret = getSessionSecret();
+      } catch {
+        set.status = 500;
+        return { error: "server misconfigured" };
+      }
+
       const db = getDb();
       try {
         if (hasAdminUser(db)) {
@@ -44,32 +44,25 @@ export const setupRouter = new Elysia({ prefix: "/setup" })
           return { error: "setup already complete" };
         }
 
-        await createAdminUser(db, body.username, body.password);
-        const { rawKey } = createApiKey(db, "default");
-
-        let secret: string;
         try {
-          secret = getSessionSecret();
+          await createAdminUser(db, body.username, body.password);
         } catch {
-          set.status = 500;
-          return { error: "server misconfigured" };
+          // Lost a race with another setup request: the admin exists now.
+          set.status = 409;
+          return { error: "setup already complete" };
         }
-
-        const token = createSessionToken(secret, body.username);
-        const isSecure = process.env.NODE_ENV !== "development";
-        const sessionCookie = cookie.session;
-        if (sessionCookie) {
-          sessionCookie.value = token;
-          sessionCookie.httpOnly = true;
-          sessionCookie.sameSite = "strict";
-          sessionCookie.path = "/";
-          if (isSecure) sessionCookie.secure = true;
-        }
+        const { rawKey } = createApiKey(db, "default");
+        setSessionCookie(cookie.session, createSession(db, secret, body.username));
 
         return { apiKey: rawKey };
       } finally {
         db.close();
       }
     },
-    { body: t.Object({ username: t.String(), password: t.String() }) },
+    {
+      body: t.Object({
+        username: t.String({ minLength: 1 }),
+        password: t.String({ minLength: 8 }),
+      }),
+    },
   );

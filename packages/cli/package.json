@@ -1,12 +1,13 @@
 {
   "name": "@webfrost/cli",
   "version": "0.0.0",
+  "license": "MIT",
   "private": true,
   "bin": {
     "webfrost": "src/index.ts"
   },
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target bun",
+    "build": "bun build src/index.ts --outdir dist --target bun --external playwright --external jsdom",
     "test": "bun test",
     "benchmarks": "echo 'CLI benchmarks are covered by bench/cli-add.bench.ts at the repo root'"
   },

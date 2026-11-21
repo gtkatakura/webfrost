@@ -4,8 +4,31 @@ import type { PaginatedResult } from "./list";
 export interface SearchResult {
   id: number;
   url: string;
+  /**
+   * HTML-safe excerpt: the archived text is entity-escaped and the only markup
+   * is `<mark>…</mark>` around matched terms.
+   */
   snippet: string;
   rank: number;
+}
+
+// Control characters used as highlight sentinels inside SQLite, so the archived
+// text can be HTML-escaped before the real <mark> tags are added.
+const MARK_OPEN = "\u0001";
+const MARK_CLOSE = "\u0002";
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Turn a sentinel-marked FTS snippet into HTML that is safe to inject as-is. */
+export function renderSnippet(raw: string): string {
+  return escapeHtml(raw).replaceAll(MARK_OPEN, "<mark>").replaceAll(MARK_CLOSE, "</mark>");
 }
 
 /**
@@ -49,7 +72,8 @@ export function rebuildIndex(db: Database): void {
     .query<ReadabilityRow, []>(
       `SELECT s.id, s.url,
          (SELECT content FROM archive_results
-          WHERE snapshot_id = s.id AND extractor = 'readability' LIMIT 1) AS content
+          WHERE snapshot_id = s.id AND extractor = 'readability' AND error IS NULL
+          LIMIT 1) AS content
        FROM snapshots s
        WHERE s.status = 'done'`,
     )
@@ -63,7 +87,8 @@ export function rebuildIndex(db: Database): void {
 
 /**
  * Full-text search across URL, title, extracted text, and tags.
- * Returns paginated results ranked by relevance, with a plain-text snippet.
+ * Returns paginated results ranked by relevance, with an HTML-safe snippet
+ * (archived text is escaped; only <mark> highlights are real markup).
  *
  * FTS5 MATCH syntax is supported (e.g. "phrase query", term*, col:term).
  * Returns empty result on invalid query expressions.
@@ -71,10 +96,15 @@ export function rebuildIndex(db: Database): void {
 export function searchSnapshots(
   db: Database,
   query: string,
-  limit = 20,
-  page = 1,
+  requestedLimit = 20,
+  requestedPage = 1,
+  status?: string,
 ): PaginatedResult<SearchResult> {
+  // LIMIT/OFFSET must be integers; a fractional value makes SQLite raise.
+  const limit = Math.max(1, Math.trunc(requestedLimit) || 20);
+  const page = Math.max(1, Math.trunc(requestedPage) || 1);
   if (!query.trim()) return { items: [], total: 0, page, limit };
+  const statusFilter = status ?? null;
 
   interface FtsRow {
     id: number;
@@ -87,24 +117,31 @@ export function searchSnapshots(
 
   try {
     const items = db
-      .query<FtsRow, [string, number, number]>(
+      .query<FtsRow, [string, string, string, string | null, string | null, number, number]>(
         `SELECT
            snapshots_fts.rowid AS id,
            snapshots_fts.url AS url,
-           snippet(snapshots_fts, 2, '<mark>', '</mark>', '…', 32) AS snippet,
+           snippet(snapshots_fts, 2, ?, ?, '…', 32) AS snippet,
            rank
          FROM snapshots_fts
+         JOIN snapshots s ON s.id = snapshots_fts.rowid
          WHERE snapshots_fts MATCH ?
+           AND (? IS NULL OR s.status = ?)
          ORDER BY rank
          LIMIT ? OFFSET ?`,
       )
-      .all(query, limit, offset);
+      .all(MARK_OPEN, MARK_CLOSE, query, statusFilter, statusFilter, limit, offset)
+      .map((row) => ({ ...row, snippet: renderSnippet(row.snippet) }));
 
     const countRow = db
-      .query<{ total: number }, [string]>(
-        "SELECT COUNT(*) AS total FROM snapshots_fts WHERE snapshots_fts MATCH ?",
+      .query<{ total: number }, [string, string | null, string | null]>(
+        `SELECT COUNT(*) AS total
+         FROM snapshots_fts
+         JOIN snapshots s ON s.id = snapshots_fts.rowid
+         WHERE snapshots_fts MATCH ?
+           AND (? IS NULL OR s.status = ?)`,
       )
-      .get(query);
+      .get(query, statusFilter, statusFilter);
     const total = countRow?.total ?? 0;
 
     return { items, total, page, limit };

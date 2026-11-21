@@ -80,13 +80,32 @@ function SandboxedHtmlResult({
 }) {
   const [showRaw, setShowRaw] = useState(false);
   const [rawHtml, setRawHtml] = useState<string | null>(null);
+  const [rawError, setRawError] = useState<string | null>(null);
+  const [rawLoading, setRawLoading] = useState(false);
 
   async function handleToggleRaw() {
-    if (!showRaw && rawHtml === null) {
-      const res = await fetch(downloadUrl);
-      setRawHtml(await res.text());
+    if (showRaw) {
+      setShowRaw(false);
+      return;
     }
-    setShowRaw((v) => !v);
+    if (rawHtml === null) {
+      setRawLoading(true);
+      setRawError(null);
+      try {
+        const res = await fetch(downloadUrl);
+        if (!res.ok) {
+          setRawError(`Could not load HTML (HTTP ${res.status}).`);
+          setShowRaw(true);
+          return;
+        }
+        setRawHtml(await res.text());
+      } catch (e) {
+        setRawError(`Could not load HTML: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setRawLoading(false);
+      }
+    }
+    setShowRaw(true);
   }
 
   return (
@@ -100,19 +119,27 @@ function SandboxedHtmlResult({
           <button
             type="button"
             onClick={handleToggleRaw}
+            disabled={rawLoading}
             className="text-sm text-primary bg-transparent border-0 cursor-pointer p-0 underline"
           >
-            {showRaw ? "Hide HTML" : "View HTML"}
+            {rawLoading ? "Loading…" : showRaw ? "Hide HTML" : "View HTML"}
           </button>
         )}
       </div>
-      {showRaw && rawHtml !== null ? (
+      {showRaw && rawError ? (
+        <p role="alert" className="text-sm text-red-700 bg-red-100 py-2 px-3 rounded m-0">
+          {rawError}
+        </p>
+      ) : showRaw && rawHtml !== null ? (
         <pre className="bg-gray-100 dark:bg-gray-900 p-3 rounded text-[0.75rem] overflow-x-auto whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto m-0">
           {rawHtml}
         </pre>
       ) : (
+        // The preview endpoint serves the archived HTML with a `sandbox` CSP (opaque
+        // origin, no scripts, no network). sandbox="" is the second layer — never
+        // relax it: this is untrusted content.
         <iframe
-          src={downloadUrl}
+          src={downloadUrl.replace(/\/download$/, "/preview")}
           sandbox=""
           title={`${extractor} preview`}
           className="w-full border border-gray-200 rounded"

@@ -127,3 +127,14 @@ describe("FilesystemBackend", () => {
     });
   });
 });
+
+describe("FilesystemBackend.validateRef — path normalisation", () => {
+  test("rejects a ref that climbs out of the snapshots directory", () => {
+    const backend = new FilesystemBackend("/data/snapshots");
+    expect(backend.validateRef("/data/snapshots/1/page.pdf")).toBe(true);
+    expect(backend.validateRef("/data/snapshots/../archive.db")).toBe(false);
+    expect(backend.validateRef("/data/snapshots/1/../../../etc/passwd")).toBe(false);
+    // A sibling directory that merely shares the prefix is not inside it.
+    expect(backend.validateRef("/data/snapshots-old/1/page.pdf")).toBe(false);
+  });
+});

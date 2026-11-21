@@ -1,40 +1,28 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
 import {
-  createConcurrencyLimiter,
-  createSnapshot,
   detectFormat,
   fetchRssFeedUrls,
   isUrlArchived,
   listImports,
-  openDb,
   parseUrls,
   recordImport,
-  runPipeline,
   safeFetch,
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
-import { logger } from "../logger";
-
-function getWebfrostDir(): string {
-  return process.env.WEBFROST_DIR ?? join(homedir(), ".webfrost");
-}
-
-// Shared limiter for all background pipeline runs — bounded by WEBFROST_CONCURRENCY (default: 3)
-const pipelineLimiter = createConcurrencyLimiter();
-
-function getDb() {
-  return openDb(getWebfrostDir());
-}
+import { getDb, getRunner } from "../context";
 
 type ImportFormat = "rss" | "opml" | "netscape" | "text";
 const VALID_FORMATS: ReadonlyArray<string> = ["rss", "opml", "netscape", "text"];
 
-function queueUrls(
-  urls: string[],
-  deduplicate: boolean,
-  webfrostDir: string,
-): { queued: number; skipped: number } {
+/**
+ * Insert a snapshot for each URL and hand it to the shared background runner.
+ *
+ * The runner opens its own DB connection per pipeline, so the connection used
+ * here to insert rows can be closed as soon as the loop ends. (Passing this
+ * connection to the pipelines is what used to leave every imported snapshot
+ * stuck in `pending`: it was closed before any of them ran.)
+ */
+function queueUrls(urls: string[], deduplicate: boolean): { queued: number; skipped: number } {
+  const runner = getRunner();
   const db = getDb();
   let queued = 0;
   let skipped = 0;
@@ -45,14 +33,11 @@ function queueUrls(
         continue;
       }
       try {
-        const snapshotId = createSnapshot(db, url);
-        const pipelineLogger = logger.child({ snapshotId });
-        pipelineLimiter
-          .run(() => runPipeline(db, snapshotId, url, webfrostDir, undefined, pipelineLogger))
-          .catch(() => {});
+        runner.add(db, url);
         queued++;
       } catch {
         // skip URLs that fail to enqueue
+        skipped++;
       }
     }
   } finally {
@@ -86,7 +71,6 @@ export const importRouter = new Elysia({ prefix: "/import" })
     "/",
     async ({ body, set }) => {
       const { url: sourceUrl, content, format: formatHint } = body;
-      const webfrostDir = getWebfrostDir();
 
       // Validate that at least one source is provided
       if (!sourceUrl && !content) {
@@ -109,7 +93,7 @@ export const importRouter = new Elysia({ prefix: "/import" })
           urls = [];
         }
         if (urls.length > 0 || formatHint === "rss") {
-          const { queued, skipped } = queueUrls(urls, true, webfrostDir);
+          const { queued, skipped } = queueUrls(urls, true);
           const db = getDb();
           try {
             recordImport(db, {
@@ -155,7 +139,7 @@ export const importRouter = new Elysia({ prefix: "/import" })
         : detectFormat(filename, rawContent);
 
       const urls = parseUrls(rawContent, format);
-      const { queued, skipped } = queueUrls(urls, format === "rss", webfrostDir);
+      const { queued, skipped } = queueUrls(urls, format === "rss");
 
       const db = getDb();
       try {
@@ -196,7 +180,6 @@ export const importRouter = new Elysia({ prefix: "/import" })
     "/file",
     async ({ body, set }) => {
       const { file, format: formatHint } = body;
-      const webfrostDir = getWebfrostDir();
 
       const rawContent = await file.text();
       const filename = file.name ?? "";
@@ -206,7 +189,7 @@ export const importRouter = new Elysia({ prefix: "/import" })
         : detectFormat(filename, rawContent);
 
       const urls = parseUrls(rawContent, format);
-      const { queued, skipped } = queueUrls(urls, format === "rss", webfrostDir);
+      const { queued, skipped } = queueUrls(urls, format === "rss");
 
       const db = getDb();
       try {

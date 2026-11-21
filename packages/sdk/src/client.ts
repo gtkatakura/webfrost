@@ -10,6 +10,7 @@ import type {
   LoginResult,
   MeResult,
   Schedule,
+  SearchPage,
   SearchResult,
   ServerInfo,
   SetupResult,
@@ -23,13 +24,33 @@ import type {
 } from "./types";
 
 export class WebFrostError extends Error {
+  /** Seconds to wait before retrying, parsed from the `Retry-After` header (typically on 429). */
+  public readonly retryAfter?: number;
+
   constructor(
     public readonly status: number,
     message: string,
+    retryAfter?: number,
   ) {
     super(message);
     this.name = "WebFrostError";
+    if (retryAfter !== undefined) this.retryAfter = retryAfter;
   }
+}
+
+/** Parse a `Retry-After` header given as delta-seconds (or an HTTP date). */
+function parseRetryAfter(res: Response): number | undefined {
+  const value = res.headers?.get("Retry-After");
+  if (!value) return undefined;
+  const secs = Number(value);
+  if (Number.isFinite(secs) && secs >= 0) return Math.ceil(secs);
+  const date = Date.parse(value);
+  if (Number.isNaN(date)) return undefined;
+  return Math.max(0, Math.ceil((date - Date.now()) / 1000));
+}
+
+function httpError(res: Response, message: string): WebFrostError {
+  return new WebFrostError(res.status, message, parseRetryAfter(res));
 }
 
 // Raw server shapes (server uses created_at, SDK exposes createdAt)
@@ -53,11 +74,24 @@ interface RawSnapshot {
   screenshotUrl: string | null;
 }
 
+interface RawSearchResult {
+  id: number;
+  url: string;
+  snippet: string;
+  rank: number;
+  status?: string;
+  createdAt?: string;
+  title?: string | null;
+  extractors?: string[];
+  tags?: RawTag[];
+}
+
 interface RawArchiveResult {
   id: number;
   extractor: string;
   content: string | null;
-  created_at: string;
+  created_at?: string;
+  createdAt?: string;
 }
 
 interface RawSnapshotDetail {
@@ -87,7 +121,12 @@ function toTag(r: RawTag): Tag {
 }
 
 function toArchiveResult(r: RawArchiveResult): ArchiveResult {
-  return { id: r.id, extractor: r.extractor, content: r.content, createdAt: r.created_at };
+  return {
+    id: r.id,
+    extractor: r.extractor,
+    content: r.content,
+    createdAt: r.created_at ?? r.createdAt ?? "",
+  };
 }
 
 function toSnapshot(raw: RawSnapshot): Snapshot {
@@ -101,6 +140,20 @@ function toSnapshot(raw: RawSnapshot): Snapshot {
     title: raw.title ?? null,
     excerpt: raw.excerpt ?? null,
     screenshotUrl: raw.screenshotUrl ?? null,
+  };
+}
+
+function toSearchResult(raw: RawSearchResult): SearchResult {
+  return {
+    id: raw.id,
+    url: raw.url,
+    snippet: raw.snippet,
+    rank: raw.rank,
+    status: raw.status ?? "",
+    createdAt: raw.createdAt ?? "",
+    title: raw.title ?? null,
+    extractors: raw.extractors ?? [],
+    tags: (raw.tags ?? []).map(toTag),
   };
 }
 
@@ -138,8 +191,9 @@ export class WebFrostClient {
   /** Check whether first-run setup is needed (no admin user exists). */
   async getSetupStatus(): Promise<SetupStatusResult> {
     const res = await this.request(`${this.baseUrl}/setup/status`);
-    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
-    return res.json() as Promise<SetupStatusResult>;
+    if (!res.ok) throw httpError(res, res.statusText);
+    const body = (await res.json()) as { needsSetup: boolean; publicRead?: boolean };
+    return { needsSetup: body.needsSetup, publicRead: body.publicRead === true };
   }
 
   /** Complete first-run setup: create admin user and generate first API key. Sets a session cookie. */
@@ -151,7 +205,7 @@ export class WebFrostClient {
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw new WebFrostError(res.status, body.error);
+      throw httpError(res, body.error);
     }
     return res.json() as Promise<SetupResult>;
   }
@@ -165,7 +219,7 @@ export class WebFrostClient {
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw new WebFrostError(res.status, body.error);
+      throw httpError(res, body.error);
     }
     return res.json() as Promise<LoginResult>;
   }
@@ -178,7 +232,7 @@ export class WebFrostClient {
   /** Get the currently authenticated user. Returns null username for API-key auth. */
   async getMe(): Promise<MeResult> {
     const res = await this.request(`${this.baseUrl}/auth/me`);
-    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    if (!res.ok) throw httpError(res, res.statusText);
     return res.json() as Promise<MeResult>;
   }
 
@@ -198,7 +252,7 @@ export class WebFrostClient {
       const body = (await res.json().catch(() => ({ error: res.statusText }))) as {
         error: string;
       };
-      throw new WebFrostError(res.status, body.error);
+      throw httpError(res, body.error);
     }
 
     return res.json() as Promise<SnapshotCreated>;
@@ -218,7 +272,7 @@ export class WebFrostClient {
     const res = await this.request(`${this.baseUrl}/snapshots${qs}`);
 
     if (!res.ok) {
-      throw new WebFrostError(res.status, res.statusText);
+      throw httpError(res, res.statusText);
     }
 
     const raw = (await res.json()) as {
@@ -248,7 +302,7 @@ export class WebFrostClient {
     }
 
     if (!res.ok) {
-      throw new WebFrostError(res.status, res.statusText);
+      throw httpError(res, res.statusText);
     }
 
     const raw = (await res.json()) as RawSnapshotDetail;
@@ -260,24 +314,48 @@ export class WebFrostClient {
    * Returns ranked results with HTML snippets (matching terms wrapped in <mark>).
    */
   async searchSnapshots(query: string): Promise<SearchResult[]> {
-    const res = await this.request(`${this.baseUrl}/snapshots?q=${encodeURIComponent(query)}`);
-    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
-    const data = (await res.json()) as { items: SearchResult[] };
-    return data.items;
+    return (await this.searchSnapshotsPage(query)).items;
+  }
+
+  /**
+   * Full-text search with pagination.
+   * Returns the page of ranked results plus the total match count.
+   */
+  async searchSnapshotsPage(
+    query: string,
+    options?: { page?: number; limit?: number },
+  ): Promise<SearchPage> {
+    const params = new URLSearchParams({ q: query });
+    if (options?.page !== undefined) params.set("page", String(options.page));
+    if (options?.limit !== undefined) params.set("limit", String(options.limit));
+    const res = await this.request(`${this.baseUrl}/snapshots?${params.toString()}`);
+    if (!res.ok) throw httpError(res, res.statusText);
+    const raw = (await res.json()) as {
+      items: RawSearchResult[];
+      total?: number;
+      page?: number;
+      limit?: number;
+    };
+    return {
+      items: raw.items.map(toSearchResult),
+      total: raw.total ?? raw.items.length,
+      page: raw.page ?? options?.page ?? 1,
+      limit: raw.limit ?? options?.limit ?? raw.items.length,
+    };
   }
 
   /** Delete a snapshot by id. Returns true if deleted, false if not found. */
   async deleteSnapshot(id: number): Promise<boolean> {
     const res = await this.request(`${this.baseUrl}/snapshots/${id}`, { method: "DELETE" });
     if (res.status === 404) return false;
-    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    if (!res.ok) throw httpError(res, res.statusText);
     return true;
   }
 
   /** List all tags. */
   async listTags(): Promise<Tag[]> {
     const res = await this.request(`${this.baseUrl}/tags`);
-    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    if (!res.ok) throw httpError(res, res.statusText);
     const raw = (await res.json()) as RawTag[];
     return raw.map(toTag);
   }
@@ -291,7 +369,7 @@ export class WebFrostClient {
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw new WebFrostError(res.status, body.error);
+      throw httpError(res, body.error);
     }
     return toTag((await res.json()) as RawTag);
   }
@@ -300,7 +378,7 @@ export class WebFrostClient {
   async deleteTag(id: number): Promise<boolean> {
     const res = await this.request(`${this.baseUrl}/tags/${id}`, { method: "DELETE" });
     if (res.status === 404) return false;
-    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    if (!res.ok) throw httpError(res, res.statusText);
     return true;
   }
 
@@ -308,7 +386,7 @@ export class WebFrostClient {
   async listSnapshotTags(snapshotId: number): Promise<Tag[]> {
     const res = await this.request(`${this.baseUrl}/snapshots/${snapshotId}/tags`);
     if (res.status === 404) return [];
-    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    if (!res.ok) throw httpError(res, res.statusText);
     const raw = (await res.json()) as RawTag[];
     return raw.map(toTag);
   }
@@ -322,7 +400,7 @@ export class WebFrostClient {
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw new WebFrostError(res.status, body.error);
+      throw httpError(res, body.error);
     }
     return toTag((await res.json()) as RawTag);
   }
@@ -333,14 +411,14 @@ export class WebFrostClient {
       method: "DELETE",
     });
     if (res.status === 404) return false;
-    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    if (!res.ok) throw httpError(res, res.statusText);
     return true;
   }
 
   /** List all scheduled archive jobs. */
   async listSchedules(): Promise<Schedule[]> {
     const res = await this.request(`${this.baseUrl}/schedules`);
-    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    if (!res.ok) throw httpError(res, res.statusText);
     return res.json() as Promise<Schedule[]>;
   }
 
@@ -353,7 +431,7 @@ export class WebFrostClient {
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw new WebFrostError(res.status, body.error);
+      throw httpError(res, body.error);
     }
     return res.json() as Promise<Schedule>;
   }
@@ -367,7 +445,7 @@ export class WebFrostClient {
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw new WebFrostError(res.status, body.error);
+      throw httpError(res, body.error);
     }
     return res.json() as Promise<Schedule>;
   }
@@ -376,21 +454,21 @@ export class WebFrostClient {
   async deleteSchedule(id: number): Promise<boolean> {
     const res = await this.request(`${this.baseUrl}/schedules/${id}`, { method: "DELETE" });
     if (res.status === 404) return false;
-    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    if (!res.ok) throw httpError(res, res.statusText);
     return true;
   }
 
   /** Get dashboard stats: snapshot count, storage usage, success rate, schedule count, failed today. */
   async getStats(): Promise<DashboardStats> {
     const res = await this.request(`${this.baseUrl}/stats`);
-    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    if (!res.ok) throw httpError(res, res.statusText);
     return res.json() as Promise<DashboardStats>;
   }
 
   /** Get server info: version, storage path, and total snapshot count. */
   async getServerInfo(): Promise<ServerInfo> {
     const res = await this.request(`${this.baseUrl}/settings/info`);
-    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    if (!res.ok) throw httpError(res, res.statusText);
     return res.json() as Promise<ServerInfo>;
   }
 
@@ -403,14 +481,14 @@ export class WebFrostClient {
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw new WebFrostError(res.status, body.error);
+      throw httpError(res, body.error);
     }
   }
 
   /** List all active (non-revoked) API keys. */
   async listApiKeys(): Promise<ApiKey[]> {
     const res = await this.request(`${this.baseUrl}/settings/keys`);
-    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    if (!res.ok) throw httpError(res, res.statusText);
     return res.json() as Promise<ApiKey[]>;
   }
 
@@ -423,7 +501,7 @@ export class WebFrostClient {
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw new WebFrostError(res.status, body.error);
+      throw httpError(res, body.error);
     }
     return res.json() as Promise<ApiKeyCreated>;
   }
@@ -432,7 +510,7 @@ export class WebFrostClient {
   async revokeApiKey(id: string): Promise<boolean> {
     const res = await this.request(`${this.baseUrl}/settings/keys/${id}`, { method: "DELETE" });
     if (res.status === 404) return false;
-    if (!res.ok) throw new WebFrostError(res.status, res.statusText);
+    if (!res.ok) throw httpError(res, res.statusText);
     return true;
   }
 
@@ -448,7 +526,7 @@ export class WebFrostClient {
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw new WebFrostError(res.status, body.error);
+      throw httpError(res, body.error);
     }
     return res.json() as Promise<ImportResult>;
   }
@@ -458,7 +536,7 @@ export class WebFrostClient {
     const res = await this.request(`${this.baseUrl}/imports`);
     if (!res.ok) {
       const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw new WebFrostError(res.status, body.error);
+      throw httpError(res, body.error);
     }
     return res.json() as Promise<ImportRecord[]>;
   }

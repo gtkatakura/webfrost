@@ -7,15 +7,20 @@ import { join } from "node:path";
 import {
   createAdminUser,
   createApiKey,
+  createSession,
   createSessionToken,
   getAdminUsername,
   hasAdminUser,
   hashPassword,
   listApiKeys,
+  revokeAllSessions,
   revokeApiKey,
+  revokeSession,
+  updateAdminPassword,
   validateAdminCredentials,
   validateApiKey,
   verifyPassword,
+  verifySession,
   verifySessionToken,
 } from "./auth";
 import { openDb } from "./db";
@@ -220,5 +225,104 @@ describe("session tokens", () => {
     const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
     expect(data.exp).toBeGreaterThanOrEqual(before + sevenDaysMs);
     expect(data.exp).toBeLessThanOrEqual(after + sevenDaysMs);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Server-side sessions (revocation)
+// ---------------------------------------------------------------------------
+
+describe("sessions", () => {
+  const SESSION_SECRET = "test-secret-that-is-at-least-32-chars!!";
+
+  test("createSession yields a cookie that verifySession accepts", () => {
+    const token = createSession(db, SESSION_SECRET, "alice");
+    expect(verifySession(db, SESSION_SECRET, token)).toBe("alice");
+  });
+
+  test("a signed token with no server-side session is rejected", () => {
+    // Valid signature, valid expiry — but it was never registered, so it cannot be revoked
+    // and therefore must not grant access.
+    const token = createSessionToken(SESSION_SECRET, "alice");
+    expect(verifySessionToken(SESSION_SECRET, token)).toBe("alice");
+    expect(verifySession(db, SESSION_SECRET, token)).toBeNull();
+  });
+
+  test("revokeSession (logout) kills that session only", () => {
+    const laptop = createSession(db, SESSION_SECRET, "alice");
+    const phone = createSession(db, SESSION_SECRET, "alice");
+
+    expect(revokeSession(db, SESSION_SECRET, laptop)).toBe(true);
+
+    expect(verifySession(db, SESSION_SECRET, laptop)).toBeNull();
+    expect(verifySession(db, SESSION_SECRET, phone)).toBe("alice");
+    expect(revokeSession(db, SESSION_SECRET, laptop)).toBe(false);
+  });
+
+  test("changing the password revokes every session of that user", async () => {
+    await createAdminUser(db, "alice", "old-password");
+    const token = createSession(db, SESSION_SECRET, "alice");
+
+    await updateAdminPassword(db, "alice", "new-password");
+
+    expect(verifySession(db, SESSION_SECRET, token)).toBeNull();
+    expect(await validateAdminCredentials(db, "alice", "new-password")).toBe("alice");
+  });
+
+  test("revokeAllSessions clears everything", () => {
+    const a = createSession(db, SESSION_SECRET, "alice");
+    const b = createSession(db, SESSION_SECRET, "bob");
+    expect(revokeAllSessions(db)).toBe(2);
+    expect(verifySession(db, SESSION_SECRET, a)).toBeNull();
+    expect(verifySession(db, SESSION_SECRET, b)).toBeNull();
+  });
+
+  test("an expired session row is rejected and pruned on the next login", () => {
+    const token = createSession(db, SESSION_SECRET, "alice");
+    db.query("UPDATE sessions SET expires_at = '2000-01-01T00:00:00.000Z'").run();
+    expect(verifySession(db, SESSION_SECRET, token)).toBeNull();
+
+    createSession(db, SESSION_SECRET, "alice");
+    expect(db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM sessions").get()?.n).toBe(1);
+  });
+
+  test("a token signed with another secret is rejected", () => {
+    const token = createSession(db, SESSION_SECRET, "alice");
+    expect(verifySession(db, "another-secret-that-is-32-chars-long!!", token)).toBeNull();
+  });
+});
+
+describe("hardening", () => {
+  test("two concurrent setups create exactly one admin", async () => {
+    const outcomes = await Promise.allSettled([
+      createAdminUser(db, "alice", "password-one"),
+      createAdminUser(db, "mallory", "password-two"),
+    ]);
+
+    expect(outcomes.filter((o) => o.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.filter((o) => o.status === "rejected")).toHaveLength(1);
+    expect(db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM admin_users").get()?.n).toBe(1);
+  });
+
+  test("an API key with an ISO expiry in the past is rejected the same day", () => {
+    const anHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { rawKey } = createApiKey(db, "expired", anHourAgo);
+    expect(validateApiKey(db, rawKey)).toBe(false);
+  });
+
+  test("an API key with an ISO expiry in the future is accepted", () => {
+    const inAnHour = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const { rawKey } = createApiKey(db, "valid", inAnHour);
+    expect(validateApiKey(db, rawKey)).toBe(true);
+  });
+
+  test("a date-only expiry is honoured", () => {
+    expect(validateApiKey(db, createApiKey(db, "old", "2020-01-01").rawKey)).toBe(false);
+    expect(validateApiKey(db, createApiKey(db, "new", "2999-01-01").rawKey)).toBe(true);
+  });
+
+  test("an unparseable expiry never validates", () => {
+    const { rawKey } = createApiKey(db, "garbage", "next tuesday");
+    expect(validateApiKey(db, rawKey)).toBe(false);
   });
 });

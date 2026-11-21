@@ -18,6 +18,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Pagination } from "../components/Pagination";
 import { useClient } from "../context";
+import { useAuth } from "../context/auth";
 import { useBulkSnapshots, useSnapshots, useTags } from "../hooks";
 import { snapshotKeys } from "../hooks/useSnapshots";
 import { SnapshotDetailPanel } from "./SnapshotDetailPanel";
@@ -105,7 +106,8 @@ function StatusChip({ status }: { status: string }) {
 interface SnapshotRowProps {
   snapshot: Snapshot;
   selected: boolean;
-  onToggle: (id: number) => void;
+  /** Omitted for read-only guests: no checkbox is rendered. */
+  onToggle?: (id: number) => void;
   density: Density;
   height: number;
   style?: CSSProperties;
@@ -140,22 +142,26 @@ function SnapshotRow({ snapshot, selected, onToggle, density, height, style }: S
         if (!selected) (e.currentTarget as HTMLElement).style.background = "transparent";
       }}
     >
-      {/* Checkbox */}
-      <label
-        className="flex items-center justify-center shrink-0 cursor-pointer"
-        style={{ width: 40, height: "100%" }}
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.stopPropagation()}
-      >
-        <input
-          type="checkbox"
-          checked={selected}
-          onChange={() => onToggle(snapshot.id)}
-          className="cursor-pointer"
-          aria-label={`Select ${snapshot.url}`}
-          style={{ accentColor: "var(--accent)" }}
-        />
-      </label>
+      {/* Checkbox (write-only) */}
+      {onToggle ? (
+        <label
+          className="flex items-center justify-center shrink-0 cursor-pointer"
+          style={{ width: 40, height: "100%" }}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggle(snapshot.id)}
+            className="cursor-pointer"
+            aria-label={`Select ${snapshot.url}`}
+            style={{ accentColor: "var(--accent)" }}
+          />
+        </label>
+      ) : (
+        <div className="shrink-0" style={{ width: 20 }} />
+      )}
 
       {/* Thumbnail */}
       {density === "comfortable" && (
@@ -452,9 +458,16 @@ function BulkBar({
 
 export function SnapshotListPage() {
   const client = useClient();
+  const { canWrite } = useAuth();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
-  const { snapshots, total, loading, error: snapshotsError } = useSnapshots(page, PAGE_SIZE);
+  const {
+    snapshots,
+    total,
+    loading,
+    error: snapshotsError,
+    refetch,
+  } = useSnapshots(page, PAGE_SIZE);
   const { tags: allTags } = useTags();
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
@@ -480,7 +493,10 @@ export function SnapshotListPage() {
     );
   }, [snapshots, search]);
 
-  const bulk = useBulkSnapshots(filtered.map((s) => s.id));
+  const bulk = useBulkSnapshots(
+    filtered.map((s) => s.id),
+    canWrite,
+  );
 
   const archiveMutation = useMutation({
     mutationFn: (url: string) => client.createSnapshot(url),
@@ -503,6 +519,7 @@ export function SnapshotListPage() {
   }
 
   function handleArchiveUrl(url: string) {
+    if (!canWrite) return;
     archiveMutation.mutate(url);
   }
 
@@ -590,7 +607,9 @@ export function SnapshotListPage() {
             ))}
           </div>
 
-          <NewSnapshotDropdown onArchiveUrl={handleArchiveUrl} submitting={submitting} />
+          {canWrite && (
+            <NewSnapshotDropdown onArchiveUrl={handleArchiveUrl} submitting={submitting} />
+          )}
         </div>
       </div>
 
@@ -604,16 +623,18 @@ export function SnapshotListPage() {
           background: "var(--bg-surface)",
         }}
       >
-        {/* Checkbox + select all */}
-        <div style={{ width: 40 }} className="flex items-center justify-center">
-          <input
-            type="checkbox"
-            checked={bulk.allSelected}
-            onChange={bulk.toggleAll}
-            className="cursor-pointer"
-            aria-label="Select all"
-            style={{ accentColor: "var(--accent)" }}
-          />
+        {/* Checkbox + select all (write-only; guests get a plain gutter) */}
+        <div style={{ width: canWrite ? 40 : 20 }} className="flex items-center justify-center">
+          {canWrite && (
+            <input
+              type="checkbox"
+              checked={bulk.allSelected}
+              onChange={bulk.toggleAll}
+              className="cursor-pointer"
+              aria-label="Select all"
+              style={{ accentColor: "var(--accent)" }}
+            />
+          )}
         </div>
         {density === "comfortable" && <div style={{ width: 56 + 12 }} className="shrink-0" />}
         <div className="flex-1 px-2">URL</div>
@@ -711,7 +732,9 @@ export function SnapshotListPage() {
               </p>
               <p className="text-ui-sm mt-1" style={{ color: "var(--text-mid)" }}>
                 {snapshots.length === 0
-                  ? "Use the New Snapshot button to archive your first URL."
+                  ? canWrite
+                    ? "Use the New Snapshot button to archive your first URL."
+                    : "Nothing has been archived here yet."
                   : "Try a different search term."}
               </p>
             </div>
@@ -723,8 +746,8 @@ export function SnapshotListPage() {
               <SnapshotRow
                 key={snapshot.id}
                 snapshot={snapshot}
-                selected={bulk.selectedIds.has(snapshot.id)}
-                onToggle={bulk.toggle}
+                selected={canWrite && bulk.selectedIds.has(snapshot.id)}
+                onToggle={canWrite ? bulk.toggle : undefined}
                 density={density}
                 height={rowHeight}
               />
@@ -745,7 +768,7 @@ export function SnapshotListPage() {
       </div>
 
       {/* ── Bulk action bar ───────────────────────────────────── */}
-      {bulk.someSelected && (
+      {canWrite && bulk.someSelected && (
         <BulkBar
           count={bulk.selectedIds.size}
           status={bulk.status}

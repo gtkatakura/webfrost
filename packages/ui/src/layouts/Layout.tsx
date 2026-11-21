@@ -3,8 +3,10 @@ import {
   Camera,
   ChevronLeft,
   ChevronRight,
+  Eye,
   KeyboardIcon,
   LayoutDashboard,
+  LogIn,
   LogOut,
   Menu,
   Moon,
@@ -16,28 +18,36 @@ import {
   X,
 } from "lucide-react";
 import { type ElementType, useEffect, useState } from "react";
-import { Link, Outlet, useLocation } from "react-router-dom";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { CommandPalette } from "../components/CommandPalette";
 import { useAuth } from "../context/auth";
 import { useThemeContext } from "../context/theme";
-import { SHORTCUTS, useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
+import { shortcutsFor, useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 
 const SIDEBAR_KEY = "webfrost-sidebar-collapsed";
 
-const PRIMARY_NAV: { label: string; to: string; Icon: ElementType }[] = [
+interface NavEntry {
+  label: string;
+  to: string;
+  Icon: ElementType;
+  /** Write-only pages: hidden from read-only guests. */
+  writeOnly?: boolean;
+}
+
+const PRIMARY_NAV: NavEntry[] = [
   { label: "Dashboard", to: "/", Icon: LayoutDashboard },
   { label: "Snapshots", to: "/snapshots", Icon: Camera },
-  { label: "Schedules", to: "/schedules", Icon: Calendar },
+  { label: "Schedules", to: "/schedules", Icon: Calendar, writeOnly: true },
   { label: "Tags", to: "/tags", Icon: Tag },
 ];
 
-const SECONDARY_NAV: { label: string; to: string; Icon: ElementType }[] = [
-  { label: "Import", to: "/import", Icon: Upload },
-  { label: "Settings", to: "/settings", Icon: Settings },
+const SECONDARY_NAV: NavEntry[] = [
+  { label: "Import", to: "/import", Icon: Upload, writeOnly: true },
+  { label: "Settings", to: "/settings", Icon: Settings, writeOnly: true },
 ];
 
-function KeyboardShortcutsModal({ onClose }: { onClose: () => void }) {
+function KeyboardShortcutsModal({ onClose, canWrite }: { onClose: () => void; canWrite: boolean }) {
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -83,7 +93,7 @@ function KeyboardShortcutsModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <ul className="list-none p-0 m-0 flex flex-col gap-2">
-          {SHORTCUTS.map((s) => (
+          {shortcutsFor(canWrite).map((s) => (
             <li key={s.description} className="flex items-center justify-between gap-4">
               <span className="text-ui-sm" style={{ color: "var(--text-mid)" }}>
                 {s.description}
@@ -169,7 +179,8 @@ function NavItem({ to, Icon, label, active, collapsed }: NavItemProps) {
 export function Layout() {
   const location = useLocation();
   const { theme, toggle } = useThemeContext();
-  const { logout, username } = useAuth();
+  const { logout, username, isGuest, canWrite, publicRead } = useAuth();
+  const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -194,6 +205,8 @@ export function Layout() {
   async function handleLogout() {
     try {
       await logout();
+      // On a public instance the user becomes a guest: land on the dashboard, not /login.
+      if (publicRead) navigate("/");
     } catch {
       toast.error("Logout failed. Please try again.");
     }
@@ -202,6 +215,7 @@ export function Layout() {
   useKeyboardShortcuts({
     onToggleHelp: () => setShortcutsOpen((v) => !v),
     onOpenSearch: () => setPaletteOpen(true),
+    canWrite,
   });
 
   // Close mobile menu on route change
@@ -215,6 +229,8 @@ export function Layout() {
     return location.pathname === to || location.pathname.startsWith(`${to}/`);
   }
 
+  const primaryNav = PRIMARY_NAV.filter((n) => canWrite || !n.writeOnly);
+  const secondaryNav = SECONDARY_NAV.filter((n) => canWrite || !n.writeOnly);
   const sidebarWidth = collapsed ? 56 : 240;
 
   const sidebarBody = (
@@ -302,7 +318,7 @@ export function Layout() {
 
       {/* Primary navigation */}
       <nav className="flex flex-col gap-0.5" style={{ padding: collapsed ? "0 8px" : "0 8px" }}>
-        {PRIMARY_NAV.map(({ label, to, Icon }) => (
+        {primaryNav.map(({ label, to, Icon }) => (
           <NavItem
             key={to}
             to={to}
@@ -314,22 +330,26 @@ export function Layout() {
         ))}
       </nav>
 
-      {/* Divider */}
-      <div className="my-3 mx-3" style={{ height: 1, background: "var(--border-default)" }} />
+      {secondaryNav.length > 0 && (
+        <>
+          {/* Divider */}
+          <div className="my-3 mx-3" style={{ height: 1, background: "var(--border-default)" }} />
 
-      {/* Secondary navigation — not a landmark nav to avoid strict-mode violations */}
-      <div className="flex flex-col gap-0.5" style={{ padding: collapsed ? "0 8px" : "0 8px" }}>
-        {SECONDARY_NAV.map(({ label, to, Icon }) => (
-          <NavItem
-            key={to}
-            to={to}
-            Icon={Icon}
-            label={label}
-            active={isActive(to)}
-            collapsed={collapsed}
-          />
-        ))}
-      </div>
+          {/* Secondary navigation — not a landmark nav to avoid strict-mode violations */}
+          <div className="flex flex-col gap-0.5" style={{ padding: collapsed ? "0 8px" : "0 8px" }}>
+            {secondaryNav.map(({ label, to, Icon }) => (
+              <NavItem
+                key={to}
+                to={to}
+                Icon={Icon}
+                label={label}
+                active={isActive(to)}
+                collapsed={collapsed}
+              />
+            ))}
+          </div>
+        </>
+      )}
 
       {/* Bottom section */}
       <div
@@ -373,7 +393,7 @@ export function Layout() {
         </button>
 
         {/* Username */}
-        {!collapsed && username && (
+        {!collapsed && canWrite && username && (
           <span
             className="px-2.5 py-1 text-ui-xs truncate"
             title={username}
@@ -408,30 +428,62 @@ export function Layout() {
           {!collapsed && <span className="text-ui-xs">Shortcuts</span>}
         </button>
 
+        {/* Guest: read-only indicator + sign in */}
+        {isGuest && (
+          <>
+            {!collapsed && (
+              <span
+                className="px-2.5 py-0.5 text-ui-xs inline-flex items-center gap-1.5"
+                style={{ color: "var(--text-low)" }}
+                title="You are browsing a public, read-only archive"
+              >
+                <Eye size={11} />
+                Read-only
+              </span>
+            )}
+            <Link
+              to="/login"
+              state={{ from: `${location.pathname}${location.search}` }}
+              title={collapsed ? "Sign in" : undefined}
+              className="flex items-center gap-2 rounded-md no-underline transition-colors"
+              style={{
+                padding: collapsed ? "7px 0" : "7px 10px",
+                justifyContent: collapsed ? "center" : "flex-start",
+                color: "var(--text-mid)",
+              }}
+            >
+              <LogIn size={14} />
+              {!collapsed && <span className="text-ui-xs">Sign in</span>}
+            </Link>
+          </>
+        )}
+
         {/* Sign out */}
-        <button
-          type="button"
-          onClick={handleLogout}
-          title={collapsed ? "Sign out" : undefined}
-          className="flex items-center gap-2 rounded-md cursor-pointer border-0 transition-colors text-left"
-          style={{
-            padding: collapsed ? "7px 0" : "7px 10px",
-            justifyContent: collapsed ? "center" : "flex-start",
-            background: "transparent",
-            color: "var(--text-mid)",
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.color = "var(--status-danger)";
-            (e.currentTarget as HTMLElement).style.background = "var(--bg-subtle)";
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.color = "var(--text-mid)";
-            (e.currentTarget as HTMLElement).style.background = "transparent";
-          }}
-        >
-          <LogOut size={14} />
-          {!collapsed && <span className="text-ui-xs">Sign out</span>}
-        </button>
+        {canWrite && (
+          <button
+            type="button"
+            onClick={handleLogout}
+            title={collapsed ? "Sign out" : undefined}
+            className="flex items-center gap-2 rounded-md cursor-pointer border-0 transition-colors text-left"
+            style={{
+              padding: collapsed ? "7px 0" : "7px 10px",
+              justifyContent: collapsed ? "center" : "flex-start",
+              background: "transparent",
+              color: "var(--text-mid)",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.color = "var(--status-danger)";
+              (e.currentTarget as HTMLElement).style.background = "var(--bg-subtle)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.color = "var(--text-mid)";
+              (e.currentTarget as HTMLElement).style.background = "transparent";
+            }}
+          >
+            <LogOut size={14} />
+            {!collapsed && <span className="text-ui-xs">Sign out</span>}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -530,7 +582,9 @@ export function Layout() {
         <Outlet />
       </div>
 
-      {shortcutsOpen && <KeyboardShortcutsModal onClose={() => setShortcutsOpen(false)} />}
+      {shortcutsOpen && (
+        <KeyboardShortcutsModal onClose={() => setShortcutsOpen(false)} canWrite={canWrite} />
+      )}
     </div>
   );
 }

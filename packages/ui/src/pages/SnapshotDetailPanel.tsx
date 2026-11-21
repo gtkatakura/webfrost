@@ -21,7 +21,8 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useClient } from "../context";
-import { snapshotKeys } from "../hooks/useSnapshots";
+import { useAuth } from "../context/auth";
+import { PENDING_POLL_MS, snapshotKeys } from "../hooks/useSnapshots";
 import { tagKeys } from "../hooks/useTags";
 
 // ─── Types ────────────────────────────────────────────────────
@@ -29,10 +30,18 @@ import { tagKeys } from "../hooks/useTags";
 type TabId = "reader" | "screenshot" | "dom" | "media" | "raw" | "history";
 
 interface ReadabilityContent {
-  title?: string;
-  byline?: string;
-  content?: string;
-  excerpt?: string;
+  title?: string | null;
+  byline?: string | null;
+  textContent?: string | null;
+  excerpt?: string | null;
+}
+
+/** Split plain text into paragraphs on blank lines. */
+export function splitParagraphs(text: string): string[] {
+  return text
+    .split(/\r?\n\s*\r?\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────
@@ -44,7 +53,8 @@ function archiveUrl(snapshotId: number, extractor: string) {
 function parseReadability(content: string | null): ReadabilityContent | null {
   if (!content) return null;
   try {
-    return JSON.parse(content) as ReadabilityContent;
+    const value: unknown = JSON.parse(content);
+    return value && typeof value === "object" ? (value as ReadabilityContent) : null;
   } catch {
     return null;
   }
@@ -118,6 +128,7 @@ function ReaderTab({ result }: { result: ArchiveResult | undefined }) {
   if (!parsed) {
     return <TabEmpty message="Could not parse readability content." />;
   }
+  const textParagraphs = parsed.textContent ? splitParagraphs(parsed.textContent) : [];
   return (
     <div className="p-5 overflow-y-auto h-full">
       {parsed.title && (
@@ -133,13 +144,15 @@ function ReaderTab({ result }: { result: ArchiveResult | undefined }) {
           {parsed.byline}
         </p>
       )}
-      {parsed.content ? (
-        <div
-          className="text-ui-sm text-content prose-like"
-          style={{ color: "var(--text-high)" }}
-          // biome-ignore lint/security/noDangerouslySetInnerHtml: readability HTML is from our own extractor
-          dangerouslySetInnerHTML={{ __html: parsed.content }}
-        />
+      {textParagraphs.length > 0 ? (
+        <div className="text-ui-sm text-content" style={{ color: "var(--text-high)" }}>
+          {textParagraphs.map((p, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static paragraph list derived from plain text
+            <p key={i} className="mb-3" style={{ whiteSpace: "pre-line" }}>
+              {p}
+            </p>
+          ))}
+        </div>
       ) : parsed.excerpt ? (
         <p className="text-ui-sm text-content" style={{ color: "var(--text-high)" }}>
           {parsed.excerpt}
@@ -233,7 +246,9 @@ function DomTab({
   const domResult = getExtractorResult(results, "dom-snapshot");
   const singlefileResult = getExtractorResult(results, "singlefile");
   const available = domResult || singlefileResult;
-  const extractor = domResult ? "dom-snapshot" : "singlefile";
+  // SingleFile has its CSS and images inlined, so it survives the preview's
+  // "nothing from the network" policy; the raw DOM snapshot renders unstyled.
+  const extractor = singlefileResult ? "singlefile" : "dom-snapshot";
 
   if (!available) {
     return <TabEmpty message="DOM snapshot / SingleFile extractor did not run or failed." />;
@@ -255,10 +270,13 @@ function DomTab({
           <Download size={12} /> Download
         </a>
       </div>
+      {/* Untrusted archived HTML: served by the sandboxed preview endpoint and framed
+          with sandbox="". Never add allow-scripts / allow-same-origin here — together
+          they would let an archived page act as the signed-in user. */}
       <iframe
-        src={archiveUrl(snapshotId, extractor)}
-        title="DOM preview"
-        sandbox="allow-same-origin allow-scripts"
+        src={archiveUrl(snapshotId, extractor).replace(/\/download$/, "/preview")}
+        title="Archived page preview"
+        sandbox=""
         className="flex-1 border-0 w-full"
         style={{ background: "#fff" }}
       />
@@ -278,17 +296,21 @@ function MediaTab({
   const mediaResult = getExtractorResult(results, "media");
   const metaResult = getExtractorResult(results, "media-metadata");
 
+  // The archive result only carries a reference to the metadata file, so the JSON
+  // itself is fetched from the download endpoint.
+  const { data: metadata } = useQuery({
+    queryKey: [...snapshotKeys.all, "media-metadata", snapshotId],
+    enabled: Boolean(mediaResult && metaResult),
+    staleTime: Number.POSITIVE_INFINITY,
+    queryFn: async () => {
+      const res = await fetch(archiveUrl(snapshotId, "media-metadata"));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return (await res.json()) as Record<string, unknown>;
+    },
+  });
+
   if (!mediaResult) {
     return <TabEmpty message="Media extractor did not run or no media found." />;
-  }
-
-  let metadata: Record<string, unknown> | null = null;
-  if (metaResult?.content) {
-    try {
-      metadata = JSON.parse(metaResult.content) as Record<string, unknown>;
-    } catch {
-      // ignore
-    }
   }
 
   return (
@@ -448,6 +470,7 @@ const snapshotTagKeys = {
 
 function InlineTags({ snapshotId }: { snapshotId: number }) {
   const client = useClient();
+  const { canWrite } = useAuth();
   const queryClient = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
 
@@ -459,6 +482,8 @@ function InlineTags({ snapshotId }: { snapshotId: number }) {
   const { data: allTags = [] } = useQuery<Tag[]>({
     queryKey: tagKeys.list(),
     queryFn: () => client.listTags(),
+    // Only needed for the add-tag picker.
+    enabled: canWrite,
   });
 
   const removeTag = useMutation({
@@ -482,10 +507,12 @@ function InlineTags({ snapshotId }: { snapshotId: number }) {
   });
 
   function handleRemove(tagId: number) {
+    if (!canWrite) return;
     removeTag.mutate(tagId);
   }
 
   function handleAdd(tagId: number) {
+    if (!canWrite) return;
     addTag.mutate(tagId);
   }
 
@@ -504,22 +531,25 @@ function InlineTags({ snapshotId }: { snapshotId: number }) {
           }}
         >
           {tag.name}
-          <button
-            type="button"
-            onClick={() => handleRemove(tag.id)}
-            className="border-0 cursor-pointer p-0 leading-none"
-            style={{
-              background: "transparent",
-              color: "inherit",
-              opacity: 0.6,
-            }}
-            aria-label={`Remove tag ${tag.name}`}
-          >
-            ×
-          </button>
+          {canWrite && (
+            <button
+              type="button"
+              onClick={() => handleRemove(tag.id)}
+              className="border-0 cursor-pointer p-0 leading-none"
+              style={{
+                background: "transparent",
+                color: "inherit",
+                opacity: 0.6,
+              }}
+              aria-label={`Remove tag ${tag.name}`}
+            >
+              ×
+            </button>
+          )}
         </span>
       ))}
-      {available.length > 0 &&
+      {canWrite &&
+        available.length > 0 &&
         (showAdd ? (
           <select
             className="px-1.5 py-0.5 rounded border text-ui-xs cursor-pointer"
@@ -569,7 +599,8 @@ function MetadataSidebar({
   onDelete,
 }: {
   detail: SnapshotDetail;
-  onDelete: () => void;
+  /** Omitted for read-only guests: no Delete control is rendered. */
+  onDelete?: () => void;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -707,17 +738,19 @@ function MetadataSidebar({
       </div>
 
       {/* Storage (placeholder — depends on WEB-137) */}
-      <div className="mt-auto pt-3" style={{ borderTop: "1px solid var(--border-default)" }}>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="inline-flex items-center gap-1.5 text-ui-xs cursor-pointer border-0 p-0"
-          style={{ background: "transparent", color: "var(--status-danger)" }}
-        >
-          <Trash2 size={11} />
-          Delete
-        </button>
-      </div>
+      {onDelete && (
+        <div className="mt-auto pt-3" style={{ borderTop: "1px solid var(--border-default)" }}>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="inline-flex items-center gap-1.5 text-ui-xs cursor-pointer border-0 p-0"
+            style={{ background: "transparent", color: "var(--status-danger)" }}
+          >
+            <Trash2 size={11} />
+            Delete
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -732,6 +765,7 @@ interface SnapshotDetailPanelProps {
 
 export function SnapshotDetailPanel({ snapshotId, onClose, onDelete }: SnapshotDetailPanelProps) {
   const client = useClient();
+  const { canWrite } = useAuth();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<TabId>("reader");
 
@@ -742,6 +776,7 @@ export function SnapshotDetailPanel({ snapshotId, onClose, onDelete }: SnapshotD
   } = useQuery<SnapshotDetail | null>({
     queryKey: snapshotKeys.detail(snapshotId),
     queryFn: () => client.getSnapshot(snapshotId),
+    refetchInterval: (query) => (query.state.data?.status === "pending" ? PENDING_POLL_MS : false),
   });
 
   const error = queryError ? String(queryError) : detail === null ? "Snapshot not found." : null;
@@ -778,16 +813,18 @@ export function SnapshotDetailPanel({ snapshotId, onClose, onDelete }: SnapshotD
     };
   }, []);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: handleClose is defined in same render, stable enough
+  const handleCloseRef = useRef(handleClose);
+  handleCloseRef.current = handleClose;
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") handleClose();
+      if (e.key === "Escape") handleCloseRef.current();
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, []);
 
   function handleDelete() {
+    if (!canWrite) return;
     if (!window.confirm("Delete this snapshot and all its artifacts? This cannot be undone."))
       return;
     deleteMutation.mutate();
@@ -961,9 +998,13 @@ export function SnapshotDetailPanel({ snapshotId, onClose, onDelete }: SnapshotD
           {detail && (
             <MetadataSidebar
               detail={detail}
-              onDelete={() => {
-                if (!deleting) handleDelete();
-              }}
+              onDelete={
+                canWrite
+                  ? () => {
+                      if (!deleting) handleDelete();
+                    }
+                  : undefined
+              }
             />
           )}
         </div>

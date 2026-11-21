@@ -11,11 +11,12 @@ import {
   TriangleAlert,
   Upload,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useClient } from "../context";
-import { snapshotKeys } from "../hooks/useSnapshots";
+import { useAuth } from "../context/auth";
+import { PENDING_POLL_MS, snapshotKeys } from "../hooks/useSnapshots";
 
 // ——————————————————————————————————————————————
 // Utilities
@@ -154,6 +155,7 @@ export function DashboardPage() {
   const client = useClient();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { canWrite } = useAuth();
 
   const [archiveUrl, setArchiveUrl] = useState("");
 
@@ -168,7 +170,7 @@ export function DashboardPage() {
     // Poll every 5s while any snapshot is pending
     refetchInterval: (query) => {
       const items = query.state.data ?? [];
-      return items.some((s) => s.status === "pending") ? 5000 : false;
+      return items.some((s) => s.status === "pending") ? PENDING_POLL_MS : false;
     },
   });
 
@@ -181,6 +183,17 @@ export function DashboardPage() {
     queryFn: () => client.getStats(),
     retry: false,
   });
+
+  // Refresh stats when polling observes a snapshot leaving "pending"
+  const prevPendingRef = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    const currentPending = new Set(
+      snapshots.filter((x) => x.status === "pending").map((x) => x.id),
+    );
+    const finished = [...prevPendingRef.current].some((id) => !currentPending.has(id));
+    prevPendingRef.current = currentPending;
+    if (finished) queryClient.invalidateQueries({ queryKey: STATS_KEY });
+  }, [snapshots, queryClient]);
 
   const archiveMutation = useMutation({
     mutationFn: (url: string) => client.createSnapshot(url),
@@ -197,7 +210,7 @@ export function DashboardPage() {
 
   async function handleArchive(e: React.FormEvent) {
     e.preventDefault();
-    if (!archiveUrl.trim()) return;
+    if (!canWrite || !archiveUrl.trim()) return;
     archiveMutation.mutate(archiveUrl.trim());
   }
 
@@ -218,40 +231,42 @@ export function DashboardPage() {
         </p>
       </div>
 
-      {/* Quick actions bar */}
-      <form
-        onSubmit={handleArchive}
-        className="flex flex-wrap gap-2 mb-8 p-4 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800"
-      >
-        <input
-          type="url"
-          placeholder="https://example.com — archive a URL"
-          value={archiveUrl}
-          onChange={(e) => setArchiveUrl(e.target.value)}
-          className="flex-1 min-w-48 py-2 px-3 rounded border border-gray-300 dark:border-gray-600 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary/50"
-        />
-        <button
-          type="submit"
-          disabled={archiving || !archiveUrl.trim()}
-          className="py-2 px-4 rounded bg-primary text-white text-sm font-semibold border-0 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
+      {/* Quick actions bar (write-only) */}
+      {canWrite && (
+        <form
+          onSubmit={handleArchive}
+          className="flex flex-wrap gap-2 mb-8 p-4 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800"
         >
-          {archiving ? "Archiving…" : "Archive"}
-        </button>
-        <Link
-          to="/import"
-          className="flex items-center gap-1.5 py-2 px-4 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium no-underline hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors shrink-0"
-        >
-          <Upload size={14} />
-          Import
-        </Link>
-        <Link
-          to="/snapshots"
-          className="flex items-center gap-1.5 py-2 px-4 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium no-underline hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors shrink-0"
-        >
-          <CircleX size={14} />
-          View Failures
-        </Link>
-      </form>
+          <input
+            type="url"
+            placeholder="https://example.com — archive a URL"
+            value={archiveUrl}
+            onChange={(e) => setArchiveUrl(e.target.value)}
+            className="flex-1 min-w-48 py-2 px-3 rounded border border-gray-300 dark:border-gray-600 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary/50"
+          />
+          <button
+            type="submit"
+            disabled={archiving || !archiveUrl.trim()}
+            className="py-2 px-4 rounded bg-primary text-white text-sm font-semibold border-0 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
+          >
+            {archiving ? "Archiving…" : "Archive"}
+          </button>
+          <Link
+            to="/import"
+            className="flex items-center gap-1.5 py-2 px-4 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium no-underline hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors shrink-0"
+          >
+            <Upload size={14} />
+            Import
+          </Link>
+          <Link
+            to="/snapshots"
+            className="flex items-center gap-1.5 py-2 px-4 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium no-underline hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors shrink-0"
+          >
+            <CircleX size={14} />
+            View Failures
+          </Link>
+        </form>
+      )}
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -382,15 +397,19 @@ export function DashboardPage() {
             No snapshots yet
           </p>
           <p className="text-gray-400 dark:text-gray-500 text-sm mb-6">
-            Enter a URL above to archive your first page, or import from a feed.
+            {canWrite
+              ? "Enter a URL above to archive your first page, or import from a feed."
+              : "Nothing has been archived here yet."}
           </p>
-          <Link
-            to="/import"
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors no-underline"
-          >
-            <Upload size={14} />
-            Import from RSS / Bookmarks
-          </Link>
+          {canWrite && (
+            <Link
+              to="/import"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors no-underline"
+            >
+              <Upload size={14} />
+              Import from RSS / Bookmarks
+            </Link>
+          )}
         </div>
       ) : (
         /* Activity feed */

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { isPrivateIPv4, isPrivateIPv6, safeFetch } from "./ssrf-guard";
+import { assertPublicUrl, isPrivateIPv4, isPrivateIPv6, safeFetch } from "./ssrf-guard";
 
 // ---------------------------------------------------------------------------
 // IP classification helpers
@@ -129,6 +129,91 @@ describe("safeFetch response size cap", () => {
       const res = await safeFetch(`http://localhost:${server.port}/`);
       expect(await res.text()).toBe("hello world");
     } finally {
+      server.stop(true);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Ranges and encodings that used to slip through
+// ---------------------------------------------------------------------------
+
+describe("reserved ranges", () => {
+  test.each([
+    ["100.64.0.1", true], // carrier-grade NAT
+    ["100.127.255.254", true],
+    ["100.128.0.1", false],
+    ["192.0.0.8", true], // IETF protocol assignments
+    ["198.18.0.1", true], // benchmarking
+    ["198.19.255.255", true],
+    ["198.20.0.1", false],
+    ["224.0.0.1", true], // multicast
+    ["239.255.255.250", true],
+    ["8.8.8.8", false],
+  ])("isPrivateIPv4(%s) = %s", (ip, expected) => {
+    expect(isPrivateIPv4(ip)).toBe(expected);
+  });
+
+  test.each([
+    ["::ffff:7f00:1", true], // 127.0.0.1 in the hex form the URL parser produces
+    ["::ffff:a9fe:a9fe", true], // 169.254.169.254
+    ["::ffff:808:808", false], // 8.8.8.8
+    ["[::1]", true], // bracketed, as returned by URL.hostname
+    ["64:ff9b::7f00:1", true], // NAT64 → 127.0.0.1
+    ["64:ff9b::808:808", false],
+    ["fec0::1", true], // deprecated site-local
+    ["ff02::1", true], // multicast
+    ["2606:4700:4700::1111", false],
+  ])("isPrivateIPv6(%s) = %s", (ip, expected) => {
+    expect(isPrivateIPv6(ip)).toBe(expected);
+  });
+});
+
+describe("assertPublicUrl", () => {
+  beforeEach(() => {
+    process.env.WEBFROST_ALLOW_PRIVATE_URLS = undefined;
+  });
+
+  test.each([
+    "file:///etc/passwd",
+    "ftp://example.com/",
+    "http://[::1]/",
+    "http://[::ffff:127.0.0.1]/",
+    "http://2130706433/", // decimal 127.0.0.1
+    "http://0x7f.1/", // hex 127.0.0.1
+    "not a url",
+  ])("rejects %s", async (url) => {
+    await expect(assertPublicUrl(url)).rejects.toThrow();
+  });
+
+  test("lets private addresses through when explicitly allowed", async () => {
+    process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
+    try {
+      await expect(assertPublicUrl("http://127.0.0.1/")).resolves.toBeUndefined();
+      // The protocol restriction is not part of the opt-out.
+      await expect(assertPublicUrl("file:///etc/passwd")).rejects.toThrow("unsupported protocol");
+    } finally {
+      process.env.WEBFROST_ALLOW_PRIVATE_URLS = undefined;
+    }
+  });
+});
+
+describe("safeFetch timeout", () => {
+  test("aborts a response that never arrives", async () => {
+    const server = Bun.serve({
+      port: 0,
+      async fetch() {
+        await Bun.sleep(2000);
+        return new Response("late");
+      },
+    });
+    process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
+    process.env.WEBFROST_FETCH_TIMEOUT_MS = "100";
+    try {
+      await expect(safeFetch(`http://127.0.0.1:${server.port}/`)).rejects.toThrow("timed out");
+    } finally {
+      process.env.WEBFROST_ALLOW_PRIVATE_URLS = undefined;
+      process.env.WEBFROST_FETCH_TIMEOUT_MS = undefined;
       server.stop(true);
     }
   });

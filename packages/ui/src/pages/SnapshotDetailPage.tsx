@@ -12,10 +12,12 @@ import {
   StatusBadge,
 } from "../components";
 import { useClient } from "../context";
-import { snapshotKeys } from "../hooks/useSnapshots";
+import { useAuth } from "../context/auth";
+import { PENDING_POLL_MS, snapshotKeys } from "../hooks/useSnapshots";
 
 export function SnapshotDetailPage() {
   const client = useClient();
+  const { canWrite } = useAuth();
   const queryClient = useQueryClient();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -29,6 +31,7 @@ export function SnapshotDetailPage() {
     queryKey: snapshotKeys.detail(numId ?? 0),
     queryFn: () => (numId ? client.getSnapshot(numId) : null),
     enabled: numId !== null,
+    refetchInterval: (query) => (query.state.data?.status === "pending" ? PENDING_POLL_MS : false),
   });
 
   const error = queryError ? String(queryError) : detail === null ? "Snapshot not found." : null;
@@ -44,7 +47,7 @@ export function SnapshotDetailPage() {
   });
 
   function handleDelete() {
-    if (!numId) return;
+    if (!canWrite || !numId) return;
     if (!window.confirm("Delete this snapshot and all its artifacts? This cannot be undone.")) {
       return;
     }
@@ -96,18 +99,20 @@ export function SnapshotDetailPage() {
             </span>
           </div>
 
-          <div className="mb-7">
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={deleting}
-              className={`bg-red-100 dark:bg-red-900/20 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-400 text-sm rounded-md py-1.5 px-3.5 ${
-                deleting ? "cursor-not-allowed opacity-60" : "cursor-pointer"
-              }`}
-            >
-              {deleting ? "Deleting…" : "Delete snapshot"}
-            </button>
-          </div>
+          {canWrite && (
+            <div className="mb-7">
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className={`bg-red-100 dark:bg-red-900/20 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-400 text-sm rounded-md py-1.5 px-3.5 ${
+                  deleting ? "cursor-not-allowed opacity-60" : "cursor-pointer"
+                }`}
+              >
+                {deleting ? "Deleting…" : "Delete snapshot"}
+              </button>
+            </div>
+          )}
 
           <SnapshotTagSection snapshotId={detail.id} />
 

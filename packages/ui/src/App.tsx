@@ -1,12 +1,20 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { WebFrostClient } from "@webfrost/sdk";
-import { useState } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
-import { Toaster } from "sonner";
+import {
+  MutationCache,
+  QueryCache,
+  QueryClient,
+  QueryClientProvider,
+  useQueryClient,
+} from "@tanstack/react-query";
+import type { WebFrostClient, WebFrostError } from "@webfrost/sdk";
+import { useEffect, useRef, useState } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Toaster, toast } from "sonner";
 import { ClientContext, defaultClient } from "./context";
 import { AuthProvider, useAuth } from "./context/auth";
 import { ThemeProvider } from "./context/theme";
 import { Layout } from "./layouts/Layout";
+import { isStatus, shouldRetry } from "./lib/errors";
+import { returnToPath } from "./lib/returnTo";
 import { ApiKeysPage } from "./pages/ApiKeysPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ImportPage } from "./pages/ImportPage";
@@ -19,8 +27,31 @@ import { SnapshotDetailPage } from "./pages/SnapshotDetailPage";
 import { SnapshotListPage } from "./pages/SnapshotListPage";
 import { TagsPage } from "./pages/TagsPage";
 
+/** Write-only pages: a guest is sent to /login and returns here after signing in. */
+function RequireWrite({ children }: { children: React.ReactNode }) {
+  const { canWrite } = useAuth();
+  const location = useLocation();
+  if (!canWrite) {
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: `${location.pathname}${location.search}${location.hash}` }}
+      />
+    );
+  }
+  return <>{children}</>;
+}
+
+function LoginRoute() {
+  const { isAuthenticated } = useAuth();
+  const location = useLocation();
+  if (isAuthenticated) return <Navigate to={returnToPath(location.state)} replace />;
+  return <LoginPage />;
+}
+
 function AppRoutes() {
-  const { ready, needsSetup, isAuthenticated } = useAuth();
+  const { ready, needsSetup, isAuthenticated, publicRead } = useAuth();
 
   // Wait for session check before rendering routes to avoid flash
   if (!ready) return null;
@@ -34,13 +65,14 @@ function AppRoutes() {
     );
   }
 
+  // Signed-in users, and anonymous visitors on a public-read instance, get the app shell.
+  // Guests only reach the read-only pages; the rest are wrapped in RequireWrite.
+  const canBrowse = isAuthenticated || publicRead;
+
   return (
     <Routes>
-      <Route
-        path="/login"
-        element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />}
-      />
-      {isAuthenticated ? (
+      <Route path="/login" element={<LoginRoute />} />
+      {canBrowse ? (
         <>
           <Route element={<Layout />}>
             <Route index element={<DashboardPage />} />
@@ -48,10 +80,38 @@ function AppRoutes() {
             <Route path="snapshots/:id" element={<SnapshotDetailPage />} />
             <Route path="search" element={<SearchPage />} />
             <Route path="tags" element={<TagsPage />} />
-            <Route path="schedules" element={<SchedulesPage />} />
-            <Route path="import" element={<ImportPage />} />
-            <Route path="settings" element={<SettingsPage />} />
-            <Route path="settings/api-keys" element={<ApiKeysPage />} />
+            <Route
+              path="schedules"
+              element={
+                <RequireWrite>
+                  <SchedulesPage />
+                </RequireWrite>
+              }
+            />
+            <Route
+              path="import"
+              element={
+                <RequireWrite>
+                  <ImportPage />
+                </RequireWrite>
+              }
+            />
+            <Route
+              path="settings"
+              element={
+                <RequireWrite>
+                  <SettingsPage />
+                </RequireWrite>
+              }
+            />
+            <Route
+              path="settings/api-keys"
+              element={
+                <RequireWrite>
+                  <ApiKeysPage />
+                </RequireWrite>
+              }
+            />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </>
@@ -62,14 +122,72 @@ function AppRoutes() {
   );
 }
 
+const RATE_LIMIT_TOAST_ID = "rate-limited";
+
+function notifyRateLimited(err: WebFrostError) {
+  const wait =
+    err.retryAfter !== undefined
+      ? ` Try again in ${err.retryAfter} second${err.retryAfter === 1 ? "" : "s"}.`
+      : "";
+  // Fixed id so a burst of failing queries shows a single toast.
+  toast.error(`The server is rate limiting requests.${wait}`, { id: RATE_LIMIT_TOAST_ID });
+}
+
+/**
+ * Wires global 401 handling: when a query fails with 401 the auth state is cleared
+ * (AppRoutes then redirects to /login, or keeps a guest on a public-read instance
+ * where they are) and cached data is dropped.
+ */
+function AuthBridge({
+  onUnauthorizedRef,
+}: {
+  onUnauthorizedRef: React.MutableRefObject<() => void>;
+}) {
+  const { markUnauthenticated, ready, isAuthenticated, publicRead } = useAuth();
+  const queryClient = useQueryClient();
+  const wasAuthenticated = useRef(false);
+  onUnauthorizedRef.current = markUnauthenticated;
+
+  // Drop cached data once signed out.
+  useEffect(() => {
+    const signedOut = wasAuthenticated.current && !isAuthenticated;
+    wasAuthenticated.current = isAuthenticated;
+    if (!ready || isAuthenticated) return;
+    if (!publicRead) {
+      // Pages are unmounted by now (redirect to /login).
+      queryClient.clear();
+    } else if (signedOut) {
+      // Guest pages stay mounted: reset the cache and refetch what they show.
+      queryClient.resetQueries();
+    }
+  }, [ready, isAuthenticated, publicRead, queryClient]);
+
+  return null;
+}
+
 export default function App({ client = defaultClient }: { client?: WebFrostClient }) {
+  const onUnauthorizedRef = useRef<() => void>(() => {});
   const [queryClient] = useState(
     () =>
       new QueryClient({
+        queryCache: new QueryCache({
+          onError: (err) => {
+            if (isStatus(err, 401)) onUnauthorizedRef.current();
+            else if (isStatus(err, 429)) notifyRateLimited(err);
+          },
+        }),
+        // 401 always means the session is gone (a wrong current password on
+        // change-password is a 403), so mutations get the same treatment as queries.
+        mutationCache: new MutationCache({
+          onError: (err) => {
+            if (isStatus(err, 401)) onUnauthorizedRef.current();
+            else if (isStatus(err, 429)) notifyRateLimited(err);
+          },
+        }),
         defaultOptions: {
           queries: {
             staleTime: 30_000,
-            retry: 1,
+            retry: shouldRetry,
           },
         },
       }),
@@ -79,6 +197,7 @@ export default function App({ client = defaultClient }: { client?: WebFrostClien
       <ClientContext.Provider value={client}>
         <ThemeProvider>
           <AuthProvider client={client}>
+            <AuthBridge onUnauthorizedRef={onUnauthorizedRef} />
             <Toaster richColors position="top-right" />
             <AppRoutes />
           </AuthProvider>

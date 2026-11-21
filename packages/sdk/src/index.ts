@@ -11,6 +11,7 @@ export type {
   LoginResult,
   MeResult,
   Schedule,
+  SearchPage,
   SearchResult,
   ServerInfo,
   Snapshot,

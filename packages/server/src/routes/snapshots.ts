@@ -1,30 +1,32 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
 import {
-  createSnapshot,
-  createStorageBackend,
   deleteSnapshot,
   getSnapshot,
+  getSnapshotsByIds,
   listSnapshotsWithExtractorsPaginated,
-  openDb,
-  runPipeline,
   searchSnapshots,
 } from "@webfrost/core";
-import type { StorageBackend } from "@webfrost/core";
+import type { SnapshotWithExtractors, StorageBackend } from "@webfrost/core";
 import { Elysia, t } from "elysia";
-import { logger } from "../logger";
-import { rateLimiterPlugin } from "../middleware/rateLimiter";
+import { getDb, getRunner, getStorage } from "../context";
+import { isGuestRequest } from "./auth";
 
-function getWebfrostDir(): string {
-  return process.env.WEBFROST_DIR ?? join(homedir(), ".webfrost");
-}
-
-function getDb() {
-  return openDb(getWebfrostDir());
-}
-
-function getStorage(): StorageBackend {
-  return createStorageBackend(getWebfrostDir());
+/** List-level fields shared by the list, search and detail responses. */
+function snapshotSummary(s: SnapshotWithExtractors) {
+  return {
+    status: s.status,
+    createdAt: s.created_at,
+    extractors: s.extractors,
+    title: s.title,
+    excerpt: s.excerpt,
+    screenshotUrl: s.hasScreenshot ? `/api/snapshots/${s.id}/archives/screenshot/download` : null,
+    tags: s.tags.map((tag) => ({
+      id: tag.id,
+      name: tag.name,
+      slug: tag.slug,
+      color: tag.color,
+      createdAt: tag.created_at,
+    })),
+  };
 }
 
 // File-based extractors store a storage ref in content; derive file size via storage backend.
@@ -37,13 +39,16 @@ const FILE_BASED_EXTRACTORS = new Set([
   "media",
 ]);
 
+// Every extractor whose `content` column holds a storage reference rather than the data itself.
+const FILE_BACKED_EXTRACTORS = new Set([...FILE_BASED_EXTRACTORS, "media-metadata"]);
+
 async function getFileSizeBytes(
   content: string | null,
   extractor: string,
   storage: StorageBackend,
 ): Promise<number | null> {
   if (!content) return null;
-  if (FILE_BASED_EXTRACTORS.has(extractor)) {
+  if (FILE_BACKED_EXTRACTORS.has(extractor)) {
     const size = await storage.fileSize(content);
     return size > 0 ? size : null;
   }
@@ -62,6 +67,23 @@ const ALLOWED_EXTRACTORS = new Set([
   "media-metadata",
 ]);
 
+/** Archived HTML formats that can be shown in the sandboxed preview. */
+const PREVIEWABLE_EXTRACTORS = new Set(["dom-snapshot", "singlefile"]);
+
+/**
+ * Policy for rendering archived (untrusted) HTML inside the app.
+ *
+ * - `sandbox` gives the document an opaque origin and disables scripts, forms,
+ *   popups and top-level navigation — even if the URL is opened directly, outside
+ *   the iframe.
+ * - Nothing may be loaded from the network: only inline styles and data: URIs,
+ *   which is what the SingleFile extractor produces. That also keeps the archived
+ *   page from phoning home when someone looks at it.
+ * - Only this app may frame it.
+ */
+const PREVIEW_CSP =
+  "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src data:; frame-ancestors 'self'";
+
 const FILE_EXTRACTORS: Record<string, { contentType: string; filename: string }> = {
   warc: { contentType: "application/warc", filename: "archive.warc" },
   pdf: { contentType: "application/pdf", filename: "page.pdf" },
@@ -72,8 +94,6 @@ const FILE_EXTRACTORS: Record<string, { contentType: string; filename: string }>
 };
 
 export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
-  // 60 req/min per IP for snapshot creation (write) to prevent pipeline abuse
-  .use(rateLimiterPlugin({ limit: 60, windowMs: 60_000, methods: ["POST"] }))
   .onError(({ code, set }) => {
     if (code === "VALIDATION") {
       set.status = 400;
@@ -99,23 +119,15 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
         return { error: "invalid url" };
       }
 
+      // The shared runner bounds concurrency (WEBFROST_CONCURRENCY) and gives the
+      // pipeline its own DB connection, so the request connection closes right away.
       const db = getDb();
       let snapshotId: number;
       try {
-        snapshotId = createSnapshot(db, url);
+        snapshotId = getRunner().add(db, url);
       } finally {
         db.close();
       }
-
-      // Fire and forget with its own DB connection so the request DB can close immediately
-      const pipelineDb = getDb();
-      const pipelineLogger = logger.child({ snapshotId });
-      const storage = getStorage();
-      runPipeline(pipelineDb, snapshotId, url, getWebfrostDir(), undefined, pipelineLogger, storage)
-        .catch((err: unknown) => {
-          pipelineLogger.error({ err }, "pipeline error");
-        })
-        .finally(() => pipelineDb.close());
 
       set.status = 202;
       return { id: snapshotId, url, status: "pending" };
@@ -134,20 +146,31 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       const db = getDb();
       try {
         const q = query.q?.trim();
-        const page = Math.max(1, Number(query.page) || 1);
-        const limit = Math.min(10000, Math.max(1, Number(query.limit) || 20));
+        // Whole numbers only: SQLite rejects a fractional LIMIT/OFFSET.
+        const page = Math.max(1, Math.trunc(Number(query.page)) || 1);
+        const limit = Math.min(10000, Math.max(1, Math.trunc(Number(query.limit)) || 20));
         const status = query.status?.trim() || undefined;
 
         if (q) {
-          // FTS5 ranked search — returns paginated results with snippet
-          const result = searchSnapshots(db, q, limit, page);
+          // FTS5 ranked search — paginated hits with an HTML-safe snippet, plus the
+          // same summary fields as the list so clients can filter and render without
+          // a second request.
+          const result = searchSnapshots(db, q, limit, page, status);
+          const meta = getSnapshotsByIds(
+            db,
+            result.items.map((r) => r.id),
+          );
           return {
-            items: result.items.map((r) => ({
-              id: r.id,
-              url: r.url,
-              snippet: r.snippet,
-              rank: r.rank,
-            })),
+            items: result.items.map((r) => {
+              const snapshot = meta.get(r.id);
+              return {
+                id: r.id,
+                url: r.url,
+                snippet: r.snippet,
+                rank: r.rank,
+                ...(snapshot ? snapshotSummary(snapshot) : {}),
+              };
+            }),
             total: result.total,
             page: result.page,
             limit: result.limit,
@@ -156,25 +179,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
 
         const result = listSnapshotsWithExtractorsPaginated(db, page, limit, status);
         return {
-          items: result.items.map((s) => ({
-            id: s.id,
-            url: s.url,
-            status: s.status,
-            createdAt: s.created_at,
-            extractors: s.extractors,
-            title: s.title,
-            excerpt: s.excerpt,
-            screenshotUrl: s.hasScreenshot
-              ? `/api/snapshots/${s.id}/archives/screenshot/download`
-              : null,
-            tags: s.tags.map((tag) => ({
-              id: tag.id,
-              name: tag.name,
-              slug: tag.slug,
-              color: tag.color,
-              createdAt: tag.created_at,
-            })),
-          })),
+          items: result.items.map((s) => ({ id: s.id, url: s.url, ...snapshotSummary(s) })),
           total: result.total,
           page: result.page,
           limit: result.limit,
@@ -194,13 +199,16 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
   )
   .get(
     "/:id",
-    async ({ params, set }) => {
+    async ({ params, set, request }) => {
       const id = Number(params.id);
       if (!Number.isInteger(id) || id <= 0) {
         set.status = 404;
         return { error: "not found" };
       }
 
+      // For file-backed extractors `content` is a storage reference (an absolute
+      // path or an S3 key). Anonymous visitors get the download URL instead.
+      const guest = isGuestRequest(request);
       const db = getDb();
       const storage = getStorage();
       try {
@@ -236,17 +244,22 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
             }
           }),
         );
+        const summary = getSnapshotsByIds(db, [id]).get(id);
         return {
           id: snapshot.id,
           url: snapshot.url,
           status: snapshot.status,
           createdAt: snapshot.created_at,
+          ...(summary ? snapshotSummary(summary) : {}),
           archiveResults: snapshot.archiveResults
             .filter((ar) => ar.error === null)
             .map((ar) => ({
               id: ar.id,
               extractor: ar.extractor,
-              content: ar.content,
+              content:
+                guest && ar.content !== null && FILE_BACKED_EXTRACTORS.has(ar.extractor)
+                  ? `/api/snapshots/${id}/archives/${ar.extractor}/download`
+                  : ar.content,
               createdAt: ar.created_at,
             })),
           extractorMeta,
@@ -285,6 +298,49 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
     { params: t.Object({ id: t.String() }) },
   )
   .get(
+    "/:id/archives/:extractor/preview",
+    async ({ params, set }) => {
+      const id = Number(params.id);
+      const { extractor } = params;
+      const fail = (status: number, error: string) => {
+        set.status = status;
+        return { error };
+      };
+
+      if (!Number.isInteger(id) || id <= 0) return fail(404, "not found");
+      if (!PREVIEWABLE_EXTRACTORS.has(extractor)) return fail(400, "extractor has no preview");
+
+      const db = getDb();
+      let ref: string | null;
+      try {
+        ref =
+          db
+            .query<{ content: string | null }, [number, string]>(
+              "SELECT content FROM archive_results WHERE snapshot_id = ? AND extractor = ? AND error IS NULL ORDER BY id DESC LIMIT 1",
+            )
+            .get(id, extractor)?.content ?? null;
+      } finally {
+        db.close();
+      }
+      if (!ref) return fail(404, "not found");
+
+      const storage = getStorage();
+      if (!storage.validateRef(ref)) return fail(403, "forbidden");
+      if (!(await storage.fileExists(ref))) return fail(404, "file not found");
+      const bytes = await storage.getBytes(ref);
+
+      set.headers["content-type"] = "text/html; charset=utf-8";
+      set.headers["content-security-policy"] = PREVIEW_CSP;
+      set.headers["x-frame-options"] = "SAMEORIGIN";
+      set.headers["referrer-policy"] = "no-referrer";
+      set.headers["cache-control"] = "private, no-store";
+      return new Response(bytes as unknown as BodyInit);
+    },
+    {
+      params: t.Object({ id: t.String(), extractor: t.String() }),
+    },
+  )
+  .get(
     "/:id/archives/:extractor/download",
     async ({ params, set }) => {
       const id = Number(params.id);
@@ -310,7 +366,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       try {
         const row = db
           .query<{ content: string | null }, [number, string]>(
-            "SELECT content FROM archive_results WHERE snapshot_id = ? AND extractor = ? LIMIT 1",
+            "SELECT content FROM archive_results WHERE snapshot_id = ? AND extractor = ? AND error IS NULL ORDER BY id DESC LIMIT 1",
           )
           .get(id, extractor);
         if (!row) {
@@ -378,7 +434,10 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
             headers: { "Content-Type": "application/json" },
           });
         }
-        const presignedUrl = storage.presignedDownloadUrl(content);
+        // The media metadata JSON is read by the UI with fetch(), which may not follow
+        // a redirect to the bucket's origin (connect-src 'self'); serve it from here.
+        const presignedUrl =
+          extractor === "media-metadata" ? null : storage.presignedDownloadUrl(content);
         if (presignedUrl) {
           return new Response(null, {
             status: 302,

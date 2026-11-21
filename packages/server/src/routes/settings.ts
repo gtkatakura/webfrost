@@ -1,15 +1,6 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { createApiKey, listApiKeys, openDb, revokeApiKey } from "@webfrost/core";
+import { createApiKey, listApiKeys, revokeApiKey } from "@webfrost/core";
 import { Elysia, t } from "elysia";
-
-function getWebfrostDir(): string {
-  return process.env.WEBFROST_DIR ?? join(homedir(), ".webfrost");
-}
-
-function getDb() {
-  return openDb(getWebfrostDir());
-}
+import { SERVER_VERSION, getDb, getWebfrostDir } from "../context";
 
 export const settingsRouter = new Elysia({ prefix: "/settings" })
   .get("/info", () => {
@@ -18,7 +9,7 @@ export const settingsRouter = new Elysia({ prefix: "/settings" })
     try {
       const row = db.query<{ count: number }, []>("SELECT COUNT(*) as count FROM snapshots").get();
       return {
-        version: "0.0.0",
+        version: SERVER_VERSION,
         storagePath: webfrostDir,
         snapshotCount: row?.count ?? 0,
       };

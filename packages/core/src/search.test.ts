@@ -4,7 +4,14 @@ import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb } from "./db";
-import { indexSnapshot, rebuildIndex, removeFromIndex, searchSnapshots } from "./search";
+import {
+  indexSnapshot,
+  rebuildIndex,
+  removeFromIndex,
+  renderSnippet,
+  searchSnapshots,
+} from "./search";
+import { addTagToSnapshot, createTag, deleteTag, removeTagFromSnapshot } from "./tags";
 
 let testDir: string;
 let db: Database;
@@ -136,5 +143,101 @@ describe("rebuildIndex", () => {
     const result = searchSnapshots(db, "archiving");
     expect(result.items.length).toBeGreaterThan(0);
     expect(result.items[0]?.id).toBe(1);
+  });
+});
+
+describe("snippet escaping", () => {
+  test("archived markup is escaped; only the highlight is real HTML", () => {
+    indexSnapshot(
+      db,
+      1,
+      "https://example.com",
+      "XSS write-up",
+      'payload <img src=x onerror=alert(1)> & "quotes" near the keyword frostbite',
+      "",
+    );
+
+    const [hit] = searchSnapshots(db, "frostbite").items;
+
+    expect(hit?.snippet).toContain("<mark>frostbite</mark>");
+    expect(hit?.snippet).toContain("&lt;img src=x onerror=alert(1)&gt;");
+    expect(hit?.snippet).toContain("&amp;");
+    expect(hit?.snippet).toContain("&quot;quotes&quot;");
+    // No tag other than <mark> survives.
+    expect(hit?.snippet.replace(/<\/?mark>/g, "")).not.toMatch(/[<>]/);
+  });
+
+  test("a literal <mark> in the page text is escaped, not treated as a highlight", () => {
+    expect(renderSnippet("before <mark>fake</mark> after")).toBe(
+      "before &lt;mark&gt;fake&lt;/mark&gt; after",
+    );
+  });
+});
+
+describe("tags in the search index", () => {
+  beforeEach(() => {
+    indexSnapshot(db, 1, "https://example.com", "Example", "plain body text", "");
+  });
+
+  test("a tag added after archiving becomes searchable", () => {
+    const tag = createTag(db, "glaciology");
+    expect(searchSnapshots(db, "glaciology").total).toBe(0);
+
+    addTagToSnapshot(db, 1, tag.id);
+
+    expect(searchSnapshots(db, "glaciology").items.map((r) => r.id)).toEqual([1]);
+  });
+
+  test("removing the tag from the snapshot removes it from search", () => {
+    const tag = createTag(db, "glaciology");
+    addTagToSnapshot(db, 1, tag.id);
+
+    removeTagFromSnapshot(db, 1, tag.id);
+
+    expect(searchSnapshots(db, "glaciology").total).toBe(0);
+    expect(searchSnapshots(db, "plain").total).toBe(1);
+  });
+
+  test("deleting the tag removes it from every indexed snapshot", () => {
+    const tag = createTag(db, "glaciology");
+    addTagToSnapshot(db, 1, tag.id);
+
+    deleteTag(db, tag.id);
+
+    expect(searchSnapshots(db, "glaciology").total).toBe(0);
+  });
+
+  test("tagging a snapshot that is not indexed yet is harmless", () => {
+    const tag = createTag(db, "pending-tag");
+    expect(() => addTagToSnapshot(db, 2, tag.id)).not.toThrow();
+    expect(searchSnapshots(db, "pending").total).toBe(0);
+  });
+});
+
+describe("search options", () => {
+  beforeEach(() => {
+    db.query("UPDATE snapshots SET status = 'failed' WHERE id = 2").run();
+    indexSnapshot(db, 1, "https://example.com", "One", "shared keyword alpha", "");
+    indexSnapshot(db, 2, "https://test.org/article", "Two", "shared keyword beta", "");
+  });
+
+  test("filters hits by snapshot status, including the total", () => {
+    expect(searchSnapshots(db, "shared").total).toBe(2);
+
+    const failed = searchSnapshots(db, "shared", 20, 1, "failed");
+    expect(failed.items.map((r) => r.id)).toEqual([2]);
+    expect(failed.total).toBe(1);
+
+    expect(searchSnapshots(db, "shared", 20, 1, "pending").total).toBe(0);
+  });
+
+  test("fractional or nonsensical paging values are normalised instead of failing", () => {
+    const result = searchSnapshots(db, "shared", 1.9, 1.5);
+    expect(result.limit).toBe(1);
+    expect(result.page).toBe(1);
+    expect(result.items).toHaveLength(1);
+    expect(result.total).toBe(2);
+
+    expect(searchSnapshots(db, "shared", Number.NaN, -3).items).toHaveLength(2);
   });
 });

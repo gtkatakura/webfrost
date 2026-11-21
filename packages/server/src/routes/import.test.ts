@@ -436,3 +436,48 @@ describe("GET /imports", () => {
     expect(body[1]).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Imported URLs are actually archived
+// ---------------------------------------------------------------------------
+
+describe("POST /import — background pipelines", () => {
+  test("imported snapshots finish instead of staying pending", async () => {
+    // Regression: the route closed the DB connection it had handed to the
+    // background pipelines, so every imported snapshot stayed `pending` forever.
+    const origin = Bun.serve({
+      port: 0,
+      fetch: () =>
+        new Response("<html><body><p>imported page</p></body></html>", {
+          headers: { "content-type": "text/html" },
+        }),
+    });
+    process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
+    process.env.WEBFROST_DOMAIN_DELAY_MS = "0";
+    try {
+      const app = await getApp();
+      const base = `http://127.0.0.1:${origin.port}`;
+      const res = await post(app, { content: `${base}/one\n${base}/two\n`, format: "text" });
+      expect(res.status).toBe(202);
+      expect(((await res.json()) as { queued: number }).queued).toBe(2);
+
+      const { getRunner } = await import("../context");
+      await getRunner().onIdle();
+
+      const { openDb } = await import("@webfrost/core");
+      const db = openDb(testDir);
+      try {
+        const rows = db
+          .query<{ status: string }, []>("SELECT status FROM snapshots ORDER BY id")
+          .all();
+        expect(rows).toEqual([{ status: "done" }, { status: "done" }]);
+      } finally {
+        db.close();
+      }
+    } finally {
+      process.env.WEBFROST_ALLOW_PRIVATE_URLS = undefined;
+      process.env.WEBFROST_DOMAIN_DELAY_MS = undefined;
+      origin.stop(true);
+    }
+  }, 60_000);
+});
