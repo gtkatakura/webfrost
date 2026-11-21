@@ -1,6 +1,7 @@
 # The documentation site, built from the repo root: docker build -f apps/docs/Dockerfile .
 # Tag and digest: the tag says which version, the digest makes sure it is the same bytes everywhere.
-# Bun 1.4.4 here, not the repo's 1.3.11: inside a container 1.3.11 fails to prerender the pages (a 500 from
+# Bun 1.4.4, the version in mise.toml (1.3.11 also failed to prerender the pages inside a container: a 500 from
+# React Router's preview server with no error shown). Keep it in step with mise.toml.
 FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS build
 WORKDIR /app
 # Every workspace manifest, so the lockfile resolves; only the docs app's dependencies matter here.

@@ -1,5 +1,5 @@
 # Stage 1 — build the React UI
-ARG BUN_VERSION=1.3.11
+ARG BUN_VERSION=1.4.4
 FROM oven/bun:${BUN_VERSION} AS ui-builder
 WORKDIR /app
 
