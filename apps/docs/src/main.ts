@@ -39,6 +39,7 @@ const server = Bun.serve({
   port: Number(process.env.PORT ?? 5175),
   async fetch(req) {
     const path = decodeURIComponent(new URL(req.url).pathname);
+    // Health check for a reverse proxy or the container runtime.
     if (path === "/up") return new Response("ok");
     if (req.method !== "GET" && req.method !== "HEAD")
       return new Response("Method not allowed", { status: 405 });

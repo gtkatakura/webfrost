@@ -1,6 +1,7 @@
 /**
  * Apply the GitHub repository settings WebFrost relies on. Safe to run again at any time.
  *
+ *   mise run github:setup        (or: bun scripts/github-setup.ts [owner/repo])
  *
  * Needs the GitHub CLI logged in as an admin of the repository. Settings that GitHub offers only to
  * public repositories (private vulnerability reporting, free secret scanning) are reported as skipped

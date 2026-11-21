@@ -1,7 +1,6 @@
 # Tools and tasks for the whole repository. `mise install` sets up the tools; `mise tasks` lists the
 # tasks; `mise run <task>` runs one. CI uses the same file (jdx/mise-action).
 
-
 [tools]
 bun = "1.4.4"
 
@@ -112,6 +111,10 @@ run = "bun run docs:preview"
 [tasks.brand]
 description = "Rewrite the brand images not built with the site (README banner, social preview, favicons)"
 run = "bun apps/docs/scripts/brand-images.ts"
+
+[tasks."github:setup"]
+description = "Maintainers: apply the GitHub repository settings (topics, security, Actions, main ruleset); safe to re-run"
+run = "bun scripts/github-setup.ts"
 
 # ─── Housekeeping ─────────────────────────────────────────────────────────────
 

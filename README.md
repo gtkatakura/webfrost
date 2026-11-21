@@ -26,36 +26,29 @@ keeping and lets you search what you saved. Run it from a terminal, a script or 
 > WebFrost is young (`0.x`). It works, and it is tested, but the HTTP API and the SDK can still change
 > before 1.0. See the [roadmap](ROADMAP.md).
 
-## Quickstart
+## Install
 
-With Docker (server, web UI and scheduler):
+**Docker**, for the server, the web UI and the scheduler. The image bundles Chromium, yt-dlp and ffmpeg,
+so every format works out of the box, on amd64 and arm64:
 
 ```bash
-git clone https://github.com/gtkatakura/webfrost.git && cd webfrost
-[ -f .env ] || echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
+curl -fsSLO https://raw.githubusercontent.com/gtkatakura/webfrost/main/docker-compose.prod.yml
+echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-Open http://localhost:3000 and create the admin user. The image bundles Chromium, yt-dlp and ffmpeg, so
-every format works out of the box. For a real deployment (reverse proxy, TLS, backups) see
-[Deploy](https://webfrost.dev/docs/guides/deploy).
+Open http://localhost:3000 and create the admin user. For a real deployment (reverse proxy, TLS,
+backups) see [Deploy](https://webfrost.dev/docs/guides/deploy).
 
-From source, with [mise](https://mise.jdx.dev) (it installs the pinned Bun):
-
-```bash
-git clone https://github.com/gtkatakura/webfrost.git && cd webfrost
-mise install && mise run setup     # dependencies and Playwright's Chromium
-mise run dev                       # API on :3000 and the web UI on http://localhost:5173
-```
-
-Or just the CLI, against a folder:
+**The `webfrost` binary**, for macOS, Linux and Windows. One file with the CLI and the server:
 
 ```bash
-export WEBFROST_DIR=./archive
-bun run webfrost add https://example.com
-bun run webfrost search "example domain"
-bun run webfrost import bookmarks.html      # Netscape bookmarks, OPML, RSS/Atom or a list of URLs
+curl -fsSL https://webfrost.dev/install.sh | sh      # or: brew install gtkatakura/tap/webfrost
+webfrost setup                                       # downloads a headless Chromium if you have none
+webfrost serve                                       # server, web UI and scheduler on :3000
 ```
+
+**The SDK**, to talk to a server from your own code: `npm install @webfrost/sdk`.
 
 ## Four ways in
 
@@ -67,9 +60,17 @@ bun run webfrost import bookmarks.html      # Netscape bookmarks, OPML, RSS/Atom
 | **TypeScript SDK** | A typed client with no dependencies, for Bun, Node and the browser. [Reference](https://webfrost.dev/docs/reference/sdk) |
 
 ```bash
-curl -X POST http://localhost:3000/api/snapshots \
-  -H "Authorization: Bearer $WEBFROST_API_KEY" -H "Content-Type: application/json" \
-  -d '{"url":"https://example.com"}'
+webfrost add https://example.com
+webfrost search "example domain"
+webfrost import bookmarks.html          # Netscape bookmarks, OPML, RSS/Atom or a list of URLs
+webfrost schedule add https://example.com --cron "0 * * * *"   # re-archive every hour
+```
+
+```ts
+import { WebFrostClient } from "@webfrost/sdk";
+
+const client = new WebFrostClient({ baseUrl: "http://localhost:3000/api", apiKey: process.env.WEBFROST_API_KEY });
+const { id } = await client.createSnapshot("https://example.com");
 ```
 
 ## How it compares
@@ -107,7 +108,8 @@ before exposing it to other people.
 
 ## Contributing
 
-Bug reports, ideas and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md); questions
+Bug reports, ideas and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) shows how to run
+WebFrost from source and what a good pull request looks like; questions
 go to [Discussions](https://github.com/gtkatakura/webfrost/discussions), and security issues to
 [SECURITY.md](SECURITY.md), never to a public issue.
 

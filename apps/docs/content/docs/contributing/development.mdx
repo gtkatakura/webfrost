@@ -173,14 +173,14 @@ After changing the mascot art in `app/assets/brand`, run `mise run brand`. It re
   </Card>
 </Cards>
 
-## Publishing the docs site
+## The docs site as a container
 
-This section is for the maintainer. The site in `apps/docs` is published at [webfrost.dev](https://webfrost.dev)
-setup as the apps there. It needs a checkout of that repository next to this one (or `PLATFORM=/path/to/it`).
+`apps/docs/Dockerfile` builds the site into an image: it prerenders every page and resizes the images at
+build time, and what runs is a small Bun server that hands out the files on port 3000 (health check at
+`/up`). Pages and their route data are cacheable for a minute; files under `/assets` for a year, because
+their names change when their content does.
 
 ```bash
+docker build -f apps/docs/Dockerfile -t webfrost-docs .
+docker run --rm -p 3000:3000 webfrost-docs
 ```
-
-The image (`apps/docs/Dockerfile`) prerenders every page and resizes the images at build time; what
-runs is a small Bun server that hands out the files. Pages are revalidated on every visit, files
-under `/assets` are cached for a year (their names change when their content does).
