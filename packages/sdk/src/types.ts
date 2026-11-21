@@ -124,6 +124,8 @@ export interface SetupStatusResult {
   needsSetup: boolean;
   /** True when anonymous visitors may read the archive (older servers omit it; normalised to false). */
   publicRead: boolean;
+  /** True when the server has WEBFROST_SETUP_TOKEN set, so setup must present it (false when omitted). */
+  setupTokenRequired: boolean;
 }
 
 /** Response from POST /setup */

@@ -1,4 +1,5 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
+import { useClient } from "../context";
 import { useAuth } from "../context/auth";
 import { setupErrorMessage } from "../lib/errors";
 
@@ -6,11 +7,22 @@ type Step = "credentials" | "apikey";
 
 export function SetupPage() {
   const { completeSetup, finishSetup } = useAuth();
+  const client = useClient();
 
   const [step, setStep] = useState<Step>("credentials");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  // Asked for only when the server has WEBFROST_SETUP_TOKEN set.
+  const [tokenRequired, setTokenRequired] = useState(false);
+  const [setupToken, setSetupToken] = useState("");
+
+  useEffect(() => {
+    client
+      .getSetupStatus()
+      .then((status) => setTokenRequired(status.setupTokenRequired === true))
+      .catch(() => {});
+  }, [client]);
   const [apiKey, setApiKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -31,7 +43,7 @@ export function SetupPage() {
 
     setLoading(true);
     try {
-      const key = await completeSetup(username, password);
+      const key = await completeSetup(username, password, tokenRequired ? setupToken : undefined);
       setApiKey(key);
       setStep("apikey");
     } catch (err) {
@@ -67,6 +79,29 @@ export function SetupPage() {
             {error && (
               <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
                 {error}
+              </div>
+            )}
+
+            {tokenRequired && (
+              <div className="flex flex-col gap-1">
+                <label
+                  htmlFor="setup-token"
+                  className="text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  Setup token
+                </label>
+                <input
+                  id="setup-token"
+                  type="password"
+                  autoComplete="off"
+                  required
+                  value={setupToken}
+                  onChange={(e) => setSetupToken(e.target.value)}
+                  className="px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  The value of WEBFROST_SETUP_TOKEN on the server.
+                </p>
               </div>
             )}
 

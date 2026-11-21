@@ -315,14 +315,43 @@ describe("WebFrostClient.getSetupStatus", () => {
   test("passes publicRead through", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ needsSetup: false, publicRead: true }));
     const client = new WebFrostClient({ baseUrl: BASE });
-    expect(await client.getSetupStatus()).toEqual({ needsSetup: false, publicRead: true });
+    expect(await client.getSetupStatus()).toEqual({
+      needsSetup: false,
+      publicRead: true,
+      setupTokenRequired: false,
+    });
     const [calledUrl] = fetchSpy.mock.calls[0] as [string];
     expect(calledUrl).toBe(`${BASE}/setup/status`);
   });
 
-  test("normalises a missing publicRead (older server) to false", async () => {
+  test("normalises missing publicRead/setupTokenRequired (older server) to false", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ needsSetup: true }));
     const client = new WebFrostClient({ baseUrl: BASE });
-    expect(await client.getSetupStatus()).toEqual({ needsSetup: true, publicRead: false });
+    expect(await client.getSetupStatus()).toEqual({
+      needsSetup: true,
+      publicRead: false,
+      setupTokenRequired: false,
+    });
+  });
+
+  test("passes setupTokenRequired through", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ needsSetup: true, setupTokenRequired: true }));
+    const client = new WebFrostClient({ baseUrl: BASE });
+    expect((await client.getSetupStatus()).setupTokenRequired).toBe(true);
+  });
+});
+
+describe("WebFrostClient.completeSetup", () => {
+  test("sends the setup token only when given", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ apiKey: "k" }));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ apiKey: "k" }));
+    const client = new WebFrostClient({ baseUrl: BASE });
+    await client.completeSetup("admin", "password123");
+    await client.completeSetup("admin", "password123", "tok");
+    const bodies = (fetchSpy.mock.calls as unknown as [string, RequestInit][]).map((call) =>
+      JSON.parse(String(call[1].body)),
+    );
+    expect(bodies[0]).toEqual({ username: "admin", password: "password123" });
+    expect(bodies[1]).toEqual({ username: "admin", password: "password123", setupToken: "tok" });
   });
 });

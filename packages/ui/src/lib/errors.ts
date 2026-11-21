@@ -28,6 +28,7 @@ export function loginErrorMessage(err: unknown): string {
 /** Human-readable message for a failed first-run setup. */
 export function setupErrorMessage(err: unknown): string {
   if (isStatus(err, 409)) return "Setup has already been completed. Please sign in instead.";
+  if (isStatus(err, 403)) return "The setup token is incorrect.";
   if (isStatus(err, 429)) return rateLimitMessage(err, "Too many attempts.");
   return commonMessage(err, "Setup failed.");
 }

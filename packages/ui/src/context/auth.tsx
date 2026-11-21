@@ -23,7 +23,7 @@ interface AuthContextValue extends AuthState {
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   /** Creates the admin account and returns the one-time API key. Stays in the wizard. */
-  completeSetup: (username: string, password: string) => Promise<string>;
+  completeSetup: (username: string, password: string, setupToken?: string) => Promise<string>;
   /** Leaves the wizard for the app, signed in as the admin created by completeSetup. */
   finishSetup: (username: string) => void;
   /** Called when the server rejects a request with 401 (expired/revoked session). */
@@ -139,8 +139,8 @@ export function AuthProvider({
   // The wizard has a second step that shows the API key, so the app state only changes
   // in finishSetup: flipping it here would unmount the wizard before the key is seen.
   const completeSetup = useCallback(
-    async (username: string, password: string): Promise<string> => {
-      const { apiKey } = await client.completeSetup(username, password);
+    async (username: string, password: string, setupToken?: string): Promise<string> => {
+      const { apiKey } = await client.completeSetup(username, password, setupToken);
       return apiKey;
     },
     [client],

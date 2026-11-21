@@ -192,16 +192,33 @@ export class WebFrostClient {
   async getSetupStatus(): Promise<SetupStatusResult> {
     const res = await this.request(`${this.baseUrl}/setup/status`);
     if (!res.ok) throw httpError(res, res.statusText);
-    const body = (await res.json()) as { needsSetup: boolean; publicRead?: boolean };
-    return { needsSetup: body.needsSetup, publicRead: body.publicRead === true };
+    const body = (await res.json()) as {
+      needsSetup: boolean;
+      publicRead?: boolean;
+      setupTokenRequired?: boolean;
+    };
+    return {
+      needsSetup: body.needsSetup,
+      publicRead: body.publicRead === true,
+      setupTokenRequired: body.setupTokenRequired === true,
+    };
   }
 
-  /** Complete first-run setup: create admin user and generate first API key. Sets a session cookie. */
-  async completeSetup(username: string, password: string): Promise<SetupResult> {
+  /**
+   * Complete first-run setup: create admin user and generate first API key. Sets a session cookie.
+   * Pass `setupToken` when the server requires one (WEBFROST_SETUP_TOKEN).
+   */
+  async completeSetup(
+    username: string,
+    password: string,
+    setupToken?: string,
+  ): Promise<SetupResult> {
     const res = await this.request(`${this.baseUrl}/setup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify(
+        setupToken ? { username, password, setupToken } : { username, password },
+      ),
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
