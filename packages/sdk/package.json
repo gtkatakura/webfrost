@@ -1,21 +1,43 @@
 {
   "name": "@webfrost/sdk",
   "version": "0.0.0",
+  "description": "TypeScript client for the WebFrost self-hosted web archiver REST API",
+  "keywords": ["webfrost", "web-archive", "archiving", "sdk", "api-client", "typescript"],
   "license": "MIT",
   "private": true,
-  "module": "src/index.ts",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gtkatakura/webfrost.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://webfrost.dev/docs/reference/sdk",
+  "bugs": {
+    "url": "https://github.com/gtkatakura/webfrost/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "bun": "./src/index.ts",
-      "import": "./dist/index.js",
       "types": "./dist/index.d.ts",
-      "default": "./src/index.ts"
-    }
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target browser --dts",
+    "build": "rm -rf dist && bun build src/index.ts --outdir dist --target browser --format esm && tsc -p tsconfig.build.json",
+    "prepack": "bun run build",
+    "check:package": "bunx publint@0.3.25 --pack npm && bunx @arethetypeswrong/cli@0.18.5 --pack . --profile esm-only",
     "test": "bun test",
     "benchmarks": "bun run src/client.bench.ts"
   }

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { WebFrostClient, WebFrostError } from "./client";
+import type { Snapshot } from "./types";
 
 const BASE = "http://localhost:3000";
 
@@ -65,7 +66,7 @@ describe("WebFrostClient.createSnapshot", () => {
 
 describe("WebFrostClient.listSnapshots", () => {
   test("returns paginated result", async () => {
-    const rawItems = [
+    const rawItems: Snapshot[] = [
       {
         id: 1,
         url: "https://a.com",
@@ -269,7 +270,7 @@ describe("WebFrostClient.searchSnapshotsPage", () => {
     );
     const client = new WebFrostClient({ baseUrl: BASE });
     const result = await client.searchSnapshotsPage("q");
-    expect(result.items[0]).toMatchObject({ status: "", title: null, extractors: [], tags: [] });
+    expect(result.items[0]).toMatchObject({ status: null, title: null, extractors: [], tags: [] });
     expect(result.total).toBe(1);
   });
 

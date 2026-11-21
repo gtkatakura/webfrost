@@ -1,8 +1,20 @@
+/** Lifecycle of a snapshot: queued or running, finished, or gave up. */
+export type SnapshotStatus = "pending" | "done" | "failed";
+
+/** Import source formats the server understands. */
+export type ImportFormat = "rss" | "opml" | "netscape" | "text";
+
+/** Outcome of a schedule's most recent run (null before its first run). */
+export type ScheduleRunStatus = "success" | "failed";
+
+/** Which form of an archive result to address. */
+export type ArchiveUrlKind = "download" | "preview";
+
 /** Response from POST /snapshots (202 Accepted) */
 export interface SnapshotCreated {
   id: number;
   url: string;
-  status: string;
+  status: "pending";
 }
 
 /** Tag attached to a snapshot */
@@ -18,7 +30,7 @@ export interface Tag {
 export interface Snapshot {
   id: number;
   url: string;
-  status: string;
+  status: SnapshotStatus;
   createdAt: string;
   /** Extractor names that have produced results for this snapshot (e.g. ["warc", "readability"]) */
   extractors: string[];
@@ -60,16 +72,53 @@ export interface WebFrostClientOptions {
   baseUrl: string;
   /** API key for Bearer authentication. All requests will include Authorization: Bearer <apiKey>. */
   apiKey?: string;
+  /**
+   * Per-attempt timeout in milliseconds, covering the response headers and body.
+   * Defaults to 30000. `0` disables it.
+   */
+  timeoutMs?: number;
+  /**
+   * Custom `fetch` (SSR, tests, proxies). Defaults to the global `fetch`, looked up on every
+   * request.
+   */
+  fetch?: typeof fetch;
+  /**
+   * How many times to retry a failed idempotent request (GET/HEAD) on a network error, a timeout,
+   * 429 or 502/503/504. Defaults to 0 (no retries). Writes are never retried.
+   */
+  retries?: number;
+  /** Base delay for exponential backoff with jitter, in ms. Defaults to 250. */
+  retryDelayMs?: number;
+  /**
+   * Longest the client will wait between attempts, in ms. Defaults to 30000. A `Retry-After`
+   * longer than this is not waited out: the error is thrown instead.
+   */
+  maxRetryDelayMs?: number;
+  /**
+   * The `credentials` mode for requests. Defaults to "same-origin". Use "include" when the
+   * browser page and the API are on different origins and you rely on the session cookie
+   * (`login()`). Outside the browser, authenticate with an API key instead.
+   */
+  credentials?: RequestCredentials;
+}
+
+/** Options accepted by every request method. */
+export interface RequestOptions {
+  /** Abort the request. Combined with the client's timeout. */
+  signal?: AbortSignal | undefined;
 }
 
 export interface ListSnapshotsOptions {
   /** Page number (1-indexed). Defaults to 1. */
   page?: number;
-  /** Items per page (1–100). Defaults to 20. */
+  /** Items per page (1-100). Defaults to 20. */
   limit?: number;
-  /** Filter by snapshot status (e.g. "pending", "done", "failed"). */
-  status?: string;
+  /** Filter by snapshot status. */
+  status?: SnapshotStatus;
 }
+
+/** Options for {@link WebFrostClient.iterateSnapshots}: the list filters plus a signal. */
+export interface IterateSnapshotsOptions extends ListSnapshotsOptions, RequestOptions {}
 
 export interface SnapshotPage {
   items: Snapshot[];
@@ -78,12 +127,12 @@ export interface SnapshotPage {
   limit: number;
 }
 
-/** Response from POST /import (202 Accepted) */
+/** Response from POST /import and POST /import/file (202 Accepted) */
 export interface ImportResult {
   queued: number;
   skipped: number;
   total: number;
-  format: "rss" | "opml" | "netscape" | "text";
+  format: ImportFormat;
 }
 
 /** Options for POST /import */
@@ -93,7 +142,7 @@ export interface ImportOptions {
   /** Raw text content to parse (alternative to url) */
   content?: string;
   /** Format hint; auto-detected if omitted */
-  format?: "rss" | "opml" | "netscape" | "text";
+  format?: ImportFormat;
 }
 
 /** Scheduled archive job */
@@ -105,7 +154,7 @@ export interface Schedule {
   lastRunAt: string | null;
   nextRunAt: string | null;
   paused: boolean;
-  lastStatus: string | null;
+  lastStatus: ScheduleRunStatus | null;
   consecutiveFailures: number;
 }
 
@@ -168,7 +217,7 @@ export interface ApiKeyCreated extends ApiKey {
 export interface ImportRecord {
   id: string;
   sourceUrl: string | null;
-  format: "rss" | "opml" | "netscape" | "text";
+  format: ImportFormat;
   queued: number;
   skipped: number;
   createdAt: string;
@@ -181,8 +230,8 @@ export interface SearchResult {
   /** HTML snippet with <mark> highlights around matching terms */
   snippet: string;
   rank: number;
-  /** Snapshot status ("" when the server did not report one). */
-  status: string;
+  /** Snapshot status (`null` when the server did not report one). */
+  status: SnapshotStatus | null;
   /** ISO creation timestamp ("" when the server did not report one). */
   createdAt: string;
   title: string | null;

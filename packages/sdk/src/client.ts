@@ -1,14 +1,28 @@
+import { WebFrostError, parseError } from "./errors.js";
+import {
+  type RawSearchResult,
+  type RawSnapshot,
+  type RawSnapshotDetail,
+  type RawTag,
+  toSearchResult,
+  toSnapshot,
+  toSnapshotDetail,
+  toTag,
+} from "./mappers.js";
 import type {
   ApiKey,
   ApiKeyCreated,
-  ArchiveResult,
+  ArchiveUrlKind,
   DashboardStats,
+  ImportFormat,
   ImportOptions,
   ImportRecord,
   ImportResult,
+  IterateSnapshotsOptions,
   ListSnapshotsOptions,
   LoginResult,
   MeResult,
+  RequestOptions,
   Schedule,
   SearchPage,
   SearchResult,
@@ -21,182 +35,223 @@ import type {
   SnapshotPage,
   Tag,
   WebFrostClientOptions,
-} from "./types";
+} from "./types.js";
 
-export class WebFrostError extends Error {
-  /** Seconds to wait before retrying, parsed from the `Retry-After` header (typically on 429). */
-  public readonly retryAfter?: number;
+export { WebFrostError } from "./errors.js";
 
-  constructor(
-    public readonly status: number,
-    message: string,
-    retryAfter?: number,
-  ) {
-    super(message);
-    this.name = "WebFrostError";
-    if (retryAfter !== undefined) this.retryAfter = retryAfter;
-  }
+const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_RETRY_DELAY_MS = 250;
+const DEFAULT_MAX_RETRY_DELAY_MS = 30_000;
+/** Statuses worth retrying: rate limited, or a gateway/upstream hiccup. */
+const RETRYABLE_STATUSES = new Set([429, 502, 503, 504]);
+
+interface SendOptions {
+  /** JSON-serialised unless it is a FormData. */
+  body?: unknown;
+  signal?: AbortSignal | undefined;
+  /** Non-2xx statuses the caller handles itself (e.g. 404 -> null) instead of throwing. */
+  allow?: readonly number[];
+  /** The caller consumes the body after the call, so the timeout must not outlive the headers. */
+  streaming?: boolean;
 }
 
-/** Parse a `Retry-After` header given as delta-seconds (or an HTTP date). */
-function parseRetryAfter(res: Response): number | undefined {
-  const value = res.headers?.get("Retry-After");
-  if (!value) return undefined;
-  const secs = Number(value);
-  if (Number.isFinite(secs) && secs >= 0) return Math.ceil(secs);
-  const date = Date.parse(value);
-  if (Number.isNaN(date)) return undefined;
-  return Math.max(0, Math.ceil((date - Date.now()) / 1000));
-}
-
-function httpError(res: Response, message: string): WebFrostError {
-  return new WebFrostError(res.status, message, parseRetryAfter(res));
-}
-
-// Raw server shapes (server uses created_at, SDK exposes createdAt)
-interface RawTag {
-  id: number;
-  name: string;
-  slug: string;
-  color: string | null;
-  createdAt: string;
-}
-
-interface RawSnapshot {
-  id: number;
-  url: string;
-  status: string;
-  createdAt: string;
-  extractors: string[];
-  tags: RawTag[];
-  title: string | null;
-  excerpt: string | null;
-  screenshotUrl: string | null;
-}
-
-interface RawSearchResult {
-  id: number;
-  url: string;
-  snippet: string;
-  rank: number;
-  status?: string;
-  createdAt?: string;
-  title?: string | null;
-  extractors?: string[];
-  tags?: RawTag[];
-}
-
-interface RawArchiveResult {
-  id: number;
-  extractor: string;
-  content: string | null;
-  created_at?: string;
-  createdAt?: string;
-}
-
-interface RawSnapshotDetail {
-  id: number;
-  url: string;
-  status: string;
-  createdAt: string;
-  extractors?: string[];
-  tags?: RawTag[];
-  archiveResults: RawArchiveResult[];
-  title?: string | null;
-  excerpt?: string | null;
-  screenshotUrl?: string | null;
-  extractorMeta?: Record<
-    string,
-    {
-      status: "success" | "failed";
-      durationMs: number | null;
-      fileSizeBytes: number | null;
-      error?: string;
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(abortedError(signal));
+      return;
     }
-  >;
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(abortedError(signal));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
-function toTag(r: RawTag): Tag {
-  return { id: r.id, name: r.name, slug: r.slug, color: r.color, createdAt: r.createdAt };
+function abortedError(signal?: AbortSignal): WebFrostError {
+  return new WebFrostError(0, "request aborted", undefined, "ABORTED", { cause: signal?.reason });
 }
 
-function toArchiveResult(r: RawArchiveResult): ArchiveResult {
-  return {
-    id: r.id,
-    extractor: r.extractor,
-    content: r.content,
-    createdAt: r.created_at ?? r.createdAt ?? "",
-  };
-}
-
-function toSnapshot(raw: RawSnapshot): Snapshot {
-  return {
-    id: raw.id,
-    url: raw.url,
-    status: raw.status,
-    createdAt: raw.createdAt,
-    extractors: raw.extractors ?? [],
-    tags: (raw.tags ?? []).map(toTag),
-    title: raw.title ?? null,
-    excerpt: raw.excerpt ?? null,
-    screenshotUrl: raw.screenshotUrl ?? null,
-  };
-}
-
-function toSearchResult(raw: RawSearchResult): SearchResult {
-  return {
-    id: raw.id,
-    url: raw.url,
-    snippet: raw.snippet,
-    rank: raw.rank,
-    status: raw.status ?? "",
-    createdAt: raw.createdAt ?? "",
-    title: raw.title ?? null,
-    extractors: raw.extractors ?? [],
-    tags: (raw.tags ?? []).map(toTag),
-  };
-}
-
-function toSnapshotDetail(raw: RawSnapshotDetail): SnapshotDetail {
-  return {
-    id: raw.id,
-    url: raw.url,
-    status: raw.status,
-    createdAt: raw.createdAt,
-    extractors: raw.extractors ?? [],
-    tags: (raw.tags ?? []).map(toTag),
-    archiveResults: raw.archiveResults.map(toArchiveResult),
-    title: raw.title ?? null,
-    excerpt: raw.excerpt ?? null,
-    screenshotUrl: raw.screenshotUrl ?? null,
-    extractorMeta: raw.extractorMeta ?? {},
-  };
+function isRetryable(err: WebFrostError): boolean {
+  return (
+    err.code === "NETWORK_ERROR" || err.code === "TIMEOUT" || RETRYABLE_STATUSES.has(err.status)
+  );
 }
 
 export class WebFrostClient {
   private readonly baseUrl: string;
   private readonly apiKey: string | undefined;
+  private readonly timeoutMs: number;
+  private readonly fetchImpl: typeof fetch | undefined;
+  private readonly retries: number;
+  private readonly retryDelayMs: number;
+  private readonly maxRetryDelayMs: number;
+  private readonly credentials: RequestCredentials;
 
   constructor(options: WebFrostClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
     this.apiKey = options.apiKey;
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.fetchImpl = options.fetch;
+    this.retries = Math.max(0, Math.floor(options.retries ?? 0));
+    this.retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+    this.maxRetryDelayMs = options.maxRetryDelayMs ?? DEFAULT_MAX_RETRY_DELAY_MS;
+    this.credentials = options.credentials ?? "same-origin";
   }
 
-  private request(url: string, init?: RequestInit): Promise<Response> {
-    const headers = new Headers(init?.headers);
-    if (this.apiKey) headers.set("Authorization", `Bearer ${this.apiKey}`);
-    return fetch(url, { ...init, headers });
+  // ---------------------------------------------------------------------------
+  // Transport
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Send one request and parse its response, applying the timeout, abort signal and (for
+   * idempotent GET/HEAD requests only) retries. Every failure surfaces as a WebFrostError.
+   *
+   * DELETE is deliberately not retried: if the first attempt reached the server but the reply
+   * was lost, the retry would see 404 and report "not found" for something that was deleted.
+   */
+  private async send<T>(
+    method: string,
+    path: string,
+    options: SendOptions,
+    parse: (res: Response) => Promise<T>,
+  ): Promise<T> {
+    const idempotent = method === "GET" || method === "HEAD";
+    const maxRetries = idempotent ? this.retries : 0;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.attempt(method, path, options, parse);
+      } catch (err) {
+        if (!(err instanceof WebFrostError) || attempt >= maxRetries || !isRetryable(err))
+          throw err;
+        const delay = this.backoffDelay(attempt, err.retryAfter);
+        if (delay === null) throw err;
+        await sleep(delay, options.signal);
+      }
+    }
   }
+
+  /** Milliseconds to wait before the next attempt, or null when waiting is not worth it. */
+  private backoffDelay(attempt: number, retryAfterSecs: number | undefined): number | null {
+    if (retryAfterSecs !== undefined) {
+      const ms = retryAfterSecs * 1000;
+      return ms > this.maxRetryDelayMs ? null : ms;
+    }
+    const exp = Math.min(this.maxRetryDelayMs, this.retryDelayMs * 2 ** attempt);
+    // Jitter between 50% and 100% so clients that failed together do not retry together.
+    return Math.round(exp * (0.5 + Math.random() / 2));
+  }
+
+  private async attempt<T>(
+    method: string,
+    path: string,
+    options: SendOptions,
+    parse: (res: Response) => Promise<T>,
+  ): Promise<T> {
+    const { signal, body, allow = [], streaming = false } = options;
+    if (signal?.aborted) throw abortedError(signal);
+
+    const headers = new Headers();
+    if (this.apiKey) headers.set("Authorization", `Bearer ${this.apiKey}`);
+    let payload: BodyInit | undefined;
+    if (body instanceof FormData) {
+      payload = body; // fetch sets the multipart boundary itself
+    } else if (body !== undefined) {
+      headers.set("Content-Type", "application/json");
+      payload = JSON.stringify(body);
+    }
+
+    const controller = new AbortController();
+    const onAbort = () => controller.abort(signal?.reason);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    let timedOut = false;
+    const timer =
+      this.timeoutMs > 0
+        ? setTimeout(() => {
+            timedOut = true;
+            controller.abort();
+          }, this.timeoutMs)
+        : undefined;
+
+    const wrap = (err: unknown): WebFrostError => {
+      if (err instanceof WebFrostError) return err;
+      if (timedOut) {
+        return new WebFrostError(
+          0,
+          `request timed out after ${this.timeoutMs}ms`,
+          undefined,
+          "TIMEOUT",
+          { cause: err },
+        );
+      }
+      if (signal?.aborted) return abortedError(signal);
+      if (err instanceof SyntaxError) {
+        return new WebFrostError(0, "response was not valid JSON", undefined, "INVALID_RESPONSE", {
+          cause: err,
+        });
+      }
+      const detail = err instanceof Error ? err.message : String(err);
+      return new WebFrostError(0, `network error: ${detail}`, undefined, "NETWORK_ERROR", {
+        cause: err,
+      });
+    };
+
+    try {
+      // Looked up per call so a replaced global fetch (tests, polyfills) is honoured.
+      const doFetch = this.fetchImpl ?? globalThis.fetch;
+      const res = await doFetch(`${this.baseUrl}${path}`, {
+        method,
+        headers,
+        credentials: this.credentials,
+        signal: controller.signal,
+        ...(payload !== undefined ? { body: payload } : {}),
+      });
+      if (!res.ok && !allow.includes(res.status)) throw await parseError(res);
+      return await parse(res);
+    } catch (err) {
+      throw wrap(err);
+    } finally {
+      clearTimeout(timer);
+      // A streamed body keeps honouring the caller's signal after this method returns.
+      if (!streaming) signal?.removeEventListener("abort", onAbort);
+    }
+  }
+
+  private json<T>(method: string, path: string, options: SendOptions = {}): Promise<T> {
+    return this.send(method, path, options, (res) => res.json() as Promise<T>);
+  }
+
+  /** A request whose response body is ignored. */
+  private async none(method: string, path: string, options: SendOptions = {}): Promise<void> {
+    await this.send(method, path, options, async (res) => {
+      await res.arrayBuffer().catch(() => undefined);
+    });
+  }
+
+  /** DELETE-style request: true when it succeeded, false on 404. */
+  private async remove(path: string, request?: RequestOptions): Promise<boolean> {
+    return this.send("DELETE", path, { signal: request?.signal, allow: [404] }, async (res) => {
+      await res.arrayBuffer().catch(() => undefined);
+      return res.status !== 404;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Setup and auth
+  // ---------------------------------------------------------------------------
 
   /** Check whether first-run setup is needed (no admin user exists). */
-  async getSetupStatus(): Promise<SetupStatusResult> {
-    const res = await this.request(`${this.baseUrl}/setup/status`);
-    if (!res.ok) throw httpError(res, res.statusText);
-    const body = (await res.json()) as {
+  async getSetupStatus(request?: RequestOptions): Promise<SetupStatusResult> {
+    const body = await this.json<{
       needsSetup: boolean;
       publicRead?: boolean;
       setupTokenRequired?: boolean;
-    };
+    }>("GET", "/setup/status", { signal: request?.signal });
     return {
       needsSetup: body.needsSetup,
       publicRead: body.publicRead === true,
@@ -208,96 +263,90 @@ export class WebFrostClient {
    * Complete first-run setup: create admin user and generate first API key. Sets a session cookie.
    * Pass `setupToken` when the server requires one (WEBFROST_SETUP_TOKEN).
    */
-  async completeSetup(
+  completeSetup(
     username: string,
     password: string,
     setupToken?: string,
+    request?: RequestOptions,
   ): Promise<SetupResult> {
-    const res = await this.request(`${this.baseUrl}/setup`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(
-        setupToken ? { username, password, setupToken } : { username, password },
-      ),
+    return this.json("POST", "/setup", {
+      body: setupToken ? { username, password, setupToken } : { username, password },
+      signal: request?.signal,
     });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw httpError(res, body.error);
-    }
-    return res.json() as Promise<SetupResult>;
   }
 
-  /** Log in with username and password. Sets a session cookie on the browser. */
-  async login(username: string, password: string): Promise<LoginResult> {
-    const res = await this.request(`${this.baseUrl}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+  /**
+   * Log in with username and password. Sets a session cookie, which only a browser keeps: from
+   * the browser, pass `credentials: "include"` to the client when the API is on another origin.
+   * Outside the browser, authenticate with an API key instead.
+   */
+  login(username: string, password: string, request?: RequestOptions): Promise<LoginResult> {
+    return this.json("POST", "/auth/login", {
+      body: { username, password },
+      signal: request?.signal,
     });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw httpError(res, body.error);
-    }
-    return res.json() as Promise<LoginResult>;
   }
 
-  /** Log out, clearing the session cookie. */
-  async logout(): Promise<void> {
-    await this.request(`${this.baseUrl}/auth/logout`, { method: "POST" });
+  /** Log out, clearing the session cookie. Already being logged out (401) is not an error. */
+  logout(request?: RequestOptions): Promise<void> {
+    return this.none("POST", "/auth/logout", { signal: request?.signal, allow: [401] });
   }
 
   /** Get the currently authenticated user. Returns null username for API-key auth. */
-  async getMe(): Promise<MeResult> {
-    const res = await this.request(`${this.baseUrl}/auth/me`);
-    if (!res.ok) throw httpError(res, res.statusText);
-    return res.json() as Promise<MeResult>;
+  getMe(request?: RequestOptions): Promise<MeResult> {
+    return this.json("GET", "/auth/me", { signal: request?.signal });
   }
+
+  /** Change the admin account password. Throws WebFrostError on invalid current password. */
+  changePassword(
+    currentPassword: string,
+    newPassword: string,
+    request?: RequestOptions,
+  ): Promise<void> {
+    return this.none("POST", "/auth/change-password", {
+      body: { currentPassword, newPassword },
+      signal: request?.signal,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Snapshots
+  //
+  // Not-found semantics: looking up one thing that is missing (`getSnapshot`) resolves `null`;
+  // deleting something that is missing (`delete*`, `remove*`) resolves `false`; listing the
+  // children of a missing parent (`listSnapshotTags`) resolves `[]`. Everything else treats a
+  // 404 as an error and throws a WebFrostError with code NOT_FOUND.
+  // ---------------------------------------------------------------------------
 
   /**
    * Create a new snapshot (fire-and-forget pipeline).
    * Resolves with the created snapshot stub (status "pending").
    * Throws {@link WebFrostError} on HTTP errors.
    */
-  async createSnapshot(url: string): Promise<SnapshotCreated> {
-    const res = await this.request(`${this.baseUrl}/snapshots`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }),
-    });
-
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({ error: res.statusText }))) as {
-        error: string;
-      };
-      throw httpError(res, body.error);
-    }
-
-    return res.json() as Promise<SnapshotCreated>;
+  createSnapshot(url: string, request?: RequestOptions): Promise<SnapshotCreated> {
+    return this.json("POST", "/snapshots", { body: { url }, signal: request?.signal });
   }
 
   /**
    * List snapshots with optional pagination.
    * Returns a paginated result with items, total count, and pagination metadata.
    */
-  async listSnapshots(options?: ListSnapshotsOptions): Promise<SnapshotPage> {
+  async listSnapshots(
+    options?: ListSnapshotsOptions,
+    request?: RequestOptions,
+  ): Promise<SnapshotPage> {
     const params = new URLSearchParams();
     if (options?.page !== undefined) params.set("page", String(options.page));
     if (options?.limit !== undefined) params.set("limit", String(options.limit));
     if (options?.status !== undefined) params.set("status", options.status);
-    const qs = params.size > 0 ? `?${params.toString()}` : "";
+    const qs = params.toString();
 
-    const res = await this.request(`${this.baseUrl}/snapshots${qs}`);
-
-    if (!res.ok) {
-      throw httpError(res, res.statusText);
-    }
-
-    const raw = (await res.json()) as {
+    const raw = await this.json<{
       items: RawSnapshot[];
       total: number;
       page: number;
       limit: number;
-    };
+    }>("GET", `/snapshots${qs ? `?${qs}` : ""}`, { signal: request?.signal });
     return {
       items: raw.items.map(toSnapshot),
       total: raw.total,
@@ -307,31 +356,47 @@ export class WebFrostClient {
   }
 
   /**
+   * Iterate over every snapshot matching the filters, fetching pages lazily (100 per page unless
+   * `limit` says otherwise). Starts at `page` (default 1). Stops early if the consumer breaks out
+   * of the loop or the signal aborts.
+   *
+   * ```ts
+   * for await (const snapshot of client.iterateSnapshots({ status: "done" })) { ... }
+   * ```
+   */
+  async *iterateSnapshots(options: IterateSnapshotsOptions = {}): AsyncGenerator<Snapshot> {
+    const { signal, page: startPage = 1, limit = 100, ...filters } = options;
+    let page = startPage;
+    for (;;) {
+      const result = await this.listSnapshots({ ...filters, page, limit }, { signal });
+      yield* result.items;
+      // Trust the limit the server applied: it may have capped the one requested.
+      if (result.items.length === 0 || result.page * result.limit >= result.total) return;
+      page = result.page + 1;
+    }
+  }
+
+  /**
    * Get a single snapshot with its archive results.
    * Returns `null` when the snapshot does not exist (404).
    * Throws {@link WebFrostError} for other HTTP errors.
    */
-  async getSnapshot(id: number): Promise<SnapshotDetail | null> {
-    const res = await this.request(`${this.baseUrl}/snapshots/${id}`);
-
-    if (res.status === 404) {
-      return null;
-    }
-
-    if (!res.ok) {
-      throw httpError(res, res.statusText);
-    }
-
-    const raw = (await res.json()) as RawSnapshotDetail;
-    return toSnapshotDetail(raw);
+  getSnapshot(id: number, request?: RequestOptions): Promise<SnapshotDetail | null> {
+    return this.send(
+      "GET",
+      `/snapshots/${id}`,
+      { signal: request?.signal, allow: [404] },
+      async (res) =>
+        res.status === 404 ? null : toSnapshotDetail((await res.json()) as RawSnapshotDetail),
+    );
   }
 
   /**
    * Full-text search across snapshots.
    * Returns ranked results with HTML snippets (matching terms wrapped in <mark>).
    */
-  async searchSnapshots(query: string): Promise<SearchResult[]> {
-    return (await this.searchSnapshotsPage(query)).items;
+  async searchSnapshots(query: string, request?: RequestOptions): Promise<SearchResult[]> {
+    return (await this.searchSnapshotsPage(query, undefined, request)).items;
   }
 
   /**
@@ -341,18 +406,17 @@ export class WebFrostClient {
   async searchSnapshotsPage(
     query: string,
     options?: { page?: number; limit?: number },
+    request?: RequestOptions,
   ): Promise<SearchPage> {
     const params = new URLSearchParams({ q: query });
     if (options?.page !== undefined) params.set("page", String(options.page));
     if (options?.limit !== undefined) params.set("limit", String(options.limit));
-    const res = await this.request(`${this.baseUrl}/snapshots?${params.toString()}`);
-    if (!res.ok) throw httpError(res, res.statusText);
-    const raw = (await res.json()) as {
+    const raw = await this.json<{
       items: RawSearchResult[];
       total?: number;
       page?: number;
       limit?: number;
-    };
+    }>("GET", `/snapshots?${params.toString()}`, { signal: request?.signal });
     return {
       items: raw.items.map(toSearchResult),
       total: raw.total ?? raw.items.length,
@@ -362,199 +426,180 @@ export class WebFrostClient {
   }
 
   /** Delete a snapshot by id. Returns true if deleted, false if not found. */
-  async deleteSnapshot(id: number): Promise<boolean> {
-    const res = await this.request(`${this.baseUrl}/snapshots/${id}`, { method: "DELETE" });
-    if (res.status === 404) return false;
-    if (!res.ok) throw httpError(res, res.statusText);
-    return true;
+  deleteSnapshot(id: number, request?: RequestOptions): Promise<boolean> {
+    return this.remove(`/snapshots/${id}`, request);
   }
 
+  /**
+   * URL of an archived result, for `<a href>`, `<img src>` or `<iframe src>`.
+   * "download" serves the stored file (or the extractor's JSON); "preview" serves sandboxed
+   * HTML for the extractors that have one. The URL carries no credentials: the browser sends the
+   * session cookie, and an API key cannot be put in a URL, so use {@link downloadArchive} to
+   * fetch with a key.
+   */
+  archiveUrl(id: number, extractor: string, kind: ArchiveUrlKind = "download"): string {
+    return `${this.baseUrl}/snapshots/${id}/archives/${encodeURIComponent(extractor)}/${kind}`;
+  }
+
+  /**
+   * Fetch an archived result as a `Response`, with the client's auth, timeout and abort signal
+   * applied to the request (not to reading the body). Read it with `.blob()`, `.arrayBuffer()`
+   * or `.body`. Throws WebFrostError (NOT_FOUND when there is no such result).
+   */
+  downloadArchive(
+    id: number,
+    extractor: string,
+    options?: RequestOptions & { kind?: ArchiveUrlKind },
+  ): Promise<Response> {
+    const path = this.archiveUrl(id, extractor, options?.kind).slice(this.baseUrl.length);
+    return this.send("GET", path, { signal: options?.signal, streaming: true }, async (res) => res);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tags
+  // ---------------------------------------------------------------------------
+
   /** List all tags. */
-  async listTags(): Promise<Tag[]> {
-    const res = await this.request(`${this.baseUrl}/tags`);
-    if (!res.ok) throw httpError(res, res.statusText);
-    const raw = (await res.json()) as RawTag[];
+  async listTags(request?: RequestOptions): Promise<Tag[]> {
+    const raw = await this.json<RawTag[]>("GET", "/tags", { signal: request?.signal });
     return raw.map(toTag);
   }
 
   /** Create a new tag. Throws WebFrostError(409) if name already exists. */
-  async createTag(name: string, color?: string): Promise<Tag> {
-    const res = await this.request(`${this.baseUrl}/tags`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, ...(color !== undefined ? { color } : {}) }),
+  async createTag(name: string, color?: string, request?: RequestOptions): Promise<Tag> {
+    const raw = await this.json<RawTag>("POST", "/tags", {
+      body: { name, ...(color !== undefined ? { color } : {}) },
+      signal: request?.signal,
     });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw httpError(res, body.error);
-    }
-    return toTag((await res.json()) as RawTag);
+    return toTag(raw);
   }
 
   /** Delete a tag by id. Returns true if deleted, false if not found. */
-  async deleteTag(id: number): Promise<boolean> {
-    const res = await this.request(`${this.baseUrl}/tags/${id}`, { method: "DELETE" });
-    if (res.status === 404) return false;
-    if (!res.ok) throw httpError(res, res.statusText);
-    return true;
+  deleteTag(id: number, request?: RequestOptions): Promise<boolean> {
+    return this.remove(`/tags/${id}`, request);
   }
 
-  /** List tags on a snapshot. */
-  async listSnapshotTags(snapshotId: number): Promise<Tag[]> {
-    const res = await this.request(`${this.baseUrl}/snapshots/${snapshotId}/tags`);
-    if (res.status === 404) return [];
-    if (!res.ok) throw httpError(res, res.statusText);
-    const raw = (await res.json()) as RawTag[];
+  /** List tags on a snapshot. Resolves `[]` when the snapshot does not exist. */
+  async listSnapshotTags(snapshotId: number, request?: RequestOptions): Promise<Tag[]> {
+    const raw = await this.send(
+      "GET",
+      `/snapshots/${snapshotId}/tags`,
+      { signal: request?.signal, allow: [404] },
+      async (res) => (res.status === 404 ? [] : ((await res.json()) as RawTag[])),
+    );
     return raw.map(toTag);
   }
 
   /** Add a tag to a snapshot. */
-  async addTagToSnapshot(snapshotId: number, tagId: number): Promise<Tag> {
-    const res = await this.request(`${this.baseUrl}/snapshots/${snapshotId}/tags`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tagId }),
+  async addTagToSnapshot(
+    snapshotId: number,
+    tagId: number,
+    request?: RequestOptions,
+  ): Promise<Tag> {
+    const raw = await this.json<RawTag>("POST", `/snapshots/${snapshotId}/tags`, {
+      body: { tagId },
+      signal: request?.signal,
     });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw httpError(res, body.error);
-    }
-    return toTag((await res.json()) as RawTag);
+    return toTag(raw);
   }
 
-  /** Remove a tag from a snapshot. */
-  async removeTagFromSnapshot(snapshotId: number, tagId: number): Promise<boolean> {
-    const res = await this.request(`${this.baseUrl}/snapshots/${snapshotId}/tags/${tagId}`, {
-      method: "DELETE",
-    });
-    if (res.status === 404) return false;
-    if (!res.ok) throw httpError(res, res.statusText);
-    return true;
+  /** Remove a tag from a snapshot. Returns true if removed, false if not found. */
+  removeTagFromSnapshot(
+    snapshotId: number,
+    tagId: number,
+    request?: RequestOptions,
+  ): Promise<boolean> {
+    return this.remove(`/snapshots/${snapshotId}/tags/${tagId}`, request);
   }
+
+  // ---------------------------------------------------------------------------
+  // Schedules
+  // ---------------------------------------------------------------------------
 
   /** List all scheduled archive jobs. */
-  async listSchedules(): Promise<Schedule[]> {
-    const res = await this.request(`${this.baseUrl}/schedules`);
-    if (!res.ok) throw httpError(res, res.statusText);
-    return res.json() as Promise<Schedule[]>;
+  listSchedules(request?: RequestOptions): Promise<Schedule[]> {
+    return this.json("GET", "/schedules", { signal: request?.signal });
   }
 
   /** Create a new scheduled archive job. Throws WebFrostError on invalid url or cron. */
-  async createSchedule(url: string, cron: string): Promise<Schedule> {
-    const res = await this.request(`${this.baseUrl}/schedules`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, cron }),
-    });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw httpError(res, body.error);
-    }
-    return res.json() as Promise<Schedule>;
+  createSchedule(url: string, cron: string, request?: RequestOptions): Promise<Schedule> {
+    return this.json("POST", "/schedules", { body: { url, cron }, signal: request?.signal });
   }
 
   /** Update a schedule (e.g. pause/resume). Returns the updated schedule. */
-  async updateSchedule(id: number, update: { paused: boolean }): Promise<Schedule> {
-    const res = await this.request(`${this.baseUrl}/schedules/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(update),
-    });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw httpError(res, body.error);
-    }
-    return res.json() as Promise<Schedule>;
+  updateSchedule(
+    id: number,
+    update: { paused: boolean },
+    request?: RequestOptions,
+  ): Promise<Schedule> {
+    return this.json("PATCH", `/schedules/${id}`, { body: update, signal: request?.signal });
   }
 
   /** Delete a schedule by id. Returns true if deleted, false if not found. */
-  async deleteSchedule(id: number): Promise<boolean> {
-    const res = await this.request(`${this.baseUrl}/schedules/${id}`, { method: "DELETE" });
-    if (res.status === 404) return false;
-    if (!res.ok) throw httpError(res, res.statusText);
-    return true;
+  deleteSchedule(id: number, request?: RequestOptions): Promise<boolean> {
+    return this.remove(`/schedules/${id}`, request);
   }
 
+  // ---------------------------------------------------------------------------
+  // Server, stats and keys
+  // ---------------------------------------------------------------------------
+
   /** Get dashboard stats: snapshot count, storage usage, success rate, schedule count, failed today. */
-  async getStats(): Promise<DashboardStats> {
-    const res = await this.request(`${this.baseUrl}/stats`);
-    if (!res.ok) throw httpError(res, res.statusText);
-    return res.json() as Promise<DashboardStats>;
+  getStats(request?: RequestOptions): Promise<DashboardStats> {
+    return this.json("GET", "/stats", { signal: request?.signal });
   }
 
   /** Get server info: version, storage path, and total snapshot count. */
-  async getServerInfo(): Promise<ServerInfo> {
-    const res = await this.request(`${this.baseUrl}/settings/info`);
-    if (!res.ok) throw httpError(res, res.statusText);
-    return res.json() as Promise<ServerInfo>;
-  }
-
-  /** Change the admin account password. Throws WebFrostError on invalid current password. */
-  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
-    const res = await this.request(`${this.baseUrl}/auth/change-password`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ currentPassword, newPassword }),
-    });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw httpError(res, body.error);
-    }
+  getServerInfo(request?: RequestOptions): Promise<ServerInfo> {
+    return this.json("GET", "/settings/info", { signal: request?.signal });
   }
 
   /** List all active (non-revoked) API keys. */
-  async listApiKeys(): Promise<ApiKey[]> {
-    const res = await this.request(`${this.baseUrl}/settings/keys`);
-    if (!res.ok) throw httpError(res, res.statusText);
-    return res.json() as Promise<ApiKey[]>;
+  listApiKeys(request?: RequestOptions): Promise<ApiKey[]> {
+    return this.json("GET", "/settings/keys", { signal: request?.signal });
   }
 
   /** Create a new API key. The raw key is returned once and never stored. */
-  async createApiKey(name: string): Promise<ApiKeyCreated> {
-    const res = await this.request(`${this.baseUrl}/settings/keys`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw httpError(res, body.error);
-    }
-    return res.json() as Promise<ApiKeyCreated>;
+  createApiKey(name: string, request?: RequestOptions): Promise<ApiKeyCreated> {
+    return this.json("POST", "/settings/keys", { body: { name }, signal: request?.signal });
   }
 
   /** Revoke an API key by id. Returns true if revoked, false if not found. */
-  async revokeApiKey(id: string): Promise<boolean> {
-    const res = await this.request(`${this.baseUrl}/settings/keys/${id}`, { method: "DELETE" });
-    if (res.status === 404) return false;
-    if (!res.ok) throw httpError(res, res.statusText);
-    return true;
+  revokeApiKey(id: string, request?: RequestOptions): Promise<boolean> {
+    return this.remove(`/settings/keys/${encodeURIComponent(id)}`, request);
   }
+
+  // ---------------------------------------------------------------------------
+  // Import
+  // ---------------------------------------------------------------------------
 
   /**
    * Import URLs from a feed URL or raw content.
    * Returns counts of queued and skipped URLs plus the detected format.
    */
-  async importUrls(options: ImportOptions): Promise<ImportResult> {
-    const res = await this.request(`${this.baseUrl}/import`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(options),
-    });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw httpError(res, body.error);
-    }
-    return res.json() as Promise<ImportResult>;
+  importUrls(options: ImportOptions, request?: RequestOptions): Promise<ImportResult> {
+    return this.json("POST", "/import", { body: options, signal: request?.signal });
+  }
+
+  /**
+   * Import URLs from a file (OPML, Netscape bookmarks, RSS or plain text) uploaded as multipart
+   * form data. The format is auto-detected from the file name and content unless `format` is
+   * given. A bare `Blob` has no name, so pass `filename` (e.g. "bookmarks.html") to help detection.
+   */
+  importFile(
+    file: Blob,
+    format?: ImportFormat,
+    request?: RequestOptions & { filename?: string },
+  ): Promise<ImportResult> {
+    const form = new FormData();
+    const name = request?.filename ?? (file as { name?: string }).name ?? "import.txt";
+    form.append("file", file, name);
+    if (format) form.append("format", format);
+    return this.json("POST", "/import/file", { body: form, signal: request?.signal });
   }
 
   /** List past import records from GET /imports. */
-  async listImports(): Promise<ImportRecord[]> {
-    const res = await this.request(`${this.baseUrl}/imports`);
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error: string };
-      throw httpError(res, body.error);
-    }
-    return res.json() as Promise<ImportRecord[]>;
+  listImports(request?: RequestOptions): Promise<ImportRecord[]> {
+    return this.json("GET", "/imports", { signal: request?.signal });
   }
 }

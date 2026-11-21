@@ -1,23 +1,34 @@
-export { WebFrostClient, WebFrostError } from "./client";
+export { WebFrostClient } from "./client.js";
+export { WebFrostError } from "./errors.js";
+export type { ApiErrorCode, ClientErrorCode, WebFrostErrorCode } from "./errors.js";
 export type {
   ApiKey,
   ApiKeyCreated,
   ArchiveResult,
+  ArchiveUrlKind,
   DashboardStats,
+  ExtractorMeta,
+  ImportFormat,
   ImportOptions,
   ImportRecord,
   ImportResult,
+  IterateSnapshotsOptions,
   ListSnapshotsOptions,
   LoginResult,
   MeResult,
+  RequestOptions,
   Schedule,
+  ScheduleRunStatus,
   SearchPage,
   SearchResult,
   ServerInfo,
+  SetupResult,
+  SetupStatusResult,
   Snapshot,
   SnapshotCreated,
   SnapshotDetail,
   SnapshotPage,
+  SnapshotStatus,
   Tag,
   WebFrostClientOptions,
-} from "./types";
+} from "./types.js";
