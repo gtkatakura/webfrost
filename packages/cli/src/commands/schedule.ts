@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import {
   JobRunner,
   SCHEDULER_INTERVAL_MS,
@@ -101,6 +102,7 @@ const scheduleWorker: Command = {
   async run(ctx) {
     // Due schedules are claimed atomically, so running this next to a server on the same
     // archive is safe.
+    mkdirSync(ctx.dir, { recursive: true });
     const runner = new JobRunner({ dir: ctx.dir, logger: () => ctx.logger });
     // Adopt snapshots an interrupted run left pending. Only jobs whose heartbeat has gone
     // stale are taken, so work a live server is doing is left alone; the sweep repeats

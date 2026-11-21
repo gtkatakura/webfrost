@@ -162,7 +162,7 @@ describe("--flag value and --flag=value are the same", () => {
     expect(list.stdout).toContain("#222222");
   });
 
-  test("flags may come before the positional arguments", async () => {
+  test("global flags go after the command, not before it", async () => {
     const r = await cli(["--quiet", "tag", "create", "C"]);
     // The global flags are command options, so they go after the command path.
     expect(r.exitCode).toBe(2);
