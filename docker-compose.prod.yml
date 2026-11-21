@@ -1,13 +1,13 @@
 # Production deployment of the WebFrost server (API + web UI + scheduler).
 #
-#   echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
+#   [ -f .env ] || echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
 #   docker compose -f docker-compose.prod.yml up -d
 #
 # Compose reads .env from this directory for the ${...} substitutions below.
 # Then open http://localhost:3000 and create the admin user.
 services:
   webfrost:
-    image: ghcr.io/${GITHUB_REPOSITORY:-gtkatakura/webfrost}/server:${IMAGE_TAG:-latest}
+    image: ghcr.io/gtkatakura/webfrost/server:${IMAGE_TAG:-latest}
     # Or build locally: uncomment the build block and comment out image above
     # build:
     #   context: .
@@ -48,18 +48,11 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
       S3_REGION: ${S3_REGION:-us-east-1}
       S3_PATH_PREFIX: ${S3_PATH_PREFIX:-snapshots}
+    # The container runs as UID 1000. A named volume gets that ownership on first use; a bind
+    # mount (./data:/data) must be owned by UID 1000: sudo chown -R 1000:1000 ./data
+    # The image has its own HEALTHCHECK against /health.
     volumes:
       - webfrost_data:/data
-    healthcheck:
-      test:
-        - CMD
-        - bun
-        - -e
-        - "fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
 
 volumes:
   webfrost_data:
