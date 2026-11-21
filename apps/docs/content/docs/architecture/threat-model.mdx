@@ -69,16 +69,17 @@ The CLI drives the same core library directly against the data directory, withou
 | Threat | Control | Status |
 |---|---|---|
 | Unauthenticated API access | All `/api/*` routes require a session or API key | Mitigated |
-| Anonymous visitor changing the archive when public read is on | `WEBFROST_PUBLIC_READ` admits only `GET`s on an explicit allowlist of read routes; storage paths are withheld from anonymous responses | Mitigated |
+| Anonymous visitor changing the archive when public read is on | `WEBFROST_PUBLIC_READ` admits only `GET`s on an explicit allowlist of read routes; storage paths and raw extractor errors (which can name internal hosts and paths) are withheld from anonymous responses; list pages capped at 200 | Mitigated |
 | Operator enables public read on an archive holding private captures | None — the whole archive becomes readable | Operator responsibility |
 | Password brute force | 10 attempts/min per client; bcrypt; uniform timing for unknown users | Mitigated |
-| Rate-limit evasion with a forged `X-Forwarded-For` | Header ignored unless `WEBFROST_TRUST_PROXY=true` | Mitigated |
-| Stolen session cookie | `HttpOnly`/`SameSite=Strict`/`Secure`; server-side sessions revoked on logout and on password change | Mitigated |
+| Rate-limit evasion with a forged `X-Forwarded-For` | Header ignored unless `WEBFROST_TRUST_PROXY=true`; behind a proxy the right-most entry (minus `WEBFROST_TRUSTED_PROXY_HOPS`) is used, never the client-chosen left-most; IPv6 bucketed per `/64` | Mitigated |
+| Stolen session cookie | `HttpOnly`/`SameSite=Strict`/`Secure`; server-side sessions revoked on logout, on re-login over the same cookie and on password change | Mitigated |
+| Oversized bodies (huge passwords for bcrypt, giant imports) | Length limits on every string field; imports capped by size and URL count (`413`); request body cap | Mitigated |
 | Forged cookie | HMAC-SHA256 with `SESSION_SECRET`, constant-time compare, must match a session row | Mitigated |
 | Leaked API key | Stored hashed; revocable; optional expiry | Mitigated |
-| First-run takeover: whoever reaches a fresh instance first creates the admin | Setup only works while no admin exists | **Open (by design)** — finish setup before exposing the port |
-| CSRF | `SameSite=Strict` cookie; JSON bodies; `form-action 'self'` | Mitigated |
-| Everything above bypassed by `AUTH_DISABLED=true` | Warning logged at startup | Operator responsibility |
+| First-run takeover: whoever reaches a fresh instance first creates the admin | Setup only works while no admin exists; `WEBFROST_SETUP_TOKEN` makes it require a secret; a warning is logged at startup while setup is open and unprotected | Mitigated with `WEBFROST_SETUP_TOKEN`; otherwise finish setup before exposing the port |
+| CSRF, including from a sibling subdomain (same site) | Cookie-authenticated writes need `Sec-Fetch-Site: same-origin`/`none`, or a matching `Origin`; JSON-only bodies (`415` otherwise); `SameSite=Strict`; `form-action 'self'` | Mitigated |
+| Everything above bypassed by `AUTH_DISABLED=true` | Warning logged at startup; binds to `127.0.0.1` unless `HOST` is set | Operator responsibility |
 
 ### 2. URL submission — snapshots, imports, schedules
 
@@ -120,7 +121,7 @@ The page being archived controls what the browser requests.
 
 | Threat | Control | Status |
 |---|---|---|
-| Stored XSS from archived HTML | Downloads are `Content-Disposition: attachment`; the in-app preview is served with `CSP: sandbox` (opaque origin, no scripts, no network) inside `<iframe sandbox="">`; strict CSP on the app itself | Mitigated |
+| Stored XSS from archived HTML | Downloads are `Content-Disposition: attachment` (with S3, signed into the presigned URL together with the content type, so HTML never renders on the bucket's origin); the in-app preview is served with `CSP: sandbox` (opaque origin, no scripts, no network) inside `<iframe sandbox="">`; strict CSP on the app itself | Mitigated |
 | Archived page phoning home when previewed | Preview policy allows only inline styles and `data:` URIs | Mitigated |
 | HTML injection through search snippets | Server escapes archived text; UI renders snippets as text nodes | Mitigated |
 | Path traversal via a stored file reference | Reference normalised and checked against the storage root / S3 prefix | Mitigated |
@@ -152,7 +153,7 @@ by definition. It still refuses non-HTTP(S) URLs and applies the same SSRF guard
 | 1 | DNS rebinding past the SSRF guard | Medium | Block egress to internal ranges at the network layer |
 | 2 | Blind SSRF through browser redirect hops and yt-dlp | Medium | Same as above |
 | 3 | Chromium without its own sandbox | Medium | Keep the image current; treat the container as the sandbox |
-| 4 | First-run setup race | Low | Complete setup before exposing the port |
+| 4 | First-run setup race | Low | Set `WEBFROST_SETUP_TOKEN`, or complete setup before exposing the port |
 | 5 | Container process runs as root | Low | No extra capabilities, no host mounts beyond the data volume |
 | 6 | Rate-limit state is per process and in memory | Low | Single-instance deployments only; limits reset on restart |
 

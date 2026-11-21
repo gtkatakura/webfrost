@@ -8,7 +8,7 @@ The server exposes a JSON REST API under `/api`, plus an unauthenticated `GET /h
 
 ## Authentication
 
-Every `/api/*` route requires authentication except `POST /api/auth/login`, `GET /api/setup/status` and `POST /api/setup`. Unauthenticated requests get `401 { "error": "unauthorized" }`.
+Every `/api/*` route requires authentication except `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/setup/status` and `POST /api/setup`. Unauthenticated requests get `401 { "error": "unauthorized", "code": "UNAUTHORIZED" }`.
 
 **API key.** Send it as a bearer token:
 
@@ -18,7 +18,9 @@ curl -H "Authorization: Bearer $KEY" $API/snapshots
 
 Create keys in the UI (**Settings, API keys**), with `webfrost admin key create`, or with `POST /api/settings/keys`. Keys are stored as SHA-256 hashes and shown once.
 
-**Session cookie.** Browsers use the cookie set by `POST /api/auth/login` or `POST /api/setup`. It is `HttpOnly`, `SameSite=Strict` and `Secure`, valid for 7 days, and backed by a server-side session: logging out revokes it, and changing the password revokes every session of the user.
+**Session cookie.** Browsers use the cookie set by `POST /api/auth/login` or `POST /api/setup`. It is `HttpOnly`, `SameSite=Strict` and `Secure`, valid for 7 days, and backed by a server-side session: logging out revokes it, logging in again revokes the session in the cookie it replaces, and changing the password revokes every session of the user.
+
+**Cross-origin protection.** A state-changing request (`POST`, `PUT`, `PATCH`, `DELETE`) without a bearer token must come from the app's own origin: its `Sec-Fetch-Site` header must be `same-origin` or `none`. A browser that sends no `Sec-Fetch-Site` must send an `Origin` that matches the `Host`. Anything else gets `403 { "code": "CROSS_ORIGIN_REQUEST" }`. `same-site` is refused too, so a sibling subdomain cannot act with the session cookie. Clients that are not browsers send neither header and are not affected; bearer-token requests are never checked.
 
 **Public read.** With `WEBFROST_PUBLIC_READ=true`, a fixed set of `GET` routes also works without credentials. See [Public read](/docs/guides/public-read) for the list.
 
@@ -26,8 +28,10 @@ Create keys in the UI (**Settings, API keys**), with `webfrost admin key create`
 
 ## Conventions
 
-- Bodies and responses are JSON, except downloads and `POST /api/import/file` (multipart).
-- Errors are `{ "error": "message" }` with an appropriate status.
+- Bodies and responses are JSON, except downloads and `POST /api/import/file` (multipart). A request body with any other `Content-Type` gets `415`. Requests without a body (`DELETE`, logout) need no `Content-Type`.
+- Errors are `{ "error": "message", "code": "CODE" }` with an appropriate status. `error` is for people and may change; branch on `code`: `BAD_REQUEST`, `VALIDATION`, `INVALID_JSON`, `UNAUTHORIZED`, `FORBIDDEN`, `CROSS_ORIGIN_REQUEST`, `SETUP_TOKEN_INVALID`, `NOT_FOUND`, `CONFLICT`, `PAYLOAD_TOO_LARGE`, `UNSUPPORTED_MEDIA_TYPE`, `RATE_LIMITED` or `INTERNAL`.
+- Malformed JSON answers `400` with `INVALID_JSON`; a body that fails validation (missing field, wrong type, too long) `400` with `VALIDATION`. An unknown `/api/*` route answers `404 { "error": "not found", "code": "NOT_FOUND" }`.
+- Length limits: passwords 1024 characters, usernames 128, API key and tag names 100, URLs 8192.
 - Timestamps are UTC strings from SQLite, such as `2026-01-31 14:02:11`.
 - Lists of snapshots are newest first.
 - Snapshot `status` is exactly one of `pending`, `done` or `failed`.
@@ -42,7 +46,7 @@ Limits are per client IP over a sliding one-minute window, held in memory:
 | `POST /api/snapshots`, `POST /api/import`, `POST /api/import/file` | 60 per minute |
 | `POST /api/auth/login`, `POST /api/auth/change-password`, `POST /api/setup` | 10 per minute |
 
-A limited request gets `429` with a `Retry-After` header (seconds). The client IP is the TCP peer address. `X-Forwarded-For` is used only when `WEBFROST_TRUST_PROXY=true`, which you should set behind a reverse proxy that overwrites the header.
+A limited request gets `429` with a `Retry-After` header (seconds). The client IP is the TCP peer address. `X-Forwarded-For` is used only when `WEBFROST_TRUST_PROXY=true`, which you should set only behind a reverse proxy. Proxies append the address they saw to the header, so the server takes the entry `WEBFROST_TRUSTED_PROXY_HOPS` (default `1`) places from the right, never the client-chosen left-most one. IPv6 clients share one limit per `/64`.
 
 ## Health
 
@@ -54,17 +58,23 @@ A limited request gets `429` with a `Retry-After` header (seconds). The client I
 
 | Method | Route | Auth | Description |
 |---|---|---|---|
-| `GET` | `/api/setup/status` | none | `{ needsSetup, publicRead }` |
+| `GET` | `/api/setup/status` | none | `{ needsSetup, publicRead, setupTokenRequired }` |
 | `POST` | `/api/setup` | none | Create the admin user (first run only) |
 
-`POST /api/setup` takes `{ "username", "password" }`. The username must not be empty and the password needs at least 8 characters, otherwise `400`. On success it returns `{ "apiKey": "..." }` (shown once) and sets a session cookie. Once an admin exists it answers `409`.
+`POST /api/setup` takes `{ "username", "password", "setupToken"? }`. The username must not be empty and the password needs at least 8 characters, otherwise `400`. When the server has `WEBFROST_SETUP_TOKEN` set (`setupTokenRequired: true`), the request must carry that token, as the `setupToken` field or an `X-Setup-Token` header, otherwise `403 { "code": "SETUP_TOKEN_INVALID" }`. On success it returns `{ "apiKey": "..." }` (shown once) and sets a session cookie. Once an admin exists it answers `409`.
+
+```bash
+curl -X POST $API/setup -H "Content-Type: application/json" \
+  -H "X-Setup-Token: $WEBFROST_SETUP_TOKEN" \
+  -d '{"username": "admin", "password": "a-long-password"}'
+```
 
 ## Auth
 
 | Method | Route | Description |
 |---|---|---|
 | `POST` | `/api/auth/login` | `{ username, password }`. Sets the session cookie, returns `{ "ok": true }`. `401` for wrong credentials. |
-| `POST` | `/api/auth/logout` | Revokes the session and clears the cookie. |
+| `POST` | `/api/auth/logout` | Revokes the session and clears the cookie. `204`, also when the session has already expired or been revoked. |
 | `GET` | `/api/auth/me` | `{ username }`. `username` is `null` when authenticated by API key. |
 | `POST` | `/api/auth/change-password` | `{ currentPassword, newPassword }` |
 
@@ -99,7 +109,7 @@ curl "$API/snapshots?page=1&limit=20&status=done" -H "Authorization: Bearer $KEY
 | Query | Default | Description |
 |---|---|---|
 | `page` | `1` | 1-based page |
-| `limit` | `20` | Page size, from 1 to 10000 |
+| `limit` | `20` | Page size, from 1 to 200; larger values are capped at 200 |
 | `status` | none | Filter by `pending`, `done` or `failed` |
 | `q` | none | Full-text search term |
 
@@ -126,7 +136,7 @@ The snippet is HTML-escaped; its only markup is the literal `<mark>` tag. Render
 - `archiveResults`: `[{ id, extractor, content, createdAt }]` for extractors that succeeded. For file-backed formats `content` is the server's storage path or S3 key; for guests it is the download URL instead.
 - `extractorMeta`: an object keyed by extractor name, `{ status: "success" | "failed", durationMs, fileSizeBytes, error? }`.
 
-Browser extractors that could not run (Chromium missing, navigation failed, SSRF violation) appear in `extractorMeta` with `status: "failed"` and an `error`, and are absent from `extractors` and `archiveResults`. `media` is skipped silently, with no entry, when `yt-dlp` is missing or the URL is not a media page. An unknown id answers `404`.
+Browser extractors that could not run (Chromium missing, navigation failed, SSRF violation) appear in `extractorMeta` with `status: "failed"` and an `error`, and are absent from `extractors` and `archiveResults`. Guests see `error: "extraction failed"` instead of the raw message, which can name internal hosts and paths. `media` is skipped silently, with no entry, when `yt-dlp` is missing or the URL is not a media page. An unknown id answers `404`.
 
 ## Archive files
 
@@ -152,7 +162,7 @@ curl -OJ $API/snapshots/1/archives/screenshot/download -H "Authorization: Bearer
 | `media-metadata` | `application/json` | `media-metadata.json` |
 | `readability`, `html` | `application/json` | `readability.json`, `html.json` (the stored value as is) |
 
-Downloads carry `Content-Disposition: attachment`. With the S3 backend every file format except `media-metadata` answers `302` to a presigned URL valid for one hour. See [Storage](/docs/guides/storage#downloads-with-s3).
+Downloads carry `Content-Disposition: attachment`. With the S3 backend every file format except `media-metadata` answers `302` to a presigned URL valid for one hour; the URL signs the content type and an `attachment` disposition (`response-content-type`, `response-content-disposition`), so archived HTML downloads instead of rendering on the bucket's origin. See [Storage](/docs/guides/storage#downloads-with-s3).
 
 `preview` works only for `dom-snapshot` and `singlefile` (`400` otherwise). It serves the page with `Content-Security-Policy: sandbox; default-src 'none'; ...`, so scripts, forms and network requests are disabled even if the URL is opened directly. The UI frames it in `<iframe sandbox="">`.
 
@@ -191,6 +201,8 @@ A schedule is `{ id, url, cron, createdAt, lastRunAt, nextRunAt, paused, lastSta
 
 `POST /api/import` takes JSON `{ url?, content?, format? }`. Send `url` (a feed or file to fetch) or `content` (raw text), otherwise `400`. `format` is `rss`, `opml`, `netscape` or `text`; it is detected when omitted. A `url` without a format is tried as an RSS feed first. `POST /api/import/file` takes a `file` field and an optional `format` field.
 
+An import larger than `WEBFROST_IMPORT_MAX_BYTES` (default 10 MiB: the file, the `content` field or the fetched `url`) or with more URLs than `WEBFROST_IMPORT_MAX_URLS` (default 10000) is refused with `413 { "code": "PAYLOAD_TOO_LARGE" }` and queues nothing.
+
 ```bash
 curl -X POST $API/import -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
@@ -221,13 +233,15 @@ curl -X POST $API/import/file -H "Authorization: Bearer $KEY" \
 |---|---|
 | `200`, `201` | Success, created |
 | `202` | Accepted; work continues in the background (snapshot, import) |
-| `204` | Deleted |
+| `204` | Deleted, logged out |
 | `302` | Download redirect to a presigned S3 URL |
-| `400` | Invalid input |
+| `400` | Invalid input, malformed JSON |
 | `401` | Not authenticated |
-| `403` | Wrong current password on `change-password`; storage reference refused on download |
-| `404` | Not found |
+| `403` | Cross-origin request; wrong setup token; wrong current password on `change-password`; storage reference refused on download |
+| `404` | Not found, including unknown `/api/*` routes |
 | `409` | Already exists (tag name, setup already done) |
+| `413` | Import over the size or URL-count limit |
+| `415` | Request body is not JSON (or not multipart for `/api/import/file`) |
 | `429` | Rate limited; see `Retry-After` |
 
 <Cards>

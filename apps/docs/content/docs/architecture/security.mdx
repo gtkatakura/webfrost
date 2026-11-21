@@ -15,18 +15,22 @@ For the structured analysis (assets, trust boundaries, risks by component) see t
 
 ## Authentication
 
-Every `/api/*` route requires authentication except `POST /api/auth/login`,
-`GET /api/setup/status` and `POST /api/setup` (which only works while no admin user exists).
+Every `/api/*` route requires authentication except `POST /api/auth/login`, `POST /api/auth/logout`,
+`GET /api/setup/status` and `POST /api/setup` (which only works while no admin user exists, and
+only with `WEBFROST_SETUP_TOKEN` when that is set). While no admin exists and no setup token is
+configured, the server logs a warning at startup: anyone who reaches it can claim it.
 
 | Mechanism | Details |
 |---|---|
-| Admin password | bcrypt (cost 10) via `Bun.password`. Minimum 8 characters. A failed login takes the same time whether or not the username exists. |
+| Admin password | bcrypt (cost 10) via `Bun.password`. 8 to 1024 characters (longer ones are refused before hashing). A failed login takes the same time whether or not the username exists. |
 | Session cookie | `HttpOnly`, `SameSite=Strict`, `Secure`. HMAC-SHA256 signed with `SESSION_SECRET` **and** backed by a row in the `sessions` table. Expires after 7 days. |
 | API keys | 256-bit random, shown once, stored as SHA-256 hashes. Optional expiry; revocable. Sent as `Authorization: Bearer <key>`. |
 
 Sessions are revocable:
 
-- **Logout** deletes the server-side session, so a copied cookie stops working immediately.
+- **Logout** deletes the server-side session, so a copied cookie stops working immediately. It
+  clears the cookie even when the session has already expired.
+- **Logging in again** revokes the session in the cookie being replaced.
 - **Changing the password** deletes every session of that user and issues a fresh one to the
   caller. Use it if you suspect a cookie leaked.
 
@@ -34,7 +38,24 @@ Sessions are revocable:
 random characters: `openssl rand -hex 32`. Rotating it invalidates every session.
 
 `AUTH_DISABLED=true` turns all of the above off. It exists for local development and automated
-tests. Never set it on anything reachable from a network you do not fully control.
+tests. Never set it on anything reachable from a network you do not fully control. With it the
+server binds to `127.0.0.1` unless `HOST` is set explicitly.
+
+### Cross-site requests (CSRF)
+
+`SameSite=Strict` keeps the cookie off requests started by other *sites*, but not by other
+origins on the same site (a sibling subdomain). So every state-changing request (`POST`, `PUT`,
+`PATCH`, `DELETE` under `/api`) that does not carry a bearer token is checked before its body is
+parsed:
+
+- `Sec-Fetch-Site` must be `same-origin` or `none`; `same-site` and `cross-site` get `403`.
+- A browser that sends no `Sec-Fetch-Site` must send an `Origin` equal to the `Host`.
+- A request with neither header did not come from a browser and cannot ride on a cookie, so it
+  passes (scripts, the SDK in Node or Bun).
+
+On top of that, every body must be `application/json` (multipart only for
+`POST /api/import/file`), otherwise `415`: an HTML form cannot send JSON. Bearer-token requests
+skip the origin check, since a form cannot set an `Authorization` header.
 
 ### Public read and private write
 
@@ -44,7 +65,9 @@ and the schedules, imports, settings and API-key routes, still require a session
 The allowlist is explicit and matched on method and exact path, so a new route is private unless
 it is added to it.
 
-Anonymous responses do not include storage paths (local file paths or S3 keys). See [Public read](/docs/guides/public-read) for the exact route list. Remember that
+Anonymous responses do not include storage paths (local file paths or S3 keys), and failed
+extractors show `extraction failed` instead of the raw error, which can name internal hosts and
+paths. List pages are capped at 200 items for everyone. See [Public read](/docs/guides/public-read) for the exact route list. Remember that
 everything you have archived becomes visible to anyone who can reach the server — including
 pages that were themselves private when you captured them.
 
@@ -70,8 +93,10 @@ A limited request gets `429` with a `Retry-After` header.
 
 The client is identified by its TCP peer address. `X-Forwarded-For` is ignored by default because
 any client can set it. Behind a reverse proxy every request would then share the proxy's address,
-so set `WEBFROST_TRUST_PROXY=true` there — and make sure the proxy **overwrites** the header rather
-than appending to a client-supplied one.
+so set `WEBFROST_TRUST_PROXY=true` there. Proxies append the address they saw to whatever the
+client sent, so the left-most entry is the client's choice; the server takes the entry
+`WEBFROST_TRUSTED_PROXY_HOPS` (default `1`, one proxy) places from the right instead. IPv6 clients
+share a limit per `/64`, since one host usually controls the whole prefix.
 
 Background pipelines are bounded separately by `WEBFROST_CONCURRENCY` (default 3), so the write
 limit cannot translate into dozens of simultaneous headless browsers.
@@ -130,7 +155,13 @@ Referrer-Policy: strict-origin-when-cross-origin
 ```
 
 With the S3 backend, downloads redirect to presigned URLs on the bucket's host, so that one origin
-is added to `img-src` and `media-src` (and to nothing else).
+is added to `img-src` and `media-src` (and to nothing else). The presigned URL signs the content
+type and `Content-Disposition: attachment` into the response, so an archived HTML page downloads
+instead of rendering, with its scripts, on the bucket's origin.
+
+These headers are set on every response, including errors, `404`s and requests refused before
+they reach a route. Errors are always JSON `{ error, code }`; an unknown `/api/*` path is a JSON
+`404`, never the single-page app.
 
 Archived content is **untrusted**:
 
@@ -178,6 +209,11 @@ inline from a route that carries the app's own policy.
 | Per-extractor timeout | 60 s | `WEBFROST_EXTRACTOR_TIMEOUT_MS` |
 | yt-dlp process timeout | 10 min | `WEBFROST_MEDIA_TIMEOUT_MS` |
 | Browser shutdown | 5 s | — |
+| Import size (file, `content` or fetched `url`) | 10 MiB | `WEBFROST_IMPORT_MAX_BYTES` |
+| URLs per import | 10 000 | `WEBFROST_IMPORT_MAX_URLS` |
+| List page size | 200 | — |
+| Password / username / tag and key name / URL length | 1024 / 128 / 100 / 8192 | — |
+| Graceful shutdown wait for running jobs | 20 s | `WEBFROST_SHUTDOWN_TIMEOUT_MS` |
 | Media file size | 500 MB | — |
 | Gap between archives of one host | 1 s | `WEBFROST_DOMAIN_DELAY_MS` |
 
@@ -186,8 +222,10 @@ inline from a route that carries the app's own policy.
 
 - [ ] `SESSION_SECRET` set from a secret store, ≥ 32 random characters.
 - [ ] `AUTH_DISABLED` unset.
+- [ ] First-run setup completed before the port is exposed, or `WEBFROST_SETUP_TOKEN` set.
 - [ ] TLS terminated in front of the server; `WEBFROST_TRUST_PROXY=true` if (and only if) that
-      proxy sets `X-Forwarded-For`.
+      proxy sets `X-Forwarded-For`, and `WEBFROST_TRUSTED_PROXY_HOPS` matching the number of
+      proxies that append to it.
 - [ ] `WEBFROST_ALLOW_PRIVATE_URLS` unset unless you archive intranet pages on purpose.
 - [ ] `WEBFROST_PUBLIC_READ` set only if everything in the archive may be seen by anyone who can
       reach the server.

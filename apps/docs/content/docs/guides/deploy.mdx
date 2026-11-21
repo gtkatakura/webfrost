@@ -125,7 +125,9 @@ archive.example.com {
 }
 ```
 
-Behind a proxy, set `WEBFROST_TRUST_PROXY=true`. Rate limits are keyed on the client address, which is the TCP peer by default, so without this every client shares the proxy's address and its limit. With it, the first entry of `X-Forwarded-For` is used. Set it only if the proxy **overwrites** the header instead of appending to what the client sent; otherwise a client can pick its own address and dodge the limits.
+Behind a proxy, set `WEBFROST_TRUST_PROXY=true`. Rate limits are keyed on the client address, which is the TCP peer by default, so without this every client shares the proxy's address and its limit. With it, the address comes from `X-Forwarded-For`. Proxies append the address they saw to whatever the client sent, so the server reads the header from the right: with one proxy (the default, `WEBFROST_TRUSTED_PROXY_HOPS=1`) it takes the last entry. With a CDN in front of the proxy, set `WEBFROST_TRUSTED_PROXY_HOPS=2`. Set `WEBFROST_TRUST_PROXY` only when the server is reachable through the proxy alone; a client that can connect directly can send any header it likes.
+
+The proxy must pass the `Host` header through unchanged (Caddy and Traefik do; with nginx use `proxy_set_header Host $host;`). Browsers that send no `Sec-Fetch-Site` header are checked by comparing their `Origin` with `Host`, and a rewritten `Host` would make the server refuse their writes as cross-origin.
 
 ## TLS and cookies
 
@@ -137,8 +139,26 @@ The session cookie is `HttpOnly`, `SameSite=Strict` and `Secure`. Browsers drop 
 ## Secrets
 
 - Set `SESSION_SECRET` from a secret manager or Docker secret, not a committed `.env`. It must be at least 32 random characters; rotating it signs everyone out.
-- Never set `AUTH_DISABLED=true` on a reachable server.
+- Never set `AUTH_DISABLED=true` on a reachable server. With it the server binds to `127.0.0.1` unless `HOST` is set, so inside a container it is unreachable through a published port until you set `HOST=0.0.0.0` on purpose.
 - Keep `.env` out of version control.
+
+## First-run setup
+
+Until an admin exists, `POST /api/setup` (the setup page) lets whoever reaches the server first become its admin, and the server logs a warning at every start while that is the case. Either finish setup before exposing the port, or set `WEBFROST_SETUP_TOKEN`:
+
+```bash
+docker run -d -p 3000:3000 \
+  -e SESSION_SECRET=$(openssl rand -hex 32) \
+  -e WEBFROST_SETUP_TOKEN=$(openssl rand -hex 16) \
+  -v webfrost_data:/data \
+  ghcr.io/gtkatakura/webfrost/server:latest
+```
+
+The setup page then asks for the token, and API calls must send it as `X-Setup-Token` or a `setupToken` field. With Compose, add `WEBFROST_SETUP_TOKEN` to the service's `environment`. Once setup is done the token has no further use; remove it at the next restart if you like.
+
+## Shutdown
+
+On `SIGTERM` or `SIGINT` (`docker stop`, a deploy) the server stops accepting requests and running schedules, then waits up to `WEBFROST_SHUTDOWN_TIMEOUT_MS` (default 20 seconds) for archive jobs in progress. Give the container at least that long before it is killed (`docker stop -t 30`, `stop_grace_period: 30s` in Compose). A job still running at the deadline stays `pending` and is re-queued by the next start.
 
 ## Health check
 
