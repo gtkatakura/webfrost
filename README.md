@@ -45,10 +45,12 @@ backups) see [Deploy](https://webfrost.dev/docs/guides/deploy).
 
 ```bash
 # or: brew install gtkatakura/tap/webfrost
+# Windows: irm https://webfrost.dev/install.ps1 | iex
 curl -fsSL https://webfrost.dev/install.sh | sh
 
-# a headless Chromium, if you have none
+# a headless Chromium, if you have none; doctor says what else is missing
 webfrost setup
+webfrost doctor
 
 # server, web UI and scheduler on :3000
 webfrost serve
@@ -113,7 +115,7 @@ the two is in the repository; its numbers will be published once it has run.
 
 ## FAQ
 
-**Where is my data?** In `WEBFROST_DIR` (`/data` in Docker): `archive.db` plus one folder per snapshot. Back
+**Where is my data?** In `WEBFROST_DIR` (`~/.webfrost` for the binary, `/data` in Docker): `archive.db` plus one folder per snapshot. Back
 it up like any folder. See [Disk layout](https://webfrost.dev/docs/reference/disk-layout).
 
 **Can I archive pages behind a login?** Not yet: every page is fetched as an anonymous visitor. It is on the
