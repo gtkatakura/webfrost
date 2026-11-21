@@ -64,12 +64,12 @@ jobs:
       pull-requests: write
       id-token: write # npm trusted publishing (OIDC) and provenance
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
       # Tools (Bun) at the versions pinned in mise.toml.
-      - uses: jdx/mise-action@v5.2.6
+      - uses: jdx/mise-action@v5.2.8
         with:
           install_args: bun
 
@@ -80,7 +80,7 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - name: Cache Bun dependencies
-        uses: actions/cache@v5.0.4
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
@@ -95,7 +95,7 @@ jobs:
       # Version Packages pull request was just merged) it runs `publish`. Private packages are
       # skipped, so nothing is published until a package sets "private": false.
       - name: Create Version Packages PR or publish
-        uses: changesets/action@v1.7.0
+        uses: changesets/action@v2.1.2
         with:
           title: "chore: version packages"
           commit: "chore: version packages"
@@ -117,7 +117,7 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
       - name: Set up QEMU (arm64 emulation)
         uses: docker/setup-qemu-action@v4.4.0
@@ -126,7 +126,7 @@ jobs:
         uses: docker/setup-buildx-action@v4.4.1
 
       - name: Log in to GHCR
-        uses: docker/login-action@v4.1.0
+        uses: docker/login-action@v4.8.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -135,7 +135,7 @@ jobs:
       # `latest` follows the newest stable version tag (not release candidates).
       - name: Extract Docker metadata
         id: meta
-        uses: docker/metadata-action@v6.0.0
+        uses: docker/metadata-action@v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/server
           tags: |
@@ -145,7 +145,7 @@ jobs:
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v7.0.0
+        uses: docker/build-push-action@v7.4.0
         with:
           context: .
           file: packages/server/Dockerfile
@@ -166,15 +166,15 @@ jobs:
       packages: read
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
       # Tools (Bun) at the versions pinned in mise.toml.
-      - uses: jdx/mise-action@v5.2.6
+      - uses: jdx/mise-action@v5.2.8
         with:
           install_args: bun
 
       - name: Cache Bun dependencies
-        uses: actions/cache@v5.0.4
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
@@ -185,7 +185,7 @@ jobs:
 
       - name: Cache Playwright browsers
         id: playwright-cache
-        uses: actions/cache@v5.0.4
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/bun.lock') }}
@@ -195,7 +195,7 @@ jobs:
         run: bunx playwright install --with-deps chromium
 
       - name: Log in to GHCR
-        uses: docker/login-action@v4.1.0
+        uses: docker/login-action@v4.8.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -230,7 +230,7 @@ jobs:
 
       - name: Upload deploy screenshot
         if: always()
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: deploy-screenshot-${{ github.sha }}
           path: packages/ui/test-results/deploy-screenshot.png
