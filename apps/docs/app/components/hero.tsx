@@ -24,13 +24,14 @@ export interface CodeTab {
 
 type TokenType = "string" | "comment" | "keyword" | "number" | "function" | "flag";
 
+// Nord's syntax colors: Aurora green strings, Frost blues for code, Aurora purple numbers.
 const TOKEN_CLASS: Record<TokenType, string> = {
-  string: "text-emerald-600 dark:text-emerald-400",
+  string: "text-[var(--tint-3)]",
   comment: "italic text-muted-foreground",
   keyword: "text-primary",
-  number: "text-amber-600 dark:text-amber-400",
-  function: "text-sky-600 dark:text-sky-400",
-  flag: "text-sky-600 dark:text-sky-400",
+  number: "text-[#8f6a8a] dark:text-aurora-purple",
+  function: "text-[var(--tint-2)]",
+  flag: "text-[var(--tint-2)]",
 };
 
 const KEYWORDS =
@@ -199,7 +200,7 @@ function CodeWindow({ tabs }: { tabs: CodeTab[] }) {
   const shell = /^(bash|shell|sh)$/i.test(current.language);
 
   return (
-    <div className="min-w-0 overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl shadow-violet-900/10 dark:shadow-black/50">
+    <div className="min-w-0 overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl shadow-slate-900/10 dark:shadow-black/50">
       <div className="flex items-center gap-3 border-b border-border bg-muted/40 px-4 py-2.5">
         <div className="hidden gap-1.5 sm:flex" aria-hidden="true">
           <span className="size-2.5 rounded-full bg-border" />

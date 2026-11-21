@@ -5,55 +5,83 @@
 @import "@fontsource-variable/jetbrains-mono/wght.css";
 
 /*
- * The look of the site. Fumadocs gives the structure; the colors, type and radius come from the
- * "Violet Dusk" theme on 21st.dev, which sits close to the web app's own violet accent.
- * The shadcn token names (bg-primary, text-muted-foreground, …) are mapped onto Fumadocs' tokens at the
- * bottom, so components taken from 21st.dev work without rewriting their classes.
+ * The look of the site: "Frost", built on the Nord palette (nordtheme.com, MIT) — Polar Night for dark
+ * grounds, Snow Storm for light ones, and the four Frost blues as the accent. Status colors come from
+ * Nord's Aurora. The blues are darkened a step in light mode so text on them passes WCAG AA.
+ * The shadcn token names (bg-primary, text-muted-foreground, …) are mapped onto Fumadocs' tokens below,
+ * so components taken from 21st.dev work without rewriting their classes.
  */
 @theme {
   --font-sans: "Plus Jakarta Sans Variable", "Plus Jakarta Sans", Inter, ui-sans-serif, system-ui,
     sans-serif;
   --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo,
     monospace;
+
+  /* Nord, by name. */
+  --color-polar-0: #2e3440;
+  --color-polar-1: #3b4252;
+  --color-polar-2: #434c5e;
+  --color-polar-3: #4c566a;
+  --color-snow-0: #d8dee9;
+  --color-snow-1: #e5e9f0;
+  --color-snow-2: #eceff4;
+  --color-frost-0: #8fbcbb;
+  --color-frost-1: #88c0d0;
+  --color-frost-2: #81a1c1;
+  --color-frost-3: #5e81ac;
+  --color-aurora-red: #bf616a;
+  --color-aurora-orange: #d08770;
+  --color-aurora-yellow: #ebcb8b;
+  --color-aurora-green: #a3be8c;
+  --color-aurora-purple: #b48ead;
 }
 
 :root {
-  --color-fd-background: hsl(210, 40%, 98%);
-  --color-fd-foreground: hsl(224, 71%, 4%);
-  --color-fd-card: hsl(0, 0%, 100%);
-  --color-fd-card-foreground: hsl(224, 71%, 4%);
-  --color-fd-popover: hsl(0, 0%, 100%);
-  --color-fd-popover-foreground: hsl(224, 71%, 4%);
-  --color-fd-primary: hsl(263, 70%, 50%);
-  --color-fd-primary-foreground: hsl(210, 40%, 98%);
-  --color-fd-secondary: hsl(263, 20%, 94%);
-  --color-fd-secondary-foreground: hsl(263, 70%, 30%);
-  --color-fd-muted: hsl(220, 14%, 96%);
-  --color-fd-muted-foreground: hsl(220, 9%, 42%);
-  --color-fd-accent: hsl(263, 80%, 96%);
-  --color-fd-accent-foreground: hsl(263, 70%, 45%);
-  --color-fd-border: hsl(220, 13%, 89%);
-  --color-fd-ring: hsl(263, 70%, 50%);
+  --color-fd-background: #eceff4;
+  --color-fd-foreground: #2e3440;
+  --color-fd-card: #f7f9fb;
+  --color-fd-card-foreground: #2e3440;
+  --color-fd-popover: #f7f9fb;
+  --color-fd-popover-foreground: #2e3440;
+  --color-fd-primary: #4a6d96;
+  --color-fd-primary-foreground: #f7f9fb;
+  --color-fd-secondary: #e5e9f0;
+  --color-fd-secondary-foreground: #3b4252;
+  --color-fd-muted: #e5e9f0;
+  --color-fd-muted-foreground: #4c566a;
+  --color-fd-accent: #dde6ef;
+  --color-fd-accent-foreground: #3b5a80;
+  --color-fd-border: #d3dae6;
+  --color-fd-ring: #5e81ac;
   --radius: 1rem;
+  /* Icon tints on the home page: one per Frost blue and the Aurora green. */
+  --tint-1: #4a6d96;
+  --tint-2: #3d8597;
+  --tint-3: #5b8a5a;
+  --tint-4: #a8743f;
 }
 
 .dark {
-  --color-fd-background: hsl(260, 25%, 3%);
-  --color-fd-foreground: hsl(210, 40%, 98%);
-  --color-fd-card: hsl(260, 25%, 5%);
-  --color-fd-card-foreground: hsl(210, 40%, 98%);
-  --color-fd-popover: hsl(260, 25%, 6%);
-  --color-fd-popover-foreground: hsl(210, 40%, 98%);
-  --color-fd-primary: hsl(263, 85%, 68%);
-  --color-fd-primary-foreground: hsl(260, 25%, 3%);
-  --color-fd-secondary: hsl(263, 40%, 15%);
-  --color-fd-secondary-foreground: hsl(263, 85%, 85%);
-  --color-fd-muted: hsl(260, 20%, 11%);
-  --color-fd-muted-foreground: hsl(260, 10%, 70%);
-  --color-fd-accent: hsl(263, 50%, 15%);
-  --color-fd-accent-foreground: hsl(263, 85%, 78%);
-  --color-fd-border: hsl(260, 20%, 15%);
-  --color-fd-ring: hsl(263, 85%, 68%);
+  --color-fd-background: #242933;
+  --color-fd-foreground: #eceff4;
+  --color-fd-card: #2b313c;
+  --color-fd-card-foreground: #eceff4;
+  --color-fd-popover: #2e3440;
+  --color-fd-popover-foreground: #eceff4;
+  --color-fd-primary: #88c0d0;
+  --color-fd-primary-foreground: #242933;
+  --color-fd-secondary: #3b4252;
+  --color-fd-secondary-foreground: #e5e9f0;
+  --color-fd-muted: #2e3440;
+  --color-fd-muted-foreground: #b4bccc;
+  --color-fd-accent: #343c4a;
+  --color-fd-accent-foreground: #8fbcbb;
+  --color-fd-border: #3b4252;
+  --color-fd-ring: #88c0d0;
+  --tint-1: #88c0d0;
+  --tint-2: #8fbcbb;
+  --tint-3: #a3be8c;
+  --tint-4: #ebcb8b;
 }
 
 /* shadcn names → Fumadocs tokens, for the components taken from 21st.dev. */

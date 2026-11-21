@@ -62,28 +62,28 @@ const pillars: Tile[] = [
     icon: Archive,
     label: "Every format from one visit",
     body: "One fetch and one browser navigation produce WARC, raw HTML, readable text, PDF, a full-page screenshot, the rendered DOM, a self-contained HTML file and, for media pages, the video.",
-    accent: "text-violet-500",
+    accent: "text-[var(--tint-1)]",
     href: "/docs/reference/extractors",
   },
   {
     icon: CalendarClock,
     label: "Keeps running on its own",
     body: "Cron schedules and RSS feeds run inside the server. Jobs are queued with a concurrency limit, retried after a crash, and spaced out per site so nobody gets hammered.",
-    accent: "text-sky-500",
+    accent: "text-[var(--tint-2)]",
     href: "/docs/guides/scheduled-archiving",
   },
   {
     icon: ShieldCheck,
     label: "Safe to put on a network",
     body: "Sessions you can revoke, API keys, rate limits, and a guard that stops archived pages — and the browser rendering them — from reaching your internal network.",
-    accent: "text-emerald-500",
+    accent: "text-[var(--tint-3)]",
     href: "/docs/architecture/security",
   },
   {
     icon: Database,
     label: "Plain files, no lock-in",
     body: "An archive is a folder: one SQLite database and the files next to it, or an S3-compatible bucket. Copy it, back it up, read it with any tool.",
-    accent: "text-amber-500",
+    accent: "text-[var(--tint-4)]",
     href: "/docs/architecture/storage-model",
   },
 ];
@@ -93,28 +93,28 @@ const surfaces: Tile[] = [
     icon: Terminal,
     label: "CLI",
     body: "Archive, import, search and schedule from a terminal, straight against an archive folder.",
-    accent: "text-violet-500",
+    accent: "text-[var(--tint-1)]",
     href: "/docs/reference/cli",
   },
   {
     icon: Webhook,
     label: "HTTP API",
     body: "Everything the UI does, over REST, with API keys for scripts and integrations.",
-    accent: "text-sky-500",
+    accent: "text-[var(--tint-2)]",
     href: "/docs/reference/rest-api",
   },
   {
     icon: Code2,
     label: "TypeScript SDK",
     body: "A typed client with no dependencies, for Bun, Node and the browser.",
-    accent: "text-emerald-500",
+    accent: "text-[var(--tint-3)]",
     href: "/docs/reference/sdk",
   },
   {
     icon: LayoutDashboard,
     label: "Web UI",
     body: "Dashboard, search with highlights, previews of every format, tags, schedules and imports.",
-    accent: "text-amber-500",
+    accent: "text-[var(--tint-4)]",
     href: "/docs/guides/web-ui",
   },
 ];
@@ -149,7 +149,7 @@ export default function Home() {
         <section className="mx-auto max-w-6xl px-6 pt-4 pb-24">
           <div className="flex flex-col items-start gap-4 rounded-2xl border border-border bg-card px-6 py-8 sm:flex-row sm:items-center sm:justify-between sm:px-8">
             <div className="flex items-start gap-4">
-              <div className="grid size-10 shrink-0 place-items-center rounded-xl border border-border bg-muted text-violet-500">
+              <div className="grid size-10 shrink-0 place-items-center rounded-xl border border-border bg-muted text-[var(--tint-1)]">
                 <Eye className="size-5" strokeWidth={1.6} />
               </div>
               <div>
