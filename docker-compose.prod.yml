@@ -1,20 +1,61 @@
+# Production deployment of the WebFrost server (API + web UI + scheduler).
+#
+#   echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Compose reads .env from this directory for the ${...} substitutions below.
+# Then open http://localhost:3000 and create the admin user.
 services:
   webfrost:
-    image: ghcr.io/${GITHUB_REPOSITORY:-your-org/webfrost}/server:${IMAGE_TAG:-latest}
+    image: ghcr.io/${GITHUB_REPOSITORY:-gtkatakura/webfrost}/server:${IMAGE_TAG:-latest}
     # Or build locally: uncomment the build block and comment out image above
     # build:
     #   context: .
     #   dockerfile: packages/server/Dockerfile
     restart: unless-stopped
+    # Reaps the Chromium and yt-dlp child processes the extractors spawn.
+    init: true
     ports:
       - "${PORT:-3000}:3000"
     environment:
       PORT: "3000"
       WEBFROST_DIR: /data
+      # Required: signs session cookies. The server refuses to start without it.
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET — generate one with "openssl rand -hex 32"}
+      # Set to "true" only behind a reverse proxy that sets X-Forwarded-For.
+      WEBFROST_TRUST_PROXY: ${WEBFROST_TRUST_PROXY:-false}
+      # Pipelines run in parallel (each launches a headless Chromium).
+      WEBFROST_CONCURRENCY: ${WEBFROST_CONCURRENCY:-3}
+      # Time zone used to evaluate cron expressions.
+      TZ: ${TZ:-UTC}
+      # Let anonymous visitors browse (never change) the archive.
+      WEBFROST_PUBLIC_READ: ${WEBFROST_PUBLIC_READ:-false}
+      # Session cookies are Secure, so signing in over plain HTTP on a non-localhost
+      # address fails. Set to "true" only for an HTTP-only deployment (e.g. a LAN IP).
+      WEBFROST_INSECURE_COOKIES: ${WEBFROST_INSECURE_COOKIES:-false}
+      # Allow archiving private/loopback addresses (intranet archiving).
+      WEBFROST_ALLOW_PRIVATE_URLS: ${WEBFROST_ALLOW_PRIVATE_URLS:-false}
+      # Minimum gap in ms between two archives of the same host.
+      WEBFROST_DOMAIN_DELAY_MS: ${WEBFROST_DOMAIN_DELAY_MS:-1000}
+      # Set to "false" if a separate `webfrost schedule worker` runs the schedules.
+      WEBFROST_SCHEDULER: ${WEBFROST_SCHEDULER:-true}
+      WEBFROST_LOG_LEVEL: ${WEBFROST_LOG_LEVEL:-info}
+      # Storage backend: filesystem (default) or s3. See docs/how-to/s3-storage.md.
+      WEBFROST_STORAGE_BACKEND: ${WEBFROST_STORAGE_BACKEND:-filesystem}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_PATH_PREFIX: ${S3_PATH_PREFIX:-snapshots}
     volumes:
       - webfrost_data:/data
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      test:
+        - CMD
+        - bun
+        - -e
+        - "fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
       interval: 30s
       timeout: 5s
       retries: 3

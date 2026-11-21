@@ -2,6 +2,7 @@
   "name": "webfrost",
   "private": true,
   "version": "0.0.0",
+  "license": "MIT",
   "workspaces": ["packages/*"],
   "scripts": {
     "webfrost": "bun run packages/cli/src/index.ts",
