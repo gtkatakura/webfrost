@@ -1,4 +1,5 @@
-import type Database from "bun:sqlite";
+import { type RawBuilder, sql } from "kysely";
+import type { Db } from "./db";
 import type { Tag } from "./tags";
 
 function parseReadability(content: string | null): {
@@ -52,12 +53,21 @@ interface SnapshotRow {
 
 // Failed extractors leave a row with `error` set and no content; joining only the
 // successful rows keeps them out of `extractors`, `title` and `hasScreenshot`.
-const SNAPSHOT_SELECT = `SELECT s.id, s.url, s.status, s.created_at,
-     GROUP_CONCAT(DISTINCT ar.extractor) AS extractor_names,
+function snapshotSelect(db: Db): RawBuilder<SnapshotRow> {
+  const names =
+    db.dialect === "postgres"
+      ? sql`string_agg(DISTINCT ar.extractor, ',')`
+      : sql`GROUP_CONCAT(DISTINCT ar.extractor)`;
+  return sql<SnapshotRow>`SELECT s.id, s.url, s.status, s.created_at,
+     ${names} AS extractor_names,
      MAX(CASE WHEN ar.extractor = 'readability' THEN ar.content END) AS readability_content,
      MAX(CASE WHEN ar.extractor = 'screenshot' THEN 1 END) AS has_screenshot
    FROM snapshots s
    LEFT JOIN archive_results ar ON ar.snapshot_id = s.id AND ar.error IS NULL`;
+}
+
+/** GROUP BY that every dialect accepts for the columns snapshotSelect() returns. */
+const SNAPSHOT_GROUP_BY = sql`GROUP BY s.id, s.url, s.status, s.created_at`;
 
 interface RawTagRow {
   snapshot_id: number;
@@ -69,19 +79,15 @@ interface RawTagRow {
 }
 
 /** Load tags for the given snapshots (or for every snapshot when `ids` is omitted). */
-function loadTags(db: Database, ids?: number[]): Map<number, Tag[]> {
-  const base = `SELECT st.snapshot_id, t.id AS tag_id, t.name, t.slug, t.color, t.created_at
+async function loadTags(db: Db, ids?: number[]): Promise<Map<number, Tag[]>> {
+  const base = sql`SELECT st.snapshot_id, t.id AS tag_id, t.name, t.slug, t.color, t.created_at
      FROM snapshot_tags st
      JOIN tags t ON t.id = st.tag_id`;
-  // number[] extends SQLQueryBindings[] so .all(...ids) type-checks; the dynamic
-  // IN clause requires a variable param count that cannot be expressed as a fixed tuple.
   const tagRows = ids
-    ? db
-        .query<RawTagRow, number[]>(
-          `${base} WHERE st.snapshot_id IN (${ids.map(() => "?").join(",")}) ORDER BY t.name`,
-        )
-        .all(...ids)
-    : db.query<RawTagRow, []>(`${base} ORDER BY t.name`).all();
+    ? await db.all<RawTagRow>(
+        sql`${base} WHERE st.snapshot_id IN (${sql.join(ids)}) ORDER BY t.name, st.snapshot_id`,
+      )
+    : await db.all<RawTagRow>(sql`${base} ORDER BY t.name, st.snapshot_id`);
 
   const tagsBySnapshot = new Map<number, Tag[]>();
   for (const row of tagRows) {
@@ -112,20 +118,20 @@ function toSnapshot(r: SnapshotRow, tags: Map<number, Tag[]>): SnapshotWithExtra
     tags: tags.get(r.id) ?? [],
     title,
     excerpt,
-    hasScreenshot: r.has_screenshot === 1,
+    hasScreenshot: Number(r.has_screenshot) === 1,
   };
 }
 
-export function listSnapshots(db: Database): Snapshot[] {
-  return db
-    .query<Snapshot, []>("SELECT id, url, status, created_at FROM snapshots ORDER BY id")
-    .all();
+export async function listSnapshots(db: Db): Promise<Snapshot[]> {
+  return db.all<Snapshot>(sql`SELECT id, url, status, created_at FROM snapshots ORDER BY id`);
 }
 
-export function listSnapshotsWithExtractors(db: Database): SnapshotWithExtractors[] {
-  const rows = db.query<SnapshotRow, []>(`${SNAPSHOT_SELECT} GROUP BY s.id ORDER BY s.id`).all();
+export async function listSnapshotsWithExtractors(db: Db): Promise<SnapshotWithExtractors[]> {
+  const rows = await db.all(
+    sql<SnapshotRow>`${snapshotSelect(db)} ${SNAPSHOT_GROUP_BY} ORDER BY s.id`,
+  );
   // Load all snapshot-tag associations in a single query to avoid N+1
-  const tags = loadTags(db);
+  const tags = await loadTags(db);
   return rows.map((r) => toSnapshot(r, tags));
 }
 
@@ -133,18 +139,16 @@ export function listSnapshotsWithExtractors(db: Database): SnapshotWithExtractor
  * Load list-level metadata (extractors, tags, title…) for specific snapshots.
  * Ids that do not exist are simply absent from the returned map.
  */
-export function getSnapshotsByIds(
-  db: Database,
+export async function getSnapshotsByIds(
+  db: Db,
   ids: number[],
-): Map<number, SnapshotWithExtractors> {
+): Promise<Map<number, SnapshotWithExtractors>> {
   const result = new Map<number, SnapshotWithExtractors>();
   if (ids.length === 0) return result;
-  const rows = db
-    .query<SnapshotRow, number[]>(
-      `${SNAPSHOT_SELECT} WHERE s.id IN (${ids.map(() => "?").join(",")}) GROUP BY s.id`,
-    )
-    .all(...ids);
-  const tags = loadTags(db, ids);
+  const rows = await db.all(
+    sql<SnapshotRow>`${snapshotSelect(db)} WHERE s.id IN (${sql.join(ids)}) ${SNAPSHOT_GROUP_BY}`,
+  );
+  const tags = await loadTags(db, ids);
   for (const r of rows) result.set(r.id, toSnapshot(r, tags));
   return result;
 }
@@ -153,43 +157,33 @@ export function getSnapshotsByIds(
  * One page of snapshots, newest first — page 1 is what was archived most recently,
  * which is what a "recent activity" view and the first screen of a list should show.
  */
-export function listSnapshotsWithExtractorsPaginated(
-  db: Database,
+export async function listSnapshotsWithExtractorsPaginated(
+  db: Db,
   page: number,
   limit: number,
   status?: string,
-): PaginatedResult<SnapshotWithExtractors> {
+): Promise<PaginatedResult<SnapshotWithExtractors>> {
   const offset = (page - 1) * limit;
+  const where = status ? sql`WHERE s.status = ${status}` : sql``;
 
-  const countRow = status
-    ? db
-        .query<{ total: number }, [string]>(
-          "SELECT COUNT(*) AS total FROM snapshots WHERE status = ?",
-        )
-        .get(status)
-    : db.query<{ total: number }, []>("SELECT COUNT(*) AS total FROM snapshots").get();
+  const countRow = await db.get<{ total: number }>(
+    sql`SELECT COUNT(*) AS total FROM snapshots s ${where}`,
+  );
   const total = countRow?.total ?? 0;
 
-  const whereClause = status ? "WHERE s.status = ?" : "";
-  const rows = db
-    .query<SnapshotRow, [string, number, number] | [number, number]>(
-      `${SNAPSHOT_SELECT}
-       ${whereClause}
-       GROUP BY s.id
+  const rows = await db.all(
+    sql<SnapshotRow>`${snapshotSelect(db)}
+       ${where}
+       ${SNAPSHOT_GROUP_BY}
        ORDER BY s.id DESC
-       LIMIT ? OFFSET ?`,
-    )
-    .all(
-      ...(status
-        ? ([status, limit, offset] as [string, number, number])
-        : ([limit, offset] as [number, number])),
-    );
+       LIMIT ${limit} OFFSET ${offset}`,
+  );
 
   if (rows.length === 0) {
     return { items: [], total, page, limit };
   }
 
-  const tags = loadTags(
+  const tags = await loadTags(
     db,
     rows.map((r) => r.id),
   );

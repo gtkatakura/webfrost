@@ -32,7 +32,7 @@ Create keys in the UI (**Settings, API keys**), with `webfrost admin key create`
 - Errors are `{ "error": "message", "code": "CODE" }` with an appropriate status. `error` is for people and may change; branch on `code`: `BAD_REQUEST`, `VALIDATION`, `INVALID_JSON`, `UNAUTHORIZED`, `FORBIDDEN`, `CROSS_ORIGIN_REQUEST`, `SETUP_TOKEN_INVALID`, `NOT_FOUND`, `CONFLICT`, `PAYLOAD_TOO_LARGE`, `UNSUPPORTED_MEDIA_TYPE`, `RATE_LIMITED` or `INTERNAL`.
 - Malformed JSON answers `400` with `INVALID_JSON`; a body that fails validation (missing field, wrong type, too long) `400` with `VALIDATION`. An unknown `/api/*` route answers `404 { "error": "not found", "code": "NOT_FOUND" }`.
 - Length limits: passwords 1024 characters, usernames 128, API key and tag names 100, URLs 8192.
-- Timestamps are UTC strings from SQLite, such as `2026-01-31 14:02:11`.
+- Timestamps are UTC strings, such as `2026-01-31 14:02:11`, whichever database WebFrost uses.
 - Lists of snapshots are newest first.
 - Snapshot `status` is exactly one of `pending`, `done` or `failed`.
 
@@ -121,7 +121,7 @@ Each item is `{ id, url, status, createdAt, extractors, title, excerpt, screensh
 curl "$API/snapshots?q=climate+change&page=1&limit=20" -H "Authorization: Bearer $KEY"
 ```
 
-The query uses SQLite FTS5 syntax (`"exact phrase"`, prefix `term*`, column filters). It searches URL, title, extracted text and tag names. An invalid expression returns no results. Results are ranked by relevance, `status` filters them like the list, and each item adds `snippet` and `rank` to the list fields:
+The query uses FTS5 syntax (`"exact phrase"`, prefix `term*`, `OR`, `NOT`; column filters on SQLite). On PostgreSQL and MySQL the same common syntax is accepted; see [full-text search](/docs/reference/database#full-text-search). It searches URL, title, extracted text and tag names. An invalid expression returns no results. `rank` is lower for better matches on every database, but its scale differs between them. Results are ranked by relevance, `status` filters them like the list, and each item adds `snippet` and `rank` to the list fields:
 
 ```json
 { "id": 1, "url": "https://example.com", "snippet": "...climate <mark>change</mark>...", "rank": -1.2, "status": "done" }

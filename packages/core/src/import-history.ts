@@ -1,4 +1,5 @@
-import type Database from "bun:sqlite";
+import { sql } from "kysely";
+import type { Db } from "./db";
 
 export interface ImportRecord {
   id: string;
@@ -10,17 +11,18 @@ export interface ImportRecord {
 }
 
 /** Record a completed import operation in the imports history table. */
-export function recordImport(db: Database, record: Omit<ImportRecord, "created_at">): void {
-  db.query<null, [string, string | null, string, number, number]>(
-    "INSERT INTO imports (id, source_url, format, queued, skipped) VALUES (?, ?, ?, ?, ?)",
-  ).run(record.id, record.source_url, record.format, record.queued, record.skipped);
+export async function recordImport(
+  db: Db,
+  record: Omit<ImportRecord, "created_at">,
+): Promise<void> {
+  await db.run(
+    sql`INSERT INTO imports (id, source_url, format, queued, skipped, created_at) VALUES (${record.id}, ${record.source_url}, ${record.format}, ${record.queued}, ${record.skipped}, ${db.now()})`,
+  );
 }
 
 /** List the most recent import records, newest first. */
-export function listImports(db: Database, limit = 50): ImportRecord[] {
-  return db
-    .query<ImportRecord, [number]>(
-      "SELECT id, source_url, format, queued, skipped, created_at FROM imports ORDER BY created_at DESC LIMIT ?",
-    )
-    .all(limit);
+export async function listImports(db: Db, limit = 50): Promise<ImportRecord[]> {
+  return db.all<ImportRecord>(
+    sql`SELECT id, source_url, format, queued, skipped, created_at FROM imports ORDER BY created_at DESC LIMIT ${limit}`,
+  );
 }

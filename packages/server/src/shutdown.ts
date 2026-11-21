@@ -1,6 +1,8 @@
 import type { Logger } from "pino";
 
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 20_000;
+/** Closing the database pools must never hold up the exit for longer than this. */
+const CLOSE_DATABASES_TIMEOUT_MS = 2_000;
 
 /** WEBFROST_SHUTDOWN_TIMEOUT_MS: how long a shutdown waits for requests and archive jobs. */
 export function shutdownTimeoutMs(): number {
@@ -17,6 +19,8 @@ export interface ShutdownDeps {
   stopBackgroundWork: () => void;
   /** The job runner: `size` jobs in flight, `onIdle()` resolves when none are. */
   runner: { readonly size: number; onIdle(): Promise<void> };
+  /** End the database pools; the last step, so nothing is cut off mid-query. */
+  closeDatabases?: () => Promise<void>;
   timeoutMs: number;
   logger: Pick<Logger, "info" | "warn">;
 }
@@ -25,8 +29,9 @@ export interface ShutdownDeps {
  * Stop in an order that loses no work: no new scheduled runs, no new requests, then
  * give running archive jobs until the deadline (`timeoutMs` from the start) to
  * finish. A job cut off by the deadline stays `pending` in the database and is
- * picked up again by the next start's recovery sweep. Every DB connection is per
- * request or per job, so once those end there is no shared handle left to close.
+ * picked up again by the next start's recovery sweep. Connections are per
+ * request or per job; the pooled databases (PostgreSQL, MySQL) are ended last, via
+ * `closeDatabases`.
  *
  * Resolves to true when everything finished, false when the deadline cut it off.
  */
@@ -57,6 +62,21 @@ export async function gracefulShutdown(deps: ShutdownDeps): Promise<boolean> {
     return finished;
   } finally {
     clearTimeout(timer);
+    if (deps.closeDatabases) {
+      let closeTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          deps.closeDatabases(),
+          new Promise<void>((resolve) => {
+            closeTimer = setTimeout(resolve, CLOSE_DATABASES_TIMEOUT_MS);
+          }),
+        ]);
+      } catch (err) {
+        logger.warn({ err }, "closing the database pools failed");
+      } finally {
+        clearTimeout(closeTimer);
+      }
+    }
   }
 }
 

@@ -1,7 +1,16 @@
-import type Database from "bun:sqlite";
+import type { Db } from "../db";
+import { recordResult } from "../results";
 
-export function htmlExtractor(db: Database, snapshotId: number, html: string): void {
-  db.query<null, [number, string]>(
-    "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'html', ?)",
-  ).run(snapshotId, html);
+export async function htmlExtractor(
+  db: Db,
+  snapshotId: number,
+  html: string,
+  lease?: string,
+): Promise<void> {
+  await recordResult(
+    db,
+    snapshotId,
+    { extractor: "html", content: html, sizeBytes: Buffer.byteLength(html, "utf8") },
+    lease,
+  );
 }

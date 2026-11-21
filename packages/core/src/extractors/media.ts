@@ -1,5 +1,6 @@
-import type Database from "bun:sqlite";
+import type { Db } from "../db";
 import type { Logger } from "../pipeline";
+import { recordResult } from "../results";
 import { envInt } from "../ssrf-guard";
 import type { StorageBackend } from "../storage";
 import { runProcess } from "../subprocess";
@@ -55,7 +56,7 @@ function ytDlpArgs(options: string[], url: string): string[] {
  *   - extractor = "media-metadata" → media-metadata.json
  */
 export async function mediaExtractor(
-  db: Database,
+  db: Db,
   snapshotId: number,
   storage: StorageBackend,
   url: string,
@@ -65,12 +66,15 @@ export async function mediaExtractor(
     logger?: Logger;
     /** Aborted when the pipeline has given up on this extractor; nothing is recorded after that. */
     signal?: AbortSignal;
+    /** Job lease the results are written under (see results.ts). */
+    lease?: string;
   },
 ): Promise<void> {
   const maxFileSize = options?.maxFileSize ?? "500m";
   const spawner = options?._spawner ?? defaultSpawner;
   const logger = options?.logger;
   const signal = options?.signal;
+  const lease = options?.lease;
 
   // Step 1: Extract the metadata. This doubles as the check that yt-dlp is
   // installed and supports the URL (a non-zero exit means it is not a media page).
@@ -93,9 +97,16 @@ export async function mediaExtractor(
 
   signal?.throwIfAborted();
   const metadataRef = await storage.putText(snapshotId, "media/media-metadata.json", metadataJson);
-  db.query<null, [number, string]>(
-    "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'media-metadata', ?)",
-  ).run(snapshotId, metadataRef);
+  await recordResult(
+    db,
+    snapshotId,
+    {
+      extractor: "media-metadata",
+      content: metadataRef,
+      sizeBytes: Buffer.byteLength(metadataJson, "utf8"),
+    },
+    lease,
+  );
 
   // Step 2: Attempt video download (bestvideo+bestaudio merged to mp4)
   const videoLocalPath = await storage.localPath(snapshotId, "media/media.mp4");
@@ -127,10 +138,9 @@ export async function mediaExtractor(
 
   signal?.throwIfAborted();
   if (videoResult.exitCode === 0) {
+    const sizeBytes = Bun.file(videoLocalPath).size;
     const videoRef = await storage.finalize(snapshotId, "media/media.mp4");
-    db.query<null, [number, string]>(
-      "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'media', ?)",
-    ).run(snapshotId, videoRef);
+    await recordResult(db, snapshotId, { extractor: "media", content: videoRef, sizeBytes }, lease);
     return;
   }
 
@@ -162,9 +172,8 @@ export async function mediaExtractor(
 
   signal?.throwIfAborted();
   if (audioResult.exitCode === 0) {
+    const sizeBytes = Bun.file(audioLocalPath).size;
     const audioRef = await storage.finalize(snapshotId, "media/media.mp3");
-    db.query<null, [number, string]>(
-      "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'media', ?)",
-    ).run(snapshotId, audioRef);
+    await recordResult(db, snapshotId, { extractor: "media", content: audioRef, sizeBytes }, lease);
   }
 }

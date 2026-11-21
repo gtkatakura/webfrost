@@ -45,7 +45,7 @@ Who talks to WebFrost, and what WebFrost talks to.
   cli -->|library calls| core
   server -.uses.-> core
 
-  core --> db[("archive.db (SQLite and FTS5)")]
+  core --> db[("database (SQLite + FTS5, PostgreSQL or MySQL)")]
   core --> files[("snapshots/ on disk or S3 bucket")]
   core --> chromium[Chromium via Playwright]
   core --> ytdlp[yt-dlp subprocess]
@@ -94,7 +94,7 @@ Key relationships:
 | Fetch cache (`fetch-cache.ts`) | Per-snapshot, in-memory: the page is fetched over HTTP once and shared by the text extractors. |
 | SSRF guards (`ssrf-guard.ts`, `browser-guard.ts`) | Block requests to private addresses, for the HTTP fetch and for every browser request. |
 | Throttle (`throttle.ts`) | Spaces archives of the same host. |
-| Database (`db.ts`) | SQLite access and migrations, plain SQL, no ORM. |
+| Database (`db.ts`) | One async data-access layer for SQLite, PostgreSQL and MySQL, and their migrations. SQL through the Kysely query builder, no ORM. |
 | Storage (`storage/`) | Filesystem or S3 backend behind one interface. |
 | Auth, search, tags, import | Admin users, API keys and sessions; FTS5 queries; tag management; text, OPML, Netscape and RSS parsing. |
 

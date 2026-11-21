@@ -1,6 +1,6 @@
 ---
 title: Deploy
-description: Run WebFrost in production with Docker Compose, a reverse proxy, TLS, backups and health checks.
+description: Run WebFrost in production with Docker Compose, a reverse proxy, TLS, a choice of database, backups and health checks.
 icon: Server
 ---
 
@@ -115,6 +115,54 @@ With Podman in rootless mode, add `--userns=keep-id:uid=1000,gid=1000` instead o
 
 The database stores absolute paths to the files it saved, so keep the same mount point (`/data`) across restores and upgrades.
 
+## Choosing a database
+
+WebFrost keeps its metadata (snapshots, results, the search index, schedules, users) in SQLite, PostgreSQL or MySQL. Archive files go to the [storage backend](/docs/guides/storage) in every case.
+
+| | Pick it when |
+|---|---|
+| **SQLite** (default) | One host, any archive size you would keep on one disk. Nothing to set up, and a backup is a file copy or [Litestream](/docs/guides/backups#continuous-backups-with-litestream). |
+| **PostgreSQL** 13+ | You already run PostgreSQL, want managed hosting, point-in-time recovery or replicas, or have many processes writing at once. |
+| **MySQL** 8.0.13+ | You already run MySQL. |
+
+SQLite needs no configuration. For the others set `DATABASE_URL`; WebFrost creates its tables on first start and migrates them on upgrades:
+
+```bash
+# PostgreSQL
+DATABASE_URL=postgres://webfrost:secret@db.internal:5432/webfrost
+
+# MySQL
+DATABASE_URL=mysql://webfrost:secret@db.internal:3306/webfrost
+```
+
+<Tabs items={["PostgreSQL", "MySQL"]}>
+<Tab value="PostgreSQL">
+
+```sql
+CREATE USER webfrost WITH PASSWORD 'secret';
+CREATE DATABASE webfrost OWNER webfrost;
+```
+
+Add `?sslmode=require` to the URL for a server that expects TLS.
+
+</Tab>
+<Tab value="MySQL">
+
+```sql
+CREATE DATABASE webfrost CHARACTER SET utf8mb4;
+CREATE USER 'webfrost'@'%' IDENTIFIED BY 'secret';
+GRANT ALL PRIVILEGES ON webfrost.* TO 'webfrost'@'%';
+```
+
+Start MySQL with `--innodb-ft-min-token-size=1` if searches for words of one or two letters matter; with the default (3) MySQL leaves them out of the full-text index. Changing it later needs `webfrost search:rebuild`.
+
+</Tab>
+</Tabs>
+
+With Compose, put `DATABASE_URL` in `.env`; `docker-compose.prod.yml` passes it to the container. Every process that shares the archive (the server, a `webfrost schedule worker`, CLI commands) must use the same `DATABASE_URL` and storage settings. Search syntax and ranking differ slightly between engines; see [full-text search](/docs/reference/database#full-text-search).
+
+Switching engines on a populated archive is not automatic: there is no built-in export from one database to another yet. Choose before you start archiving, or re-archive the URLs (`webfrost import`) into the new database.
+
 ## Reverse proxy
 
 WebFrost does not terminate TLS. Put nginx, Caddy or Traefik in front. A Caddyfile:
@@ -171,7 +219,7 @@ curl http://localhost:3000/health
 
 ## Backups
 
-State lives in two places inside `WEBFROST_DIR`: `archive.db` (metadata, search index, schedules, sessions, API key hashes) and `snapshots/` (files). With S3 storage the files are in the bucket and only `archive.db` is local; back up both. The archive is only usable with its database.
+State lives in two places: the database (by default `archive.db` in `WEBFROST_DIR`: metadata, search index, schedules, sessions, API key hashes) and the archive files (`snapshots/` in `WEBFROST_DIR`, or the S3 bucket). Back up both; the archive is only usable with its database. The quick recipes for SQLite are below; continuous replication with Litestream and `pg_dump` / `mysqldump` are in [Backups](/docs/guides/backups).
 
 <Tabs items={["Cold backup", "Hot backup", "Restore"]}>
 <Tab value="Cold backup">

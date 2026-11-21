@@ -87,6 +87,8 @@ A secret shorter than 32 characters starts, with a warning.
 sqlite3 ./data/archive.db "PRAGMA wal_checkpoint(TRUNCATE);"
 ```
 
+Do not do this while [Litestream](/docs/guides/backups#continuous-backups-with-litestream) replicates the archive: stop Litestream first, and let it take a fresh snapshot afterwards. With many writers on one archive, PostgreSQL or MySQL (`DATABASE_URL`) avoids the single-writer lock altogether.
+
 ## Search finds nothing after an import
 
 The full-text index may be out of sync. Rebuild it:

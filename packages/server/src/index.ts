@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { hasAdminUser, startScheduler } from "@webfrost/core";
+import { closeDatabases, hasAdminUser, startScheduler } from "@webfrost/core";
 import { Elysia } from "elysia";
 import { getDb, getRunner, getWebfrostDir } from "./context";
 import { appContentSecurityPolicy } from "./csp";
@@ -193,18 +193,23 @@ export function startBackgroundWork(): { stop: () => void } {
   // process is still running (a CLI worker, a rolling restart) is left alone. Right
   // after a crash the dead process's jobs still look alive for a few seconds —
   // hence the periodic sweep rather than a single pass at startup.
-  const recover = () => {
+  let sweeping = false;
+  const recover = async () => {
+    if (sweeping) return;
+    sweeping = true;
     try {
-      const recovered = runner.recoverPending();
+      const recovered = await runner.recoverPending();
       if (recovered > 0) {
         logger.info({ recovered }, "re-queued snapshots left pending by an interrupted run");
       }
     } catch (err) {
       logger.error({ err }, "pending-snapshot recovery failed");
+    } finally {
+      sweeping = false;
     }
   };
-  recover();
-  const recovery = setInterval(recover, RECOVERY_INTERVAL_MS);
+  void recover();
+  const recovery = setInterval(() => void recover(), RECOVERY_INTERVAL_MS);
 
   if (process.env.WEBFROST_SCHEDULER === "false") {
     logger.info("WEBFROST_SCHEDULER=false — schedules are not run by this process");
@@ -232,13 +237,13 @@ export function listenHostname(env: Record<string, string | undefined> = process
 }
 
 /** Warn when a fresh instance can be claimed by anyone who reaches POST /api/setup. */
-function warnIfSetupUnprotected(): void {
+async function warnIfSetupUnprotected(): Promise<void> {
   if (process.env.AUTH_DISABLED === "true" || setupToken() !== null) return;
-  const db = getDb();
+  const db = await getDb();
   try {
-    if (hasAdminUser(db)) return;
+    if (await hasAdminUser(db)) return;
   } finally {
-    db.close();
+    await db.close();
   }
   logger.warn(
     "No admin user exists yet and WEBFROST_SETUP_TOKEN is not set: anyone who can reach this server can complete first-run setup and become its admin. Finish setup now, or set WEBFROST_SETUP_TOKEN.",
@@ -268,7 +273,10 @@ export function startServer(options: StartServerOptions = {}): RunningServer {
   checkSessionSecret();
   if (options.uiAssets !== undefined) setUiAssets(options.uiAssets);
   const background = startBackgroundWork();
-  warnIfSetupUnprotected();
+  // Only a log line: never hold up the listener for it.
+  void warnIfSetupUnprotected().catch((err) =>
+    logger.warn({ err }, "could not check whether an admin user exists"),
+  );
   const hostname = listenHostname();
   const port = Number(process.env.PORT ?? "3000");
   app.listen({ port, hostname, maxRequestBodySize: maxRequestBodyBytes() });
@@ -281,6 +289,7 @@ export function startServer(options: StartServerOptions = {}): RunningServer {
     stopServer: () => app.stop(),
     stopBackgroundWork: background.stop,
     runner: getRunner(),
+    closeDatabases,
     timeoutMs: shutdownTimeoutMs(),
     logger,
   };

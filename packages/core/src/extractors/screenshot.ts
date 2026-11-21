@@ -1,4 +1,5 @@
-import type Database from "bun:sqlite";
+import type { Db } from "../db";
+import { recordResult } from "../results";
 import type { StorageBackend } from "../storage";
 
 /**
@@ -10,20 +11,21 @@ import type { StorageBackend } from "../storage";
  * failed extractor without failing the snapshot.
  */
 export async function screenshotExtractor(
-  db: Database,
+  db: Db,
   snapshotId: number,
   storage: StorageBackend,
   page: import("playwright").Page,
   signal?: AbortSignal,
+  lease?: string,
 ): Promise<void> {
   const localPath = await storage.localPath(snapshotId, "screenshot.png");
   await page.screenshot({ path: localPath, fullPage: true });
   // The pipeline gave up on this extractor (timeout): do not record a late result.
   signal?.throwIfAborted();
 
+  // Measured before finalize(): an S3 backend uploads the file and removes the local copy.
+  const sizeBytes = Bun.file(localPath).size;
   const ref = await storage.finalize(snapshotId, "screenshot.png");
 
-  db.query<null, [number, string]>(
-    "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'screenshot', ?)",
-  ).run(snapshotId, ref);
+  await recordResult(db, snapshotId, { extractor: "screenshot", content: ref, sizeBytes }, lease);
 }

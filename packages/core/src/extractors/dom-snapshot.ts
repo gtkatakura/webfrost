@@ -1,4 +1,5 @@
-import type Database from "bun:sqlite";
+import type { Db } from "../db";
+import { recordResult } from "../results";
 import type { StorageBackend } from "../storage";
 
 /**
@@ -11,11 +12,12 @@ import type { StorageBackend } from "../storage";
  * extractor without failing the snapshot.
  */
 export async function domSnapshotExtractor(
-  db: Database,
+  db: Db,
   snapshotId: number,
   storage: StorageBackend,
   page: import("playwright").Page,
   signal?: AbortSignal,
+  lease?: string,
 ): Promise<void> {
   const dom = await page.content();
   // The pipeline gave up on this extractor (timeout): do not record a late result.
@@ -23,7 +25,10 @@ export async function domSnapshotExtractor(
 
   const ref = await storage.putText(snapshotId, "dom.html", dom);
 
-  db.query<null, [number, string]>(
-    "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'dom-snapshot', ?)",
-  ).run(snapshotId, ref);
+  await recordResult(
+    db,
+    snapshotId,
+    { extractor: "dom-snapshot", content: ref, sizeBytes: Buffer.byteLength(dom, "utf8") },
+    lease,
+  );
 }

@@ -1,4 +1,5 @@
 import {
+  type Schedule,
   addSchedule,
   getSchedule,
   listSchedules,
@@ -10,7 +11,7 @@ import { getDb } from "../context";
 import { apiErrorHandler } from "../errors";
 import { MAX_CRON_LENGTH, MAX_URL_LENGTH } from "../limits";
 
-function mapSchedule(s: ReturnType<typeof getSchedule>) {
+function mapSchedule(s: Schedule | null) {
   if (!s) return null;
   return {
     id: s.id,
@@ -29,7 +30,7 @@ export const schedulesRouter = new Elysia({ prefix: "/schedules" })
   .onError(apiErrorHandler)
   .post(
     "/",
-    ({ body, set }) => {
+    async ({ body, set }) => {
       const { url, cron } = body;
 
       // Validate HTTP/HTTPS URL
@@ -45,10 +46,10 @@ export const schedulesRouter = new Elysia({ prefix: "/schedules" })
         return { error: "invalid url" };
       }
 
-      const db = getDb();
+      const db = await getDb();
       try {
-        const id = addSchedule(db, url, cron);
-        const schedule = getSchedule(db, id);
+        const id = await addSchedule(db, url, cron);
+        const schedule = await getSchedule(db, id);
         if (!schedule) throw new Error("Schedule not found after insert");
         set.status = 201;
         return mapSchedule(schedule);
@@ -60,7 +61,7 @@ export const schedulesRouter = new Elysia({ prefix: "/schedules" })
         }
         throw err;
       } finally {
-        db.close();
+        await db.close();
       }
     },
     {
@@ -70,57 +71,57 @@ export const schedulesRouter = new Elysia({ prefix: "/schedules" })
       }),
     },
   )
-  .get("/", () => {
-    const db = getDb();
+  .get("/", async () => {
+    const db = await getDb();
     try {
-      return listSchedules(db).map(mapSchedule);
+      return (await listSchedules(db)).map(mapSchedule);
     } finally {
-      db.close();
+      await db.close();
     }
   })
   .get(
     "/:id",
-    ({ params, set }) => {
+    async ({ params, set }) => {
       const id = Number(params.id);
       if (!Number.isInteger(id) || id <= 0) {
         set.status = 404;
         return { error: "not found" };
       }
 
-      const db = getDb();
+      const db = await getDb();
       try {
-        const schedule = getSchedule(db, id);
+        const schedule = await getSchedule(db, id);
         if (!schedule) {
           set.status = 404;
           return { error: "not found" };
         }
         return mapSchedule(schedule);
       } finally {
-        db.close();
+        await db.close();
       }
     },
     { params: t.Object({ id: t.String() }) },
   )
   .patch(
     "/:id",
-    ({ params, body, set }) => {
+    async ({ params, body, set }) => {
       const id = Number(params.id);
       if (!Number.isInteger(id) || id <= 0) {
         set.status = 404;
         return { error: "not found" };
       }
 
-      const db = getDb();
+      const db = await getDb();
       try {
-        const found = pauseSchedule(db, id, body.paused);
+        const found = await pauseSchedule(db, id, body.paused);
         if (!found) {
           set.status = 404;
           return { error: "not found" };
         }
-        const schedule = getSchedule(db, id);
+        const schedule = await getSchedule(db, id);
         return mapSchedule(schedule);
       } finally {
-        db.close();
+        await db.close();
       }
     },
     {
@@ -130,16 +131,16 @@ export const schedulesRouter = new Elysia({ prefix: "/schedules" })
   )
   .delete(
     "/:id",
-    ({ params, set }) => {
+    async ({ params, set }) => {
       const id = Number(params.id);
       if (!Number.isInteger(id) || id <= 0) {
         set.status = 404;
         return { error: "not found" };
       }
 
-      const db = getDb();
+      const db = await getDb();
       try {
-        const removed = removeSchedule(db, id);
+        const removed = await removeSchedule(db, id);
         if (!removed) {
           set.status = 404;
           return { error: "not found" };
@@ -147,7 +148,7 @@ export const schedulesRouter = new Elysia({ prefix: "/schedules" })
         set.status = 204;
         return null;
       } finally {
-        db.close();
+        await db.close();
       }
     },
     {

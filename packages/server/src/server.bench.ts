@@ -83,4 +83,6 @@ console.log();
 // ---------------------------------------------------------------------------
 
 app.stop();
+const { closeDatabases } = await import("@webfrost/core");
+await closeDatabases();
 rmSync(dataDir, { recursive: true, force: true });

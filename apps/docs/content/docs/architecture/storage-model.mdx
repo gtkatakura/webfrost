@@ -1,16 +1,17 @@
 ---
 title: Storage model
-description: How WebFrost stores an archive in one directory, with SQLite for metadata and plain files or S3 for content, and why.
+description: How WebFrost stores an archive, with a database (SQLite by default, or PostgreSQL or MySQL) for metadata and plain files or S3 for content, and why.
 icon: Archive
 ---
 
-A WebFrost archive is a directory. SQLite holds the metadata and search index, and ordinary files hold what was captured. Optionally the files can live in an S3-compatible bucket, while the database stays local.
+A WebFrost archive is a directory. A database holds the metadata and search index, and ordinary files hold what was captured. By default the database is a SQLite file in the same directory; with `DATABASE_URL` it can be PostgreSQL or MySQL instead. Optionally the files can live in an S3-compatible bucket. The two choices are independent: any database works with either storage backend.
 
 ## One directory
 
 ```
 $WEBFROST_DIR/
 ├── archive.db              SQLite: metadata, FTS5 index, schedules, sessions
+│                           (absent when DATABASE_URL points at PostgreSQL or MySQL)
 └── snapshots/
     └── <snapshot-id>/      one directory per snapshot
         ├── archive.warc
@@ -34,9 +35,21 @@ The `html` and `readability` results live in the database. Files exist only for 
 - **schedules**: cron definitions with last-run state and failure counts.
 - **admin_users**, **sessions**, **api_keys**: the admin account, login sessions and hashed API keys.
 - **imports**: history of bulk imports.
-- **snapshots_fts**: the FTS5 table over URL, title, text and tags.
+- **snapshots_fts** (SQLite) or **search_index** (PostgreSQL, MySQL): the full-text index over URL, title, text and tags.
 
-Column detail is in [Database](/docs/reference/database).
+The tables are the same on every engine; column detail and the per-engine differences are in [Database](/docs/reference/database).
+
+## Databases
+
+| | SQLite (default) | PostgreSQL | MySQL |
+|---|---|---|---|
+| Setup | none | a database and a user | a database and a user |
+| Lives | in `WEBFROST_DIR` | on the database server | on the database server |
+| Search | FTS5, full query syntax | `tsvector` + GIN | `FULLTEXT` |
+| Backup | copy the file, or [Litestream](/docs/guides/backups#continuous-backups-with-litestream) | `pg_dump` | `mysqldump` |
+| Good for | one host, the common case | an existing PostgreSQL, managed hosting, replicas | an existing MySQL |
+
+All three run the same code through one data-access layer (`packages/core/src/db.ts`, [Kysely](https://kysely.dev/) as the query builder): SQLite on Bun's built-in driver, PostgreSQL on `pg`, MySQL on `mysql2`. Queries that differ by engine (full-text search, job claiming, "insert or ignore", the clock) are written per dialect; everything else is shared SQL. Timestamps are stored as UTC text in one format on every engine, so the API output is identical.
 
 ## Storage backends
 
@@ -47,7 +60,7 @@ Both backends implement one interface (write, read, size, delete, presigned URL)
 | Files at | `WEBFROST_DIR/snapshots/<id>/` | `<prefix>/<id>/<file>` |
 | Stored reference | absolute path | `s3:<key>` |
 | Download | streamed by the server | `302` to a presigned URL |
-| Database | local | local |
+| Database | any | any |
 
 Writes from Chromium and yt-dlp go to a temporary file first. With S3 the file is then uploaded and the temporary copy removed.
 
@@ -55,17 +68,17 @@ The reference stored in the database is checked on every read: a filesystem path
 
 ## Why this design
 
-**No external services.** SQLite and a directory are enough. No database server, no object store required.
+**No external services.** SQLite and a directory are enough. No database server, no object store required — but both are there when you already run them.
 
-**Self-contained backup.** Copy the directory. Restore by copying it back to the same path.
+**Self-contained backup.** With SQLite, copy the directory. Restore by copying it back to the same path. With a database server, dump it alongside the files.
 
-**Open formats.** WARC is readable by [ReplayWeb.page](https://replayweb.page/) and other tools. PDF, PNG and HTML need nothing special. SQLite opens in any client.
+**Open formats.** WARC is readable by [ReplayWeb.page](https://replayweb.page/) and other tools. PDF, PNG and HTML need nothing special. The database is plain tables in SQLite, PostgreSQL or MySQL.
 
 **No lock-in.** If WebFrost disappears, the files remain readable. The WARC files alone are enough for long-term preservation.
 
 ## Concurrency
 
-Several processes can share one archive: the server, CLI commands and a schedule worker. SQLite runs in WAL mode with a 5-second busy timeout, and each background job uses its own connection. Schedules are claimed and jobs adopted with atomic updates, so processes do not run the same work twice.
+Several processes can share one archive: the server, CLI commands and a schedule worker. SQLite runs in WAL mode with a 5-second busy timeout; within a process all work shares one connection. PostgreSQL and MySQL use a connection pool per process. Schedules are claimed with an atomic compare-and-set and jobs adopted under row locks (`FOR UPDATE SKIP LOCKED` on PostgreSQL and MySQL), with lease tokens fencing off a worker that lost its job, so processes do not run the same work twice.
 
 ## Backing up
 
@@ -73,7 +86,7 @@ Several processes can share one archive: the server, CLI commands and a schedule
 rsync -av --progress "$WEBFROST_DIR"/ /backup/webfrost/
 ```
 
-With S3, also back up the bucket. For hot backups and restores, see [Deploy](/docs/guides/deploy#backups).
+With S3, also back up the bucket; with PostgreSQL or MySQL, dump the database. For hot backups, continuous replication and restores, see [Backups](/docs/guides/backups).
 
 <Cards>
   <Card title="Storage guide" href="/docs/guides/storage">

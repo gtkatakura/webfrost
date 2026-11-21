@@ -90,13 +90,13 @@ function fmt(ms: number): string {
 // ---------------------------------------------------------------------------
 console.log("\nBenchmark A: webfrost add <url>  (full pipeline — fetch + Playwright + extractors)");
 const addDir = await makeTempDir("add");
-const addDb = openDb(addDir);
+const addDb = await openDb(addDir);
 
 const t0 = performance.now();
 await addUrl(addDb, localUrl, addDir);
 const addMs = performance.now() - t0;
 
-addDb.close();
+await addDb.close();
 await rm(addDir, { recursive: true, force: true });
 console.log(`  → ${fmt(addMs)}`);
 
@@ -109,13 +109,13 @@ console.log(`  → ${fmt(addMs)}`);
 // ---------------------------------------------------------------------------
 console.log("\nBenchmark B: singlefile processing  (pre-cached HTML, no Playwright)");
 const sfDir = await makeTempDir("singlefile");
-const sfDb = openDb(sfDir);
+const sfDb = await openDb(sfDir);
 
 // Pre-fetch outside the timed window so network latency isn't measured here
 const prefetchCache = new FetchCache();
 const { html, headers, status, statusText } = await prefetchCache.get(localUrl);
 
-const snapshotId = createSnapshot(sfDb, localUrl);
+const snapshotId = await createSnapshot(sfDb, localUrl);
 const sfSnapshotDir = join(sfDir, "snapshots", String(snapshotId));
 await mkdir(sfSnapshotDir, { recursive: true });
 
@@ -127,7 +127,7 @@ await Promise.allSettled([
 ]);
 const sfMs = performance.now() - t1;
 
-sfDb.close();
+await sfDb.close();
 await rm(sfDir, { recursive: true, force: true });
 console.log(`  → ${fmt(sfMs)}`);
 

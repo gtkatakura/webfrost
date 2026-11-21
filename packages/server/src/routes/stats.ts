@@ -12,13 +12,13 @@ export const statsRouter = new Elysia({ prefix: "/stats" }).get("/", async () =>
   if (cached && now < cached.expiry) {
     return cached.stats;
   }
-  const db = getDb();
+  const db = await getDb();
   const storage = getStorage();
   try {
     const stats = await getStats(db, storage);
     cache.set(dir, { stats, expiry: now + 60_000 });
     return stats;
   } finally {
-    db.close();
+    await db.close();
   }
 });

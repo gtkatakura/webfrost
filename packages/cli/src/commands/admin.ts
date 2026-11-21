@@ -90,7 +90,7 @@ environment variable, then an interactive prompt (no echo) when run on a termina
     const password = await readPassword(ctx);
     await withDb(ctx, async (db) => {
       await createAdminUser(db, username, password);
-      const { id, rawKey } = createApiKey(db, "default");
+      const { id, rawKey } = await createApiKey(db, "default");
       ctx.logger.info(`Admin user "${username}" created.`);
       console.log("Default API key (save this, it is shown once):");
       console.log(`  ID:  ${id}`);
@@ -119,8 +119,8 @@ const keyCreate: Command = {
     if (!name) throw new UsageError("Missing --name <label>.", path);
     const expiresRaw = ctx.string("expires");
     const expires = expiresRaw === undefined ? undefined : parseExpires(expiresRaw, path);
-    await withDb(ctx, (db) => {
-      const { id, rawKey } = createApiKey(db, name, expires);
+    await withDb(ctx, async (db) => {
+      const { id, rawKey } = await createApiKey(db, name, expires);
       console.log("API key created (save this, it is shown once):");
       console.log(`  ID:  ${id}`);
       console.log(`  Key: ${rawKey}`);
@@ -134,8 +134,8 @@ const keyList: Command = {
   name: "list",
   summary: "List active API keys",
   async run(ctx) {
-    await withDb(ctx, (db) => {
-      const keys = listApiKeys(db);
+    await withDb(ctx, async (db) => {
+      const keys = await listApiKeys(db);
       if (keys.length === 0) console.log("No active API keys.");
       for (const k of keys) {
         console.log(
@@ -154,8 +154,9 @@ const keyRevoke: Command = {
   args: [{ name: "id", description: "Key id (see `webfrost admin key list`)" }],
   async run(ctx) {
     const id = ctx.args[0] ?? "";
-    await withDb(ctx, (db) => {
-      if (!revokeApiKey(db, id)) throw new CliError(`API key ${id} not found or already revoked.`);
+    await withDb(ctx, async (db) => {
+      if (!(await revokeApiKey(db, id)))
+        throw new CliError(`API key ${id} not found or already revoked.`);
       ctx.logger.info(`API key ${id} revoked.`);
     });
     return 0;

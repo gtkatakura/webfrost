@@ -1,10 +1,10 @@
-import type Database from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sql } from "kysely";
 import type { Page } from "playwright";
-import { openDb } from "../db";
+import { type Db, openDb } from "../db";
 import { FilesystemBackend } from "../storage";
 import { inlineAssets, singleFileExtractor } from "./singlefile";
 
@@ -27,20 +27,20 @@ function makeSuccessPage(html: string, url = "https://example.com"): Page {
 }
 
 let testDir: string;
-let db: Database;
+let db: Db;
 
-beforeEach(() => {
+beforeEach(async () => {
   // Allow localhost so in-process test servers pass the SSRF guard
   process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
   testDir = join(tmpdir(), `singlefile-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   mkdirSync(testDir, { recursive: true });
-  db = openDb(testDir);
-  db.query("INSERT INTO snapshots (url, status) VALUES ('https://example.com', 'pending')").run();
+  db = await openDb(testDir);
+  await db.run(sql`INSERT INTO snapshots (url, status) VALUES ('https://example.com', 'pending')`);
 });
 
-afterEach(() => {
+afterEach(async () => {
   Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
-  db.close();
+  await db.close();
   try {
     rmSync(testDir, { recursive: true, force: true });
   } catch {
@@ -66,11 +66,9 @@ describe("singleFileExtractor", () => {
 
     await singleFileExtractor(db, 1, makeStorage(), page).catch(() => {});
 
-    const row = db
-      .query<{ extractor: string }, []>(
-        "SELECT extractor FROM archive_results WHERE snapshot_id = 1 AND extractor = 'singlefile'",
-      )
-      .get();
+    const row = await db.get<{ extractor: string }>(
+      sql`SELECT extractor FROM archive_results WHERE snapshot_id = 1 AND extractor = 'singlefile'`,
+    );
 
     expect(row).toBeNull();
   });
@@ -81,11 +79,9 @@ describe("singleFileExtractor", () => {
 
     await singleFileExtractor(db, 1, makeStorage(), page);
 
-    const row = db
-      .query<{ content: string }, []>(
-        "SELECT content FROM archive_results WHERE snapshot_id = 1 AND extractor = 'singlefile'",
-      )
-      .get();
+    const row = await db.get<{ content: string }>(
+      sql`SELECT content FROM archive_results WHERE snapshot_id = 1 AND extractor = 'singlefile'`,
+    );
 
     expect(row).toBeDefined();
     expect(row?.content).toEndWith("singlefile.html");
@@ -115,11 +111,9 @@ describe("singleFileExtractor", () => {
     await singleFileExtractor(db, 1, makeStorage(), page);
     server.stop(true);
 
-    const row = db
-      .query<{ content: string }, []>(
-        "SELECT content FROM archive_results WHERE snapshot_id = 1 AND extractor = 'singlefile'",
-      )
-      .get();
+    const row = await db.get<{ content: string }>(
+      sql`SELECT content FROM archive_results WHERE snapshot_id = 1 AND extractor = 'singlefile'`,
+    );
 
     expect(row).toBeDefined();
     const written = await Bun.file(row?.content ?? "").text();
@@ -153,11 +147,9 @@ describe("singleFileExtractor", () => {
     await singleFileExtractor(db, 1, makeStorage(), page);
     server.stop(true);
 
-    const row = db
-      .query<{ content: string }, []>(
-        "SELECT content FROM archive_results WHERE snapshot_id = 1 AND extractor = 'singlefile'",
-      )
-      .get();
+    const row = await db.get<{ content: string }>(
+      sql`SELECT content FROM archive_results WHERE snapshot_id = 1 AND extractor = 'singlefile'`,
+    );
 
     expect(row).toBeDefined();
     const written = await Bun.file(row?.content ?? "").text();
@@ -187,11 +179,9 @@ describe("singleFileExtractor", () => {
     await singleFileExtractor(db, 1, makeStorage(), page);
     server.stop(true);
 
-    const row = db
-      .query<{ content: string }, []>(
-        "SELECT content FROM archive_results WHERE snapshot_id = 1 AND extractor = 'singlefile'",
-      )
-      .get();
+    const row = await db.get<{ content: string }>(
+      sql`SELECT content FROM archive_results WHERE snapshot_id = 1 AND extractor = 'singlefile'`,
+    );
 
     expect(row).toBeDefined();
     const written = await Bun.file(row?.content ?? "").text();
@@ -208,11 +198,9 @@ describe("singleFileExtractor", () => {
     // Should not throw even if fetch fails
     await expect(singleFileExtractor(db, 1, makeStorage(), page)).resolves.toBeUndefined();
 
-    const row = db
-      .query<{ content: string }, []>(
-        "SELECT content FROM archive_results WHERE snapshot_id = 1 AND extractor = 'singlefile'",
-      )
-      .get();
+    const row = await db.get<{ content: string }>(
+      sql`SELECT content FROM archive_results WHERE snapshot_id = 1 AND extractor = 'singlefile'`,
+    );
 
     // File should still be written with the original link intact
     expect(row).toBeDefined();
@@ -233,7 +221,7 @@ describe("singleFileExtractor — cancellation", () => {
       singleFileExtractor(db, 1, makeStorage(), page, AbortSignal.abort()),
     ).rejects.toThrow();
 
-    const rows = db.query<{ extractor: string }, []>("SELECT extractor FROM archive_results").all();
+    const rows = await db.all<{ extractor: string }>(sql`SELECT extractor FROM archive_results`);
     expect(rows).toHaveLength(0);
   });
 });
@@ -244,7 +232,7 @@ describe("inlineAssets", () => {
   let inFlight = 0;
   let maxInFlight = 0;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     inFlight = 0;
     maxInFlight = 0;
     server = Bun.serve({
@@ -272,7 +260,7 @@ describe("inlineAssets", () => {
     base = `http://127.0.0.1:${server.port}`;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     server.stop(true);
     for (const key of ["WEBFROST_SINGLEFILE_MAX_BYTES", "WEBFROST_SINGLEFILE_CONCURRENCY"]) {
       Reflect.deleteProperty(process.env, key);

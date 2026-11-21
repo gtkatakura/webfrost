@@ -174,7 +174,7 @@ export function rateLimiterPlugin(options: RateLimiterOptions) {
 
   return new Elysia({
     name: `rate-limiter-${options.limit}-per-${options.windowMs}ms-${scope}`,
-  }).onBeforeHandle({ as: "global" }, ({ request, set, server }) => {
+  }).onBeforeHandle({ as: "global" }, async ({ request, set, server }) => {
     if (methods && !methods.has(request.method)) return;
     if (path && !path.test(new URL(request.url).pathname)) return;
 

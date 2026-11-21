@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sql } from "@webfrost/core";
 
 let testDir: string;
 
@@ -15,7 +16,10 @@ beforeEach(() => {
   process.env.AUTH_DISABLED = "true";
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // Each test archive is its own database; release the pools so a server-backed run does not pile up connections.
+  const { closeDatabases } = await import("@webfrost/core");
+  await closeDatabases();
   Reflect.deleteProperty(process.env, "WEBFROST_DIR");
   Reflect.deleteProperty(process.env, "AUTH_DISABLED");
   try {
@@ -48,7 +52,7 @@ function post(app: Awaited<ReturnType<typeof getApp>>, body: unknown) {
 describe("POST /import — validation", () => {
   test("returns 400 when neither url nor content is provided", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await post(app, {});
@@ -59,7 +63,7 @@ describe("POST /import — validation", () => {
 
   test("returns 400 for completely empty body", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -81,7 +85,7 @@ describe("POST /import — validation", () => {
 describe("POST /import — text format via content", () => {
   test("returns 202 with queued count for plain URL list", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await post(app, {
@@ -103,7 +107,7 @@ describe("POST /import — text format via content", () => {
 
   test("skips comment lines and blank lines", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await post(app, {
@@ -117,7 +121,7 @@ describe("POST /import — text format via content", () => {
 
   test("returns 202 with total=0 for content with no valid URLs", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await post(app, { content: "not-a-url\nftp://skip.me\n", format: "text" });
@@ -151,7 +155,7 @@ const ATOM_FEED = `<?xml version="1.0" encoding="UTF-8"?>
 describe("POST /import — RSS 2.0 format via content", () => {
   test("parses RSS 2.0 feed and queues article URLs", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await post(app, { content: RSS2_FEED, format: "rss" });
@@ -170,9 +174,11 @@ describe("POST /import — RSS 2.0 format via content", () => {
 
   test("deduplicates already-archived URLs in RSS content import", async () => {
     const { openDb } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    db.exec("INSERT INTO snapshots (url, status) VALUES ('https://example.com/article-1', 'done')");
-    db.close();
+    const db = await openDb(testDir);
+    await db.run(
+      sql`INSERT INTO snapshots (url, status) VALUES ('https://example.com/article-1', 'done')`,
+    );
+    await db.close();
 
     const app = await getApp();
     const res = await post(app, { content: RSS2_FEED, format: "rss" });
@@ -187,7 +193,7 @@ describe("POST /import — RSS 2.0 format via content", () => {
 describe("POST /import — Atom format via content", () => {
   test("parses Atom feed and queues article URLs", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await post(app, { content: ATOM_FEED, format: "rss" });
@@ -206,7 +212,7 @@ describe("POST /import — Atom format via content", () => {
 describe("POST /import — format auto-detection", () => {
   test("auto-detects RSS 2.0 content when no format hint given", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await post(app, { content: RSS2_FEED });
@@ -218,7 +224,7 @@ describe("POST /import — format auto-detection", () => {
 
   test("auto-detects Atom content when no format hint given", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await post(app, { content: ATOM_FEED });
@@ -230,7 +236,7 @@ describe("POST /import — format auto-detection", () => {
 
   test("auto-detects text format for plain URL list with no format hint", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await post(app, { content: "https://example.com\nhttps://other.com" });
@@ -255,7 +261,7 @@ describe("POST /import — OPML format via content", () => {
 
   test("extracts xmlUrl entries from OPML", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await post(app, { content: OPML, format: "opml" });
@@ -304,10 +310,10 @@ describe("import limits", () => {
     expect(body.code).toBe("PAYLOAD_TOO_LARGE");
     expect(body.error).toContain("limit is 2");
     const { openDb } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const row = db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM snapshots").get();
-    db.close();
-    expect(row?.n).toBe(0);
+    const db = await openDb(testDir);
+    const row = await db.get<{ n: number }>(sql`SELECT COUNT(*) AS n FROM snapshots`);
+    await db.close();
+    expect(Number(row?.n)).toBe(0);
   });
 
   test("refuses content larger than WEBFROST_IMPORT_MAX_BYTES with 413", async () => {
@@ -344,7 +350,7 @@ function postFile(
 describe("POST /import/file — multipart upload", () => {
   test("imports plain text URL list from uploaded file", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await postFile(app, "https://example.com\nhttps://other.com\n", "urls.txt", "text");
@@ -362,7 +368,7 @@ describe("POST /import/file — multipart upload", () => {
 
   test("imports OPML file and auto-detects format from filename", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await postFile(app, OPML_CONTENT, "subscriptions.opml");
@@ -374,7 +380,7 @@ describe("POST /import/file — multipart upload", () => {
 
   test("imports Netscape bookmarks file with explicit format", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await postFile(app, NETSCAPE_CONTENT, "bookmarks.html", "netscape");
@@ -386,7 +392,7 @@ describe("POST /import/file — multipart upload", () => {
 
   test("records file import in history with null sourceUrl", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     await postFile(app, "https://example.com\n", "urls.txt", "text");
@@ -400,7 +406,7 @@ describe("POST /import/file — multipart upload", () => {
 
   test("returns 400 when no file is provided", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -420,7 +426,7 @@ describe("POST /import/file — multipart upload", () => {
 describe("GET /imports", () => {
   test("returns empty array when no imports have been run", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/imports"));
@@ -431,7 +437,7 @@ describe("GET /imports", () => {
 
   test("records import and returns it in history", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     await post(app, {
@@ -460,7 +466,7 @@ describe("GET /imports", () => {
 
   test("returns imports ordered newest first", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     await post(app, { content: "https://first.com", format: "text" });
@@ -503,14 +509,14 @@ describe("POST /import — background pipelines", () => {
       await getRunner().onIdle();
 
       const { openDb } = await import("@webfrost/core");
-      const db = openDb(testDir);
+      const db = await openDb(testDir);
       try {
-        const rows = db
-          .query<{ status: string }, []>("SELECT status FROM snapshots ORDER BY id")
-          .all();
+        const rows = await db.all<{ status: string }>(
+          sql`SELECT status FROM snapshots ORDER BY id`,
+        );
         expect(rows).toEqual([{ status: "done" }, { status: "done" }]);
       } finally {
-        db.close();
+        await db.close();
       }
     } finally {
       Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");

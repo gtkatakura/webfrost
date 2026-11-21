@@ -4,7 +4,7 @@ description: Keep archive files on the local filesystem or in S3-compatible obje
 icon: HardDrive
 ---
 
-WebFrost stores archive files in one of two backends. The SQLite database (`archive.db`) always stays on the local disk in `WEBFROST_DIR`, whichever you pick. It holds the metadata and the references to the files.
+WebFrost stores archive files in one of two backends. The database (by default the SQLite file `archive.db` in `WEBFROST_DIR`, or PostgreSQL or MySQL with [`DATABASE_URL`](/docs/guides/deploy#choosing-a-database)) is separate from that choice. It holds the metadata and the references to the files.
 
 | Backend | `WEBFROST_STORAGE_BACKEND` | Files go to |
 |---|---|---|
@@ -85,7 +85,7 @@ Start a new archive directory when you change backend, or keep the old data and 
 
 ## Backups
 
-Back up both: the bucket holds the files, but `archive.db` is what maps snapshots to them. See [Backups](/docs/guides/deploy#backups).
+Back up both: the bucket holds the files, but the database is what maps snapshots to them. See [Backups](/docs/guides/backups).
 
 <Cards>
   <Card title="Storage model" href="/docs/architecture/storage-model">

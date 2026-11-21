@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sql } from "@webfrost/core";
 
 let testDir: string;
 
@@ -14,7 +15,10 @@ beforeEach(() => {
   process.env.WEBFROST_DIR = testDir;
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // Each test archive is its own database; release the pools so a server-backed run does not pile up connections.
+  const { closeDatabases } = await import("@webfrost/core");
+  await closeDatabases();
   Reflect.deleteProperty(process.env, "WEBFROST_DIR");
   try {
     rmSync(testDir, { recursive: true, force: true });
@@ -72,7 +76,7 @@ describe("POST /snapshots", () => {
 
     try {
       const { openDb } = await import("@webfrost/core");
-      openDb(testDir).close();
+      await (await openDb(testDir)).close();
 
       const app = await getApp();
       const res = await app.handle(
@@ -114,7 +118,7 @@ interface SnapshotPage {
 describe("GET /snapshots", () => {
   test("returns empty paginated result when no snapshots exist", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots"));
@@ -128,9 +132,9 @@ describe("GET /snapshots", () => {
 
   test("returns snapshot list after adding a snapshot", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    createSnapshot(db, "https://example.com");
-    db.close();
+    const db = await openDb(testDir);
+    await createSnapshot(db, "https://example.com");
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots"));
@@ -148,14 +152,12 @@ describe("GET /snapshots", () => {
 
   test("returns extractors list when archive results exist", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com/ext");
-    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
-      id,
-      "readability",
-      JSON.stringify({ title: "Test", textContent: "hello" }),
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/ext");
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${"readability"}, ${JSON.stringify({ title: "Test", textContent: "hello" })})`,
     );
-    db.close();
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots"));
@@ -166,11 +168,11 @@ describe("GET /snapshots", () => {
 
   test("paginates snapshot list with page and limit params", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    createSnapshot(db, "https://first.com");
-    createSnapshot(db, "https://second.com");
-    createSnapshot(db, "https://third.com");
-    db.close();
+    const db = await openDb(testDir);
+    await createSnapshot(db, "https://first.com");
+    await createSnapshot(db, "https://second.com");
+    await createSnapshot(db, "https://third.com");
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots?page=2&limit=1"));
@@ -187,28 +189,26 @@ describe("GET /snapshots", () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
     const { mkdirSync, writeFileSync } = await import("node:fs");
     const { join } = await import("node:path");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com/article");
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/article");
     const snapshotsDir = join(testDir, "snapshots");
     mkdirSync(snapshotsDir, { recursive: true });
     const screenshotPath = join(snapshotsDir, `${id}-screenshot.png`);
     writeFileSync(screenshotPath, new Uint8Array([137, 80, 78, 71]));
-    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
-      id,
-      "readability",
-      JSON.stringify({
-        title: "Test Article",
-        excerpt: "A short excerpt about something.",
-        byline: null,
-        textContent: null,
-      }),
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${"readability"}, ${JSON.stringify(
+        {
+          title: "Test Article",
+          excerpt: "A short excerpt about something.",
+          byline: null,
+          textContent: null,
+        },
+      )})`,
     );
-    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
-      id,
-      "screenshot",
-      screenshotPath,
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${"screenshot"}, ${screenshotPath})`,
     );
-    db.close();
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots"));
@@ -229,9 +229,9 @@ describe("GET /snapshots", () => {
 
   test("returns null title, excerpt, screenshotUrl when extractors did not run", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    createSnapshot(db, "https://example.com/bare");
-    db.close();
+    const db = await openDb(testDir);
+    await createSnapshot(db, "https://example.com/bare");
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots"));
@@ -246,15 +246,13 @@ describe("GET /snapshots", () => {
 
   test("truncates excerpt to 120 chars", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com/long");
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/long");
     const longExcerpt = "x".repeat(200);
-    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
-      id,
-      "readability",
-      JSON.stringify({ title: "Long", excerpt: longExcerpt, byline: null, textContent: null }),
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${"readability"}, ${JSON.stringify({ title: "Long", excerpt: longExcerpt, byline: null, textContent: null })})`,
     );
-    db.close();
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots"));
@@ -264,11 +262,11 @@ describe("GET /snapshots", () => {
 
   test("filters snapshots by status query param", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const pendingId = createSnapshot(db, "https://pending.com");
-    const doneId = createSnapshot(db, "https://done.com");
-    db.query("UPDATE snapshots SET status = 'done' WHERE id = ?").run(doneId);
-    db.close();
+    const db = await openDb(testDir);
+    const pendingId = await createSnapshot(db, "https://pending.com");
+    const doneId = await createSnapshot(db, "https://done.com");
+    await db.run(sql`UPDATE snapshots SET status = 'done' WHERE id = ${doneId}`);
+    await db.close();
 
     const app = await getApp();
 
@@ -289,11 +287,11 @@ describe("GET /snapshots", () => {
 
   test("returns all snapshots when status param is omitted", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    createSnapshot(db, "https://a.com");
-    const id2 = createSnapshot(db, "https://b.com");
-    db.query("UPDATE snapshots SET status = 'done' WHERE id = ?").run(id2);
-    db.close();
+    const db = await openDb(testDir);
+    await createSnapshot(db, "https://a.com");
+    const id2 = await createSnapshot(db, "https://b.com");
+    await db.run(sql`UPDATE snapshots SET status = 'done' WHERE id = ${id2}`);
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots"));
@@ -305,9 +303,9 @@ describe("GET /snapshots", () => {
 
   test("returns empty when status filter matches no snapshots", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    createSnapshot(db, "https://example.com");
-    db.close();
+    const db = await openDb(testDir);
+    await createSnapshot(db, "https://example.com");
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots?status=done"));
@@ -319,9 +317,9 @@ describe("GET /snapshots", () => {
 
   test("returns empty items for out-of-range page", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    createSnapshot(db, "https://example.com");
-    db.close();
+    const db = await openDb(testDir);
+    await createSnapshot(db, "https://example.com");
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots?page=99&limit=20"));
@@ -339,7 +337,7 @@ describe("GET /snapshots", () => {
 describe("GET /snapshots/:id/archives/:extractor/download", () => {
   test("returns 404 for non-existent snapshot", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -350,12 +348,12 @@ describe("GET /snapshots/:id/archives/:extractor/download", () => {
 
   test("returns 404 when extractor result has no content", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com");
-    db.query(
-      "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, NULL)",
-    ).run(id, "readability");
-    db.close();
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com");
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, 'readability', NULL)`,
+    );
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -366,15 +364,13 @@ describe("GET /snapshots/:id/archives/:extractor/download", () => {
 
   test("returns readability JSON content for download", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com/read");
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/read");
     const content = JSON.stringify({ title: "Hello", textContent: "World" });
-    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
-      id,
-      "readability",
-      content,
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${"readability"}, ${content})`,
     );
-    db.close();
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -395,9 +391,9 @@ describe("GET /snapshots/:id/archives/:extractor/download", () => {
 describe("GET /snapshots/:id/archives/:extractor/download — security", () => {
   test("returns 400 for unknown extractor", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com");
-    db.close();
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com");
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -410,15 +406,13 @@ describe("GET /snapshots/:id/archives/:extractor/download — security", () => {
 
   test("returns 403 when warc path escapes snapshots directory", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com");
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com");
     // Inject a path traversal value into the DB
-    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
-      id,
-      "warc",
-      "/etc/passwd",
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${"warc"}, ${"/etc/passwd"})`,
     );
-    db.close();
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -431,14 +425,12 @@ describe("GET /snapshots/:id/archives/:extractor/download — security", () => {
 
   test("returns 403 when pdf path escapes snapshots directory", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com");
-    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
-      id,
-      "pdf",
-      "/etc/shadow",
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com");
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${"pdf"}, ${"/etc/shadow"})`,
     );
-    db.close();
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -451,14 +443,12 @@ describe("GET /snapshots/:id/archives/:extractor/download — security", () => {
 
   test("returns 403 when screenshot path escapes snapshots directory", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com");
-    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
-      id,
-      "screenshot",
-      "/etc/passwd",
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com");
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${"screenshot"}, ${"/etc/passwd"})`,
     );
-    db.close();
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -471,14 +461,12 @@ describe("GET /snapshots/:id/archives/:extractor/download — security", () => {
 
   test("returns 403 when dom-snapshot path escapes snapshots directory", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com");
-    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
-      id,
-      "dom-snapshot",
-      "/etc/hosts",
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com");
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${"dom-snapshot"}, ${"/etc/hosts"})`,
     );
-    db.close();
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -491,14 +479,12 @@ describe("GET /snapshots/:id/archives/:extractor/download — security", () => {
 
   test("returns 403 when singlefile path escapes snapshots directory", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com");
-    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
-      id,
-      "singlefile",
-      "/etc/hostname",
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com");
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${"singlefile"}, ${"/etc/hostname"})`,
     );
-    db.close();
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -519,19 +505,17 @@ describe("GET /snapshots/:id/archives/:extractor/download — file extractors", 
     const { openDb, createSnapshot } = await import("@webfrost/core");
     const { mkdirSync, writeFileSync } = await import("node:fs");
     const { join } = await import("node:path");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com/screenshot");
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/screenshot");
     const snapshotsDir = join(testDir, "snapshots");
     mkdirSync(snapshotsDir, { recursive: true });
     const filePath = join(snapshotsDir, `${id}-screenshot.png`);
     const pngBytes = new Uint8Array([137, 80, 78, 71]); // PNG magic bytes
     writeFileSync(filePath, pngBytes);
-    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
-      id,
-      "screenshot",
-      filePath,
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${"screenshot"}, ${filePath})`,
     );
-    db.close();
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -546,18 +530,16 @@ describe("GET /snapshots/:id/archives/:extractor/download — file extractors", 
     const { openDb, createSnapshot } = await import("@webfrost/core");
     const { mkdirSync, writeFileSync } = await import("node:fs");
     const { join } = await import("node:path");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com/dom");
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/dom");
     const snapshotsDir = join(testDir, "snapshots");
     mkdirSync(snapshotsDir, { recursive: true });
     const filePath = join(snapshotsDir, `${id}-dom.html`);
     writeFileSync(filePath, "<html><body>hello</body></html>");
-    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
-      id,
-      "dom-snapshot",
-      filePath,
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${"dom-snapshot"}, ${filePath})`,
     );
-    db.close();
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -572,18 +554,16 @@ describe("GET /snapshots/:id/archives/:extractor/download — file extractors", 
     const { openDb, createSnapshot } = await import("@webfrost/core");
     const { mkdirSync, writeFileSync } = await import("node:fs");
     const { join } = await import("node:path");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com/single");
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/single");
     const snapshotsDir = join(testDir, "snapshots");
     mkdirSync(snapshotsDir, { recursive: true });
     const filePath = join(snapshotsDir, `${id}-singlefile.html`);
     writeFileSync(filePath, "<!DOCTYPE html><html></html>");
-    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
-      id,
-      "singlefile",
-      filePath,
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${"singlefile"}, ${filePath})`,
     );
-    db.close();
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -598,16 +578,14 @@ describe("GET /snapshots/:id/archives/:extractor/download — file extractors", 
     const { openDb, createSnapshot } = await import("@webfrost/core");
     const { mkdirSync } = await import("node:fs");
     const { join } = await import("node:path");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com/missing");
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/missing");
     const snapshotsDir = join(testDir, "snapshots");
     mkdirSync(snapshotsDir, { recursive: true });
-    db.query("INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)").run(
-      id,
-      "screenshot",
-      join(snapshotsDir, "nonexistent.png"),
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${"screenshot"}, ${join(snapshotsDir, "nonexistent.png")})`,
     );
-    db.close();
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -633,7 +611,7 @@ interface SearchPage {
 describe("GET /snapshots?q=", () => {
   test("returns empty paginated result when nothing is indexed", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots?q=anything"));
@@ -647,9 +625,9 @@ describe("GET /snapshots?q=", () => {
 
   test("returns ranked results with snippet for indexed snapshot", async () => {
     const { openDb, indexSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    db.query("INSERT INTO snapshots (url, status) VALUES ('https://example.com', 'done')").run();
-    indexSnapshot(
+    const db = await openDb(testDir);
+    await db.run(sql`INSERT INTO snapshots (url, status) VALUES ('https://example.com', 'done')`);
+    await indexSnapshot(
       db,
       1,
       "https://example.com",
@@ -657,7 +635,7 @@ describe("GET /snapshots?q=", () => {
       "FTS5 is powerful",
       "",
     );
-    db.close();
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots?q=SQLite"));
@@ -673,7 +651,7 @@ describe("GET /snapshots?q=", () => {
 
   test("returns empty items for blank query (falls through to list)", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     // Empty q param is treated as missing — returns list, not search
@@ -685,7 +663,7 @@ describe("GET /snapshots?q=", () => {
 
   test("does not throw on invalid FTS query expression", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -699,12 +677,12 @@ describe("GET /snapshots?q=", () => {
 
   test("paginates search results with page and limit params", async () => {
     const { openDb, indexSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    db.query("INSERT INTO snapshots (url, status) VALUES ('https://a.com', 'done')").run();
-    db.query("INSERT INTO snapshots (url, status) VALUES ('https://b.com', 'done')").run();
-    indexSnapshot(db, 1, "https://a.com", "Archiving Guide Part One", "archive content", "");
-    indexSnapshot(db, 2, "https://b.com", "Archiving Guide Part Two", "archive content", "");
-    db.close();
+    const db = await openDb(testDir);
+    await db.run(sql`INSERT INTO snapshots (url, status) VALUES ('https://a.com', 'done')`);
+    await db.run(sql`INSERT INTO snapshots (url, status) VALUES ('https://b.com', 'done')`);
+    await indexSnapshot(db, 1, "https://a.com", "Archiving Guide Part One", "archive content", "");
+    await indexSnapshot(db, 2, "https://b.com", "Archiving Guide Part Two", "archive content", "");
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -726,7 +704,7 @@ describe("GET /snapshots?q=", () => {
 describe("DELETE /snapshots/:id", () => {
   test("returns 404 for non-existent snapshot", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -737,9 +715,9 @@ describe("DELETE /snapshots/:id", () => {
 
   test("returns 204 and removes snapshot for existing id", async () => {
     const { openDb, createSnapshot, getSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com/del");
-    db.close();
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/del");
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -748,29 +726,29 @@ describe("DELETE /snapshots/:id", () => {
     expect(res.status).toBe(204);
 
     // Verify snapshot is gone from the DB
-    const db2 = openDb(testDir);
-    const snap = getSnapshot(db2, id);
-    db2.close();
+    const db2 = await openDb(testDir);
+    const snap = await getSnapshot(db2, id);
+    await db2.close();
     expect(snap).toBeNull();
   });
 
   test("cascades to archive_results on delete", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com/cascade");
-    db.query(
-      "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'html', '<p>hi</p>')",
-    ).run(id);
-    db.close();
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/cascade");
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, 'html', '<p>hi</p>')`,
+    );
+    await db.close();
 
     const app = await getApp();
     await app.handle(new Request(`http://localhost/snapshots/${id}`, { method: "DELETE" }));
 
-    const db2 = openDb(testDir);
-    const rows = db2
-      .query<{ id: number }, [number]>("SELECT id FROM archive_results WHERE snapshot_id = ?")
-      .all(id);
-    db2.close();
+    const db2 = await openDb(testDir);
+    const rows = await db2.all<{ id: number }>(
+      sql`SELECT id FROM archive_results WHERE snapshot_id = ${id}`,
+    );
+    await db2.close();
     expect(rows).toHaveLength(0);
   });
 
@@ -778,9 +756,9 @@ describe("DELETE /snapshots/:id", () => {
     const { openDb, createSnapshot, indexSnapshot, searchSnapshots } = await import(
       "@webfrost/core"
     );
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com/fts-del");
-    indexSnapshot(
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/fts-del");
+    await indexSnapshot(
       db,
       id,
       "https://example.com/fts-del",
@@ -788,14 +766,14 @@ describe("DELETE /snapshots/:id", () => {
       "content",
       "",
     );
-    db.close();
+    await db.close();
 
     const app = await getApp();
     await app.handle(new Request(`http://localhost/snapshots/${id}`, { method: "DELETE" }));
 
-    const db2 = openDb(testDir);
-    const results = searchSnapshots(db2, "ZZZ");
-    db2.close();
+    const db2 = await openDb(testDir);
+    const results = await searchSnapshots(db2, "ZZZ");
+    await db2.close();
     expect(results.items).toHaveLength(0);
   });
 });
@@ -807,7 +785,7 @@ describe("DELETE /snapshots/:id", () => {
 describe("GET /snapshots/:id", () => {
   test("returns 404 for non-existent snapshot", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots/99999"));
@@ -818,9 +796,9 @@ describe("GET /snapshots/:id", () => {
 
   test("returns snapshot with archiveResults for existing snapshot", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com/article");
-    db.close();
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/article");
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(new Request(`http://localhost/snapshots/${id}`));
@@ -837,17 +815,17 @@ describe("GET /snapshots/:id", () => {
 
   test("extractorMeta includes timing and status for mixed extractor outcomes", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com/video");
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/video");
     // Insert a successful extractor result with timing
-    db.query(
-      "INSERT INTO archive_results (snapshot_id, extractor, content, duration_ms) VALUES (?, ?, ?, ?)",
-    ).run(id, "readability", '{"title":"Test"}', 430);
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content, duration_ms) VALUES (${id}, 'readability', ${'{"title":"Test"}'}, 430)`,
+    );
     // Insert a failed extractor result
-    db.query(
-      "INSERT INTO archive_results (snapshot_id, extractor, content, duration_ms, error) VALUES (?, ?, ?, ?, ?)",
-    ).run(id, "pdf", null, 200, "timeout");
-    db.close();
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content, duration_ms, error) VALUES (${id}, 'pdf', NULL, 200, ${"timeout"})`,
+    );
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(new Request(`http://localhost/snapshots/${id}`));
@@ -888,9 +866,9 @@ describe("GET /snapshots/:id", () => {
 describe("GET /snapshots — limit cap", () => {
   test("never returns more than 200 items per page", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    for (let i = 0; i < 205; i++) createSnapshot(db, `https://example.com/${i}`);
-    db.close();
+    const db = await openDb(testDir);
+    for (let i = 0; i < 205; i++) await createSnapshot(db, `https://example.com/${i}`);
+    await db.close();
 
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots?limit=10000"));
@@ -904,12 +882,12 @@ describe("GET /snapshots — limit cap", () => {
 describe("GET /snapshots/:id — guests", () => {
   test("anonymous visitors never see raw extractor errors", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com/private");
-    db.query(
-      "INSERT INTO archive_results (snapshot_id, extractor, content, duration_ms, error) VALUES (?, ?, ?, ?, ?)",
-    ).run(id, "pdf", null, 5, "connect ECONNREFUSED 10.0.0.5:9222 (/opt/chrome/chrome)");
-    db.close();
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/private");
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content, duration_ms, error) VALUES (${id}, 'pdf', NULL, 5, ${"connect ECONNREFUSED 10.0.0.5:9222 (/opt/chrome/chrome)"})`,
+    );
+    await db.close();
 
     const savedAuth = process.env.AUTH_DISABLED;
     Reflect.deleteProperty(process.env, "AUTH_DISABLED");
@@ -969,12 +947,12 @@ describe("GET /snapshots/:id/archives/:extractor/download — S3", () => {
   ] as const) {
     test(`${extractor} redirects with a signed attachment disposition`, async () => {
       const { openDb, createSnapshot } = await import("@webfrost/core");
-      const db = openDb(testDir);
-      const id = createSnapshot(db, "https://example.com/s3");
-      db.query(
-        "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)",
-      ).run(id, extractor, `s3:snapshots/${id}/${filename}`);
-      db.close();
+      const db = await openDb(testDir);
+      const id = await createSnapshot(db, "https://example.com/s3");
+      await db.run(
+        sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${extractor}, ${`s3:snapshots/${id}/${filename}`})`,
+      );
+      await db.close();
 
       const app = await getApp();
       const res = await app.handle(

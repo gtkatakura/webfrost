@@ -3,7 +3,17 @@ export { ConcurrencyLimiter, createConcurrencyLimiter } from "./concurrency";
 export type { StorageBackend } from "./storage";
 export { FilesystemBackend, S3Backend, createStorageBackend, validateS3Ref } from "./storage";
 export type { S3Config } from "./storage";
-export { openDb } from "./db";
+export {
+  closeDatabases,
+  isTransientError,
+  isUniqueViolation,
+  openDb,
+  parseDatabaseUrl,
+  resolveDatabaseConfig,
+  SCHEMA_VERSION,
+} from "./db";
+export type { DatabaseConfig, Db, DialectName } from "./db";
+export { sql } from "kysely";
 export {
   createAdminUser,
   createApiKey,
@@ -68,6 +78,7 @@ export {
   addUrl,
   chromiumLaunchOptions,
   createSnapshot,
+  createSnapshotJob,
   runPipeline,
   withTimeout,
 } from "./pipeline";
@@ -84,6 +95,7 @@ export {
   markScheduleRun,
   pauseSchedule,
   updateScheduleStatus,
+  dbTimestamp,
 } from "./schedules";
 export type { Schedule } from "./schedules";
 export { nextCronDate, parseCron } from "./cron";
@@ -99,6 +111,8 @@ export {
 } from "./tags";
 export type { Tag } from "./tags";
 export { indexSnapshot, rebuildIndex, removeFromIndex, searchSnapshots } from "./search";
+export { recordResult, setJobStatus } from "./results";
+export type { ResultRecord } from "./results";
 export type { SearchResult } from "./search";
 export { getStats } from "./stats";
 export type { Stats } from "./stats";

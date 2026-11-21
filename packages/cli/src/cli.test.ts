@@ -173,16 +173,16 @@ describe("--flag value and --flag=value are the same", () => {
 
 describe("list, search and delete", () => {
   async function seed(): Promise<void> {
-    const { openDb } = await import("@webfrost/core");
-    const db = openDb(dir);
+    const { openDb, sql } = await import("@webfrost/core");
+    const db = await openDb(dir);
     for (const [url, status] of [
       ["https://a.example/", "done"],
       ["https://b.example/", "failed"],
       ["https://c.example/", "done"],
     ] as const) {
-      db.query("INSERT INTO snapshots (url, status) VALUES (?, ?)").run(url, status);
+      await db.run(sql`INSERT INTO snapshots (url, status) VALUES (${url}, ${status})`);
     }
-    db.close();
+    await db.close();
   }
 
   test("list --json, --status and --limit", async () => {

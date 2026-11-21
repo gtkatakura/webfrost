@@ -1,5 +1,6 @@
-import type Database from "bun:sqlite";
 import { createHash, createHmac, randomBytes } from "node:crypto";
+import { sql } from "kysely";
+import type { Db } from "./db";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -34,32 +35,40 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 // Admin user
 // ---------------------------------------------------------------------------
 
-export async function createAdminUser(
-  db: Database,
-  username: string,
-  password: string,
-): Promise<void> {
-  const existing = db.query<{ id: number }, []>("SELECT id FROM admin_users LIMIT 1").get();
-  if (existing) throw new Error("An admin user already exists");
+export async function createAdminUser(db: Db, username: string, password: string): Promise<void> {
+  if (await hasAdminUser(db)) throw new Error("An admin user already exists");
 
   const hash = await hashPassword(password);
   // Hashing is slow and asynchronous, so two concurrent setups can both pass the
   // check above. The insert re-checks atomically: only one of them creates the admin.
-  const result = db
-    .query<null, [string, string]>(
-      "INSERT INTO admin_users (username, password_hash) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM admin_users)",
-    )
-    .run(username, hash);
-  if (result.changes === 0) throw new Error("An admin user already exists");
+  const created = await db.transaction(async (tx) => {
+    // On PostgreSQL/MySQL a NOT EXISTS check is not atomic across transactions;
+    // locking the (one-row) table makes it so. SQLite's BEGIN IMMEDIATE already
+    // admits a single writer.
+    if (tx.dialect === "postgres") await tx.run(sql`LOCK TABLE admin_users IN EXCLUSIVE MODE`);
+    // MySQL: a locking read takes a next-key lock even on an empty table; two
+    // racing setups then deadlock on insert and the loser is retried, finding the admin.
+    const exists = await tx.get<{ id: number }>(
+      sql`SELECT id FROM admin_users LIMIT 1 ${tx.dialect === "mysql" ? sql`FOR UPDATE` : sql``}`,
+    );
+    if (exists) return false;
+    await tx.run(
+      sql`INSERT INTO admin_users (username, password_hash, created_at) VALUES (${username}, ${hash}, ${tx.now()})`,
+    );
+    return true;
+  });
+  if (!created) throw new Error("An admin user already exists");
 }
 
-export function hasAdminUser(db: Database): boolean {
-  const row = db.query<{ id: number }, []>("SELECT id FROM admin_users LIMIT 1").get();
+export async function hasAdminUser(db: Db): Promise<boolean> {
+  const row = await db.get<{ id: number }>(sql`SELECT id FROM admin_users LIMIT 1`);
   return row !== null;
 }
 
-export function getAdminUsername(db: Database): string | null {
-  const row = db.query<{ username: string }, []>("SELECT username FROM admin_users LIMIT 1").get();
+export async function getAdminUsername(db: Db): Promise<string | null> {
+  const row = await db.get<{ username: string }>(
+    sql`SELECT username FROM admin_users ORDER BY id LIMIT 1`,
+  );
   return row?.username ?? null;
 }
 
@@ -72,15 +81,13 @@ let dummyHash: Promise<string> | undefined;
  * Constant-time comparison is handled by bcrypt verify.
  */
 export async function validateAdminCredentials(
-  db: Database,
+  db: Db,
   username: string,
   password: string,
 ): Promise<string | null> {
-  const row = db
-    .query<{ username: string; password_hash: string }, [string]>(
-      "SELECT username, password_hash FROM admin_users WHERE username = ?",
-    )
-    .get(username);
+  const row = await db.get<{ username: string; password_hash: string }>(
+    sql`SELECT username, password_hash FROM admin_users WHERE username = ${username}`,
+  );
 
   if (!row) {
     dummyHash ??= hashPassword(randomBytes(16).toString("hex"));
@@ -102,46 +109,41 @@ function hashKey(rawKey: string): string {
 /**
  * Create a new API key. Returns the raw key (shown once — never stored).
  */
-export function createApiKey(
-  db: Database,
+export async function createApiKey(
+  db: Db,
   name: string,
   expiresAt?: string,
-): { id: string; rawKey: string } {
+): Promise<{ id: string; rawKey: string }> {
   const id = crypto.randomUUID();
   const rawKey = randomBytes(32).toString("hex");
   const keyHash = hashKey(rawKey);
 
-  db.query<null, [string, string, string, string | null]>(
-    "INSERT INTO api_keys (id, name, key_hash, expires_at) VALUES (?, ?, ?, ?)",
-  ).run(id, name, keyHash, expiresAt ?? null);
+  await db.run(
+    sql`INSERT INTO api_keys (id, name, key_hash, expires_at, created_at) VALUES (${id}, ${name}, ${keyHash}, ${expiresAt ?? null}, ${db.now()})`,
+  );
 
   return { id, rawKey };
 }
 
-export function listApiKeys(db: Database): ApiKey[] {
-  return db
-    .query<
-      {
-        id: string;
-        name: string;
-        expires_at: string | null;
-        last_used_at: string | null;
-        revoked_at: string | null;
-        created_at: string;
-      },
-      []
-    >(
-      "SELECT id, name, expires_at, last_used_at, revoked_at, created_at FROM api_keys WHERE revoked_at IS NULL ORDER BY created_at",
-    )
-    .all()
-    .map((r) => ({
-      id: r.id,
-      name: r.name,
-      expiresAt: r.expires_at,
-      lastUsedAt: r.last_used_at,
-      revokedAt: r.revoked_at,
-      createdAt: r.created_at,
-    }));
+export async function listApiKeys(db: Db): Promise<ApiKey[]> {
+  const rows = await db.all<{
+    id: string;
+    name: string;
+    expires_at: string | null;
+    last_used_at: string | null;
+    revoked_at: string | null;
+    created_at: string;
+  }>(
+    sql`SELECT id, name, expires_at, last_used_at, revoked_at, created_at FROM api_keys WHERE revoked_at IS NULL ORDER BY created_at`,
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    expiresAt: r.expires_at,
+    lastUsedAt: r.last_used_at,
+    revokedAt: r.revoked_at,
+    createdAt: r.created_at,
+  }));
 }
 
 /**
@@ -149,27 +151,42 @@ export function listApiKeys(db: Database): ApiKey[] {
  * so a stolen cookie stops working as soon as the password changes.
  */
 export async function updateAdminPassword(
-  db: Database,
+  db: Db,
   username: string,
   newPassword: string,
 ): Promise<void> {
   const hash = await hashPassword(newPassword);
-  const result = db
-    .query<null, [string, string]>("UPDATE admin_users SET password_hash = ? WHERE username = ?")
-    .run(hash, username);
-  if (result.changes === 0) {
-    throw new Error("User not found");
-  }
-  revokeAllSessions(db, username);
+  await db.transaction(async (tx) => {
+    const changes = await tx.run(
+      sql`UPDATE admin_users SET password_hash = ${hash} WHERE username = ${username}`,
+    );
+    if (changes === 0) {
+      throw new Error("User not found");
+    }
+    await revokeAllSessions(tx, username);
+  });
 }
 
-export function revokeApiKey(db: Database, id: string): boolean {
-  const result = db
-    .query<null, [string]>(
-      "UPDATE api_keys SET revoked_at = datetime('now') WHERE id = ? AND revoked_at IS NULL",
-    )
-    .run(id);
-  return result.changes > 0;
+export async function revokeApiKey(db: Db, id: string): Promise<boolean> {
+  const changes = await db.run(
+    sql`UPDATE api_keys SET revoked_at = ${db.now()} WHERE id = ${id} AND revoked_at IS NULL`,
+  );
+  return changes > 0;
+}
+
+/**
+ * Parse a stored timestamp. Zone-less values ("2030-01-01 00:00:00", the
+ * database format, or an ISO string without offset) are UTC, as SQLite's
+ * datetime() reads them. Returns NaN for anything unparseable.
+ */
+export function parseDbTimestamp(value: string): number {
+  const m =
+    /^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?))?\s*(Z|[+-]\d{2}:?\d{2})?$/i.exec(
+      value.trim(),
+    );
+  if (!m) return Number.NaN;
+  const [, date, time, zone] = m;
+  return Date.parse(`${date}T${time ?? "00:00:00"}${zone ?? "Z"}`);
 }
 
 /**
@@ -177,25 +194,20 @@ export function revokeApiKey(db: Database, id: string): boolean {
  * Updates `last_used_at` on success.
  * Returns true if the key is valid, active, and not expired.
  *
- * `expires_at` is user-supplied (ISO 8601 or SQLite format), so both sides go
- * through datetime() before comparing; an unparseable expiry never validates.
+ * `expires_at` is user-supplied (ISO 8601 or SQLite format) and parsed with
+ * `parseDbTimestamp`; an unparseable expiry never validates.
  */
-export function validateApiKey(db: Database, rawKey: string): boolean {
+export async function validateApiKey(db: Db, rawKey: string): Promise<boolean> {
   const keyHash = hashKey(rawKey);
-  const row = db
-    .query<{ id: string }, [string]>(
-      `SELECT id FROM api_keys
-       WHERE key_hash = ?
-         AND revoked_at IS NULL
-         AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))`,
-    )
-    .get(keyHash);
+  const row = await db.get<{ id: string; expires_at: string | null }>(
+    sql`SELECT id, expires_at FROM api_keys WHERE key_hash = ${keyHash} AND revoked_at IS NULL`,
+  );
 
   if (!row) return false;
+  // Compared in app code so every database applies the same parsing rules.
+  if (row.expires_at !== null && !(parseDbTimestamp(row.expires_at) > Date.now())) return false;
 
-  db.query<null, [string]>("UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?").run(
-    row.id,
-  );
+  await db.run(sql`UPDATE api_keys SET last_used_at = ${db.now()} WHERE id = ${row.id}`);
 
   return true;
 }
@@ -280,15 +292,15 @@ export function verifySessionToken(secret: string, token: string): string | null
  * Start a session: records it in the `sessions` table and returns the signed
  * cookie value. Expired sessions are pruned as a side effect.
  */
-export function createSession(db: Database, secret: string, username: string): string {
+export async function createSession(db: Db, secret: string, username: string): Promise<string> {
   const sessionId = randomBytes(16).toString("hex");
-  const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
-  db.query<null, []>(
-    "DELETE FROM sessions WHERE expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
-  ).run();
-  db.query<null, [string, string, string]>(
-    "INSERT INTO sessions (id, username, expires_at) VALUES (?, ?, ?)",
-  ).run(sessionId, username, expiresAt);
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + SESSION_TTL_MS).toISOString();
+  // expires_at is always an ISO string written here, so text comparison is exact.
+  await db.run(sql`DELETE FROM sessions WHERE expires_at <= ${now.toISOString()}`);
+  await db.run(
+    sql`INSERT INTO sessions (id, username, expires_at, created_at) VALUES (${sessionId}, ${username}, ${expiresAt}, ${db.now()})`,
+  );
   return createSessionToken(secret, username, sessionId);
 }
 
@@ -296,36 +308,29 @@ export function createSession(db: Database, secret: string, username: string): s
  * Verify a session cookie: valid signature, not expired, and its session still
  * exists (not logged out, not revoked by a password change). Returns the username.
  */
-export function verifySession(db: Database, secret: string, token: string): string | null {
+export async function verifySession(db: Db, secret: string, token: string): Promise<string | null> {
   const claims = readSessionToken(secret, token);
   if (!claims?.sessionId) return null;
-  const row = db
-    .query<{ username: string; expires_at: string }, [string]>(
-      "SELECT username, expires_at FROM sessions WHERE id = ?",
-    )
-    .get(claims.sessionId);
+  const row = await db.get<{ username: string; expires_at: string }>(
+    sql`SELECT username, expires_at FROM sessions WHERE id = ${claims.sessionId}`,
+  );
   if (!row || row.username !== claims.username) return null;
   if (Date.parse(row.expires_at) <= Date.now()) return null;
   return row.username;
 }
 
 /** End the session a cookie belongs to (logout). Returns true if a session was removed. */
-export function revokeSession(db: Database, secret: string, token: string): boolean {
+export async function revokeSession(db: Db, secret: string, token: string): Promise<boolean> {
   const claims = readSessionToken(secret, token);
   if (!claims?.sessionId) return false;
-  const result = db
-    .query<null, [string]>("DELETE FROM sessions WHERE id = ?")
-    .run(claims.sessionId);
-  return result.changes > 0;
+  return (await db.run(sql`DELETE FROM sessions WHERE id = ${claims.sessionId}`)) > 0;
 }
 
 /** End every session for `username` (or for everyone when omitted). Returns the number removed. */
-export function revokeAllSessions(db: Database, username?: string): number {
-  const result =
-    username === undefined
-      ? db.query<null, []>("DELETE FROM sessions").run()
-      : db.query<null, [string]>("DELETE FROM sessions WHERE username = ?").run(username);
-  return result.changes;
+export async function revokeAllSessions(db: Db, username?: string): Promise<number> {
+  return username === undefined
+    ? db.run(sql`DELETE FROM sessions`)
+    : db.run(sql`DELETE FROM sessions WHERE username = ${username}`);
 }
 
 function timingSafeEqual(a: string, b: string): boolean {

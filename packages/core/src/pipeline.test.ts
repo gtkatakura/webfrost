@@ -1,9 +1,9 @@
-import type Database from "bun:sqlite";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openDb } from "./db";
+import { sql } from "kysely";
+import { type Db, openDb } from "./db";
 import { JobRunner } from "./jobs";
 import { createSnapshot, runPipeline, withTimeout } from "./pipeline";
 import { searchSnapshots } from "./search";
@@ -19,10 +19,10 @@ const PDF_BYTES = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0xff, 0xfe, 0x00
 let server: ReturnType<typeof Bun.serve>;
 let baseUrl: string;
 let testDir: string;
-let db: Database;
+let db: Db;
 const savedEnv: Record<string, string | undefined> = {};
 
-beforeAll(() => {
+beforeAll(async () => {
   server = Bun.serve({
     port: 0,
     fetch(req) {
@@ -45,7 +45,7 @@ beforeAll(() => {
   process.env.WEBFROST_DOMAIN_DELAY_MS = "0";
 });
 
-afterAll(() => {
+afterAll(async () => {
   server.stop(true);
   for (const [key, value] of Object.entries(savedEnv)) {
     if (value === undefined) delete process.env[key];
@@ -53,64 +53,60 @@ afterAll(() => {
   }
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   testDir = join(tmpdir(), `pipeline-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   mkdirSync(testDir, { recursive: true });
-  db = openDb(testDir);
+  db = await openDb(testDir);
 });
 
-afterEach(() => {
-  db.close();
+afterEach(async () => {
+  await db.close();
   rmSync(testDir, { recursive: true, force: true });
 });
 
 function results(snapshotId: number) {
-  return db
-    .query<{ extractor: string; error: string | null; content: string | null }, [number]>(
-      "SELECT extractor, error, content FROM archive_results WHERE snapshot_id = ? ORDER BY id",
-    )
-    .all(snapshotId);
+  return db.all<{ extractor: string; error: string | null; content: string | null }>(
+    sql`SELECT extractor, error, content FROM archive_results WHERE snapshot_id = ${snapshotId} ORDER BY id`,
+  );
 }
 
-function statusOf(snapshotId: number) {
-  return db
-    .query<{ status: string }, [number]>("SELECT status FROM snapshots WHERE id = ?")
-    .get(snapshotId)?.status;
+async function statusOf(snapshotId: number) {
+  return (
+    await db.get<{ status: string }>(sql`SELECT status FROM snapshots WHERE id = ${snapshotId}`)
+  )?.status;
 }
 
 describe("runPipeline", () => {
   test("archives a page: snapshot done, job done, text formats stored and indexed", async () => {
     const url = `${baseUrl}/article`;
-    const id = createSnapshot(db, url);
-    expect(db.query<{ status: string }, []>("SELECT status FROM job_queue").get()?.status).toBe(
+    const id = await createSnapshot(db, url);
+    expect((await db.get<{ status: string }>(sql`SELECT status FROM job_queue`))?.status).toBe(
       "pending",
     );
 
     await runPipeline(db, id, url, testDir);
 
-    expect(statusOf(id)).toBe("done");
-    expect(db.query<{ status: string }, []>("SELECT status FROM job_queue").get()?.status).toBe(
+    expect(await statusOf(id)).toBe("done");
+    expect((await db.get<{ status: string }>(sql`SELECT status FROM job_queue`))?.status).toBe(
       "done",
     );
 
-    const ok = results(id)
-      .filter((r) => r.error === null)
-      .map((r) => r.extractor);
+    const ok = (await results(id)).filter((r) => r.error === null).map((r) => r.extractor);
     expect(ok).toContain("html");
     expect(ok).toContain("warc");
     expect(ok).toContain("readability");
 
-    expect(searchSnapshots(db, "glaciers").items.map((r) => r.id)).toEqual([id]);
+    expect((await searchSnapshots(db, "glaciers")).items.map((r) => r.id)).toEqual([id]);
   }, 60_000);
 
   test("accounts for every browser extractor: one row each, success or recorded failure", async () => {
     const url = `${baseUrl}/article`;
-    const id = createSnapshot(db, url);
+    const id = await createSnapshot(db, url);
     await runPipeline(db, id, url, testDir);
 
     // Whether or not Chromium is installed on this machine, nothing is skipped silently.
     for (const name of ["pdf", "screenshot", "dom-snapshot", "singlefile"]) {
-      const rows = results(id).filter((r) => r.extractor === name);
+      const rows = (await results(id)).filter((r) => r.extractor === name);
       expect(rows).toHaveLength(1);
       const row = rows[0];
       expect(row?.error === null ? row.content : row?.error).toBeTruthy();
@@ -119,23 +115,23 @@ describe("runPipeline", () => {
 
   test("marks the snapshot failed when the page cannot be fetched", async () => {
     const url = `${baseUrl}/missing`;
-    const id = createSnapshot(db, url);
+    const id = await createSnapshot(db, url);
     await runPipeline(db, id, url, testDir);
 
-    expect(statusOf(id)).toBe("failed");
-    expect(db.query<{ status: string }, []>("SELECT status FROM job_queue").get()?.status).toBe(
+    expect(await statusOf(id)).toBe("failed");
+    expect((await db.get<{ status: string }>(sql`SELECT status FROM job_queue`))?.status).toBe(
       "failed",
     );
-    expect(results(id)).toHaveLength(0);
+    expect(await results(id)).toHaveLength(0);
   });
 
   test("refuses private addresses unless explicitly allowed", async () => {
     process.env.WEBFROST_ALLOW_PRIVATE_URLS = "false";
     try {
       const url = `${baseUrl}/article`;
-      const id = createSnapshot(db, url);
+      const id = await createSnapshot(db, url);
       await runPipeline(db, id, url, testDir);
-      expect(statusOf(id)).toBe("failed");
+      expect(await statusOf(id)).toBe("failed");
     } finally {
       process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
     }
@@ -145,16 +141,16 @@ describe("runPipeline", () => {
 describe("runPipeline: content and cancellation", () => {
   test("a binary URL goes to the WARC byte for byte; html and readability do not run", async () => {
     const url = `${baseUrl}/report.pdf`;
-    const id = createSnapshot(db, url);
+    const id = await createSnapshot(db, url);
     await runPipeline(db, id, url, testDir);
 
-    const rows = results(id);
+    const rows = await results(id);
     expect(rows.some((r) => r.extractor === "html" || r.extractor === "readability")).toBe(false);
     const warc = rows.find((r) => r.extractor === "warc");
     expect(warc?.error).toBeNull();
     const bytes = new Uint8Array(readFileSync(warc?.content ?? ""));
     expect(Buffer.from(bytes).includes(Buffer.from(PDF_BYTES))).toBe(true);
-    expect(statusOf(id)).toBe("done");
+    expect(await statusOf(id)).toBe("done");
   }, 60_000);
 
   test("a yt-dlp that hangs is killed together with its children", async () => {
@@ -172,11 +168,11 @@ describe("runPipeline: content and cancellation", () => {
     process.env.WEBFROST_MEDIA_TIMEOUT_MS = "500";
     try {
       const url = `${baseUrl}/article`;
-      const id = createSnapshot(db, url);
+      const id = await createSnapshot(db, url);
       const start = Date.now();
       await runPipeline(db, id, url, testDir);
       expect(Date.now() - start).toBeLessThan(30_000);
-      expect(results(id).some((r) => r.extractor === "media")).toBe(false);
+      expect((await results(id)).some((r) => r.extractor === "media")).toBe(false);
 
       const helper = Number(readFileSync(pidFile, "utf8").trim());
       expect(helper).toBeGreaterThan(0);
@@ -203,80 +199,78 @@ describe("JobRunner", () => {
     // Regression: the server inserted the snapshot, handed its connection to the
     // background pipeline and closed it — every imported snapshot stayed pending.
     const runner = new JobRunner({ dir: testDir, concurrency: 2 });
-    const callerDb = openDb(testDir);
-    const id = runner.add(callerDb, `${baseUrl}/article`);
-    callerDb.close();
+    const callerDb = await openDb(testDir);
+    const id = await runner.add(callerDb, `${baseUrl}/article`);
+    await callerDb.close();
 
     await runner.onIdle();
 
-    expect(statusOf(id)).toBe("done");
+    expect(await statusOf(id)).toBe("done");
     expect(runner.size).toBe(0);
   }, 60_000);
 
   test("recoverPending re-runs orphaned snapshots without duplicating results", async () => {
     const url = `${baseUrl}/article`;
-    const id = createSnapshot(db, url);
+    const id = await createSnapshot(db, url);
     // Simulate a process that died mid-pipeline: job running, heartbeat long gone,
     // one result already stored.
-    db.query(
-      "UPDATE job_queue SET status = 'running', heartbeat_at = datetime('now', '-10 minutes') WHERE snapshot_id = ?",
-    ).run(id);
-    db.query(
-      "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'html', 'stale')",
-    ).run(id);
+    await db.run(
+      sql`UPDATE job_queue SET status = 'running', heartbeat_at = ${db.ago(600)} WHERE snapshot_id = ${id}`,
+    );
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, 'html', 'stale')`,
+    );
 
     const runner = new JobRunner({ dir: testDir });
-    expect(runner.recoverPending()).toBe(1);
+    expect(await runner.recoverPending()).toBe(1);
     await runner.onIdle();
 
-    expect(statusOf(id)).toBe("done");
-    const html = results(id).filter((r) => r.extractor === "html");
+    expect(await statusOf(id)).toBe("done");
+    const html = (await results(id)).filter((r) => r.extractor === "html");
     expect(html).toHaveLength(1);
     expect(html[0]?.content).toContain("Frost Report");
   }, 60_000);
 
-  test("recoverPending leaves a job alone while another process is still working on it", () => {
+  test("recoverPending leaves a job alone while another process is still working on it", async () => {
     // Another process (a CLI worker next to the server, say) created this snapshot
     // and is running it: its heartbeat is fresh.
-    const id = createSnapshot(db, `${baseUrl}/article`);
-    db.query("UPDATE job_queue SET status = 'running' WHERE snapshot_id = ?").run(id);
-    db.query(
-      "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'html', 'in progress')",
-    ).run(id);
+    const id = await createSnapshot(db, `${baseUrl}/article`);
+    await db.run(sql`UPDATE job_queue SET status = 'running' WHERE snapshot_id = ${id}`);
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, 'html', 'in progress')`,
+    );
 
-    expect(new JobRunner({ dir: testDir }).recoverPending()).toBe(0);
+    expect(await new JobRunner({ dir: testDir }).recoverPending()).toBe(0);
 
     // Nothing of the live run was thrown away.
-    expect(results(id)).toHaveLength(1);
-    expect(statusOf(id)).toBe("pending");
+    expect(await results(id)).toHaveLength(1);
+    expect(await statusOf(id)).toBe("pending");
   });
 
   test("recoverPending adopts an orphan only once", async () => {
-    const id = createSnapshot(db, `${baseUrl}/article`);
-    db.query(
-      "UPDATE job_queue SET heartbeat_at = datetime('now', '-10 minutes') WHERE snapshot_id = ?",
-    ).run(id);
+    const id = await createSnapshot(db, `${baseUrl}/article`);
+    await db.run(sql`UPDATE job_queue SET heartbeat_at = ${db.ago(600)} WHERE snapshot_id = ${id}`);
 
     const first = new JobRunner({ dir: testDir });
     const second = new JobRunner({ dir: testDir });
-    expect(first.recoverPending()).toBe(1);
+    expect(await first.recoverPending()).toBe(1);
     // The first runner's adoption renewed the lease.
-    expect(second.recoverPending()).toBe(0);
-    expect(first.recoverPending()).toBe(0);
+    expect(await second.recoverPending()).toBe(0);
+    expect(await first.recoverPending()).toBe(0);
 
     await first.onIdle();
-    expect(statusOf(id)).toBe("done");
-    expect(results(id).filter((r) => r.extractor === "html")).toHaveLength(1);
+    expect(await statusOf(id)).toBe("done");
+    expect((await results(id)).filter((r) => r.extractor === "html")).toHaveLength(1);
   }, 60_000);
 
-  test("recoverPending gives up on a job that keeps getting interrupted", () => {
-    const id = createSnapshot(db, `${baseUrl}/article`);
-    db.query(
-      "UPDATE job_queue SET attempts = 3, heartbeat_at = datetime('now', '-10 minutes') WHERE snapshot_id = ?",
-    ).run(id);
+  test("recoverPending gives up on a job that keeps getting interrupted", async () => {
+    const id = await createSnapshot(db, `${baseUrl}/article`);
+    await db.run(
+      sql`UPDATE job_queue SET attempts = 3, heartbeat_at = ${db.ago(600)} WHERE snapshot_id = ${id}`,
+    );
 
-    expect(new JobRunner({ dir: testDir }).recoverPending()).toBe(0);
-    expect(statusOf(id)).toBe("failed");
+    expect(await new JobRunner({ dir: testDir }).recoverPending()).toBe(0);
+    expect(await statusOf(id)).toBe("failed");
   });
 
   test("a burst of URLs for one host does not hold up another host", async () => {
@@ -289,15 +283,20 @@ describe("JobRunner", () => {
       const otherHost = `http://throttle-b.localhost:${port}`;
       const runner = new JobRunner({ dir: testDir, concurrency: 1 });
       const finished: string[] = [];
-      const track = (label: string, url: string) =>
-        runner.enqueue(createSnapshot(db, url), url).then(() => finished.push(label));
+      // Create the snapshots first, in order, so the enqueue order below is deterministic.
+      const jobs: { label: string; id: number; url: string }[] = [];
+      for (const [label, url] of [
+        ["a1", `${slowHost}/1`],
+        ["a2", `${slowHost}/2`],
+        ["a3", `${slowHost}/3`],
+        ["b1", `${otherHost}/1`],
+      ] as const) {
+        jobs.push({ label, url, id: await createSnapshot(db, url) });
+      }
 
-      await Promise.all([
-        track("a1", `${slowHost}/1`),
-        track("a2", `${slowHost}/2`),
-        track("a3", `${slowHost}/3`),
-        track("b1", `${otherHost}/1`),
-      ]);
+      await Promise.all(
+        jobs.map(({ label, id, url }) => runner.enqueue(id, url).then(() => finished.push(label))),
+      );
 
       // b1 was queued last but only had to wait for a1, not for the whole throttled burst.
       expect(finished.indexOf("b1")).toBeLessThan(finished.indexOf("a2"));
@@ -307,10 +306,10 @@ describe("JobRunner", () => {
     }
   });
 
-  test("recoverPending ignores finished snapshots", () => {
-    const id = createSnapshot(db, `${baseUrl}/article`);
-    db.query("UPDATE snapshots SET status = 'done' WHERE id = ?").run(id);
-    expect(new JobRunner({ dir: testDir }).recoverPending()).toBe(0);
+  test("recoverPending ignores finished snapshots", async () => {
+    const id = await createSnapshot(db, `${baseUrl}/article`);
+    await db.run(sql`UPDATE snapshots SET status = 'done' WHERE id = ${id}`);
+    expect(await new JobRunner({ dir: testDir }).recoverPending()).toBe(0);
   });
 
   test("never runs more pipelines at once than the concurrency limit", async () => {
@@ -328,7 +327,7 @@ describe("JobRunner", () => {
     });
     try {
       const runner = new JobRunner({ dir: testDir, concurrency: 2 });
-      for (let i = 0; i < 6; i++) runner.add(db, `http://127.0.0.1:${slow.port}/p${i}`);
+      for (let i = 0; i < 6; i++) await runner.add(db, `http://127.0.0.1:${slow.port}/p${i}`);
       await runner.onIdle();
       expect(peak).toBe(2);
     } finally {

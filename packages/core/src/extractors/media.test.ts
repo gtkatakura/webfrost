@@ -1,9 +1,9 @@
-import type Database from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openDb } from "../db";
+import { sql } from "kysely";
+import { type Db, openDb } from "../db";
 import { FilesystemBackend } from "../storage";
 import { YT_DLP_BASE_ARGS, type YtDlpSpawner, mediaExtractor } from "./media";
 
@@ -29,19 +29,19 @@ const META_OK: SpawnResult = {
 };
 
 let testDir: string;
-let db: Database;
+let db: Db;
 
-beforeEach(() => {
+beforeEach(async () => {
   testDir = join(tmpdir(), `media-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   mkdirSync(testDir, { recursive: true });
-  db = openDb(testDir);
-  db.query(
-    "INSERT INTO snapshots (url, status) VALUES ('https://youtube.com/watch?v=test', 'pending')",
-  ).run();
+  db = await openDb(testDir);
+  await db.run(
+    sql`INSERT INTO snapshots (url, status) VALUES ('https://youtube.com/watch?v=test', 'pending')`,
+  );
 });
 
-afterEach(() => {
-  db.close();
+afterEach(async () => {
+  await db.close();
   try {
     rmSync(testDir, { recursive: true, force: true });
   } catch {
@@ -54,11 +54,9 @@ function makeStorage() {
 }
 
 function archiveRows() {
-  return db
-    .query<{ extractor: string; content: string }, []>(
-      "SELECT extractor, content FROM archive_results WHERE snapshot_id = 1",
-    )
-    .all();
+  return db.all<{ extractor: string; content: string }>(
+    sql`SELECT extractor, content FROM archive_results WHERE snapshot_id = 1`,
+  );
 }
 
 describe("mediaExtractor", () => {
@@ -72,7 +70,7 @@ describe("mediaExtractor", () => {
       }),
     ).resolves.toBeUndefined();
 
-    expect(archiveRows()).toHaveLength(0);
+    expect(await archiveRows()).toHaveLength(0);
   });
 
   test("skips silently when URL is not media-extractable (metadata exit 1)", async () => {
@@ -82,7 +80,7 @@ describe("mediaExtractor", () => {
       mediaExtractor(db, 1, makeStorage(), "https://example.com/page", { _spawner: spawner }),
     ).resolves.toBeUndefined();
 
-    expect(archiveRows()).toHaveLength(0);
+    expect(await archiveRows()).toHaveLength(0);
   });
 
   test("stores metadata and video path on successful video download", async () => {
@@ -95,7 +93,7 @@ describe("mediaExtractor", () => {
       _spawner: spawner,
     });
 
-    const rows = archiveRows();
+    const rows = await archiveRows();
     const metaRow = rows.find((r) => r.extractor === "media-metadata");
     const mediaRow = rows.find((r) => r.extractor === "media");
 
@@ -116,7 +114,7 @@ describe("mediaExtractor", () => {
       _spawner: spawner,
     });
 
-    const rows = archiveRows();
+    const rows = await archiveRows();
     const mediaRow = rows.find((r) => r.extractor === "media");
     expect(mediaRow).toBeDefined();
     expect(mediaRow?.content).toContain("media.mp3");
@@ -133,7 +131,7 @@ describe("mediaExtractor", () => {
       _spawner: spawner,
     });
 
-    const rows = archiveRows();
+    const rows = await archiveRows();
     expect(rows.filter((r) => r.extractor === "media")).toHaveLength(0);
     expect(rows.filter((r) => r.extractor === "media-metadata")).toHaveLength(1);
   });
@@ -185,7 +183,7 @@ describe("mediaExtractor", () => {
       _spawner: spawner,
     });
 
-    const rows = archiveRows();
+    const rows = await archiveRows();
     const metaRow = rows.find((r) => r.extractor === "media-metadata");
     expect(metaRow).toBeDefined();
     const file = Bun.file(metaRow?.content ?? "");
@@ -240,6 +238,6 @@ describe("mediaExtractor", () => {
       }),
     ).rejects.toThrow("timed out");
     expect(seen).toEqual([controller.signal]);
-    expect(archiveRows()).toHaveLength(0);
+    expect(await archiveRows()).toHaveLength(0);
   });
 });

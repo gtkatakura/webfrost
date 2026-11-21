@@ -58,19 +58,22 @@ In order:
 
 ## Jobs, leases and recovery
 
-Every pipeline the server starts goes through one `JobRunner` (`packages/core/src/jobs.ts`), limited to `WEBFROST_CONCURRENCY` running at once (default 3). Each job opens its own database connection and closes it when it settles, so request handlers can close theirs as soon as the row is inserted.
+Every pipeline the server starts goes through one `JobRunner` (`packages/core/src/jobs.ts`), limited to `WEBFROST_CONCURRENCY` running at once (default 3). Each job opens its own database handle and closes it when it settles, so request handlers can close theirs as soon as the row is inserted. (On SQLite the handles of one process share a connection; on PostgreSQL and MySQL they borrow from the process's pool.)
 
 `job_queue.status` goes `pending`, `running`, then `done` or `failed`.
 
-**Leases.** A job is leased through `job_queue.heartbeat_at`. The pipeline refreshes it every 10 seconds, and the runner refreshes it for everything it has queued or running, including jobs still waiting for a slot.
+**Leases.** A job is leased through `job_queue.heartbeat_at` and `job_queue.lease_token`. The token is issued when the job is created; the pipeline refreshes the heartbeat every 10 seconds, and the runner refreshes it for everything it has queued or running, including jobs still waiting for a slot.
 
 **Recovery.** A recovery sweep adopts a snapshot that is `pending` and whose heartbeat is older than 45 seconds, meaning that no live process is working on it (a crash, deploy or restart). The server sweeps at startup and then every 60 seconds; `webfrost schedule worker` does the same. Adoption:
 
-- runs inside an immediate transaction, so two processes sweeping at once cannot adopt the same job;
+- is atomic, so two processes sweeping at once cannot adopt the same job: SQLite runs it in a `BEGIN IMMEDIATE` transaction, PostgreSQL and MySQL lock the job rows with `SELECT … FOR UPDATE SKIP LOCKED`, which also lets concurrent sweeps split the orphans between them;
+- issues a new lease token;
 - discards partial results of the interrupted run, so a snapshot never ends with duplicate archive results;
 - increments `attempts`, and marks the snapshot `failed` instead of running it again after 3 attempts.
 
 Because a live job keeps its heartbeat fresh, a server and a worker on one archive never steal each other's work. Right after a crash the dead process's jobs still look alive for up to 45 seconds, hence the periodic sweep.
+
+**Fencing.** A worker can also be presumed dead while it is still running: a stalled process, a long pause. Every write a pipeline makes (its status, each `archive_results` row, its heartbeat) names the lease token it started with and is applied only while the job still holds that token. Once another worker has adopted the job, the old worker's writes are dropped and it stops at its next status change, so it can neither overwrite the new run's outcome nor add results to it. Fenced writes lock the `job_queue` row first, in the same order as recovery, so the two never deadlock.
 
 ## Per-host spacing
 

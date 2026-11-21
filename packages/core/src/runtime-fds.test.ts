@@ -1,10 +1,11 @@
-import type Database from "bun:sqlite";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openDb } from "./db";
+import { sql } from "kysely";
+import { type Db, openDb } from "./db";
+import { isSqliteRun } from "./test-utils";
 
 /**
  * Regression guard for a Bun runtime bug (seen on 1.3.5 and 1.3.11, fixed by 1.4.4).
@@ -46,29 +47,34 @@ async function runChildWithExtraPipes(): Promise<void> {
   await new Promise((resolve) => child.on("close", resolve));
 }
 
-test("SQLite connections survive the GC of a finished child that had extra stdio pipes", async () => {
-  await runChildWithExtraPipes();
-  // Let the child's own close handling finish, so its descriptor numbers are free again.
-  await Bun.sleep(50);
+test.skipIf(!isSqliteRun)(
+  "SQLite connections survive the GC of a finished child that had extra stdio pipes",
+  async () => {
+    await runChildWithExtraPipes();
+    // Let the child's own close handling finish, so its descriptor numbers are free again.
+    await Bun.sleep(50);
 
-  // Several connections so the freed descriptor numbers are certainly reused by archive files.
-  const dbs: Database[] = [];
-  try {
-    for (let i = 0; i < 4; i++) {
-      const dir = join(testDir, `a${i}`);
-      mkdirSync(dir);
-      dbs.push(openDb(dir));
+    // Several connections so the freed descriptor numbers are certainly reused by archive files.
+    const dbs: Db[] = [];
+    try {
+      for (let i = 0; i < 4; i++) {
+        const dir = join(testDir, `a${i}`);
+        mkdirSync(dir);
+        dbs.push(await openDb(dir));
+      }
+      for (let i = 0; i < 5; i++) {
+        Bun.gc(true);
+        await Bun.sleep(20);
+      }
+      for (const db of dbs) {
+        // Write through the WAL and read back: both fail if a descriptor was closed underneath.
+        await db.run(
+          sql`INSERT INTO snapshots (url, status) VALUES ('https://example.com/', 'done')`,
+        );
+        expect((await db.get<{ n: number }>(sql`SELECT count(*) AS n FROM snapshots`))?.n).toBe(1);
+      }
+    } finally {
+      for (const db of dbs) await db.close();
     }
-    for (let i = 0; i < 5; i++) {
-      Bun.gc(true);
-      await Bun.sleep(20);
-    }
-    for (const db of dbs) {
-      // Write through the WAL and read back: both fail if a descriptor was closed underneath.
-      db.query("INSERT INTO snapshots (url, status) VALUES ('https://example.com/', 'done')").run();
-      expect(db.query<{ n: number }, []>("SELECT count(*) AS n FROM snapshots").get()?.n).toBe(1);
-    }
-  } finally {
-    for (const db of dbs) db.close();
-  }
-});
+  },
+);

@@ -1,16 +1,17 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sql } from "kysely";
 import { bench, run } from "mitata";
-import { openDb } from "../db";
+import { type Db, openDb } from "../db";
 import { readabilityExtractor } from "./readability";
 
 const testDir = join(tmpdir(), `readability-bench-${Date.now()}`);
 mkdirSync(testDir, { recursive: true });
-const db = openDb(testDir);
-db.query(
-  "INSERT INTO snapshots (url, status) VALUES ('https://example.com/article', 'pending')",
-).run();
+const db = await openDb(testDir);
+await db.run(
+  sql`INSERT INTO snapshots (url, status) VALUES ('https://example.com/article', 'pending')`,
+);
 
 // Simulate a typical news article page
 const ARTICLE_HTML = `
@@ -30,12 +31,12 @@ const ARTICLE_HTML = `
 </html>
 `;
 
-bench("readabilityExtractor: parse typical news article", () => {
-  readabilityExtractor(db, 1, "https://example.com/article", ARTICLE_HTML);
+bench("readabilityExtractor: parse typical news article", async () => {
+  await readabilityExtractor(db, 1, "https://example.com/article", ARTICLE_HTML);
 });
 
 await run();
-db.close();
+await db.close();
 try {
   rmSync(testDir, { recursive: true, force: true });
 } catch {

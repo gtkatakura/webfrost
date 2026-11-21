@@ -16,10 +16,10 @@ import { MAX_TAG_COLOR_LENGTH, MAX_TAG_NAME_LENGTH } from "../limits";
 // GET/POST/DELETE /api/tags
 export const tagsRouter = new Elysia({ prefix: "/tags" })
   .onError(apiErrorHandler)
-  .get("/", () => {
-    const db = getDb();
+  .get("/", async () => {
+    const db = await getDb();
     try {
-      return listTags(db).map((t) => ({
+      return (await listTags(db)).map((t) => ({
         id: t.id,
         name: t.name,
         slug: t.slug,
@@ -27,16 +27,16 @@ export const tagsRouter = new Elysia({ prefix: "/tags" })
         createdAt: t.created_at,
       }));
     } finally {
-      db.close();
+      await db.close();
     }
   })
   .post(
     "/",
-    ({ body, set }) => {
+    async ({ body, set }) => {
       const { name, color } = body;
-      const db = getDb();
+      const db = await getDb();
       try {
-        const tag = createTag(db, name, color ?? undefined);
+        const tag = await createTag(db, name, color ?? undefined);
         set.status = 201;
         return {
           id: tag.id,
@@ -53,7 +53,7 @@ export const tagsRouter = new Elysia({ prefix: "/tags" })
         }
         throw err;
       } finally {
-        db.close();
+        await db.close();
       }
     },
     {
@@ -65,15 +65,15 @@ export const tagsRouter = new Elysia({ prefix: "/tags" })
   )
   .delete(
     "/:id",
-    ({ params, set }) => {
+    async ({ params, set }) => {
       const id = Number(params.id);
       if (!Number.isInteger(id) || id <= 0) {
         set.status = 404;
         return { error: "not found" };
       }
-      const db = getDb();
+      const db = await getDb();
       try {
-        const removed = deleteTag(db, id);
+        const removed = await deleteTag(db, id);
         if (!removed) {
           set.status = 404;
           return { error: "not found" };
@@ -81,7 +81,7 @@ export const tagsRouter = new Elysia({ prefix: "/tags" })
         set.status = 204;
         return null;
       } finally {
-        db.close();
+        await db.close();
       }
     },
     { params: t.Object({ id: t.String() }) },
@@ -92,20 +92,20 @@ export const snapshotTagsRouter = new Elysia({ prefix: "/snapshots" })
   .onError(apiErrorHandler)
   .get(
     "/:id/tags",
-    ({ params, set }) => {
+    async ({ params, set }) => {
       const snapshotId = Number(params.id);
       if (!Number.isInteger(snapshotId) || snapshotId <= 0) {
         set.status = 404;
         return { error: "not found" };
       }
-      const db = getDb();
+      const db = await getDb();
       try {
-        const snapshot = getSnapshot(db, snapshotId);
+        const snapshot = await getSnapshot(db, snapshotId);
         if (!snapshot) {
           set.status = 404;
           return { error: "not found" };
         }
-        return listSnapshotTags(db, snapshotId).map((t) => ({
+        return (await listSnapshotTags(db, snapshotId)).map((t) => ({
           id: t.id,
           name: t.name,
           slug: t.slug,
@@ -113,32 +113,32 @@ export const snapshotTagsRouter = new Elysia({ prefix: "/snapshots" })
           createdAt: t.created_at,
         }));
       } finally {
-        db.close();
+        await db.close();
       }
     },
     { params: t.Object({ id: t.String() }) },
   )
   .post(
     "/:id/tags",
-    ({ params, body, set }) => {
+    async ({ params, body, set }) => {
       const snapshotId = Number(params.id);
       if (!Number.isInteger(snapshotId) || snapshotId <= 0) {
         set.status = 404;
         return { error: "not found" };
       }
-      const db = getDb();
+      const db = await getDb();
       try {
-        const snapshot = getSnapshot(db, snapshotId);
+        const snapshot = await getSnapshot(db, snapshotId);
         if (!snapshot) {
           set.status = 404;
           return { error: "not found" };
         }
-        const tag = getTag(db, body.tagId);
+        const tag = await getTag(db, body.tagId);
         if (!tag) {
           set.status = 404;
           return { error: "tag not found" };
         }
-        addTagToSnapshot(db, snapshotId, body.tagId);
+        await addTagToSnapshot(db, snapshotId, body.tagId);
         set.status = 201;
         return {
           id: tag.id,
@@ -148,7 +148,7 @@ export const snapshotTagsRouter = new Elysia({ prefix: "/snapshots" })
           createdAt: tag.created_at,
         };
       } finally {
-        db.close();
+        await db.close();
       }
     },
     {
@@ -158,7 +158,7 @@ export const snapshotTagsRouter = new Elysia({ prefix: "/snapshots" })
   )
   .delete(
     "/:id/tags/:tagId",
-    ({ params, set }) => {
+    async ({ params, set }) => {
       const snapshotId = Number(params.id);
       const tagId = Number(params.tagId);
       if (!Number.isInteger(snapshotId) || snapshotId <= 0) {
@@ -169,14 +169,14 @@ export const snapshotTagsRouter = new Elysia({ prefix: "/snapshots" })
         set.status = 404;
         return { error: "not found" };
       }
-      const db = getDb();
+      const db = await getDb();
       try {
-        const snapshot = getSnapshot(db, snapshotId);
+        const snapshot = await getSnapshot(db, snapshotId);
         if (!snapshot) {
           set.status = 404;
           return { error: "not found" };
         }
-        const removed = removeTagFromSnapshot(db, snapshotId, tagId);
+        const removed = await removeTagFromSnapshot(db, snapshotId, tagId);
         if (!removed) {
           set.status = 404;
           return { error: "not found" };
@@ -184,7 +184,7 @@ export const snapshotTagsRouter = new Elysia({ prefix: "/snapshots" })
         set.status = 204;
         return null;
       } finally {
-        db.close();
+        await db.close();
       }
     },
     { params: t.Object({ id: t.String(), tagId: t.String() }) },

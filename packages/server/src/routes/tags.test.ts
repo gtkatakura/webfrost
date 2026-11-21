@@ -14,7 +14,10 @@ beforeEach(() => {
   process.env.WEBFROST_DIR = testDir;
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // Each test archive is its own database; release the pools so a server-backed run does not pile up connections.
+  const { closeDatabases } = await import("@webfrost/core");
+  await closeDatabases();
   Reflect.deleteProperty(process.env, "WEBFROST_DIR");
   try {
     rmSync(testDir, { recursive: true, force: true });
@@ -42,7 +45,7 @@ async function getSnapshotTagsApp() {
 describe("GET /tags", () => {
   test("returns empty array when no tags", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getTagsApp();
     const res = await app.handle(new Request("http://localhost/tags"));
@@ -54,9 +57,9 @@ describe("GET /tags", () => {
 
   test("returns created tags", async () => {
     const { openDb, createTag } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    createTag(db, "News");
-    db.close();
+    const db = await openDb(testDir);
+    await createTag(db, "News");
+    await db.close();
 
     const app = await getTagsApp();
     const res = await app.handle(new Request("http://localhost/tags"));
@@ -75,7 +78,7 @@ describe("GET /tags", () => {
 describe("POST /tags", () => {
   test("rejects tag names longer than 100 characters", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getTagsApp();
     const res = await app.handle(
@@ -91,7 +94,7 @@ describe("POST /tags", () => {
 
   test("creates a tag and returns 201", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getTagsApp();
     const res = await app.handle(
@@ -111,7 +114,7 @@ describe("POST /tags", () => {
 
   test("creates a tag with color", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getTagsApp();
     const res = await app.handle(
@@ -128,9 +131,9 @@ describe("POST /tags", () => {
 
   test("returns 409 on duplicate name", async () => {
     const { openDb, createTag } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    createTag(db, "Dup");
-    db.close();
+    const db = await openDb(testDir);
+    await createTag(db, "Dup");
+    await db.close();
 
     const app = await getTagsApp();
     const res = await app.handle(
@@ -145,7 +148,7 @@ describe("POST /tags", () => {
 
   test("returns 400 for missing name", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getTagsApp();
     const res = await app.handle(
@@ -166,9 +169,9 @@ describe("POST /tags", () => {
 describe("DELETE /tags/:id", () => {
   test("deletes existing tag and returns 204", async () => {
     const { openDb, createTag } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const tag = createTag(db, "DeleteMe");
-    db.close();
+    const db = await openDb(testDir);
+    const tag = await createTag(db, "DeleteMe");
+    await db.close();
 
     const app = await getTagsApp();
     const res = await app.handle(
@@ -179,7 +182,7 @@ describe("DELETE /tags/:id", () => {
 
   test("returns 404 for non-existent tag", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getTagsApp();
     const res = await app.handle(new Request("http://localhost/tags/9999", { method: "DELETE" }));
@@ -194,7 +197,7 @@ describe("DELETE /tags/:id", () => {
 describe("GET /snapshots/:id/tags", () => {
   test("returns 404 for non-existent snapshot", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getSnapshotTagsApp();
     const res = await app.handle(new Request("http://localhost/snapshots/9999/tags"));
@@ -203,9 +206,9 @@ describe("GET /snapshots/:id/tags", () => {
 
   test("returns empty array for snapshot with no tags", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com");
-    db.close();
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com");
+    await db.close();
 
     const app = await getSnapshotTagsApp();
     const res = await app.handle(new Request(`http://localhost/snapshots/${id}/tags`));
@@ -222,10 +225,10 @@ describe("GET /snapshots/:id/tags", () => {
 describe("POST /snapshots/:id/tags", () => {
   test("adds a tag to a snapshot", async () => {
     const { openDb, createSnapshot, createTag } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const snapshotId = createSnapshot(db, "https://example.com/tagged");
-    const tag = createTag(db, "Important");
-    db.close();
+    const db = await openDb(testDir);
+    const snapshotId = await createSnapshot(db, "https://example.com/tagged");
+    const tag = await createTag(db, "Important");
+    await db.close();
 
     const app = await getSnapshotTagsApp();
     const res = await app.handle(
@@ -242,9 +245,9 @@ describe("POST /snapshots/:id/tags", () => {
 
   test("returns 404 for non-existent snapshot", async () => {
     const { openDb, createTag } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const tag = createTag(db, "Ghost");
-    db.close();
+    const db = await openDb(testDir);
+    const tag = await createTag(db, "Ghost");
+    await db.close();
 
     const app = await getSnapshotTagsApp();
     const res = await app.handle(
@@ -259,9 +262,9 @@ describe("POST /snapshots/:id/tags", () => {
 
   test("returns 404 for non-existent tag", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const id = createSnapshot(db, "https://example.com/snap");
-    db.close();
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/snap");
+    await db.close();
 
     const app = await getSnapshotTagsApp();
     const res = await app.handle(
@@ -282,11 +285,11 @@ describe("POST /snapshots/:id/tags", () => {
 describe("DELETE /snapshots/:id/tags/:tagId", () => {
   test("removes a tag from a snapshot", async () => {
     const { openDb, createSnapshot, createTag, addTagToSnapshot } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const snapshotId = createSnapshot(db, "https://example.com/rem");
-    const tag = createTag(db, "Removable");
-    addTagToSnapshot(db, snapshotId, tag.id);
-    db.close();
+    const db = await openDb(testDir);
+    const snapshotId = await createSnapshot(db, "https://example.com/rem");
+    const tag = await createTag(db, "Removable");
+    await addTagToSnapshot(db, snapshotId, tag.id);
+    await db.close();
 
     const app = await getSnapshotTagsApp();
     const res = await app.handle(
@@ -299,10 +302,10 @@ describe("DELETE /snapshots/:id/tags/:tagId", () => {
 
   test("returns 404 when tag not on snapshot", async () => {
     const { openDb, createSnapshot, createTag } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const snapshotId = createSnapshot(db, "https://example.com/notag");
-    const tag = createTag(db, "NotPresent");
-    db.close();
+    const db = await openDb(testDir);
+    const snapshotId = await createSnapshot(db, "https://example.com/notag");
+    const tag = await createTag(db, "NotPresent");
+    await db.close();
 
     const app = await getSnapshotTagsApp();
     const res = await app.handle(

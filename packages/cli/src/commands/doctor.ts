@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
-import { resolveChromium } from "@webfrost/core";
+import { resolveChromium, sql } from "@webfrost/core";
 import { chromiumVersion } from "../chromium-install";
 import type { Command, Context } from "../cli";
 import { VERSION } from "../version";
@@ -109,9 +109,8 @@ export async function runChecks(ctx: Pick<Context, "dir">): Promise<Check[]> {
   });
   if (w.ok && existsSync(join(ctx.dir, "archive.db"))) {
     try {
-      const count = await withDb(
-        ctx,
-        (db) => db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM snapshots").get()?.n ?? 0,
+      const count = await withDb(ctx, async (db) =>
+        Number((await db.get<{ n: number }>(sql`SELECT COUNT(*) AS n FROM snapshots`))?.n ?? 0),
       );
       add({
         name: "Database",

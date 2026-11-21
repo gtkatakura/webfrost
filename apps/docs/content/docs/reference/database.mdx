@@ -1,14 +1,38 @@
 ---
 title: Database
-description: The SQLite schema of archive.db, table by table, with indexes, pragmas and example queries.
+description: The WebFrost schema table by table, how it maps to SQLite, PostgreSQL and MySQL, migrations, full-text search and example queries.
 icon: Database
 ---
 
-WebFrost keeps all metadata in one SQLite file, `archive.db`, in `WEBFROST_DIR`. `@webfrost/core` (`packages/core/src/db.ts`) creates and migrates the schema when a connection opens. The schema version is tracked in `PRAGMA user_version` (currently 2), so migration runs once per archive rather than on every connection.
+WebFrost keeps all metadata in one database: by default a SQLite file, `archive.db`, in `WEBFROST_DIR`; with [`DATABASE_URL`](/docs/reference/configuration#database) a PostgreSQL or MySQL database instead. The tables and columns are the same on all three. `@webfrost/core` (`packages/core/src/db.ts`, migrations in `packages/core/src/database/migrations.ts`) creates and migrates the schema the first time a process opens the database.
 
-Every connection sets `journal_mode = WAL`, `foreign_keys = ON` and `busy_timeout = 5000`, so a competing writer is waited for up to 5 seconds instead of failing with `SQLITE_BUSY`. The server, each background pipeline and the CLI open their own connection.
+Column names are `snake_case`. Timestamps are UTC text in the form `YYYY-MM-DD HH:MM:SS` on every engine (the format of SQLite's `datetime('now')`), so ordering, comparisons and the API output do not depend on the database. `sessions.expires_at` holds an ISO 8601 string, and `api_keys.expires_at` whatever expiry the key was created with.
 
-Column names are `snake_case`. Timestamps are SQLite `datetime('now')` strings in UTC.
+## Engines
+
+| | SQLite (default) | PostgreSQL | MySQL |
+|---|---|---|---|
+| Selected by | no `DATABASE_URL`, or `sqlite://…` / a path | `postgres://…` | `mysql://…` |
+| Versions | bundled with Bun | 13 or later (17 tested) | 8.0.13 or later (8.4 LTS tested) |
+| Schema version kept in | `PRAGMA user_version` | table `webfrost_schema` | table `webfrost_schema` |
+| Migration lock | `BEGIN IMMEDIATE` | `pg_advisory_xact_lock`, one transaction | `GET_LOCK`, idempotent statements |
+| Connections | one per process, shared by its requests and jobs | pool per process (`WEBFROST_DB_POOL_MAX`) | pool per process |
+| Full-text search | FTS5 table `snapshots_fts` | `search_index.search_vector` (tsvector, GIN) | `search_index` FULLTEXT index |
+| Job claiming | `BEGIN IMMEDIATE` | `SELECT … FOR UPDATE SKIP LOCKED` | `SELECT … FOR UPDATE SKIP LOCKED` |
+
+The current schema version is **3**. Versions 1 and 2 are the SQLite schema of earlier releases; an archive created by them is upgraded in place, without data loss, the first time it is opened (version 3 adds `archive_results.size_bytes` and `job_queue.lease_token`). PostgreSQL and MySQL databases start at version 3.
+
+### SQLite
+
+Every connection sets `journal_mode = WAL`, `foreign_keys = ON` and `busy_timeout = 5000`, so a competing writer is waited for up to 5 seconds instead of failing with `SQLITE_BUSY`. Within one process all requests and jobs share one connection; the server, the CLI and a schedule worker each have their own and coordinate through SQLite's locking. Transactions start with `BEGIN IMMEDIATE`, and one that hits a lock is retried. WebFrost never runs manual checkpoints, which keeps the file compatible with [Litestream](/docs/guides/backups#continuous-backups-with-litestream).
+
+### PostgreSQL
+
+Integer ids are `BIGINT` identity columns. `tags.name` and `tags.slug` use the `"C"` collation so they sort and compare byte-wise, as in SQLite. The user in `DATABASE_URL` needs to create tables in its schema (`public`, or the first schema of its `search_path`).
+
+### MySQL
+
+Tables are InnoDB with `utf8mb4` and the binary collation `utf8mb4_bin`: comparisons are case-sensitive and ordering byte-wise, as in SQLite. Indexed columns are `VARCHAR`, the URL index is a 255-character prefix, and large contents are `LONGTEXT`. The user in `DATABASE_URL` needs `CREATE`, `ALTER`, `INDEX` and `REFERENCES` on its database for the first start.
 
 ## Tables
 
@@ -33,11 +57,14 @@ One row per extractor per run. A failed extractor has `error` set and no `conten
 | `snapshot_id` | INTEGER | References `snapshots.id` |
 | `extractor` | TEXT | `warc`, `readability`, `html`, `pdf`, `screenshot`, `dom-snapshot`, `singlefile`, `media` or `media-metadata` |
 | `content` | TEXT | Inline content (`html`, `readability`) or a storage reference to the file |
+| `size_bytes` | INTEGER | Size of the stored file, or of the inline content, in bytes. Recorded when the result is written. Nullable. |
 | `duration_ms` | INTEGER | How long the extractor ran. Nullable. |
 | `error` | TEXT | Failure reason, or null on success |
 | `created_at` | TEXT | Creation time |
 
 A storage reference is an absolute file path with the filesystem backend and `s3:<key>` with S3.
+
+`size_bytes` is what the stats endpoint sums, so it never has to ask the storage backend about every file. Rows written before schema version 3 are backfilled: inline results by the migration, file-backed ones the first time the stats are requested (one size lookup per file, stored from then on; a missing file counts as 0).
 
 ### job_queue
 
@@ -50,9 +77,10 @@ Background job state, one row per snapshot.
 | `status` | TEXT | `pending`, then `running`, then `done` or `failed` |
 | `heartbeat_at` | TEXT | Lease. A live pipeline refreshes it every 10 seconds. Nullable. |
 | `attempts` | INTEGER | How many times the job was re-queued after being orphaned. Default 0. |
+| `lease_token` | TEXT | Owner of the current lease. Issued when the job is created and replaced each time another worker adopts it. Nullable (older rows). |
 | `created_at` | TEXT | Creation time |
 
-A `pending` snapshot whose `heartbeat_at` is older than 45 seconds is adopted by a recovery sweep. After 3 attempts it is marked `failed`. See [Pipeline](/docs/architecture/pipeline#jobs-leases-and-recovery).
+A `pending` snapshot whose `heartbeat_at` is older than 45 seconds is adopted by a recovery sweep. After 3 attempts it is marked `failed`. Every status change, result row and heartbeat a pipeline writes is conditional on its `lease_token`, so a worker that was presumed dead and wakes up later cannot overwrite the run that adopted its job. See [Pipeline](/docs/architecture/pipeline#jobs-leases-and-recovery).
 
 ### tags and snapshot_tags
 
@@ -78,7 +106,7 @@ A `pending` snapshot whose `heartbeat_at` is older than 45 seconds is adopted by
 | `kind` | TEXT | `url` or `rss_feed` |
 | `paused` | INTEGER | `0` active, `1` paused |
 | `last_run_at` | TEXT | Last claim time. Nullable. |
-| `next_run_at` | TEXT | When it is next due. A process claims a due schedule by advancing this value atomically. |
+| `next_run_at` | TEXT | When it is next due. A process claims a due schedule by advancing this value with a compare-and-set `UPDATE`, which is atomic on every engine. |
 | `last_status` | TEXT | `success`, `failed` or null |
 | `consecutive_failures` | INTEGER | Resets on success |
 | `created_at` | TEXT | Creation time |
@@ -110,7 +138,7 @@ Server-side login sessions. A cookie is valid only while its row exists, so logo
 | `id` | TEXT | Primary key (UUID) |
 | `name` | TEXT | Label |
 | `key_hash` | TEXT | SHA-256 of the key. The key itself is never stored. |
-| `expires_at` | TEXT | Optional expiry |
+| `expires_at` | TEXT | Optional expiry. A value without a time zone is UTC. |
 | `last_used_at` | TEXT | Last successful use. Nullable. |
 | `revoked_at` | TEXT | Set when revoked |
 | `created_at` | TEXT | Creation time |
@@ -128,15 +156,27 @@ History of bulk imports, one row per operation.
 | `skipped` | INTEGER | URLs skipped (already archived, or could not be queued) |
 | `created_at` | TEXT | Creation time |
 
-### snapshots_fts
+## Full-text search
 
-A SQLite FTS5 virtual table for full-text search. Its `rowid` is the snapshot id.
+A snapshot is indexed when it finishes `done`, from its Readability output: URL, title, extracted text and tag names. Tag names stay in sync when tags change after archiving, and deleting a snapshot removes its entry in the same transaction. Rebuild everything with `webfrost search:rebuild`, which replaces the whole index in one transaction on every engine.
+
+**SQLite** uses an FTS5 virtual table whose `rowid` is the snapshot id:
 
 ```sql
 CREATE VIRTUAL TABLE snapshots_fts USING fts5(url, title, text_content, tags);
 ```
 
-A snapshot is indexed when it finishes `done`, from its Readability output. Tag names are part of the index and stay in sync when tags change after archiving. Rebuild everything with `webfrost search:rebuild`.
+**PostgreSQL and MySQL** use the table `search_index` (`snapshot_id`, `url`, `title`, `text_content`, `tags`, `search_text`). `search_text` is the token stream of the four fields, built by WebFrost the way FTS5's default tokenizer splits text: runs of letters and digits, lowercased, accents removed. `https://example.com/a-b` is indexed as `https example com a b` on every engine, so the same query finds the same snapshots. PostgreSQL indexes it as a generated `tsvector` column (`to_tsvector('simple', search_text)`) with a GIN index; MySQL with a `FULLTEXT` index. A pathological page whose vocabulary would exceed PostgreSQL's 1 MB `tsvector` limit is indexed on its first ~900 KB of vector.
+
+| | SQLite | PostgreSQL | MySQL |
+|---|---|---|---|
+| Query syntax | full FTS5 (`"phrase"`, `term*`, `OR`, `NOT`, `col:term`, `NEAR`, parentheses) | words, `"phrase"`, `term*`, `OR`, `NOT term` / `-term`; `col:term` searches all columns | same as PostgreSQL |
+| Matching | all words (implicit AND) | all words (`to_tsquery`) | all words (boolean mode, `+word`) |
+| Ranking | `bm25` | `ts_rank` | `MATCH … AGAINST` relevance |
+| Snippet | FTS5 `snippet()`, 32 tokens of the text | built by WebFrost: the 32-token window of the text with the most query terms | same as PostgreSQL |
+| Words shorter than | indexed | indexed | `innodb_ft_min_token_size` (default 3) are not indexed |
+
+Results are sorted best first and the API's `rank` is "lower is better" on every engine (FTS5's bm25 is negative; the PostgreSQL and MySQL scores are negated). The numbers are not comparable across engines. Snippets follow one contract everywhere: the archived text is HTML-escaped and the only markup is `<mark>…</mark>` around matched words, with `…` where the text was cut. An invalid FTS5 expression returns no results on SQLite; the other engines read unbalanced quotes leniently.
 
 ## Indexes
 
@@ -144,30 +184,58 @@ A snapshot is indexed when it finishes `done`, from its Readability output. Tag 
 |---|---|
 | `idx_archive_results_snapshot` | `archive_results (snapshot_id, extractor)` |
 | `idx_job_queue_snapshot` | `job_queue (snapshot_id)` |
-| `idx_snapshots_url` | `snapshots (url)` |
+| `idx_job_queue_lease` | `job_queue (lease_token)` |
+| `idx_snapshots_url` | `snapshots (url)` (MySQL: first 255 characters) |
 | `idx_snapshots_status` | `snapshots (status)` |
 | `idx_snapshots_created_at` | `snapshots (created_at)` |
 | `idx_snapshot_tags_tag` | `snapshot_tags (tag_id)` |
 | `idx_schedules_next_run` | `schedules (next_run_at)` |
 | `idx_api_keys_hash` | `api_keys (key_hash)` |
+| `idx_search_index_vector` | PostgreSQL: `search_index USING GIN (search_vector)` |
+| `ft_search_index` | MySQL: `FULLTEXT (search_text)` |
 
 ## Direct access
 
-You can read `archive.db` with any SQLite client. Prefer read-only queries while the server runs.
+Prefer read-only queries while the server runs.
+
+<Tabs items={["SQLite", "PostgreSQL", "MySQL"]}>
+<Tab value="SQLite">
 
 ```bash
 sqlite3 data/archive.db ".tables"
 sqlite3 data/archive.db \
   "SELECT id, status, url, created_at FROM snapshots ORDER BY id DESC LIMIT 10;"
-sqlite3 data/archive.db \
-  "SELECT extractor, error FROM archive_results WHERE snapshot_id = 1;"
 ```
+
+</Tab>
+<Tab value="PostgreSQL">
+
+```bash
+psql "$DATABASE_URL" -c '\dt'
+psql "$DATABASE_URL" \
+  -c "SELECT id, status, url, created_at FROM snapshots ORDER BY id DESC LIMIT 10;"
+```
+
+</Tab>
+<Tab value="MySQL">
+
+```bash
+mysql -h db -u webfrost -p webfrost -e "SHOW TABLES;"
+mysql -h db -u webfrost -p webfrost \
+  -e "SELECT id, status, url, created_at FROM snapshots ORDER BY id DESC LIMIT 10;"
+```
+
+</Tab>
+</Tabs>
 
 <Cards>
   <Card title="Disk layout" href="/docs/reference/disk-layout">
     The files the database points to.
   </Card>
   <Card title="Storage model" href="/docs/architecture/storage-model">
-    Why SQLite plus files.
+    Why a database plus files.
+  </Card>
+  <Card title="Backups" href="/docs/guides/backups">
+    Plain files, Litestream, pg_dump and mysqldump.
   </Card>
 </Cards>

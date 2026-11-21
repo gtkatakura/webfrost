@@ -39,7 +39,10 @@ packages/core/src/
 ├── schedules.ts         schedule storage (add, list, due lookup, status)
 ├── cron.ts              cron expression parsing and next-run calculation
 ├── concurrency.ts       concurrency limiter (WEBFROST_CONCURRENCY)
-├── db.ts                SQLite access, schema migration
+├── db.ts                data access (SQLite, PostgreSQL, MySQL), connections
+├── database/            DATABASE_URL parsing, bun:sqlite Kysely driver, migrations
+├── results.ts           archive_results writes and lease fencing
+├── search-text.ts       tokenizer, query parser and snippets for PostgreSQL/MySQL search
 ├── fetch-cache.ts       shared per-snapshot HTTP cache
 ├── throttle.ts          per-host spacing (WEBFROST_DOMAIN_DELAY_MS)
 ├── ssrf-guard.ts        SSRF protection and safeFetch

@@ -25,7 +25,7 @@ function tokensMatch(given: string, expected: string): boolean {
 
 export const setupRouter = new Elysia({ prefix: "/setup" })
   .onError(apiErrorHandler)
-  .get("/status", () => {
+  .get("/status", async () => {
     // AUTH_DISABLED bypasses setup so E2E tests can run without seeding an admin user
     // publicRead tells the UI whether anonymous visitors get a read-only view;
     // setupTokenRequired whether the setup form must ask for WEBFROST_SETUP_TOKEN.
@@ -33,11 +33,15 @@ export const setupRouter = new Elysia({ prefix: "/setup" })
     if (process.env.AUTH_DISABLED === "true") {
       return { needsSetup: false, publicRead: isPublicRead(), setupTokenRequired };
     }
-    const db = getDb();
+    const db = await getDb();
     try {
-      return { needsSetup: !hasAdminUser(db), publicRead: isPublicRead(), setupTokenRequired };
+      return {
+        needsSetup: !(await hasAdminUser(db)),
+        publicRead: isPublicRead(),
+        setupTokenRequired,
+      };
     } finally {
-      db.close();
+      await db.close();
     }
   })
   .post(
@@ -62,9 +66,9 @@ export const setupRouter = new Elysia({ prefix: "/setup" })
         return { error: "server misconfigured" };
       }
 
-      const db = getDb();
+      const db = await getDb();
       try {
-        if (hasAdminUser(db)) {
+        if (await hasAdminUser(db)) {
           set.status = 409;
           return { error: "setup already complete" };
         }
@@ -76,12 +80,12 @@ export const setupRouter = new Elysia({ prefix: "/setup" })
           set.status = 409;
           return { error: "setup already complete" };
         }
-        const { rawKey } = createApiKey(db, "default");
-        setSessionCookie(cookie.session, createSession(db, secret, body.username));
+        const { rawKey } = await createApiKey(db, "default");
+        setSessionCookie(cookie.session, await createSession(db, secret, body.username));
 
         return { apiKey: rawKey };
       } finally {
-        db.close();
+        await db.close();
       }
     },
     {

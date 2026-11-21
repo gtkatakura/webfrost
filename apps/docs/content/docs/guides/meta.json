@@ -8,6 +8,7 @@
     "public-read",
     "storage",
     "deploy",
+    "backups",
     "troubleshooting",
     "authenticated-pages"
   ]

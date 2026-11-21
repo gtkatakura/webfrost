@@ -15,7 +15,10 @@ beforeEach(() => {
   process.env.AUTH_DISABLED = "true";
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // Each test archive is its own database; release the pools so a server-backed run does not pile up connections.
+  const { closeDatabases } = await import("@webfrost/core");
+  await closeDatabases();
   Reflect.deleteProperty(process.env, "WEBFROST_DIR");
   Reflect.deleteProperty(process.env, "AUTH_DISABLED");
   Reflect.deleteProperty(process.env, "SESSION_SECRET");
@@ -48,7 +51,7 @@ async function getAppWithPlugin() {
 describe("POST /auth/login", () => {
   test("returns 401 for non-existent user", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
     process.env.SESSION_SECRET = "test-secret-32-chars-long-enough!!";
     Reflect.deleteProperty(process.env, "AUTH_DISABLED");
 
@@ -67,9 +70,9 @@ describe("POST /auth/login", () => {
 
   test("returns 200 and sets session cookie for valid credentials", async () => {
     const { openDb, createAdminUser } = await import("@webfrost/core");
-    const db = openDb(testDir);
+    const db = await openDb(testDir);
     await createAdminUser(db, "admin", "password123");
-    db.close();
+    await db.close();
     process.env.SESSION_SECRET = "test-secret-32-chars-long-enough!!";
     Reflect.deleteProperty(process.env, "AUTH_DISABLED");
 
@@ -92,7 +95,7 @@ describe("POST /auth/login", () => {
 
   test("returns 400 { error, code } for missing password field", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -108,7 +111,7 @@ describe("POST /auth/login", () => {
 
   test("rejects passwords longer than 1024 characters before hashing them", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -130,7 +133,7 @@ describe("POST /auth/login", () => {
 describe("POST /auth/logout", () => {
   test("returns 204 and clears the session cookie", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
 
     const app = await getApp();
     const res = await app.handle(
@@ -147,7 +150,7 @@ describe("POST /auth/logout", () => {
 
   test("works with an expired or invalid session (auth enabled)", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
     process.env.SESSION_SECRET = "test-secret-32-chars-long-enough!!";
     Reflect.deleteProperty(process.env, "AUTH_DISABLED");
 
@@ -170,7 +173,7 @@ describe("POST /auth/logout", () => {
 describe("GET /auth/me", () => {
   test("returns admin username when AUTH_DISABLED=true", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
     // AUTH_DISABLED is already set in beforeEach
 
     const app = await getApp();
@@ -182,9 +185,9 @@ describe("GET /auth/me", () => {
 
   test("returns username from valid session cookie", async () => {
     const { openDb, createAdminUser } = await import("@webfrost/core");
-    const db = openDb(testDir);
+    const db = await openDb(testDir);
     await createAdminUser(db, "admin", "password123");
-    db.close();
+    await db.close();
     process.env.SESSION_SECRET = "test-secret-32-chars-long-enough!!";
     Reflect.deleteProperty(process.env, "AUTH_DISABLED");
 
@@ -220,7 +223,7 @@ describe("GET /auth/me", () => {
 describe("authPlugin — API key validation", () => {
   test("rejects request with no auth (401)", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
     process.env.SESSION_SECRET = "test-secret-32-chars-long-enough!!";
     Reflect.deleteProperty(process.env, "AUTH_DISABLED");
 
@@ -233,9 +236,9 @@ describe("authPlugin — API key validation", () => {
 
   test("allows request with valid API key Bearer token", async () => {
     const { openDb, createApiKey } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const { rawKey } = createApiKey(db, "test-key");
-    db.close();
+    const db = await openDb(testDir);
+    const { rawKey } = await createApiKey(db, "test-key");
+    await db.close();
     process.env.SESSION_SECRET = "test-secret-32-chars-long-enough!!";
     Reflect.deleteProperty(process.env, "AUTH_DISABLED");
 
@@ -250,7 +253,7 @@ describe("authPlugin — API key validation", () => {
 
   test("rejects request with invalid Bearer token (401)", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
     process.env.SESSION_SECRET = "test-secret-32-chars-long-enough!!";
     Reflect.deleteProperty(process.env, "AUTH_DISABLED");
 
@@ -265,7 +268,7 @@ describe("authPlugin — API key validation", () => {
 
   test("bypasses auth when AUTH_DISABLED=true", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
     // AUTH_DISABLED already set to "true" in beforeEach
 
     const app = await getAppWithPlugin();
@@ -275,7 +278,7 @@ describe("authPlugin — API key validation", () => {
 
   test("login endpoint is accessible without auth", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
     process.env.SESSION_SECRET = "test-secret-32-chars-long-enough!!";
     Reflect.deleteProperty(process.env, "AUTH_DISABLED");
 
@@ -303,9 +306,9 @@ describe("session revocation", () => {
 
   async function seed() {
     const { openDb, createAdminUser } = await import("@webfrost/core");
-    const db = openDb(testDir);
+    const db = await openDb(testDir);
     await createAdminUser(db, "admin", "password123");
-    db.close();
+    await db.close();
     process.env.SESSION_SECRET = SECRET;
     Reflect.deleteProperty(process.env, "AUTH_DISABLED");
     process.env.NODE_ENV = "development";

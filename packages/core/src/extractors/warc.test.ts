@@ -1,27 +1,27 @@
-import type Database from "bun:sqlite";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
-import { openDb } from "../db";
+import { sql } from "kysely";
+import { type Db, openDb } from "../db";
 import { FetchCache } from "../fetch-cache";
 import { FilesystemBackend } from "../storage";
 import { type WarcSource, warcDigest, warcExtractor } from "./warc";
 
 let testDir: string;
-let db: Database;
+let db: Db;
 
-beforeEach(() => {
+beforeEach(async () => {
   testDir = join(tmpdir(), `warc-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   mkdirSync(testDir, { recursive: true });
-  db = openDb(testDir);
+  db = await openDb(testDir);
   // Insert a snapshot row to satisfy FK constraint
-  db.query("INSERT INTO snapshots (url, status) VALUES ('https://example.com', 'pending')").run();
+  await db.run(sql`INSERT INTO snapshots (url, status) VALUES ('https://example.com', 'pending')`);
 });
 
-afterEach(() => {
-  db.close();
+afterEach(async () => {
+  await db.close();
   try {
     rmSync(testDir, { recursive: true, force: true });
   } catch {
@@ -148,7 +148,7 @@ describe("warcExtractor", () => {
     expect(new TextDecoder().decode(res?.body)).toBe("<html><body>Hello WARC</body></html>");
   });
 
-  test("digests are sha1 in base32", () => {
+  test("digests are sha1 in base32", async () => {
     // sha1("abc") = a9993e364706816aba3e25717850c26c9cd0d89d
     expect(warcDigest(new TextEncoder().encode("abc"))).toBe(
       "sha1:VGMT4NSHA2AWVOR6EVYXQUGCNSONBWE5",
@@ -158,11 +158,9 @@ describe("warcExtractor", () => {
   test("stores WARC file ref in archive_results with extractor=warc", async () => {
     await warcExtractor(db, 1, source(), makeStorage());
 
-    const row = db
-      .query<{ extractor: string; content: string }, []>(
-        "SELECT extractor, content FROM archive_results WHERE snapshot_id = 1 LIMIT 1",
-      )
-      .get();
+    const row = await db.get<{ extractor: string; content: string }>(
+      sql`SELECT extractor, content FROM archive_results WHERE snapshot_id = 1 LIMIT 1`,
+    );
 
     expect(row?.extractor).toBe("warc");
     expect(row?.content).toContain("archive.warc");
@@ -195,7 +193,7 @@ describe("warcExtractor", () => {
     await expect(
       warcExtractor(db, 1, source(), makeStorage(), controller.signal),
     ).rejects.toThrow();
-    expect(db.query("SELECT * FROM archive_results").all()).toHaveLength(0);
+    expect(await db.all(sql`SELECT * FROM archive_results`)).toHaveLength(0);
   });
 });
 
@@ -213,7 +211,7 @@ let server: ReturnType<typeof Bun.serve>;
 let base: string;
 const saved = process.env.WEBFROST_ALLOW_PRIVATE_URLS;
 
-beforeAll(() => {
+beforeAll(async () => {
   process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
   server = Bun.serve({
     port: 0,
@@ -245,7 +243,7 @@ beforeAll(() => {
   base = `http://127.0.0.1:${server.port}`;
 });
 
-afterAll(() => {
+afterAll(async () => {
   server.stop(true);
   if (saved === undefined) Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
   else process.env.WEBFROST_ALLOW_PRIVATE_URLS = saved;

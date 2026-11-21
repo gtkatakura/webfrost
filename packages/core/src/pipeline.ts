@@ -1,6 +1,7 @@
-import type Database from "bun:sqlite";
+import { sql } from "kysely";
 import { guardBrowserContext } from "./browser-guard";
 import { resolveChromium } from "./chromium";
+import type { Db } from "./db";
 import { domSnapshotExtractor } from "./extractors/dom-snapshot";
 import { htmlExtractor } from "./extractors/html";
 import { mediaExtractor } from "./extractors/media";
@@ -10,6 +11,7 @@ import { screenshotExtractor } from "./extractors/screenshot";
 import { singleFileExtractor } from "./extractors/singlefile";
 import { warcExtractor } from "./extractors/warc";
 import { FetchCache } from "./fetch-cache";
+import { newLeaseToken, recordResult, setJobStatus, touchJob } from "./results";
 import { extractIndexFields, indexSnapshot } from "./search";
 import { envInt } from "./ssrf-guard";
 import { createStorageBackend } from "./storage";
@@ -30,6 +32,12 @@ export interface PipelineOptions {
    * slot, so a burst of URLs for one host does not hold up every other host.
    */
   throttle?: boolean;
+  /**
+   * The job lease this run holds (see results.ts). Every status and result write
+   * is conditional on it, so a run whose job was adopted by another worker in the
+   * meantime cannot overwrite the new run. Omitted: writes are unconditional.
+   */
+  lease?: string;
 }
 
 /** Extractors that need the shared headless-browser page. */
@@ -86,35 +94,36 @@ function errorMessage(err: unknown): string {
   return msg.split("\n")[0]?.trim() || "unknown error";
 }
 
+/**
+ * Insert a snapshot row and its job, in one transaction. Returns the snapshot id
+ * and the lease token the job was issued with.
+ */
+export async function createSnapshotJob(
+  db: Db,
+  url: string,
+): Promise<{ snapshotId: number; lease: string }> {
+  const lease = newLeaseToken();
+  const snapshotId = await db.transaction(async (tx) => {
+    const id = await tx.insert(
+      sql`INSERT INTO snapshots (url, status, created_at) VALUES (${url}, 'pending', ${tx.now()})`,
+    );
+    // The heartbeat starts the job's lease: whoever created it gets JOB_LEASE_SECONDS
+    // to start running it before another process may treat it as orphaned.
+    await tx.run(
+      sql`INSERT INTO job_queue (snapshot_id, status, heartbeat_at, lease_token, created_at)
+          VALUES (${id}, 'pending', ${tx.now()}, ${lease}, ${tx.now()})`,
+    );
+    return id;
+  });
+  return { snapshotId, lease };
+}
+
 /** Insert a snapshot row and enqueue a job. Returns the new snapshot id. */
-export function createSnapshot(db: Database, url: string): number {
-  const row = db
-    .query<{ id: number }, [string]>(
-      "INSERT INTO snapshots (url, status) VALUES (?, 'pending') RETURNING id",
-    )
-    .get(url);
-
-  if (!row) throw new Error("Failed to insert snapshot");
-
-  // The heartbeat starts the job's lease: whoever created it gets JOB_LEASE_SECONDS
-  // to start running it before another process may treat it as orphaned.
-  db.query<null, [number]>(
-    "INSERT INTO job_queue (snapshot_id, status, heartbeat_at) VALUES (?, 'pending', datetime('now'))",
-  ).run(row.id);
-
-  return row.id;
+export async function createSnapshot(db: Db, url: string): Promise<number> {
+  return (await createSnapshotJob(db, url)).snapshotId;
 }
 
-/** Refresh the lease on a job. Safe to call on a closed or unavailable database. */
-export function touchJob(db: Database, snapshotId: number): void {
-  try {
-    db.query<null, [number]>(
-      "UPDATE job_queue SET heartbeat_at = datetime('now') WHERE snapshot_id = ?",
-    ).run(snapshotId);
-  } catch {
-    // Lease refresh is best effort; the pipeline's own writes report real problems.
-  }
-}
+export { touchJob } from "./results";
 
 /**
  * Run the full archive pipeline for an existing snapshot id.
@@ -126,7 +135,7 @@ export function touchJob(db: Database, snapshotId: number): void {
  * `db` must stay open until the returned promise settles.
  */
 export async function runPipeline(
-  db: Database,
+  db: Db,
   snapshotId: number,
   url: string,
   dir: string,
@@ -136,7 +145,10 @@ export async function runPipeline(
   options?: PipelineOptions,
 ): Promise<void> {
   // Keep the job's lease alive for as long as this run takes.
-  const heartbeat = setInterval(() => touchJob(db, snapshotId), JOB_HEARTBEAT_MS);
+  const heartbeat = setInterval(
+    () => void touchJob(db, snapshotId, options?.lease),
+    JOB_HEARTBEAT_MS,
+  );
   try {
     await archive(db, snapshotId, url, dir, cache, logger, storage, options);
   } finally {
@@ -145,7 +157,7 @@ export async function runPipeline(
 }
 
 async function archive(
-  db: Database,
+  db: Db,
   snapshotId: number,
   url: string,
   dir: string,
@@ -162,29 +174,29 @@ async function archive(
   // Use the provided shared cache, or create a one-shot cache for this run
   const fetchCache = cache ?? new FetchCache();
 
-  function setStatus(status: "running" | "done" | "failed") {
+  const lease = options?.lease;
+
+  /** Returns false when the job's lease has passed to another worker. */
+  async function setStatus(status: "running" | "done" | "failed"): Promise<boolean> {
     try {
-      if (status !== "running") {
-        db.query<null, [string, number]>("UPDATE snapshots SET status = ? WHERE id = ?").run(
-          status,
-          snapshotId,
+      const owned = await setJobStatus(db, snapshotId, status, lease);
+      if (!owned) {
+        logger?.warn(
+          `lease lost snapshot=${snapshotId}: another worker adopted the job; dropping status=${status}`,
         );
       }
-      db.query<null, [string, number]>(
-        "UPDATE job_queue SET status = ?, heartbeat_at = datetime('now') WHERE snapshot_id = ?",
-      ).run(status, snapshotId);
+      return owned;
     } catch (err) {
       logger?.error(
         `could not record status=${status} snapshot=${snapshotId}: ${errorMessage(err)}`,
       );
+      return true;
     }
   }
 
-  function recordFailure(extractor: string, error: string, durationMs: number) {
+  async function recordFailure(extractor: string, error: string, durationMs: number) {
     try {
-      db.query<null, [number, string, string, number]>(
-        "INSERT INTO archive_results (snapshot_id, extractor, error, duration_ms) VALUES (?, ?, ?, ?)",
-      ).run(snapshotId, extractor, error, durationMs);
+      await recordResult(db, snapshotId, { extractor, error, durationMs }, lease);
     } catch (err) {
       logger?.error(
         `could not record ${extractor} failure snapshot=${snapshotId}: ${errorMessage(err)}`,
@@ -192,7 +204,7 @@ async function archive(
     }
   }
 
-  setStatus("running");
+  if (!(await setStatus("running"))) return;
 
   // Politeness: never start two runs against the same host closer than the configured gap.
   if (options?.throttle !== false) {
@@ -208,13 +220,13 @@ async function archive(
     cached = await fetchCache.get(url);
   } catch (err) {
     logger?.error(`fetch failed snapshot=${snapshotId}: ${errorMessage(err)}`);
-    setStatus("failed");
+    await setStatus("failed");
     return;
   }
 
   if (!cached.status || cached.status >= 400) {
     logger?.warn(`fetch error snapshot=${snapshotId} status=${cached.status ?? "none"} url=${url}`);
-    setStatus("failed");
+    await setStatus("failed");
     return;
   }
 
@@ -289,20 +301,25 @@ async function archive(
   // HTML and Readability need text; a PDF or an image fetched directly only goes to the WARC.
   const textExtractors = cached.isText
     ? [
-        runTimed("html", () => htmlExtractor(db, snapshotId, html)),
+        runTimed("html", () => htmlExtractor(db, snapshotId, html, lease)),
         // The final URL (after redirects) is the base for the page's relative links.
-        runTimed("readability", () => readabilityExtractor(db, snapshotId, cached.url, html)),
+        runTimed("readability", () =>
+          readabilityExtractor(db, snapshotId, cached.url, html, lease),
+        ),
       ]
     : [];
   const textTasks = Promise.all([
     ...textExtractors,
-    runTimed("warc", (signal) => warcExtractor(db, snapshotId, cached, effectiveStorage, signal)),
+    runTimed("warc", (signal) =>
+      warcExtractor(db, snapshotId, cached, effectiveStorage, signal, lease),
+    ),
     runTimed(
       "media",
       (signal) =>
         mediaExtractor(db, snapshotId, effectiveStorage, url, {
           ...(logger ? { logger } : {}),
           signal,
+          ...(lease ? { lease } : {}),
         }),
       // Three yt-dlp invocations at most (metadata, video, audio fallback), each capped on its own.
       mediaTimeout * 3,
@@ -314,15 +331,15 @@ async function archive(
     const p = page;
     const b = browser;
     browserTasks = Promise.all([
-      runTimed("pdf", (signal) => pdfExtractor(db, snapshotId, effectiveStorage, p, signal)),
+      runTimed("pdf", (signal) => pdfExtractor(db, snapshotId, effectiveStorage, p, signal, lease)),
       runTimed("screenshot", (signal) =>
-        screenshotExtractor(db, snapshotId, effectiveStorage, p, signal),
+        screenshotExtractor(db, snapshotId, effectiveStorage, p, signal, lease),
       ),
       runTimed("dom-snapshot", (signal) =>
-        domSnapshotExtractor(db, snapshotId, effectiveStorage, p, signal),
+        domSnapshotExtractor(db, snapshotId, effectiveStorage, p, signal, lease),
       ),
       runTimed("singlefile", (signal) =>
-        singleFileExtractor(db, snapshotId, effectiveStorage, p, signal),
+        singleFileExtractor(db, snapshotId, effectiveStorage, p, signal, lease),
       ),
       // Close the browser as soon as its extractors are done instead of keeping an
       // idle Chromium around while a long media download finishes.
@@ -330,7 +347,7 @@ async function archive(
   } else {
     // Be explicit about what was skipped instead of silently producing fewer formats.
     for (const name of BROWSER_EXTRACTORS) {
-      recordFailure(
+      await recordFailure(
         name,
         `browser unavailable: ${browserError ?? "unknown error"}`,
         browserSetupMs,
@@ -345,13 +362,19 @@ async function archive(
   for (const { name, durationMs, error } of results) {
     if (error !== null) {
       logger?.warn(`extractor ${name} failed snapshot=${snapshotId}: ${error}`);
-      recordFailure(name, error, durationMs);
+      await recordFailure(name, error, durationMs);
     } else {
       logger?.debug(`extractor ${name} ok snapshot=${snapshotId} durationMs=${durationMs}`);
       try {
-        db.query<null, [number, number, string]>(
-          "UPDATE archive_results SET duration_ms = ? WHERE id = (SELECT id FROM archive_results WHERE snapshot_id = ? AND extractor = ? AND duration_ms IS NULL ORDER BY id DESC LIMIT 1)",
-        ).run(durationMs, snapshotId, name);
+        // Two statements: MySQL cannot UPDATE a table it selects from in a subquery.
+        const row = await db.get<{ id: number }>(
+          sql`SELECT id FROM archive_results WHERE snapshot_id = ${snapshotId} AND extractor = ${name} AND duration_ms IS NULL ORDER BY id DESC LIMIT 1`,
+        );
+        if (row) {
+          await db.run(
+            sql`UPDATE archive_results SET duration_ms = ${durationMs} WHERE id = ${row.id}`,
+          );
+        }
       } catch {
         // Timing is informational only.
       }
@@ -361,37 +384,36 @@ async function archive(
   // A snapshot is only "done" if at least one extractor actually produced output.
   let succeeded = 0;
   try {
-    succeeded =
-      db
-        .query<{ n: number }, [number]>(
-          "SELECT COUNT(*) AS n FROM archive_results WHERE snapshot_id = ? AND error IS NULL",
+    succeeded = Number(
+      (
+        await db.get<{ n: number }>(
+          sql`SELECT COUNT(*) AS n FROM archive_results WHERE snapshot_id = ${snapshotId} AND error IS NULL`,
         )
-        .get(snapshotId)?.n ?? 0;
+      )?.n ?? 0,
+    );
   } catch (err) {
     logger?.error(`could not read results snapshot=${snapshotId}: ${errorMessage(err)}`);
   }
 
   if (succeeded === 0) {
     logger?.warn(`no extractor produced output snapshot=${snapshotId}`);
-    setStatus("failed");
+    await setStatus("failed");
     return;
   }
 
-  setStatus("done");
+  if (!(await setStatus("done"))) return;
 
   // Index the snapshot for full-text search
   try {
-    const readabilityRow = db
-      .query<{ content: string | null }, [number]>(
-        "SELECT content FROM archive_results WHERE snapshot_id = ? AND extractor = 'readability' AND error IS NULL LIMIT 1",
-      )
-      .get(snapshotId);
-    const { title, textContent, tags } = extractIndexFields(
+    const readabilityRow = await db.get<{ content: string | null }>(
+      sql`SELECT content FROM archive_results WHERE snapshot_id = ${snapshotId} AND extractor = 'readability' AND error IS NULL ORDER BY id LIMIT 1`,
+    );
+    const { title, textContent, tags } = await extractIndexFields(
       db,
       snapshotId,
       readabilityRow?.content,
     );
-    indexSnapshot(db, snapshotId, url, title, textContent, tags);
+    await indexSnapshot(db, snapshotId, url, title, textContent, tags);
   } catch (err) {
     // FTS indexing failure is non-fatal
     logger?.warn(`search indexing failed snapshot=${snapshotId}: ${errorMessage(err)}`);
@@ -402,13 +424,13 @@ async function archive(
 
 /** Convenience: create a snapshot and run the full pipeline synchronously. */
 export async function addUrl(
-  db: Database,
+  db: Db,
   url: string,
   dir: string,
   logger?: Logger,
   storage?: StorageBackend,
 ): Promise<number> {
-  const snapshotId = createSnapshot(db, url);
-  await runPipeline(db, snapshotId, url, dir, undefined, logger, storage);
+  const { snapshotId, lease } = await createSnapshotJob(db, url);
+  await runPipeline(db, snapshotId, url, dir, undefined, logger, storage, { lease });
   return snapshotId;
 }

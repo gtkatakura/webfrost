@@ -57,9 +57,9 @@ beforeAll(async () => {
   // Seed admin user directly via core (avoids bootstrapping via /api/setup
   // which would conflict with the "setup status" tests below).
   const { openDb, createAdminUser } = await import("@webfrost/core");
-  const db = openDb(testDir);
+  const db = await openDb(testDir);
   await createAdminUser(db, ADMIN_USERNAME, ADMIN_PASSWORD);
-  db.close();
+  await db.close();
 
   // Obtain a session cookie that tests can reuse.
   const loginRes = await fetch(`${baseUrl}/api/auth/login`, {
@@ -988,23 +988,21 @@ describe("archive → search round trip", () => {
 describe("archive preview", () => {
   test("serves archived HTML with a sandbox policy and refuses other formats", async () => {
     // Seed a finished snapshot with a DOM snapshot on disk — no browser needed.
-    const { openDb, createStorageBackend } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    const { id } = db
-      .query<{ id: number }, []>(
-        "INSERT INTO snapshots (url, status) VALUES ('https://preview.example/', 'done') RETURNING id",
-      )
-      .get() as { id: number };
+    const { openDb, createStorageBackend, sql } = await import("@webfrost/core");
+    const db = await openDb(testDir);
+    const id = await db.insert(
+      sql`INSERT INTO snapshots (url, status) VALUES ('https://preview.example/', 'done')`,
+    );
     const hostile =
       "<html><body><h1>archived</h1><script>top.location='https://evil.example'</script></body></html>";
     const ref = await createStorageBackend(testDir).putText(id, "dom.html", hostile);
-    db.query(
-      "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'dom-snapshot', ?)",
-    ).run(id, ref);
-    db.query(
-      "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'html', '<p>raw</p>')",
-    ).run(id);
-    db.close();
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, 'dom-snapshot', ${ref})`,
+    );
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, 'html', '<p>raw</p>')`,
+    );
+    await db.close();
 
     const res = await authed(`/api/snapshots/${id}/archives/dom-snapshot/preview`);
     expect(res.status).toBe(200);
@@ -1043,27 +1041,23 @@ describe("public read / private write", () => {
   let storedRef = "";
 
   beforeAll(async () => {
-    const { openDb, createStorageBackend } = await import("@webfrost/core");
-    const db = openDb(testDir);
-    snapshotId = (
-      db
-        .query<{ id: number }, []>(
-          "INSERT INTO snapshots (url, status) VALUES ('https://public.example/', 'done') RETURNING id",
-        )
-        .get() as { id: number }
-    ).id;
+    const { openDb, createStorageBackend, sql } = await import("@webfrost/core");
+    const db = await openDb(testDir);
+    snapshotId = await db.insert(
+      sql`INSERT INTO snapshots (url, status) VALUES ('https://public.example/', 'done')`,
+    );
     storedRef = await createStorageBackend(testDir).putText(
       snapshotId,
       "dom.html",
       "<html><body>public page</body></html>",
     );
-    db.query(
-      "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'dom-snapshot', ?)",
-    ).run(snapshotId, storedRef);
-    db.query(
-      "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'readability', ?)",
-    ).run(snapshotId, JSON.stringify({ title: "Public page", textContent: "public page" }));
-    db.close();
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${snapshotId}, 'dom-snapshot', ${storedRef})`,
+    );
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${snapshotId}, 'readability', ${JSON.stringify({ title: "Public page", textContent: "public page" })})`,
+    );
+    await db.close();
     process.env.WEBFROST_PUBLIC_READ = "true";
   });
 
@@ -1177,12 +1171,13 @@ describe("review regressions", () => {
     const [a, b] = await Promise.all([attempt("second"), attempt("third")]);
     expect([a.status, b.status]).toEqual([409, 409]);
 
-    const { openDb } = await import("@webfrost/core");
-    const db = openDb(testDir);
+    const { openDb, sql } = await import("@webfrost/core");
+    const db = await openDb(testDir);
     try {
-      expect(db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM admin_users").get()?.n).toBe(1);
+      const row = await db.get<{ n: number }>(sql`SELECT COUNT(*) AS n FROM admin_users`);
+      expect(Number(row?.n)).toBe(1);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
@@ -1245,14 +1240,14 @@ describe("list ordering", () => {
     expect(ids).toEqual([...ids].sort((a, b) => b - a));
 
     // The newest snapshot overall is on page 1, however many older ones exist.
-    const { openDb } = await import("@webfrost/core");
-    const db = openDb(testDir);
+    const { openDb, sql } = await import("@webfrost/core");
+    const db = await openDb(testDir);
     try {
-      const newest = db.query<{ id: number }, []>("SELECT MAX(id) AS id FROM snapshots").get()?.id;
-      expect(ids[0]).toBe(newest as number);
+      const row = await db.get<{ id: number }>(sql`SELECT MAX(id) AS id FROM snapshots`);
+      expect(ids[0]).toBe(Number(row?.id));
       expect(list.total).toBeGreaterThan(5);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });

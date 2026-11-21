@@ -1,4 +1,5 @@
-import type Database from "bun:sqlite";
+import { sql } from "kysely";
+import type { Db } from "./db";
 import { removeFromIndex } from "./search";
 import type { StorageBackend } from "./storage";
 
@@ -9,6 +10,8 @@ interface ArchiveResult {
   created_at: string;
   duration_ms: number | null;
   error: string | null;
+  /** Bytes of the stored file (or of the inline content); null until measured. */
+  size_bytes: number | null;
 }
 
 export interface SnapshotDetail {
@@ -19,48 +22,48 @@ export interface SnapshotDetail {
   archiveResults: ArchiveResult[];
 }
 
-export function getSnapshot(db: Database, id: number): SnapshotDetail | null {
-  const snapshot = db
-    .query<{ id: number; url: string; status: string; created_at: string }, [number]>(
-      "SELECT id, url, status, created_at FROM snapshots WHERE id = ?",
-    )
-    .get(id);
+export async function getSnapshot(db: Db, id: number): Promise<SnapshotDetail | null> {
+  const snapshot = await db.get<{ id: number; url: string; status: string; created_at: string }>(
+    sql`SELECT id, url, status, created_at FROM snapshots WHERE id = ${id}`,
+  );
 
   if (!snapshot) return null;
 
-  const archiveResults = db
-    .query<ArchiveResult, [number]>(
-      "SELECT id, extractor, content, created_at, duration_ms, error FROM archive_results WHERE snapshot_id = ? ORDER BY id",
-    )
-    .all(id);
+  const archiveResults = await db.all<ArchiveResult>(
+    sql`SELECT id, extractor, content, created_at, duration_ms, error, size_bytes FROM archive_results WHERE snapshot_id = ${id} ORDER BY id`,
+  );
 
   return { ...snapshot, archiveResults };
 }
 
 /**
  * Delete a snapshot and all related data (archive results, job queue entries,
- * snapshot-tag associations) plus artifact files on disk/S3.
+ * snapshot-tag associations, search index entry) in one transaction, then its
+ * artifact files on disk/S3.
  * Returns true if the snapshot was found and deleted, false if not found.
  */
 export async function deleteSnapshot(
-  db: Database,
+  db: Db,
   id: number,
   storage: StorageBackend,
 ): Promise<boolean> {
-  const exists = db
-    .query<{ id: number }, [number]>("SELECT id FROM snapshots WHERE id = ?")
-    .get(id);
+  const deleted = await db.transaction(async (tx) => {
+    const exists = await tx.get<{ id: number }>(sql`SELECT id FROM snapshots WHERE id = ${id}`);
+    if (!exists) return false;
 
-  if (!exists) return false;
+    // archive_results and job_queue lack ON DELETE CASCADE — delete manually
+    await tx.run(sql`DELETE FROM archive_results WHERE snapshot_id = ${id}`);
+    await tx.run(sql`DELETE FROM job_queue WHERE snapshot_id = ${id}`);
+    // snapshot_tags has ON DELETE CASCADE but explicit delete is fine
+    await tx.run(sql`DELETE FROM snapshot_tags WHERE snapshot_id = ${id}`);
+    await removeFromIndex(tx, id);
+    await tx.run(sql`DELETE FROM snapshots WHERE id = ${id}`);
+    return true;
+  });
+  if (!deleted) return false;
 
-  // archive_results and job_queue lack ON DELETE CASCADE — delete manually
-  db.query<null, [number]>("DELETE FROM archive_results WHERE snapshot_id = ?").run(id);
-  db.query<null, [number]>("DELETE FROM job_queue WHERE snapshot_id = ?").run(id);
-  // snapshot_tags has ON DELETE CASCADE but explicit delete is fine
-  removeFromIndex(db, id);
-  db.query<null, [number]>("DELETE FROM snapshots WHERE id = ?").run(id);
-
-  // Remove artifact files (best effort — don't fail if already gone)
+  // Remove artifact files (best effort — don't fail if already gone). After the
+  // commit: a failed delete leaves orphaned files, never rows pointing at nothing.
   await storage.deleteAll(id);
 
   return true;

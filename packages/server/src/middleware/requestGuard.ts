@@ -97,8 +97,10 @@ export function checkApiRequest(
  * Runs before routing and body parsing, so a cross-site form post is refused before
  * Elysia turns its url-encoded body into an object a route would accept.
  */
-export const requestGuardPlugin = new Elysia({ name: "request-guard" }).onRequest(({ request }) => {
-  const refusal = checkApiRequest(request);
-  if (refusal) return jsonError(refusal.status, refusal.code, refusal.error);
-  return;
-});
+export const requestGuardPlugin = new Elysia({ name: "request-guard" }).onRequest(
+  async ({ request }) => {
+    const refusal = checkApiRequest(request);
+    if (refusal) return jsonError(refusal.status, refusal.code, refusal.error);
+    return;
+  },
+);

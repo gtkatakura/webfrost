@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openDb } from "@webfrost/core";
+import { openDb, sql } from "@webfrost/core";
 
 let testDir: string;
 
@@ -15,7 +15,10 @@ beforeEach(() => {
   process.env.WEBFROST_DIR = testDir;
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // Each test archive is its own database; release the pools so a server-backed run does not pile up connections.
+  const { closeDatabases } = await import("@webfrost/core");
+  await closeDatabases();
   Reflect.deleteProperty(process.env, "WEBFROST_DIR");
   try {
     rmSync(testDir, { recursive: true, force: true });
@@ -64,24 +67,22 @@ describe("GET /stats — empty database", () => {
 
 describe("GET /stats — happy path", () => {
   test("returns correct aggregated stats", async () => {
-    const db = openDb(testDir);
+    const db = await openDb(testDir);
     try {
       // Two done snapshots + one failed today
-      db.exec(`
-        INSERT INTO snapshots (url, status, created_at) VALUES
-          ('https://example.com', 'done', datetime('now', '-1 day')),
-          ('https://example.org', 'done', datetime('now', '-2 days')),
-          ('https://fail.com', 'failed', datetime('now'));
-        INSERT INTO archive_results (snapshot_id, extractor, content) VALUES
+      await db.run(sql`INSERT INTO snapshots (url, status, created_at) VALUES
+          ('https://example.com', 'done', ${db.ago(86400)}),
+          ('https://example.org', 'done', ${db.ago(2 * 86400)}),
+          ('https://fail.com', 'failed', ${db.now()})`);
+      await db.run(sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES
           (1, 'html', '<html>hello world</html>'),
           (1, 'readability', 'hello world'),
-          (2, 'html', '<html>other page</html>');
-        INSERT INTO schedules (url, cron, next_run_at, kind) VALUES
-          ('https://example.com', '0 * * * *', datetime('now', '+1 hour'), 'url'),
-          ('https://example.org', '0 * * * *', datetime('now', '+1 hour'), 'url');
-      `);
+          (2, 'html', '<html>other page</html>')`);
+      await db.run(sql`INSERT INTO schedules (url, cron, next_run_at, kind) VALUES
+          ('https://example.com', '0 * * * *', ${db.ago(-3600)}, 'url'),
+          ('https://example.org', '0 * * * *', ${db.ago(-3600)}, 'url')`);
     } finally {
-      db.close();
+      await db.close();
     }
 
     const app = await getApp();
@@ -100,15 +101,13 @@ describe("GET /stats — happy path", () => {
   });
 
   test("successRate is 100 when all recent snapshots succeeded", async () => {
-    const db = openDb(testDir);
+    const db = await openDb(testDir);
     try {
-      db.exec(`
-        INSERT INTO snapshots (url, status, created_at) VALUES
-          ('https://a.com', 'done', datetime('now')),
-          ('https://b.com', 'done', datetime('now'));
-      `);
+      await db.run(sql`INSERT INTO snapshots (url, status, created_at) VALUES
+          ('https://a.com', 'done', ${db.now()}),
+          ('https://b.com', 'done', ${db.now()})`);
     } finally {
-      db.close();
+      await db.close();
     }
 
     const app = await getApp();
@@ -118,16 +117,14 @@ describe("GET /stats — happy path", () => {
   });
 
   test("activeScheduleCount excludes paused schedules", async () => {
-    const db = openDb(testDir);
+    const db = await openDb(testDir);
     try {
-      db.exec(`
-        INSERT INTO schedules (url, cron, next_run_at, kind) VALUES
-          ('https://active.com', '0 * * * *', datetime('now', '+1 hour'), 'url'),
-          ('https://paused.com', '0 * * * *', datetime('now', '+1 hour'), 'url');
-        UPDATE schedules SET paused = 1 WHERE url = 'https://paused.com';
-      `);
+      await db.run(sql`INSERT INTO schedules (url, cron, next_run_at, kind) VALUES
+          ('https://active.com', '0 * * * *', ${db.ago(-3600)}, 'url'),
+          ('https://paused.com', '0 * * * *', ${db.ago(-3600)}, 'url')`);
+      await db.run(sql`UPDATE schedules SET paused = 1 WHERE url = 'https://paused.com'`);
     } finally {
-      db.close();
+      await db.close();
     }
 
     const app = await getApp();
@@ -137,15 +134,13 @@ describe("GET /stats — happy path", () => {
   });
 
   test("excludes snapshots older than 30 days from successRate", async () => {
-    const db = openDb(testDir);
+    const db = await openDb(testDir);
     try {
-      db.exec(`
-        INSERT INTO snapshots (url, status, created_at) VALUES
-          ('https://old-fail.com', 'failed', datetime('now', '-31 days')),
-          ('https://recent.com', 'done', datetime('now'));
-      `);
+      await db.run(sql`INSERT INTO snapshots (url, status, created_at) VALUES
+          ('https://old-fail.com', 'failed', ${db.ago(31 * 86400)}),
+          ('https://recent.com', 'done', ${db.now()})`);
     } finally {
-      db.close();
+      await db.close();
     }
 
     const app = await getApp();

@@ -14,7 +14,10 @@ beforeEach(() => {
   process.env.WEBFROST_DIR = testDir;
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // Each test archive is its own database; release the pools so a server-backed run does not pile up connections.
+  const { closeDatabases } = await import("@webfrost/core");
+  await closeDatabases();
   Reflect.deleteProperty(process.env, "WEBFROST_DIR");
   try {
     rmSync(testDir, { recursive: true, force: true });
@@ -133,7 +136,7 @@ describe("GET /schedules", () => {
 describe("GET /schedules/:id", () => {
   test("returns 404 for non-existent schedule", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/schedules/9999"));
     expect(res.status).toBe(404);
@@ -172,7 +175,7 @@ describe("GET /schedules/:id", () => {
 describe("PATCH /schedules/:id", () => {
   test("returns 404 for non-existent schedule", async () => {
     const { openDb } = await import("@webfrost/core");
-    openDb(testDir).close();
+    await (await openDb(testDir)).close();
     const app = await getApp();
     const res = await app.handle(
       new Request("http://localhost/schedules/9999", {

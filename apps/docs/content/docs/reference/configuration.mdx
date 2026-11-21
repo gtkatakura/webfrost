@@ -12,9 +12,23 @@ Numeric variables (`WEBFROST_CONCURRENCY` and the millisecond settings) ignore v
 
 | Variable | Default | Description |
 |---|---|---|
-| `WEBFROST_DIR` | `~/.webfrost` (CLI and server), `/data` (Docker image) | Directory holding `archive.db` and the `snapshots/` files. Use an absolute path: file references in the database are paths. |
+| `WEBFROST_DIR` | `~/.webfrost` (CLI and server), `/data` (Docker image) | Directory holding `archive.db` (unless `DATABASE_URL` points elsewhere) and the `snapshots/` files. Use an absolute path: file references in the database are paths. |
 | `WEBFROST_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. On the CLI, `--verbose` and `--quiet` override it. The server also accepts the older name `LOG_LEVEL` when this one is unset. |
 | `TZ` | system time zone (`UTC` in Docker) | Time zone used to evaluate cron expressions in schedules. |
+
+## Database
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATABASE_URL` | none: SQLite at `$WEBFROST_DIR/archive.db` | Where the metadata lives. `postgres://user:pass@host:5432/db` (or `postgresql://`) for PostgreSQL 13+, `mysql://user:pass@host:3306/db` for MySQL 8.0.13+, `sqlite:///abs/path.db`, `sqlite://relative.db` or a plain file path for SQLite. A relative SQLite path resolves against `WEBFROST_DIR`. Archive files always go to the storage backend, whichever database you choose. |
+| `WEBFROST_DB_POOL_MAX` | `10` | PostgreSQL/MySQL: connections per process (server, CLI or worker). |
+| `WEBFROST_DB_POOL_IDLE_MS` | `30000` | PostgreSQL/MySQL: an idle pooled connection is closed after this many milliseconds. |
+
+Precedence: `DATABASE_URL` when set, otherwise SQLite at `$WEBFROST_DIR/archive.db`, exactly as in earlier releases. The schema is created and migrated automatically on first use with each database. Every process that shares an archive (server, CLI, schedule worker) must use the same `DATABASE_URL` and storage settings. See [Deploy](/docs/guides/deploy#choosing-a-database) for choosing one.
+
+PostgreSQL connection options go in the URL as usual, for example `?sslmode=require`, or `?options=-c%20search_path%3Dwebfrost` to use a schema other than `public`. For MySQL, start the server with `--innodb-ft-min-token-size=1` (or `2`) if searches for one- and two-letter words matter: MySQL's default (`3`) leaves them out of the full-text index.
+
+`WEBFROST_TEST_DATABASE_URL` is for the test suites only: it gives every temporary archive directory its own schema or database on that server. Never set it in production.
 
 ## Server
 
@@ -72,6 +86,13 @@ Setup and provider endpoints: [Storage](/docs/guides/storage).
 |---|---|---|
 | `IMAGE_TAG` | `latest` | Image tag that `docker-compose.prod.yml` pulls |
 | `GITHUB_REPOSITORY` | `gtkatakura/webfrost` | Builds the image name `ghcr.io/$GITHUB_REPOSITORY/server` |
+| `LITESTREAM_S3_BUCKET` | none | Bucket the optional `litestream` service (profile `backup`) replicates `archive.db` to. See [Backups](/docs/guides/backups). |
+| `LITESTREAM_S3_PATH` | `webfrost/archive.db` | Path of the replica inside the bucket |
+| `LITESTREAM_S3_ENDPOINT` | none (AWS) | Endpoint of an S3-compatible store (MinIO, R2, B2) |
+| `LITESTREAM_S3_REGION` | `us-east-1` | Bucket region |
+| `LITESTREAM_S3_FORCE_PATH_STYLE` | `false` | `true` for MinIO and other stores that need path-style URLs |
+| `LITESTREAM_ACCESS_KEY_ID` | none | Access key for the backup bucket |
+| `LITESTREAM_SECRET_ACCESS_KEY` | none | Secret key for the backup bucket |
 
 ## Where to set them
 

@@ -1,0 +1,167 @@
+---
+title: Backups
+description: Back up and restore a WebFrost archive — plain file copies, continuous SQLite replication with Litestream, and pg_dump or mysqldump for PostgreSQL and MySQL.
+icon: DatabaseBackup
+---
+
+A WebFrost archive is two things, and a backup needs both:
+
+- **the database**: snapshots, extractor results, the search index, tags, schedules, users, sessions and API key hashes. By default the SQLite file `archive.db` in `WEBFROST_DIR`; with [`DATABASE_URL`](/docs/guides/deploy#choosing-a-database) a PostgreSQL or MySQL database.
+- **the archive files**: WARCs, PDFs, screenshots, HTML and media. In `WEBFROST_DIR/snapshots/` with the filesystem backend, or in the bucket with [S3 storage](/docs/guides/storage).
+
+The database points at the files by absolute path (or S3 key), so restore both to the same locations: the same `WEBFROST_DIR` mount point, the same bucket and prefix.
+
+The examples use the Compose setup from [Deploy](/docs/guides/deploy), whose volume is mounted at `/data`. Compose prefixes the volume name with the project name (the directory name by default); check it with `docker volume ls`.
+
+## Plain files (SQLite)
+
+The simplest backup is a copy of the whole data directory while nothing is writing to it.
+
+```bash
+docker compose -f docker-compose.prod.yml stop
+
+docker run --rm -v webfrost_data:/data -v "$PWD":/backup alpine \
+  tar -czf "/backup/webfrost-$(date +%Y%m%d-%H%M%S).tar.gz" -C /data .
+
+docker compose -f docker-compose.prod.yml start
+```
+
+Without stopping the server, take the database with SQLite's online backup and copy the files next to it. The `.backup` command produces a consistent copy even while WebFrost writes:
+
+```bash
+sqlite3 /data/archive.db ".backup /backups/archive-$(date +%Y%m%d).db"
+rsync -a /data/snapshots/ /backups/snapshots/
+```
+
+Copying `archive.db` with `cp` while the server runs is **not** safe: recent changes may still be in `archive.db-wal`.
+
+To restore, stop the server, put the files back and start it:
+
+```bash
+docker compose -f docker-compose.prod.yml stop
+docker run --rm -v webfrost_data:/data -v "$PWD":/backup alpine \
+  sh -c 'rm -f /data/archive.db-wal /data/archive.db-shm && tar -xzf /backup/webfrost-20260101-120000.tar.gz -C /data'
+docker compose -f docker-compose.prod.yml start
+curl http://localhost:3000/health
+```
+
+An archive restored from an older release is migrated to the current schema when the server opens it.
+
+## Continuous backups with Litestream
+
+[Litestream](https://litestream.io/) streams every change of a SQLite database to S3-compatible storage (AWS S3, MinIO, Cloudflare R2, Backblaze B2 and others) within about a second, so a lost disk costs you seconds of metadata, not a day.
+
+WebFrost is compatible with it out of the box: the database runs in WAL mode and WebFrost never issues manual checkpoints, so Litestream can follow the write-ahead log while the server, CLI commands and schedule workers keep writing. Avoid running `PRAGMA wal_checkpoint` yourself while Litestream replicates.
+
+`docker-compose.prod.yml` has an optional `litestream` service under the Compose profile `backup`. It mounts the same volume, waits for the server to be healthy, and replicates `/data/archive.db` to the bucket you configure in `.env`:
+
+```bash
+# .env
+LITESTREAM_S3_BUCKET=my-webfrost-backups
+LITESTREAM_S3_PATH=webfrost/archive.db        # default
+LITESTREAM_S3_REGION=us-east-1                 # default
+LITESTREAM_ACCESS_KEY_ID=...
+LITESTREAM_SECRET_ACCESS_KEY=...
+# Only for S3-compatible stores other than AWS:
+LITESTREAM_S3_ENDPOINT=https://<account>.r2.cloudflarestorage.com
+LITESTREAM_S3_FORCE_PATH_STYLE=true            # MinIO and similar
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `LITESTREAM_S3_BUCKET` | none | Bucket to replicate to. Use one dedicated to backups. |
+| `LITESTREAM_S3_PATH` | `webfrost/archive.db` | Path of the replica inside the bucket |
+| `LITESTREAM_S3_ENDPOINT` | none (AWS) | Endpoint of an S3-compatible store |
+| `LITESTREAM_S3_REGION` | `us-east-1` | Bucket region |
+| `LITESTREAM_S3_FORCE_PATH_STYLE` | `false` | `true` for MinIO and other stores that need path-style URLs |
+| `LITESTREAM_ACCESS_KEY_ID` | none | Access key, with read and write access to the bucket |
+| `LITESTREAM_SECRET_ACCESS_KEY` | none | Secret key |
+
+Start the server together with the backup service:
+
+```bash
+docker compose -f docker-compose.prod.yml --profile backup up -d
+docker compose -f docker-compose.prod.yml logs -f litestream
+```
+
+The log shows `snapshot complete` once the first full copy is uploaded, then a sync roughly every second while the archive changes. The image is pinned by digest; the Compose file needs Docker Compose 2.23 or later (it ships the Litestream configuration inline).
+
+Litestream replicates the **database only**. Back up the archive files separately — an `rsync` of `/data/snapshots/` on a schedule, or the [S3 storage backend](/docs/guides/storage) with versioning on its bucket.
+
+### Restore from Litestream
+
+Stop the server so nothing writes to the database, restore the latest replica to a new file, then swap it in. `--no-deps` keeps Compose from starting the server along with the one-off Litestream container.
+
+```bash
+docker compose -f docker-compose.prod.yml --profile backup stop
+
+docker compose -f docker-compose.prod.yml --profile backup run --rm --no-deps litestream \
+  restore -config /etc/litestream.yml -o /data/archive.restored.db /data/archive.db
+
+docker compose -f docker-compose.prod.yml --profile backup run --rm --no-deps --entrypoint sh litestream \
+  -c 'cd /data && rm -f archive.db-wal archive.db-shm && mv archive.restored.db archive.db'
+
+docker compose -f docker-compose.prod.yml --profile backup up -d
+curl http://localhost:3000/health
+```
+
+On a fresh host (an empty volume) the swap step is unnecessary: restore straight to `/data/archive.db`. To restore the state at an earlier moment, add `-timestamp 2026-01-31T12:00:00Z` to the `restore` command. Restore the archive files from their own backup to the same paths.
+
+## PostgreSQL
+
+Use `pg_dump` while WebFrost runs; it takes a consistent snapshot of the database. The custom format (`-Fc`) restores selectively and in parallel:
+
+```bash
+pg_dump "$DATABASE_URL" -Fc -f "webfrost-$(date +%Y%m%d).dump"
+rsync -a /data/snapshots/ /backups/snapshots/   # with the filesystem backend
+```
+
+Restore into an empty database with the server stopped, then start it:
+
+```bash
+createdb -h db.internal -U postgres -O webfrost webfrost
+pg_restore --no-owner --role=webfrost -d "$DATABASE_URL" webfrost-20260131.dump
+```
+
+A managed PostgreSQL (or your own WAL archiving) adds point-in-time recovery on top; WebFrost needs nothing special for it. The search index is part of the dump; `webfrost search:rebuild` recreates it if needed.
+
+## MySQL
+
+Use `mysqldump` with `--single-transaction` for a consistent copy of the InnoDB tables without locking out the server:
+
+```bash
+mysqldump --single-transaction --routines -h db.internal -u webfrost -p webfrost \
+  > "webfrost-$(date +%Y%m%d).sql"
+rsync -a /data/snapshots/ /backups/snapshots/   # with the filesystem backend
+```
+
+Restore into an empty database with the server stopped:
+
+```bash
+mysql -h db.internal -u webfrost -p webfrost < webfrost-20260131.sql
+```
+
+The full-text index is rebuilt by MySQL while the dump loads. If the restored server uses a different `innodb_ft_min_token_size`, run `webfrost search:rebuild` afterwards.
+
+## Check a backup
+
+A backup you have never restored is a hope. Now and then restore into a scratch location and look at it:
+
+```bash
+# SQLite: restore next to the original, then open it read-only
+sqlite3 /tmp/restore/archive.db "PRAGMA integrity_check; SELECT COUNT(*) FROM snapshots;"
+```
+
+For PostgreSQL and MySQL, restore into a scratch database and point a throwaway WebFrost at it with `DATABASE_URL` and the restored files; the snapshot list and a few downloads should match production.
+
+<Cards>
+  <Card title="Deploy" href="/docs/guides/deploy">
+    Compose, volumes and choosing a database.
+  </Card>
+  <Card title="Database" href="/docs/reference/database">
+    The schema on each engine.
+  </Card>
+  <Card title="Storage" href="/docs/guides/storage">
+    Where the archive files live.
+  </Card>
+</Cards>

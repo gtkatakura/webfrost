@@ -53,7 +53,7 @@ Exit codes:
     ctx.logger.info(`Archiving ${url}...`);
     const snapshot = await withDb(ctx, async (db) => {
       const id = await addUrl(db, url, ctx.dir, ctx.logger);
-      return getSnapshot(db, id);
+      return await getSnapshot(db, id);
     });
     if (!snapshot) throw new CliError("The snapshot was not recorded.");
     const done = snapshot.status === "done";
@@ -102,8 +102,9 @@ export const listCommand: Command = {
     const limit = ctx.int("limit", { min: 1, max: 1000 }) ?? 50;
     const page = ctx.int("page", { min: 1 }) ?? 1;
     const status = ctx.string("status");
-    const result = await withDb(ctx, (db) =>
-      listSnapshotsWithExtractorsPaginated(db, page, limit, status),
+    const result = await withDb(
+      ctx,
+      async (db) => await listSnapshotsWithExtractorsPaginated(db, page, limit, status),
     );
     if (ctx.bool("json")) {
       printJson(result);
@@ -126,8 +127,9 @@ export const deleteCommand: Command = {
   examples: ["webfrost delete 12"],
   async run(ctx) {
     const id = parseId(ctx.args[0] ?? "", "snapshot id", ["delete"]);
-    const deleted = await withDb(ctx, (db) =>
-      deleteSnapshot(db, id, createStorageBackend(ctx.dir)),
+    const deleted = await withDb(
+      ctx,
+      async (db) => await deleteSnapshot(db, id, createStorageBackend(ctx.dir)),
     );
     if (!deleted) throw new CliError(`Snapshot ${id} not found.`);
     ctx.logger.info(`Snapshot ${id} deleted.`);
@@ -163,7 +165,7 @@ export const searchCommand: Command = {
     const query = ctx.args.join(" ");
     const limit = ctx.int("limit", { min: 1, max: 100 }) ?? 20;
     const page = ctx.int("page", { min: 1 }) ?? 1;
-    const results = await withDb(ctx, (db) => searchSnapshots(db, query, limit, page));
+    const results = await withDb(ctx, async (db) => await searchSnapshots(db, query, limit, page));
     if (ctx.bool("json")) {
       printJson({
         ...results,
@@ -192,7 +194,7 @@ export const searchRebuildCommand: Command = {
   name: "search:rebuild",
   summary: "Rebuild the full-text search index",
   async run(ctx) {
-    await withDb(ctx, (db) => rebuildIndex(db));
+    await withDb(ctx, async (db) => await rebuildIndex(db));
     ctx.logger.info("Search index rebuilt.");
     return 0;
   },

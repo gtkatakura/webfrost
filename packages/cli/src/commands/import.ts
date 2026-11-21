@@ -112,12 +112,12 @@ Exit codes:
     const snapshotIds: number[] = [];
     await withDb(ctx, async (db) => {
       for (const url of urls) {
-        if (deduplicate && isUrlArchived(db, url)) {
+        if (deduplicate && (await isUrlArchived(db, url))) {
           skipped++;
           continue;
         }
         try {
-          const snapshotId = runner.add(db, url);
+          const snapshotId = await runner.add(db, url);
           snapshotIds.push(snapshotId);
           queued++;
           ctx.logger.debug(
@@ -137,7 +137,7 @@ Exit codes:
       // Report what actually happened, not just what was queued.
       let done = 0;
       for (const id of snapshotIds) {
-        if (getSnapshot(db, id)?.status === "done") done++;
+        if ((await getSnapshot(db, id))?.status === "done") done++;
         else failed++;
       }
 

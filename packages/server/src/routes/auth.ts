@@ -73,7 +73,7 @@ export function authPlugin(app: Elysia) {
     return app;
   }
 
-  return app.onBeforeHandle(({ request, set }) => {
+  return app.onBeforeHandle(async ({ request, set }) => {
     // Public endpoints — allow unauthenticated access. Matched exactly: a suffix
     // match would also wave through any future route that merely ends the same way.
     const url = new URL(request.url);
@@ -87,9 +87,9 @@ export function authPlugin(app: Elysia) {
     const sessionToken = parseCookie(request.headers.get("cookie"), "session");
 
     if (bearer || sessionToken) {
-      const db = getDb();
+      const db = await getDb();
       try {
-        if (bearer && validateApiKey(db, bearer)) return;
+        if (bearer && (await validateApiKey(db, bearer))) return;
         if (sessionToken) {
           let secret: string | null = null;
           try {
@@ -97,10 +97,10 @@ export function authPlugin(app: Elysia) {
           } catch {
             // SESSION_SECRET missing — treat as no valid session
           }
-          if (secret && verifySession(db, secret, sessionToken)) return;
+          if (secret && (await verifySession(db, secret, sessionToken))) return;
         }
       } finally {
-        db.close();
+        await db.close();
       }
     }
 
@@ -119,15 +119,15 @@ export function authPlugin(app: Elysia) {
 }
 
 /** Delete the server-side session behind a cookie value, if it is one of ours. */
-function revokeCookieSession(request: Request): void {
+async function revokeCookieSession(request: Request): Promise<void> {
   const sessionToken = parseCookie(request.headers.get("cookie"), "session");
   const secret = process.env.SESSION_SECRET;
   if (!sessionToken || !secret) return;
-  const db = getDb();
+  const db = await getDb();
   try {
-    revokeSession(db, secret, sessionToken);
+    await revokeSession(db, secret, sessionToken);
   } finally {
-    db.close();
+    await db.close();
   }
 }
 
@@ -148,7 +148,7 @@ export const authRouter = new Elysia({ prefix: "/auth" })
         return { error: "server misconfigured" };
       }
 
-      const db = getDb();
+      const db = await getDb();
       try {
         const validUsername = await validateAdminCredentials(db, username, password);
         if (!validUsername) {
@@ -156,11 +156,11 @@ export const authRouter = new Elysia({ prefix: "/auth" })
           return { error: "invalid credentials" };
         }
         // The session this cookie replaces must not stay valid in a copy of the old one.
-        revokeCookieSession(request);
-        setSessionCookie(cookie.session, createSession(db, secret, validUsername));
+        await revokeCookieSession(request);
+        setSessionCookie(cookie.session, await createSession(db, secret, validUsername));
         return { ok: true };
       } finally {
-        db.close();
+        await db.close();
       }
     },
     {
@@ -170,27 +170,27 @@ export const authRouter = new Elysia({ prefix: "/auth" })
       }),
     },
   )
-  .post("/logout", ({ request, cookie, set }) => {
+  .post("/logout", async ({ request, cookie, set }) => {
     // Remove the server-side session so the cookie is dead even if a copy survives.
     // Public route: an expired or revoked session still gets its cookie cleared.
-    revokeCookieSession(request);
+    await revokeCookieSession(request);
     clearSessionCookie(cookie.session);
     set.status = 204;
     return null;
   })
-  .get("/me", ({ request }) => {
+  .get("/me", async ({ request }) => {
     const authDisabled = process.env.AUTH_DISABLED === "true";
     if (authDisabled) return { username: "admin" };
 
     // Extract username from the session (the request was already authenticated by the plugin)
     const sessionToken = parseCookie(request.headers.get("cookie"), "session");
     if (sessionToken && process.env.SESSION_SECRET) {
-      const db = getDb();
+      const db = await getDb();
       try {
-        const username = verifySession(db, process.env.SESSION_SECRET, sessionToken);
+        const username = await verifySession(db, process.env.SESSION_SECRET, sessionToken);
         if (username) return { username };
       } finally {
-        db.close();
+        await db.close();
       }
     }
     // API key auth — username not available from key alone
@@ -206,9 +206,9 @@ export const authRouter = new Elysia({ prefix: "/auth" })
         return { error: "New password must be at least 8 characters" };
       }
 
-      const db = getDb();
+      const db = await getDb();
       try {
-        const username = getAdminUsername(db);
+        const username = await getAdminUsername(db);
         if (!username) {
           set.status = 404;
           return { error: "No admin user found" };
@@ -228,11 +228,14 @@ export const authRouter = new Elysia({ prefix: "/auth" })
         // …so hand the caller a fresh one when they are logged in through the browser.
         const hadSession = parseCookie(request.headers.get("cookie"), "session") !== null;
         if (hadSession && process.env.SESSION_SECRET) {
-          setSessionCookie(cookie.session, createSession(db, process.env.SESSION_SECRET, username));
+          setSessionCookie(
+            cookie.session,
+            await createSession(db, process.env.SESSION_SECRET, username),
+          );
         }
         return { ok: true };
       } finally {
-        db.close();
+        await db.close();
       }
     },
     { body: t.Object({ currentPassword: passwordField(), newPassword: passwordField() }) },

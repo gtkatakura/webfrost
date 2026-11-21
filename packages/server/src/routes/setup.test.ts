@@ -18,7 +18,10 @@ beforeEach(() => {
   Reflect.deleteProperty(process.env, "AUTH_DISABLED");
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // Each test archive is its own database; release the pools so a server-backed run does not pile up connections.
+  const { closeDatabases } = await import("@webfrost/core");
+  await closeDatabases();
   for (const name of ["WEBFROST_DIR", "SESSION_SECRET", "WEBFROST_SETUP_TOKEN"]) {
     Reflect.deleteProperty(process.env, name);
   }

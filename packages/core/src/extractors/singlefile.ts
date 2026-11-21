@@ -1,5 +1,6 @@
-import type Database from "bun:sqlite";
 import { ConcurrencyLimiter } from "../concurrency";
+import type { Db } from "../db";
+import { recordResult } from "../results";
 import { envInt, safeFetch } from "../ssrf-guard";
 import type { StorageBackend } from "../storage";
 
@@ -22,11 +23,12 @@ import type { StorageBackend } from "../storage";
  * to download are left as external references.
  */
 export async function singleFileExtractor(
-  db: Database,
+  db: Db,
   snapshotId: number,
   storage: StorageBackend,
   page: import("playwright").Page,
   signal?: AbortSignal,
+  lease?: string,
 ): Promise<void> {
   const pageUrl = page.url();
   const html = await page.content();
@@ -38,9 +40,12 @@ export async function singleFileExtractor(
 
   const ref = await storage.putText(snapshotId, "singlefile.html", inlined);
 
-  db.query<null, [number, string]>(
-    "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'singlefile', ?)",
-  ).run(snapshotId, ref);
+  await recordResult(
+    db,
+    snapshotId,
+    { extractor: "singlefile", content: ref, sizeBytes: Buffer.byteLength(inlined, "utf8") },
+    lease,
+  );
 }
 
 /** Asset downloads running at once for one page (WEBFROST_SINGLEFILE_CONCURRENCY). */

@@ -1,4 +1,6 @@
-import type Database from "bun:sqlite";
+import { sql } from "kysely";
+import { type Db, isUniqueViolation } from "./db";
+import { updateIndexedTags } from "./search";
 
 export interface Tag {
   id: number;
@@ -15,81 +17,101 @@ export function slugify(name: string): string {
     .replace(/^-|-$/g, "");
 }
 
-export function createTag(db: Database, name: string, color?: string): Tag {
+const TAG_COLS = sql`id, name, slug, color, created_at`;
+
+/**
+ * Create a tag. A duplicate name or slug throws an error whose message contains
+ * "UNIQUE constraint failed", on every database, so callers can map it to 409.
+ */
+export async function createTag(db: Db, name: string, color?: string): Promise<Tag> {
   const slug = slugify(name);
-  const colorVal = color ?? null;
-  db.query<unknown, [string, string, string | null]>(
-    "INSERT INTO tags (name, slug, color) VALUES (?, ?, ?)",
-  ).run(name, slug, colorVal);
-  const tag = db
-    .query<Tag, [string]>("SELECT id, name, slug, color, created_at FROM tags WHERE slug = ?")
-    .get(slug);
+  try {
+    await db.run(
+      sql`INSERT INTO tags (name, slug, color, created_at) VALUES (${name}, ${slug}, ${color ?? null}, ${db.now()})`,
+    );
+  } catch (err) {
+    if (isUniqueViolation(err)) throw new Error("UNIQUE constraint failed: tags.slug");
+    throw err;
+  }
+  const tag = await db.get<Tag>(sql`SELECT ${TAG_COLS} FROM tags WHERE slug = ${slug}`);
   if (!tag) throw new Error("Tag not found after insert");
   return tag;
 }
 
-export function listTags(db: Database): Tag[] {
-  return db
-    .query<Tag, []>("SELECT id, name, slug, color, created_at FROM tags ORDER BY name")
-    .all();
+export async function listTags(db: Db): Promise<Tag[]> {
+  return db.all<Tag>(sql`SELECT ${TAG_COLS} FROM tags ORDER BY name`);
 }
 
-export function getTag(db: Database, id: number): Tag | null {
-  return db
-    .query<Tag, [number]>("SELECT id, name, slug, color, created_at FROM tags WHERE id = ?")
-    .get(id);
+export async function getTag(db: Db, id: number): Promise<Tag | null> {
+  return db.get<Tag>(sql`SELECT ${TAG_COLS} FROM tags WHERE id = ${id}`);
 }
 
 /**
- * Rewrite the `tags` column of a snapshot's full-text index entry from its
- * current tags, so searching by tag name reflects tags added or removed after
- * the snapshot was archived. A snapshot that is not indexed yet is left alone —
- * the pipeline indexes it, tags included, when it finishes.
+ * Rewrite the tag names in a snapshot's full-text index entry from its current
+ * tags, so searching by tag name reflects tags added or removed after the
+ * snapshot was archived.
  */
-function syncIndexTags(db: Database, snapshotId: number): void {
-  const names = listSnapshotTags(db, snapshotId)
-    .map((t) => t.name)
-    .join(" ");
-  db.query<null, [string, number]>("UPDATE snapshots_fts SET tags = ? WHERE rowid = ?").run(
-    names,
-    snapshotId,
+async function syncIndexTags(db: Db, snapshotId: number): Promise<void> {
+  const names = (await listSnapshotTags(db, snapshotId)).map((t) => t.name).join(" ");
+  await updateIndexedTags(db, snapshotId, names);
+}
+
+export async function deleteTag(db: Db, id: number): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const tagged = await tx.all<{ snapshot_id: number }>(
+      sql`SELECT snapshot_id FROM snapshot_tags WHERE tag_id = ${id}`,
+    );
+    const changes = await tx.run(sql`DELETE FROM tags WHERE id = ${id}`);
+    for (const { snapshot_id } of tagged) await syncIndexTags(tx, snapshot_id);
+    return changes > 0;
+  });
+}
+
+export async function addTagToSnapshot(db: Db, snapshotId: number, tagId: number): Promise<void> {
+  await db.transaction(async (tx) => {
+    // Already tagged is fine; a missing snapshot or tag still fails (foreign keys).
+    switch (tx.dialect) {
+      case "sqlite":
+        await tx.run(
+          sql`INSERT OR IGNORE INTO snapshot_tags (snapshot_id, tag_id) VALUES (${snapshotId}, ${tagId})`,
+        );
+        break;
+      case "postgres":
+        await tx.run(
+          sql`INSERT INTO snapshot_tags (snapshot_id, tag_id) VALUES (${snapshotId}, ${tagId}) ON CONFLICT DO NOTHING`,
+        );
+        break;
+      case "mysql":
+        // Not INSERT IGNORE: that would also turn foreign-key errors into warnings.
+        await tx.run(
+          sql`INSERT INTO snapshot_tags (snapshot_id, tag_id) VALUES (${snapshotId}, ${tagId}) ON DUPLICATE KEY UPDATE tag_id = tag_id`,
+        );
+        break;
+    }
+    await syncIndexTags(tx, snapshotId);
+  });
+}
+
+export async function removeTagFromSnapshot(
+  db: Db,
+  snapshotId: number,
+  tagId: number,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const changes = await tx.run(
+      sql`DELETE FROM snapshot_tags WHERE snapshot_id = ${snapshotId} AND tag_id = ${tagId}`,
+    );
+    await syncIndexTags(tx, snapshotId);
+    return changes > 0;
+  });
+}
+
+export async function listSnapshotTags(db: Db, snapshotId: number): Promise<Tag[]> {
+  return db.all<Tag>(
+    sql`SELECT t.id, t.name, t.slug, t.color, t.created_at
+        FROM tags t
+        JOIN snapshot_tags st ON st.tag_id = t.id
+        WHERE st.snapshot_id = ${snapshotId}
+        ORDER BY t.name`,
   );
-}
-
-export function deleteTag(db: Database, id: number): boolean {
-  const tagged = db
-    .query<{ snapshot_id: number }, [number]>(
-      "SELECT snapshot_id FROM snapshot_tags WHERE tag_id = ?",
-    )
-    .all(id);
-  const result = db.query<null, [number]>("DELETE FROM tags WHERE id = ?").run(id);
-  for (const { snapshot_id } of tagged) syncIndexTags(db, snapshot_id);
-  return result.changes > 0;
-}
-
-export function addTagToSnapshot(db: Database, snapshotId: number, tagId: number): void {
-  db.query<null, [number, number]>(
-    "INSERT OR IGNORE INTO snapshot_tags (snapshot_id, tag_id) VALUES (?, ?)",
-  ).run(snapshotId, tagId);
-  syncIndexTags(db, snapshotId);
-}
-
-export function removeTagFromSnapshot(db: Database, snapshotId: number, tagId: number): boolean {
-  const result = db
-    .query<null, [number, number]>("DELETE FROM snapshot_tags WHERE snapshot_id = ? AND tag_id = ?")
-    .run(snapshotId, tagId);
-  syncIndexTags(db, snapshotId);
-  return result.changes > 0;
-}
-
-export function listSnapshotTags(db: Database, snapshotId: number): Tag[] {
-  return db
-    .query<Tag, [number]>(
-      `SELECT t.id, t.name, t.slug, t.color, t.created_at
-       FROM tags t
-       JOIN snapshot_tags st ON st.tag_id = t.id
-       WHERE st.snapshot_id = ?
-       ORDER BY t.name`,
-    )
-    .all(snapshotId);
 }

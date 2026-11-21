@@ -5,7 +5,8 @@
  * - isUrlArchived: check whether a URL already has a snapshot (for deduplication).
  */
 
-import type Database from "bun:sqlite";
+import { sql } from "kysely";
+import type { Db } from "./db";
 import { parseUrls } from "./import";
 import { safeFetch } from "./ssrf-guard";
 
@@ -26,9 +27,9 @@ export async function fetchRssFeedUrls(feedUrl: string): Promise<string[]> {
  * Returns true if a snapshot with this exact URL already exists in the database.
  * Used to deduplicate RSS feed imports.
  */
-export function isUrlArchived(db: Database, url: string): boolean {
-  const row = db
-    .query<{ id: number }, [string]>("SELECT id FROM snapshots WHERE url = ? LIMIT 1")
-    .get(url);
+export async function isUrlArchived(db: Db, url: string): Promise<boolean> {
+  const row = await db.get<{ id: number }>(
+    sql`SELECT id FROM snapshots WHERE url = ${url} LIMIT 1`,
+  );
   return row !== null;
 }

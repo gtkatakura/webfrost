@@ -1,6 +1,7 @@
-import type Database from "bun:sqlite";
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
+import type { Db } from "../db";
+import { recordResult } from "../results";
 import { envInt } from "../ssrf-guard";
 
 /**
@@ -26,12 +27,13 @@ interface ReadabilityResult {
   excerpt: string | null;
 }
 
-export function readabilityExtractor(
-  db: Database,
+export async function readabilityExtractor(
+  db: Db,
   snapshotId: number,
   url: string,
   html: string,
-): void {
+  lease?: string,
+): Promise<void> {
   let result: ReadabilityResult;
   try {
     const input = capHtml(
@@ -51,7 +53,11 @@ export function readabilityExtractor(
     result = { title: null, byline: null, textContent: null, excerpt: null };
   }
 
-  db.query<null, [number, string]>(
-    "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'readability', ?)",
-  ).run(snapshotId, JSON.stringify(result));
+  const content = JSON.stringify(result);
+  await recordResult(
+    db,
+    snapshotId,
+    { extractor: "readability", content, sizeBytes: Buffer.byteLength(content, "utf8") },
+    lease,
+  );
 }

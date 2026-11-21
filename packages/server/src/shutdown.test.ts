@@ -44,6 +44,56 @@ describe("gracefulShutdown", () => {
     expect(order).toEqual(["scheduler", "server", "job finished"]);
   });
 
+  test("closes the database pools last, after the jobs are idle", async () => {
+    const order: string[] = [];
+    const { runner, finish } = fakeRunner();
+    const done = gracefulShutdown({
+      stopBackgroundWork: () => {},
+      stopServer: async () => {},
+      runner,
+      closeDatabases: async () => {
+        order.push("pools closed");
+      },
+      timeoutMs: 5_000,
+      logger: quietLogger,
+    });
+    await Bun.sleep(10);
+    order.push("job finished");
+    finish();
+    expect(await done).toBe(true);
+    expect(order).toEqual(["job finished", "pools closed"]);
+  });
+
+  test("a failing or hanging closeDatabases does not block the exit", async () => {
+    const failing = fakeRunner();
+    failing.finish();
+    expect(
+      await gracefulShutdown({
+        stopBackgroundWork: () => {},
+        stopServer: async () => {},
+        runner: failing.runner,
+        closeDatabases: async () => {
+          throw new Error("boom");
+        },
+        timeoutMs: 5_000,
+        logger: quietLogger,
+      }),
+    ).toBe(true);
+
+    const hanging = fakeRunner();
+    hanging.finish();
+    const started = Date.now();
+    await gracefulShutdown({
+      stopBackgroundWork: () => {},
+      stopServer: async () => {},
+      runner: hanging.runner,
+      closeDatabases: () => new Promise<void>(() => {}),
+      timeoutMs: 5_000,
+      logger: quietLogger,
+    });
+    expect(Date.now() - started).toBeLessThan(4_000);
+  });
+
   test("gives up on jobs after the timeout", async () => {
     const { runner } = fakeRunner();
     const started = Date.now();

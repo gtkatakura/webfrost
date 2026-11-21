@@ -1,13 +1,14 @@
-import type Database from "bun:sqlite";
+import { sql } from "kysely";
 import { ConcurrencyLimiter, createConcurrencyLimiter } from "./concurrency";
-import { openDb } from "./db";
+import { type Db, openDb } from "./db";
 import {
   JOB_HEARTBEAT_MS,
   JOB_LEASE_SECONDS,
   type Logger,
-  createSnapshot,
+  createSnapshotJob,
   runPipeline,
 } from "./pipeline";
+import { newLeaseToken } from "./results";
 import type { StorageBackend } from "./storage";
 import { domainThrottle } from "./throttle";
 
@@ -25,22 +26,30 @@ export interface JobRunnerOptions {
   storage?: () => StorageBackend;
 }
 
+interface InFlightJob {
+  promise: Promise<void>;
+  /** The job's lease token, once known (see results.ts). */
+  lease: string | undefined;
+}
+
 /**
  * Runs archive pipelines in the background with bounded concurrency.
  *
- * Every job opens its own database connection and closes it when the pipeline
+ * Every job opens its own database handle and closes it when the pipeline
  * settles, so callers can (and should) close theirs as soon as the snapshot row
  * is inserted. Sharing one connection between an HTTP handler and a background
  * pipeline is what used to leave imported snapshots stuck in `pending`.
  *
- * Jobs are leased through `job_queue.heartbeat_at`: this runner refreshes the
- * heartbeat of everything it has queued or running, and `recoverPending()` only
- * adopts jobs whose heartbeat has gone stale. That is what lets a server and a
- * `webfrost schedule worker` share one archive without stealing each other's work.
+ * Jobs are leased through `job_queue.heartbeat_at` and `job_queue.lease_token`:
+ * this runner refreshes the heartbeat of everything it has queued or running,
+ * `recoverPending()` only adopts jobs whose heartbeat has gone stale, and adopting
+ * a job issues a new token, which fences off writes from the previous owner. That
+ * is what lets a server and a `webfrost schedule worker` share one archive
+ * without stealing — or clobbering — each other's work.
  */
 export class JobRunner {
   private readonly limiter: ConcurrencyLimiter;
-  private readonly inFlight = new Map<number, Promise<void>>();
+  private readonly inFlight = new Map<number, InFlightJob>();
   private heartbeat: ReturnType<typeof setInterval> | undefined;
 
   constructor(private readonly options: JobRunnerOptions) {
@@ -59,42 +68,46 @@ export class JobRunner {
   }
 
   /**
-   * Insert a snapshot row for `url` and queue its pipeline. Returns the snapshot id
-   * immediately; the pipeline runs in the background.
+   * Insert a snapshot row for `url` and queue its pipeline. Resolves with the
+   * snapshot id once the row exists; the pipeline runs in the background.
    */
-  add(db: Database, url: string): number {
-    const snapshotId = createSnapshot(db, url);
-    this.enqueue(snapshotId, url);
+  async add(db: Db, url: string): Promise<number> {
+    const { snapshotId, lease } = await createSnapshotJob(db, url);
+    void this.enqueue(snapshotId, url, lease);
     return snapshotId;
   }
 
   /**
    * Queue the pipeline for an existing snapshot. The returned promise settles when
    * the pipeline has finished and never rejects — failures land on the snapshot row.
+   *
+   * `lease` is the token the job was created or adopted with. Without it the job
+   * runs under whatever token the job row holds when the pipeline starts.
    */
-  enqueue(snapshotId: number, url: string): Promise<void> {
+  enqueue(snapshotId: number, url: string, lease?: string): Promise<void> {
     const existing = this.inFlight.get(snapshotId);
-    if (existing) return existing;
+    if (existing) return existing.promise;
 
+    const entry: InFlightJob = { promise: Promise.resolve(), lease };
     // Wait for the per-host slot before taking a concurrency slot: otherwise a
     // batch of URLs for one host would park every worker in a sleep and stall
     // unrelated hosts behind it.
-    const job = this.waitForHost(url)
-      .then(() => this.limiter.run(() => this.runOne(snapshotId, url)))
-      .catch((err: unknown) => {
+    entry.promise = this.waitForHost(url)
+      .then(() => this.limiter.run(() => this.runOne(snapshotId, url, entry)))
+      .catch(async (err: unknown) => {
         const logger = this.options.logger?.(snapshotId);
         logger?.error(
           `pipeline crashed snapshot=${snapshotId}: ${err instanceof Error ? err.message : String(err)}`,
         );
-        this.markFailed(snapshotId);
+        await this.markFailed(snapshotId, entry.lease);
       })
       .finally(() => {
         this.inFlight.delete(snapshotId);
         if (this.inFlight.size === 0) this.stopHeartbeat();
       });
-    this.inFlight.set(snapshotId, job);
+    this.inFlight.set(snapshotId, entry);
     this.startHeartbeat();
-    return job;
+    return entry.promise;
   }
 
   /**
@@ -105,67 +118,84 @@ export class JobRunner {
    * this periodically rather than only at startup: right after a crash the dead
    * process's jobs still look alive for up to `JOB_LEASE_SECONDS`.
    *
+   * Adoption is atomic: SQLite runs it under BEGIN IMMEDIATE; PostgreSQL and MySQL
+   * lock the job rows with SELECT … FOR UPDATE SKIP LOCKED, so two processes
+   * recovering at once split the orphans instead of both taking them. Each adopted
+   * job gets a new lease token.
+   *
    * Partial results of the interrupted run are discarded first, so a snapshot never
    * ends up with duplicate archive results. A job orphaned `MAX_ATTEMPTS` times is
-   * marked failed instead of being run again. Returns the number re-queued.
+   * marked failed instead of being run again. Resolves with the number re-queued.
    */
-  recoverPending(): number {
-    const db = openDb(this.options.dir);
-    const adopted: { id: number; url: string }[] = [];
+  async recoverPending(): Promise<number> {
+    const db = await openDb(this.options.dir);
+    let adopted: { id: number; url: string; lease: string }[] = [];
     try {
-      // IMMEDIATE: two processes recovering at once must not adopt the same job.
-      db.transaction(() => {
-        const orphans = db
-          .query<{ id: number; url: string; attempts: number | null }, []>(
-            `SELECT s.id, s.url, j.attempts
-             FROM snapshots s
-             LEFT JOIN job_queue j ON j.snapshot_id = s.id
-             WHERE s.status = 'pending'
-               AND (j.heartbeat_at IS NULL
-                    OR j.heartbeat_at < datetime('now', '-${JOB_LEASE_SECONDS} seconds'))
-             ORDER BY s.id`,
-          )
-          .all();
+      adopted = await db.transaction(async (tx) => {
+        const picked: { id: number; url: string; lease: string }[] = [];
+        const stale = tx.ago(JOB_LEASE_SECONDS);
+        // Lock order: job_queue first, then snapshots — the same as fenced writes.
+        const orphans = await tx.all<{ id: number; url: string; attempts: number | null }>(
+          sql`SELECT s.id, s.url, j.attempts
+              FROM job_queue j
+              JOIN snapshots s ON s.id = j.snapshot_id
+              WHERE s.status = 'pending'
+                AND (j.heartbeat_at IS NULL OR j.heartbeat_at < ${stale})
+              ORDER BY s.id
+              ${tx.forUpdateSkipLocked("j")}`,
+        );
+        // Archives from before the job queue existed can have snapshots without a job row.
+        const jobless = await tx.all<{ id: number; url: string }>(
+          sql`SELECT s.id, s.url FROM snapshots s
+              WHERE s.status = 'pending'
+                AND NOT EXISTS (SELECT 1 FROM job_queue j WHERE j.snapshot_id = s.id)
+              ORDER BY s.id
+              ${tx.forUpdateSkipLocked("s")}`,
+        );
 
-        for (const { id, url, attempts } of orphans) {
+        for (const { id, url, attempts } of [
+          ...orphans,
+          ...jobless.map((r) => ({ ...r, attempts: null })),
+        ]) {
           if (this.inFlight.has(id)) continue;
 
           if ((attempts ?? 0) >= MAX_ATTEMPTS) {
-            db.query<null, [number]>("UPDATE snapshots SET status = 'failed' WHERE id = ?").run(id);
-            db.query<null, [number]>(
-              "UPDATE job_queue SET status = 'failed' WHERE snapshot_id = ?",
-            ).run(id);
+            await tx.run(sql`UPDATE job_queue SET status = 'failed' WHERE snapshot_id = ${id}`);
+            await tx.run(sql`UPDATE snapshots SET status = 'failed' WHERE id = ${id}`);
             this.options
               .logger?.(id)
               ?.error(`giving up on snapshot=${id}: interrupted ${attempts} times`);
             continue;
           }
 
-          db.query<null, [number]>("DELETE FROM archive_results WHERE snapshot_id = ?").run(id);
-          const job = db
-            .query<null, [number]>(
-              "UPDATE job_queue SET status = 'pending', heartbeat_at = datetime('now'), attempts = attempts + 1 WHERE snapshot_id = ?",
-            )
-            .run(id);
-          if (job.changes === 0) {
-            db.query<null, [number]>(
-              "INSERT INTO job_queue (snapshot_id, status, heartbeat_at, attempts) VALUES (?, 'pending', datetime('now'), 1)",
-            ).run(id);
+          const lease = newLeaseToken();
+          const updated = await tx.run(
+            sql`UPDATE job_queue
+                SET status = 'pending', heartbeat_at = ${tx.now()}, attempts = attempts + 1, lease_token = ${lease}
+                WHERE snapshot_id = ${id}`,
+          );
+          if (updated === 0) {
+            await tx.run(
+              sql`INSERT INTO job_queue (snapshot_id, status, heartbeat_at, attempts, lease_token, created_at)
+                  VALUES (${id}, 'pending', ${tx.now()}, 1, ${lease}, ${tx.now()})`,
+            );
           }
-          adopted.push({ id, url });
+          await tx.run(sql`DELETE FROM archive_results WHERE snapshot_id = ${id}`);
+          picked.push({ id, url, lease });
         }
-      }).immediate();
+        return picked;
+      });
     } finally {
-      db.close();
+      await db.close();
     }
-    for (const { id, url } of adopted) this.enqueue(id, url);
+    for (const { id, url, lease } of adopted) void this.enqueue(id, url, lease);
     return adopted.length;
   }
 
   /** Resolves when every queued and running job has finished. */
   async onIdle(): Promise<void> {
     while (this.inFlight.size > 0) {
-      await Promise.allSettled([...this.inFlight.values()]);
+      await Promise.allSettled([...this.inFlight.values()].map((j) => j.promise));
     }
   }
 
@@ -179,9 +209,15 @@ export class JobRunner {
     await domainThrottle.wait(host);
   }
 
-  private async runOne(snapshotId: number, url: string): Promise<void> {
-    const db = openDb(this.options.dir);
+  private async runOne(snapshotId: number, url: string, entry: InFlightJob): Promise<void> {
+    const db = await openDb(this.options.dir);
     try {
+      if (entry.lease === undefined) {
+        const row = await db.get<{ lease_token: string | null }>(
+          sql`SELECT lease_token FROM job_queue WHERE snapshot_id = ${snapshotId} ORDER BY id DESC LIMIT 1`,
+        );
+        entry.lease = row?.lease_token ?? undefined;
+      }
       await runPipeline(
         db,
         snapshotId,
@@ -190,25 +226,38 @@ export class JobRunner {
         undefined,
         this.options.logger?.(snapshotId),
         this.options.storage?.(),
-        { throttle: false },
+        { throttle: false, ...(entry.lease ? { lease: entry.lease } : {}) },
       );
     } finally {
-      db.close();
+      await db.close();
     }
   }
 
   /** Refresh the lease on everything queued or running here, including jobs still waiting for a slot. */
-  private touchInFlight(): void {
+  private async touchInFlight(): Promise<void> {
     if (this.inFlight.size === 0) return;
+    const leased: string[] = [];
+    const unleased: number[] = [];
+    for (const [id, job] of this.inFlight) {
+      if (job.lease) leased.push(job.lease);
+      else unleased.push(id);
+    }
     try {
-      const db = openDb(this.options.dir);
+      const db = await openDb(this.options.dir);
       try {
-        const ids = [...this.inFlight.keys()];
-        db.query<null, number[]>(
-          `UPDATE job_queue SET heartbeat_at = datetime('now') WHERE snapshot_id IN (${ids.map(() => "?").join(",")})`,
-        ).run(...ids);
+        // By token: a job another worker has adopted since is not kept alive from here.
+        if (leased.length > 0) {
+          await db.run(
+            sql`UPDATE job_queue SET heartbeat_at = ${db.now()} WHERE lease_token IN (${sql.join(leased)})`,
+          );
+        }
+        if (unleased.length > 0) {
+          await db.run(
+            sql`UPDATE job_queue SET heartbeat_at = ${db.now()} WHERE snapshot_id IN (${sql.join(unleased)})`,
+          );
+        }
       } finally {
-        db.close();
+        await db.close();
       }
     } catch {
       // The archive is unavailable; the jobs themselves will report it.
@@ -217,7 +266,7 @@ export class JobRunner {
 
   private startHeartbeat(): void {
     if (this.heartbeat) return;
-    this.heartbeat = setInterval(() => this.touchInFlight(), JOB_HEARTBEAT_MS);
+    this.heartbeat = setInterval(() => void this.touchInFlight(), JOB_HEARTBEAT_MS);
     // Never keep the process alive just to send heartbeats.
     this.heartbeat.unref?.();
   }
@@ -227,18 +276,22 @@ export class JobRunner {
     this.heartbeat = undefined;
   }
 
-  private markFailed(snapshotId: number): void {
+  private async markFailed(snapshotId: number, lease: string | undefined): Promise<void> {
     try {
-      const db = openDb(this.options.dir);
+      const db = await openDb(this.options.dir);
       try {
-        db.query<null, [number]>(
-          "UPDATE snapshots SET status = 'failed' WHERE id = ? AND status = 'pending'",
-        ).run(snapshotId);
-        db.query<null, [number]>(
-          "UPDATE job_queue SET status = 'failed' WHERE snapshot_id = ? AND status != 'done'",
-        ).run(snapshotId);
+        await db.transaction(async (tx) => {
+          const fence = lease === undefined ? sql`` : sql`AND lease_token = ${lease}`;
+          const changed = await tx.run(
+            sql`UPDATE job_queue SET status = 'failed' WHERE snapshot_id = ${snapshotId} AND status != 'done' ${fence}`,
+          );
+          if (lease !== undefined && changed === 0) return;
+          await tx.run(
+            sql`UPDATE snapshots SET status = 'failed' WHERE id = ${snapshotId} AND status = 'pending'`,
+          );
+        });
       } finally {
-        db.close();
+        await db.close();
       }
     } catch {
       // The archive directory itself is gone or unwritable — nothing left to record.

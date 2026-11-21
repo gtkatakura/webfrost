@@ -1,15 +1,16 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sql } from "kysely";
 import { bench, run } from "mitata";
-import { openDb } from "../db";
+import { type Db, openDb } from "../db";
 import { FilesystemBackend } from "../storage";
 import { warcExtractor } from "./warc";
 
 const testDir = join(tmpdir(), `warc-bench-${Date.now()}`);
 mkdirSync(testDir, { recursive: true });
-const db = openDb(testDir);
-db.query("INSERT INTO snapshots (url, status) VALUES ('https://example.com', 'pending')").run();
+const db = await openDb(testDir);
+await db.run(sql`INSERT INTO snapshots (url, status) VALUES ('https://example.com', 'pending')`);
 
 const storage = new FilesystemBackend(join(testDir, "snapshots"));
 const mockHeaders = new Headers({ "content-type": "text/html; charset=utf-8" });
@@ -29,7 +30,7 @@ bench("warcExtractor: build + write 10KB page", async () => {
 });
 
 await run();
-db.close();
+await db.close();
 try {
   rmSync(testDir, { recursive: true, force: true });
 } catch {

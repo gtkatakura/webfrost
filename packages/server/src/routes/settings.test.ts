@@ -10,7 +10,10 @@ beforeEach(() => {
   process.env.WEBFROST_DIR = testDir;
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // Each test archive is its own database; release the pools so a server-backed run does not pile up connections.
+  const { closeDatabases } = await import("@webfrost/core");
+  await closeDatabases();
   Reflect.deleteProperty(process.env, "WEBFROST_DIR");
   rmSync(testDir, { recursive: true, force: true });
 });

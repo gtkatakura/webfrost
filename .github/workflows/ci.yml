@@ -134,6 +134,94 @@ jobs:
           MINIO_TEST_ACCESS_KEY: minioadmin
           MINIO_TEST_SECRET_KEY: minioadmin
 
+  # The core and server suites again, with every archive directory mapped to its
+  # own schema (PostgreSQL) or database (MySQL) through WEBFROST_TEST_DATABASE_URL.
+  # The servers run with `docker run` rather than as job services: services cannot
+  # take server flags, and MySQL needs one for full-text search of short words.
+  unit-tests-db:
+    name: Unit Tests (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: PostgreSQL
+            # postgres:17, pinned by digest.
+            image: postgres:17@sha256:223efeb196329b55b3b9a13db144956411dbc18e727e59f681c3e0aede6475cf
+            run: >-
+              -e POSTGRES_USER=webfrost -e POSTGRES_PASSWORD=webfrost -e POSTGRES_DB=webfrost
+              -p 5432:5432
+            args: -c max_connections=300
+            ready: pg_isready -h 127.0.0.1 -U webfrost -d webfrost
+            url: postgres://webfrost:webfrost@127.0.0.1:5432/webfrost
+          - name: MySQL
+            # mysql:8.4 (LTS), pinned by digest.
+            image: mysql:8.4@sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902
+            run: >-
+              -e MYSQL_ROOT_PASSWORD=webfrost -e MYSQL_DATABASE=webfrost
+              -p 3306:3306
+            args: --innodb-ft-min-token-size=1 --max-connections=300
+            ready: mysql -h 127.0.0.1 -uroot -pwebfrost -e "SELECT 1"
+            # root: every test archive gets its own database (CREATE DATABASE).
+            url: mysql://root:webfrost@127.0.0.1:3306/webfrost
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      # Tools (Bun) at the versions pinned in mise.toml.
+      - uses: jdx/mise-action@v5.2.6
+        with:
+          install_args: bun
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v5.0.4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # The browser SSRF guard and pipeline tests drive a real Chromium.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v5.0.4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/bun.lock') }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: bunx playwright install --with-deps chromium
+
+      - name: Start ${{ matrix.name }}
+        run: |
+          docker run -d --name db ${{ matrix.run }} ${{ matrix.image }} ${{ matrix.args }}
+          for i in $(seq 1 60); do
+            if docker exec db ${{ matrix.ready }} >/dev/null 2>&1; then echo "${{ matrix.name }} is ready"; break; fi
+            echo "Waiting for ${{ matrix.name }} ($i/60)..."; sleep 2
+          done
+          docker exec db ${{ matrix.ready }}
+
+      - name: Core tests
+        run: bun test
+        working-directory: packages/core
+        env:
+          WEBFROST_TEST_DATABASE_URL: ${{ matrix.url }}
+
+      - name: Server tests
+        run: bun run test
+        working-directory: packages/server
+        env:
+          WEBFROST_TEST_DATABASE_URL: ${{ matrix.url }}
+
+      - name: Server API E2E tests
+        run: bun run test:e2e
+        working-directory: packages/server
+        env:
+          WEBFROST_TEST_DATABASE_URL: ${{ matrix.url }}
+
   server-api-e2e:
     name: Server API E2E Tests
     runs-on: ubuntu-24.04

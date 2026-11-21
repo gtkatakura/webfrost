@@ -1,6 +1,5 @@
-import type Database from "bun:sqlite";
 import { mkdirSync } from "node:fs";
-import { openDb } from "@webfrost/core";
+import { type Db, openDb } from "@webfrost/core";
 import type { Context } from "../cli";
 
 /**
@@ -10,14 +9,14 @@ import type { Context } from "../cli";
  */
 export async function withDb<T>(
   ctx: Pick<Context, "dir">,
-  fn: (db: Database) => T | Promise<T>,
+  fn: (db: Db) => T | Promise<T>,
 ): Promise<T> {
   mkdirSync(ctx.dir, { recursive: true });
-  const db = openDb(ctx.dir);
+  const db = await openDb(ctx.dir);
   try {
     return await fn(db);
   } finally {
-    db.close();
+    await db.close();
   }
 }
 

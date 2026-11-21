@@ -1,5 +1,6 @@
-import type Database from "bun:sqlite";
 import { createHash, randomUUID } from "node:crypto";
+import type { Db } from "../db";
+import { recordResult } from "../results";
 import type { FetchedResponse } from "../ssrf-guard";
 import type { StorageBackend } from "../storage";
 
@@ -151,16 +152,21 @@ export function buildWarc(source: WarcSource): Uint8Array {
 }
 
 export async function warcExtractor(
-  db: Database,
+  db: Db,
   snapshotId: number,
   source: WarcSource,
   storage: StorageBackend,
   signal?: AbortSignal,
+  lease?: string,
 ): Promise<void> {
-  const ref = await storage.putBytes(snapshotId, "archive.warc", buildWarc(source));
+  const warc = buildWarc(source);
+  const ref = await storage.putBytes(snapshotId, "archive.warc", warc);
   signal?.throwIfAborted();
 
-  db.query<null, [number, string]>(
-    "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'warc', ?)",
-  ).run(snapshotId, ref);
+  await recordResult(
+    db,
+    snapshotId,
+    { extractor: "warc", content: ref, sizeBytes: warc.byteLength },
+    lease,
+  );
 }

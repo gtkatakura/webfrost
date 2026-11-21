@@ -40,19 +40,22 @@ const VALID_FORMATS: ReadonlyArray<string> = ["rss", "opml", "netscape", "text"]
  * connection to the pipelines is what used to leave every imported snapshot
  * stuck in `pending`: it was closed before any of them ran.)
  */
-function queueUrls(urls: string[], deduplicate: boolean): { queued: number; skipped: number } {
+async function queueUrls(
+  urls: string[],
+  deduplicate: boolean,
+): Promise<{ queued: number; skipped: number }> {
   const runner = getRunner();
-  const db = getDb();
+  const db = await getDb();
   let queued = 0;
   let skipped = 0;
   try {
     for (const url of urls) {
-      if (deduplicate && isUrlArchived(db, url)) {
+      if (deduplicate && (await isUrlArchived(db, url))) {
         skipped++;
         continue;
       }
       try {
-        runner.add(db, url);
+        await runner.add(db, url);
         queued++;
       } catch {
         // skip URLs that fail to enqueue
@@ -60,7 +63,7 @@ function queueUrls(urls: string[], deduplicate: boolean): { queued: number; skip
       }
     }
   } finally {
-    db.close();
+    await db.close();
   }
   return { queued, skipped };
 }
@@ -115,10 +118,10 @@ export const importRouter = new Elysia({ prefix: "/import" })
             set.status = 413;
             return refusal;
           }
-          const { queued, skipped } = queueUrls(urls, true);
-          const db = getDb();
+          const { queued, skipped } = await queueUrls(urls, true);
+          const db = await getDb();
           try {
-            recordImport(db, {
+            await recordImport(db, {
               id: crypto.randomUUID(),
               source_url: sourceUrl ?? null,
               format: "rss",
@@ -126,7 +129,7 @@ export const importRouter = new Elysia({ prefix: "/import" })
               skipped,
             });
           } finally {
-            db.close();
+            await db.close();
           }
           set.status = 202;
           return { queued, skipped, total: urls.length, format: "rss" };
@@ -171,11 +174,11 @@ export const importRouter = new Elysia({ prefix: "/import" })
         set.status = 413;
         return refusal;
       }
-      const { queued, skipped } = queueUrls(urls, format === "rss");
+      const { queued, skipped } = await queueUrls(urls, format === "rss");
 
-      const db = getDb();
+      const db = await getDb();
       try {
-        recordImport(db, {
+        await recordImport(db, {
           id: crypto.randomUUID(),
           source_url: sourceUrl ?? null,
           format,
@@ -183,7 +186,7 @@ export const importRouter = new Elysia({ prefix: "/import" })
           skipped,
         });
       } finally {
-        db.close();
+        await db.close();
       }
 
       set.status = 202;
@@ -230,11 +233,11 @@ export const importRouter = new Elysia({ prefix: "/import" })
         set.status = 413;
         return refusal;
       }
-      const { queued, skipped } = queueUrls(urls, format === "rss");
+      const { queued, skipped } = await queueUrls(urls, format === "rss");
 
-      const db = getDb();
+      const db = await getDb();
       try {
-        recordImport(db, {
+        await recordImport(db, {
           id: crypto.randomUUID(),
           source_url: null,
           format,
@@ -242,7 +245,7 @@ export const importRouter = new Elysia({ prefix: "/import" })
           skipped,
         });
       } finally {
-        db.close();
+        await db.close();
       }
 
       set.status = 202;
@@ -256,10 +259,10 @@ export const importRouter = new Elysia({ prefix: "/import" })
     },
   );
 
-export const importsRouter = new Elysia({ prefix: "/imports" }).get("/", () => {
-  const db = getDb();
+export const importsRouter = new Elysia({ prefix: "/imports" }).get("/", async () => {
+  const db = await getDb();
   try {
-    return listImports(db).map((r) => ({
+    return (await listImports(db)).map((r) => ({
       id: r.id,
       sourceUrl: r.source_url,
       format: r.format,
@@ -268,6 +271,6 @@ export const importsRouter = new Elysia({ prefix: "/imports" }).get("/", () => {
       createdAt: r.created_at,
     }));
   } finally {
-    db.close();
+    await db.close();
   }
 });

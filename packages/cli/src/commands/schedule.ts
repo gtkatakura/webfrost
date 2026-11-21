@@ -41,11 +41,13 @@ const scheduleAdd: Command = {
     if (!target) throw new UsageError("Missing URL: pass <url> or --rss <feed-url>.", path);
     if (!cron) throw new UsageError("Missing --cron <expr>.", path);
     parseHttpUrl(target, path);
-    await withDb(ctx, (db) => {
+    await withDb(ctx, async (db) => {
       let id: number;
       try {
         id =
-          rss !== undefined ? addRssFeedSchedule(db, target, cron) : addSchedule(db, target, cron);
+          rss !== undefined
+            ? await addRssFeedSchedule(db, target, cron)
+            : await addSchedule(db, target, cron);
       } catch (err) {
         throw new UsageError(
           `Invalid cron expression "${cron}": ${err instanceof Error ? err.message : String(err)}`,
@@ -64,8 +66,8 @@ const scheduleList: Command = {
   name: "list",
   summary: "List schedules",
   async run(ctx) {
-    await withDb(ctx, (db) => {
-      const schedules = listSchedules(db);
+    await withDb(ctx, async (db) => {
+      const schedules = await listSchedules(db);
       if (schedules.length === 0) console.log("No schedules.");
       for (const s of schedules) {
         const kind = s.kind === "rss_feed" ? "[rss]" : "[url]";
@@ -85,8 +87,8 @@ const scheduleRemove: Command = {
   args: [{ name: "id", description: "Schedule id (see `webfrost schedule list`)" }],
   async run(ctx) {
     const id = parseId(ctx.args[0] ?? "", "schedule id", ["schedule", "remove"]);
-    await withDb(ctx, (db) => {
-      if (!removeSchedule(db, id)) throw new CliError(`Schedule ${id} not found.`);
+    await withDb(ctx, async (db) => {
+      if (!(await removeSchedule(db, id))) throw new CliError(`Schedule ${id} not found.`);
       ctx.logger.info(`Schedule ${id} removed.`);
     });
     return 0;
@@ -107,14 +109,26 @@ const scheduleWorker: Command = {
     // Adopt snapshots an interrupted run left pending. Only jobs whose heartbeat has gone
     // stale are taken, so work a live server is doing is left alone; the sweep repeats
     // because a freshly crashed process still looks alive for a while.
-    const recover = () => {
-      const recovered = runner.recoverPending();
-      if (recovered > 0) {
-        ctx.logger.info(`Re-queued ${recovered} snapshot(s) left pending by an interrupted run.`);
+    // One sweep at a time: a slow database must not stack them up.
+    let sweeping = false;
+    const recover = async () => {
+      if (sweeping) return;
+      sweeping = true;
+      try {
+        const recovered = await runner.recoverPending();
+        if (recovered > 0) {
+          ctx.logger.info(`Re-queued ${recovered} snapshot(s) left pending by an interrupted run.`);
+        }
+      } catch (err) {
+        ctx.logger.warn(
+          `Recovery sweep failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      } finally {
+        sweeping = false;
       }
     };
-    recover();
-    const recovery = setInterval(recover, 60_000);
+    await recover();
+    const recovery = setInterval(() => void recover(), 60_000);
     const scheduler = startScheduler({ dir: ctx.dir, runner, logger: ctx.logger });
     ctx.logger.info(
       `Schedule worker started (polling every ${SCHEDULER_INTERVAL_MS / 1000}s, concurrency ${runner.concurrency}). Press Ctrl+C to stop.`,
