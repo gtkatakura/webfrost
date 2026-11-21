@@ -249,3 +249,19 @@
     font-weight: 500;
   }
 }
+
+/* Tailwind 4 no longer gives buttons a pointer cursor; everything clickable gets one back. */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"],
+  [role="option"],
+  [role="menuitem"],
+  summary,
+  select,
+  label[for],
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
