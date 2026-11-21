@@ -18,7 +18,7 @@ export interface BrowserGuard {
    */
   violation(): Promise<string | null>;
   /**
-   * Take the context offline, then report violations. Call this after the page
+   * Refuse every further request, then report violations. Call this after the page
    * has loaded and before capturing it: from here on the page cannot issue any
    * request, so a script that waits and then redirects a frame to an internal
    * host cannot get that response into the screenshot, PDF or DOM snapshot.
@@ -40,8 +40,8 @@ export interface BrowserGuard {
  * 2. Playwright cannot intercept redirect hops, so those are checked from the
  *    `request` event instead. A blocked hop cannot be stopped mid-flight, but it
  *    is reported through `violation()` so the caller can refuse to capture the page.
- * 3. `seal()` cuts the network once the page has loaded, closing the window in
- *    which a late redirect could slip in between the check and the capture.
+ * 3. `seal()` refuses every request once the page has loaded, closing the window
+ *    in which a late redirect could slip in between the check and the capture.
  */
 export async function guardBrowserContext(
   context: BrowserContext,
@@ -73,6 +73,8 @@ export async function guardBrowserContext(
 
   const pending = new Set<Promise<void>>();
   let violationUrl: string | null = null;
+  // Once sealed, every new request is refused, whatever its destination.
+  let sealed = false;
 
   context.on("request", (request) => {
     // First hops go through route() below; only redirect hops need this path.
@@ -86,7 +88,7 @@ export async function guardBrowserContext(
   });
 
   await context.route("**/*", async (route) => {
-    if (await isAllowed(route.request().url())) {
+    if (!sealed && (await isAllowed(route.request().url()))) {
       await route.continue();
     } else {
       await route.abort("blockedbyclient");
@@ -94,7 +96,7 @@ export async function guardBrowserContext(
   });
 
   await context.routeWebSocket(/.*/, async (ws) => {
-    if (await isAllowed(ws.url())) {
+    if (!sealed && (await isAllowed(ws.url()))) {
       ws.connectToServer();
     } else {
       await ws.close({ code: 1008, reason: "blocked" });
@@ -109,7 +111,12 @@ export async function guardBrowserContext(
   return {
     violation,
     async seal(): Promise<string | null> {
-      await context.setOffline(true);
+      // The route handler is what actually enforces this: it sees the first hop of
+      // every request, and with no first hop there is no redirect to follow.
+      // Offline emulation is a second layer only — it does not cover every kind of
+      // request in every Chromium build (loopback is exempt in some).
+      sealed = true;
+      await context.setOffline(true).catch(() => {});
       return violation();
     },
   };

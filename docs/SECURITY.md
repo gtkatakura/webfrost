@@ -95,7 +95,7 @@ Only `http:` and `https:` URLs are accepted.
 | Initial page fetch, RSS/OPML feed fetch, SingleFile asset inlining | `safeFetch`: resolves the host, rejects blocked addresses, follows redirects manually and re-checks every hop, caps the body at 50 MB, times out after 30 s. |
 | Headless Chromium (PDF, screenshot, DOM snapshot, SingleFile) | Every request the page makes — navigation, iframes, images, scripts, `fetch`/XHR, WebSockets — is checked and aborted if the host is blocked. Service workers are disabled. |
 | Redirects inside the browser | Chromium does not allow intercepting a redirect hop. If any hop lands on a blocked host the browser extractors are **not run** for that snapshot and are recorded as failed, so the response is never captured. The request itself may still have been sent (blind SSRF). |
-| After the page has loaded | The browser context is taken offline before anything is captured, so a script cannot wait out the check and then pull an internal URL into a frame. |
+| After the page has loaded | Every further request is refused before anything is captured, so a script cannot wait out the check and then pull an internal URL into a frame. |
 
 **Opt-out:** `WEBFROST_ALLOW_PRIVATE_URLS=true` disables the address check everywhere, for
 deployments that intentionally archive intranet pages. The `http(s)`-only rule still applies.

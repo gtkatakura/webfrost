@@ -233,8 +233,8 @@ async function archive(
     const guard = await guardBrowserContext(context);
     page = await context.newPage();
     await page.goto(url, { timeout: NAVIGATION_TIMEOUT_MS, waitUntil: "load" });
-    // The capture is of the page as loaded. Cutting the network here also means a
-    // script cannot wait for the check below and then pull an internal URL into a frame.
+    // The capture is of the page as loaded. Refusing further requests here also means
+    // a script cannot wait for the check below and then pull an internal URL into a frame.
     const violation = await guard.seal();
     if (violation) {
       throw new Error(
