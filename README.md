@@ -32,7 +32,8 @@ keeping and lets you search what you saved. Run it from a terminal, a script or 
 so every format works out of the box, on amd64 and arm64:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/gtkatakura/webfrost/main/docker-compose.prod.yml
+curl -fsSLO \
+  https://raw.githubusercontent.com/gtkatakura/webfrost/main/docker-compose.prod.yml
 echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
 docker compose -f docker-compose.prod.yml up -d
 ```
@@ -43,9 +44,14 @@ backups) see [Deploy](https://webfrost.dev/docs/guides/deploy).
 **The `webfrost` binary**, for macOS, Linux and Windows. One file with the CLI and the server:
 
 ```bash
-curl -fsSL https://webfrost.dev/install.sh | sh      # or: brew install gtkatakura/tap/webfrost
-webfrost setup                                       # downloads a headless Chromium if you have none
-webfrost serve                                       # server, web UI and scheduler on :3000
+# or: brew install gtkatakura/tap/webfrost
+curl -fsSL https://webfrost.dev/install.sh | sh
+
+# a headless Chromium, if you have none
+webfrost setup
+
+# server, web UI and scheduler on :3000
+webfrost serve
 ```
 
 **The SDK**, to talk to a server from your own code: `npm install @webfrost/sdk`.
@@ -62,14 +68,21 @@ webfrost serve                                       # server, web UI and schedu
 ```bash
 webfrost add https://example.com
 webfrost search "example domain"
-webfrost import bookmarks.html          # Netscape bookmarks, OPML, RSS/Atom or a list of URLs
-webfrost schedule add https://example.com --cron "0 * * * *"   # re-archive every hour
+
+# Netscape bookmarks, OPML, RSS/Atom or a list of URLs
+webfrost import bookmarks.html
+
+# re-archive every hour
+webfrost schedule add https://example.com --cron "0 * * * *"
 ```
 
 ```ts
 import { WebFrostClient } from "@webfrost/sdk";
 
-const client = new WebFrostClient({ baseUrl: "http://localhost:3000/api", apiKey: process.env.WEBFROST_API_KEY });
+const client = new WebFrostClient({
+  baseUrl: "http://localhost:3000/api",
+  apiKey: process.env.WEBFROST_API_KEY,
+});
 const { id } = await client.createSnapshot("https://example.com");
 ```
 
