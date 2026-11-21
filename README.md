@@ -58,12 +58,10 @@ webfrost serve
 
 ## Four ways in
 
-| | |
-|---|---|
-| **Web UI** | Dashboard, search with highlights, previews of every format, tags, schedules, imports. [Guide](https://webfrost.dev/docs/guides/web-ui) |
-| **CLI** | Archive, import, search and schedule from a terminal, straight against an archive folder. [Reference](https://webfrost.dev/docs/reference/cli) |
-| **HTTP API** | Everything the UI does, over REST, with API keys. [Reference](https://webfrost.dev/docs/reference/rest-api) |
-| **TypeScript SDK** | A typed client with no dependencies, for Bun, Node and the browser. [Reference](https://webfrost.dev/docs/reference/sdk) |
+- **Web UI**: dashboard, search with highlights, previews of every format, tags, schedules, imports. [Guide](https://webfrost.dev/docs/guides/web-ui)
+- **CLI**: archive, import, search and schedule from a terminal, straight against an archive folder. [Reference](https://webfrost.dev/docs/reference/cli)
+- **HTTP API**: everything the UI does, over REST, with API keys. [Reference](https://webfrost.dev/docs/reference/rest-api)
+- **TypeScript SDK**: a typed client with no dependencies, for Bun, Node and the browser. [Reference](https://webfrost.dev/docs/reference/sdk)
 
 ```bash
 webfrost add https://example.com
