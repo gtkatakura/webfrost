@@ -14,11 +14,11 @@ The SQLite database (`archive.db`) always remains local regardless of backend.
 
 ## Filesystem (default)
 
-No configuration needed. Files are written to `WEBFROST_DIR/<snapshot-id>/`.
+No configuration needed. Files are written to `WEBFROST_DIR/snapshots/<snapshot-id>/`.
 
 ```bash
 WEBFROST_DIR=./data webfrost add https://example.com
-# Files written to ./data/abc123/
+# Files written to ./data/snapshots/1/
 ```
 
 ## S3-compatible storage

@@ -45,7 +45,7 @@ This creates the SQLite database (`archive.db`) inside `./data`. Nothing is down
 ```bash
 WEBFROST_DIR=./data bun run webfrost add https://example.com
 # Archiving https://example.com...
-# ✓ snapshot abc123 — warc, pdf, screenshot, readability, dom-snapshot, singlefile
+# Snapshot 1 archived.
 ```
 
 What just happened:
@@ -62,8 +62,7 @@ The whole thing used **one browser navigation** and **one shared HTTP cache** �
 
 ```bash
 WEBFROST_DIR=./data bun run webfrost list
-# ID       URL                    Date
-# abc123   https://example.com    2024-01-15 10:23:01
+# 1    done    https://example.com
 ```
 
 ---
@@ -74,7 +73,7 @@ WebFrost indexes the extracted text with SQLite FTS5, so you can search immediat
 
 ```bash
 WEBFROST_DIR=./data bun run webfrost search "illustrative examples"
-# abc123   https://example.com    score: 1.42
+# 1    https://example.com
 #   "...This domain is for use in <mark>illustrative examples</mark>..."
 ```
 

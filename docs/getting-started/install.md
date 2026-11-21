@@ -51,7 +51,7 @@ apk add chromium
 ```
 :::
 
-If Chromium is not available, those extractors are skipped — the snapshot still completes with WARC, Readability, and HTML.
+If Chromium is not available, those extractors are recorded as failed — the snapshot still finishes `done` with WARC, Readability, and HTML. To use a Chromium or Chrome you already have, set `WEBFROST_CHROMIUM_PATH` to its binary.
 
 ## Install yt-dlp (optional)
 
@@ -67,7 +67,7 @@ pip install yt-dlp
 ```
 :::
 
-If yt-dlp is not installed, media extraction is silently skipped.
+If yt-dlp is not installed, media extraction is silently skipped. (`ffmpeg` is needed to merge video and audio.)
 
 ## Docker
 
@@ -84,5 +84,5 @@ WEBFROST_DIR=./data bun run webfrost add https://example.com
 A successful archive produces output like:
 
 ```
-✓ snapshot abc123 — warc, pdf, screenshot, readability, dom-snapshot, singlefile
+Snapshot 1 archived.
 ```

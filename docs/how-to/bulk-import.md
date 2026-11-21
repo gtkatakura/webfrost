@@ -48,10 +48,10 @@ Each feed URL in the OPML is fetched and all feed items are enqueued.
 
 ## From an RSS feed URL
 
-Pass a feed URL directly with `--format rss`:
+Pass a feed URL directly with `--format=rss`:
 
 ```bash
-WEBFROST_DIR=./data webfrost import --format rss https://example.com/feed.xml
+WEBFROST_DIR=./data webfrost import --format=rss https://example.com/feed.xml
 ```
 
 WebFrost fetches the feed, parses all items, and enqueues each item URL.

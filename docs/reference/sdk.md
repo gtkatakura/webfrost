@@ -20,10 +20,14 @@ npm install @webfrost/sdk
 import { WebFrostClient } from "@webfrost/sdk";
 
 const client = new WebFrostClient({
-  baseUrl: "http://localhost:3000",
+  baseUrl: "http://localhost:3000/api",
   apiKey: "wf_your_api_key_here",
 });
 ```
+
+`baseUrl` must include the `/api` prefix (the client appends paths such as `/snapshots` to it), so a server on port 3000 is `http://localhost:3000/api`.
+
+Failed requests throw `WebFrostError` (with `status` and, on `429`, `retryAfter` in seconds).
 
 ---
 
@@ -39,27 +43,33 @@ const snapshot = await client.createSnapshot("https://example.com");
 ### List snapshots
 
 ```typescript
-const { items, total } = await client.listSnapshots({ page: 1, limit: 20 });
-// items: [{ id, url, createdAt, extractors: [...], tags: [...] }]
+const { items, total, page, limit } = await client.listSnapshots({ page: 1, limit: 20 });
+// { items, total, page, limit }
+// items: [{ id, url, status, createdAt, extractors, tags, title, excerpt, screenshotUrl }]
 ```
 
 ### Search snapshots
 
 ```typescript
 const results = await client.searchSnapshots("climate change policy");
-// [{ id, url, snippet: "...climate <mark>change</mark>...", rank }]
+// [{ id, url, snippet: "...climate <mark>change</mark>...", rank, status, createdAt, title, extractors, tags }]
+
+// Paginated: { items, total, page, limit }
+const page = await client.searchSnapshotsPage("climate change policy", { page: 2, limit: 20 });
 ```
 
 ### Get a snapshot
 
 ```typescript
 const snapshot = await client.getSnapshot(1);
+// null when the snapshot does not exist, otherwise the list fields plus
+// archiveResults and extractorMeta (per-extractor status, duration, size, error)
 ```
 
 ### Delete a snapshot
 
 ```typescript
-await client.deleteSnapshot(1);
+const deleted = await client.deleteSnapshot(1); // false when it did not exist
 ```
 
 ---

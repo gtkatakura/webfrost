@@ -21,10 +21,12 @@ npm install @webfrost/sdk
 import { WebFrostClient } from "@webfrost/sdk";
 
 const client = new WebFrostClient({
-  baseUrl: "http://localhost:3000",
+  baseUrl: "http://localhost:3000/api",
   apiKey: "wf_your_api_key_here",
 });
 ```
+
+`baseUrl` must include the `/api` prefix (the client appends paths such as `/snapshots` to it), so a server on port 3000 is `http://localhost:3000/api`.
 
 ## Archive a URL
 
@@ -33,24 +35,27 @@ const snapshot = await client.createSnapshot("https://example.com");
 // { id: 1, url: "https://example.com", status: "pending" }
 ```
 
-The server processes the archive asynchronously. Poll `getSnapshot` or list snapshots to check completion.
+The server processes the archive asynchronously. Poll `getSnapshot` until `status` is no longer `pending`: it becomes `done` (at least one extractor produced output) or `failed`.
 
 ## List and search snapshots
 
 ```typescript
 // List with pagination
-const { items, total } = await client.listSnapshots({ page: 1, limit: 20 });
+const { items, total, page, limit } = await client.listSnapshots({ page: 1, limit: 20 });
 
 // Full-text search
 const results = await client.searchSnapshots("climate change policy");
-// [{ id, url, snippet: "...climate <mark>change</mark>...", rank }]
+// [{ id, url, snippet: "...climate <mark>change</mark>...", rank, status, createdAt, title, extractors, tags }]
+
+// Paginated search: { items, total, page, limit }
+const page = await client.searchSnapshotsPage("climate change policy", { page: 2, limit: 20 });
 ```
 
 ## Get and delete snapshots
 
 ```typescript
-const snapshot = await client.getSnapshot(1);
-await client.deleteSnapshot(1);
+const snapshot = await client.getSnapshot(1); // null if it does not exist
+await client.deleteSnapshot(1); // resolves to false if it did not exist
 ```
 
 ## Tags
@@ -60,13 +65,13 @@ await client.deleteSnapshot(1);
 const tag = await client.createTag("research", "#4f46e5");
 
 // Add to a snapshot
-await client.addTagToSnapshot(snapshot.id, tag.id);
+await client.addTagToSnapshot(1, tag.id);
 
 // List tags on a snapshot
-const tags = await client.listSnapshotTags(snapshot.id);
+const tags = await client.listSnapshotTags(1);
 
 // Remove a tag from a snapshot
-await client.removeTagFromSnapshot(snapshot.id, tag.id);
+await client.removeTagFromSnapshot(1, tag.id);
 ```
 
 ## Bulk import

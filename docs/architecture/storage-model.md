@@ -14,17 +14,19 @@ WebFrost stores all data in `WEBFROST_DIR`:
 ```
 $WEBFROST_DIR/
 ├── archive.db              # SQLite database — all metadata, FTS index
-└── <snapshot-id>/          # One directory per snapshot
-    ├── response.warc       # Raw HTTP archive
-    ├── readability.json    # Extracted article text
-    ├── page.pdf            # Full-page PDF
-    ├── screenshot.png      # Full-page screenshot
-    ├── dom-snapshot.json   # Serialized DOM tree
-    ├── singlefile.html     # Self-contained offline HTML
-    ├── page.html           # Raw HTML source
-    ├── media.mp4           # Video/audio (if yt-dlp ran)
-    └── media-metadata.json # yt-dlp metadata JSON
+└── snapshots/
+    └── <snapshot-id>/      # One directory per snapshot (integer id)
+        ├── archive.warc        # Raw HTTP archive
+        ├── page.pdf            # Full-page PDF
+        ├── screenshot.png      # Full-page screenshot
+        ├── dom.html            # Serialized DOM
+        ├── singlefile.html     # Self-contained offline HTML
+        └── media/              # Only when yt-dlp found media
+            ├── media.mp4       # Video (or media.mp3 for audio-only)
+            └── media-metadata.json
 ```
+
+The `html` and `readability` results live in the database.
 
 Not every file is present for every snapshot. Files are only written if the extractor ran and succeeded.
 
@@ -32,13 +34,14 @@ Not every file is present for every snapshot. Files are only written if the extr
 
 `archive.db` holds all metadata:
 
-- **snapshots** — one row per URL, with status and timestamps
-- **extractor_results** — per-snapshot, per-extractor record with file path and MIME type
+- **snapshots** — one row per URL, with status (`pending`, `done` or `failed`) and timestamps
+- **archive_results** — per-snapshot, per-extractor record: output (inline content or storage reference), duration, and `error` when the extractor failed
+- **job_queue** — background job state per snapshot (`pending`, `running`, `done`, `failed`)
 - **tags** and **snapshot_tags** — tag names, colors, and associations
 - **schedules** — cron definitions with last-run state and failure tracking
-- **api_keys** — hashed API keys and labels
-- **import_history** — deduplication across re-imports
-- **fts_index** — SQLite FTS5 virtual table for full-text search
+- **admin_users**, **sessions**, **api_keys** — the admin account, server-side login sessions, and hashed API keys
+- **imports** — history of bulk imports
+- **snapshots_fts** — SQLite FTS5 virtual table for full-text search (URL, title, text, tags)
 
 See [Database schema](/reference/database-schema) for column-level detail.
 

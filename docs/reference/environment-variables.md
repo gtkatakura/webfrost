@@ -8,9 +8,9 @@ All environment variables recognized by WebFrost.
 
 | Variable | Default | Description |
 |---|---|---|
-| `WEBFROST_DIR` | `.` (CLI) / `~/.webfrost` (server) | Directory for the SQLite database (`archive.db`) and all archive files. Mount a persistent volume here in Docker. |
-| `WEBFROST_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error`. Overridden by `--verbose` / `--quiet` CLI flags. |
-| `WEBFROST_CONCURRENCY` | `3` | Max number of archive pipelines running in parallel. Applies to the import command, schedule worker, and server. |
+| `WEBFROST_DIR` | `.` (CLI) / `~/.webfrost` (server) | Directory for the SQLite database (`archive.db`) and all archive files. The Docker image sets it to `/data` (a declared volume). |
+| `WEBFROST_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error`. Controls both the CLI (overridden by `--verbose` / `--quiet`) and the server. The server falls back to `LOG_LEVEL` when `WEBFROST_LOG_LEVEL` is unset. |
+| `WEBFROST_CONCURRENCY` | `3` | Max archive pipelines running in parallel (server job runner, `import`, `schedule worker`). Each running pipeline can launch its own headless Chromium. |
 
 ---
 
@@ -18,10 +18,29 @@ All environment variables recognized by WebFrost.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `SESSION_SECRET` | Yes | — | Secret used to sign session cookies. Must be a random string ≥ 32 characters. Generate with `openssl rand -hex 32`. Never reuse across environments. |
+| `PORT` | No | `3000` | HTTP port the server listens on. |
+| `SESSION_SECRET` | Yes | — | Secret used to sign session cookies. Must be a random string ≥ 32 characters. Generate with `openssl rand -hex 32`. Never reuse across environments. Required unless `AUTH_DISABLED=true`. |
 | `AUTH_DISABLED` | No | `false` | Set to `true` to disable all authentication. **Development only. Never expose to the public internet.** |
+| `WEBFROST_TRUST_PROXY` | No | `false` | Set to `true` only behind a reverse proxy that sets `X-Forwarded-For`. Without it the header is ignored and rate limits are keyed on the TCP peer address. |
+| `WEBFROST_PUBLIC_READ` | No | `false` | Let anonymous visitors browse the archive read-only: list, search and view snapshots, tags, stats and archived files. Every write, and schedules, imports, settings and API keys, still require signing in. |
+| `WEBFROST_INSECURE_COOKIES` | No | `false` | Drops the `Secure` flag from the session cookie. Needed only for HTTP-only deployments on a non-localhost address (e.g. a LAN IP), where browsers otherwise discard the cookie. Prefer TLS. |
+| `WEBFROST_SCHEDULER` | No | enabled | The server runs due schedules itself (polling every 30 s). Set to `false` to disable this when a separate `webfrost schedule worker` should be the only process doing it. |
+| `TZ` | No | system time zone (`UTC` in Docker) | Time zone used to evaluate cron expressions in schedules. |
 
 ---
+
+## Pipeline
+
+| Variable | Default | Description |
+|---|---|---|
+| `WEBFROST_FETCH_TIMEOUT_MS` | `30000` | Timeout for the initial page fetch. |
+| `WEBFROST_EXTRACTOR_TIMEOUT_MS` | `60000` | Timeout for each extractor. An extractor that exceeds it is recorded as failed. |
+| `WEBFROST_MEDIA_TIMEOUT_MS` | `600000` | Timeout for each `yt-dlp` run (a media archive can run it up to three times). |
+| `WEBFROST_DOMAIN_DELAY_MS` | `1000` | Minimum gap between two archives of the same hostname. `0` disables the delay. |
+| `WEBFROST_CHROMIUM_PATH` | — | Path to an existing Chromium/Chrome binary to use instead of the build Playwright downloads. |
+| `WEBFROST_ALLOW_PRIVATE_URLS` | `false` | Set to `true` to allow archiving loopback, private and link-local addresses (intranet archiving). Leave unset when users you do not fully trust can submit URLs. See [Security](/SECURITY). |
+
+Browser navigation has a fixed 30 s timeout that is not configurable.
 
 ## Storage
 
@@ -66,10 +85,10 @@ docker run \
 
 **Docker Compose (`.env` file):**
 
-Copy `.env.example` to `.env` and fill in the values. Docker Compose picks it up automatically.
+`docker-compose.prod.yml` substitutes `${VAR}` from `.env`: `SESSION_SECRET` is required, and `WEBFROST_TRUST_PROXY`, `WEBFROST_CONCURRENCY`, `TZ` and the storage variables are optional. Quick start: `echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env`.
 
 ---
 
 ## `.env.example`
 
-See the [`.env.example`](../../.env.example) in the repo root for a template with all variables and descriptions.
+See the [`.env.example`](https://github.com/gtkatakura/webfrost/blob/main/.env.example) in the repo root for a template with all variables and descriptions.

@@ -20,10 +20,10 @@ WebFrost navigates to the URL with Chromium and runs all extractors.
 
 | Format | CLI flag | Extension | Description |
 |---|---|---|---|
-| Plain text | `--format text` (default) | `.txt` | One URL per line. Blank lines and `#` comments ignored. |
-| Netscape bookmarks | `--format netscape` | `.html`, `.htm` | Browser bookmark export. Parses all `<A HREF=...>` entries. |
-| OPML | `--format opml` | `.opml` | RSS reader subscription export. Fetches each feed and enqueues all items. |
-| RSS/Atom feed | `--format rss` | — | Fetches the feed URL and enqueues each item link. |
+| Plain text | `--format=text` (default) | `.txt` | One URL per line. Blank lines and `#` comments ignored. |
+| Netscape bookmarks | `--format=netscape` | `.html`, `.htm` | Browser bookmark export. Parses all `<A HREF=...>` entries. |
+| OPML | `--format=opml` | `.opml` | RSS reader subscription export. Fetches each feed and enqueues all items. |
+| RSS/Atom feed | `--format=rss` | — | Fetches the feed URL and enqueues each item link. |
 
 Auto-detection: if `--format` is omitted, the format is inferred from the file extension.
 

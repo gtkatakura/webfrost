@@ -13,7 +13,7 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 | 🟠 P1 | High value — major capability gap |
 | 🟡 P2 | Medium value — meaningful improvement |
 | ⚪ P3 | Long-term / ambitious |
-| AB | ArchiveBox has this feature |
+| AB | ArchiveBox has this feature (`?` = not verified) |
 | WF | WebFrost has this feature |
 
 ---
@@ -44,7 +44,7 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 | Netscape HTML bookmarks import | ✅ | ✅ | — |
 | OPML import | ✅ | ✅ | — |
 | HTTP API | ✅ | ✅ | — |
-| Cron-based scheduling | ✅ | ✅ | — |
+| Cron-based scheduling (run by the server itself or by `webfrost schedule worker`) | ✅ | ✅ | — |
 | RSS feed auto-import (subscribe + poll) | ✅ | ✅ | — |
 | Browser extension (Chrome/Firefox) | ✅ | ❌ | 🟠 P1 |
 | Browser history import | ✅ | ❌ | 🟡 P2 |
@@ -59,7 +59,7 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 |---------|----|----|----------|
 | URL/metadata filtering | ✅ | ✅ (client-side) | — |
 | Full-text search (SQLite FTS5) | ✅ | ✅ | — |
-| Tag-based filtering | ✅ | ✅ | — |
+| Tag-based filtering (tag names are part of the full-text index) | ✅ | ✅ | — |
 | Full-text search (Sonic backend) | ✅ | ❌ | 🟠 P1 |
 | Date/time range filtering | ✅ | ❌ | 🟡 P2 |
 | Server-side pagination | partial | ✅ | — |
@@ -81,8 +81,9 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 | Feature | AB | WF | Priority |
 |---------|----|----|----------|
 | Bearer token API authentication | ✅ | ✅ | — |
-| Session/cookie auth | ✅ | ✅ | — |
-| Public read / private write | ✅ | ❌ | 🔴 P0 |
+| Session/cookie auth (revoked on logout and on password change) | ✅ | ✅ | — |
+| Login rate limiting | ? | ✅ | — |
+| Public read / private write (`WEBFROST_PUBLIC_READ`) | ✅ | ✅ | — |
 | Reverse proxy auth integration | ✅ | ✅ (by design) | — |
 | SAML / OAuth / OpenID | ✅ | ❌ | 🟡 P2 |
 | LDAP | ✅ (addon) | ❌ | ⚪ P3 |
@@ -98,8 +99,10 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 | SDK (programmatic use) | partial | ✅ | — |
 | Webhook notifications | ✅ | ❌ | 🟠 P1 |
 | OpenAPI / interactive docs | ✅ | ❌ | 🟠 P1 |
-| Rate limiting (per-domain) | ❌ | ❌ | 🔴 P0 |
-| Concurrency limit for import/schedule pipelines (`WEBFROST_CONCURRENCY`) | ❌ | ✅ | — |
+| Rate limiting (per-domain, `WEBFROST_DOMAIN_DELAY_MS`) | ❌ | ✅ | — |
+| Concurrency limit shared by API, import and schedule pipelines (`WEBFROST_CONCURRENCY`) | ❌ | ✅ | — |
+| Crash recovery (pending snapshots re-queued at startup) | ? | ✅ | — |
+| Extractor timeouts | ✅ | ✅ | — |
 | API pagination (server-side) | ✅ | ✅ | — |
 
 ### UI and UX
@@ -120,7 +123,7 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 
 | Feature | AB | WF | Priority |
 |---------|----|----|----------|
-| Docker / Docker Compose | ✅ | ✅ | — |
+| Docker / Docker Compose (image bundles Chromium, yt-dlp, ffmpeg) | ✅ | ✅ | — |
 | GHCR image publishing via CI | ❌ | ✅ | — |
 | Semantic versioning + Changesets | ❌ | ✅ | — |
 | npm/bun package install | ✅ | ❌ | 🟠 P1 |
@@ -143,8 +146,8 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 
 | Feature | Why it matters | Complexity | AB has it |
 |---------|----------------|------------|-----------|
-| **Public read / private write** | Expose UI safely without leaking write capability | S | ✅ |
-| **Per-domain rate limiting** | Polite crawling; prevents target server bans | S | partial |
+| ~~**Public read / private write**~~ ✅ shipped | Expose UI safely without leaking write capability | S | ✅ |
+| ~~**Per-domain rate limiting**~~ ✅ shipped | Polite crawling; prevents target server bans | S | partial |
 
 ### 🟠 P1 — High Value (major capability gaps)
 
@@ -167,9 +170,14 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 | **Pinboard export import** | Migration from Pinboard | S | ✅ |
 | **Date/time range filtering** | Search snapshots within a time window | S | ✅ |
 | **Archive export (zip/tar)** | Portable data migration and backup | M | partial |
-| **Extractor timeouts** | Prevent hung Chromium from blocking pipelines | S | ✅ |
-| **Concurrent schedule dedup** | Prevent overlapping runs when interval < execution time | S | ✅ |
-| **Cron timezone support** | Users expect local-time scheduling | S | partial |
+| **Authenticated archiving** (cookies file / browser profile) | Archive pages behind a login; today every page is fetched as an anonymous visitor | M | ✅ |
+| ~~**Extractor timeouts**~~ ✅ shipped | Prevent hung Chromium from blocking pipelines | S | ✅ |
+| ~~**Concurrent schedule dedup**~~ ✅ shipped | Prevent overlapping runs when interval < execution time | S | ✅ |
+| **Per-schedule cron timezone** | Cron is evaluated in the process time zone (`TZ`); a per-schedule zone is not supported yet | S | partial |
+| **Filtering egress proxy** | Pin the validated IP for every outbound request; closes DNS rebinding and blind SSRF via browser redirects | M | ? |
+| **Durable job queue** | Queue state lives in memory between restarts (pending work is recovered at startup); needed for multi-process workers | M | ? |
+| **Non-root container, slimmer image** | Defense in depth; the image is ~2 GB with Chromium and ffmpeg | S | ? |
+| **Server-side search filters** | Status/date/tag filters apply to the current page of results only | S | ? |
 | **SAML / OAuth / OIDC** | Enterprise SSO integration | L | ✅ |
 | **Kubernetes manifests** | Formal k8s deployment support | M | ❌ |
 | **Bare metal install** | `bun install -g @webfrost/cli` should work globally | S | ✅ |
@@ -198,7 +206,7 @@ This roadmap is prioritized by user impact. Items are compared against [ArchiveB
 - **Modern stack**: TypeScript + Bun + Elysia vs Python + Django. Faster cold starts, easier embedding.
 - **CI/CD pipeline**: GHCR publishing, Changesets-based versioning, lefthook pre-commit hooks — production-grade from day one.
 - **Open formats by default**: No proprietary index or database migrations between versions.
-- **Honest partial-failure model**: One extractor failing never fails the snapshot.
+- **Honest partial-failure model**: One extractor failing never fails the snapshot, and every extractor that did not run is recorded with the reason.
 
 ---
 

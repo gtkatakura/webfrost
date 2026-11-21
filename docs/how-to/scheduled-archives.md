@@ -14,7 +14,7 @@ WEBFROST_DIR=./data webfrost schedule add https://example.com/news --cron "0 0 *
 WEBFROST_DIR=./data webfrost schedule add --rss https://example.com/feed.xml --cron "0 * * * *"
 ```
 
-Standard 5-field cron syntax: `minute hour day-of-month month day-of-week`.
+Standard 5-field cron syntax: `minute hour day-of-month month day-of-week`. Cron expressions are evaluated in the time zone of the process that runs the schedule (`TZ`; the system time zone, which is UTC in the Docker image). Set `TZ` (for example `TZ=America/Sao_Paulo`) to change it.
 
 Common expressions:
 
@@ -37,17 +37,19 @@ Output includes the schedule ID, URL, cron expression, last status, and consecut
 
 ---
 
-## Start the schedule worker
+## Who runs the schedules
 
-Schedules do not run on their own — they need a worker process watching the database:
+The server (`@webfrost/server`) runs due schedules itself: it starts the scheduler at boot and polls every 30 seconds. Schedules created in the web UI or via the API fire without any extra process. Set `WEBFROST_SCHEDULER=false` to disable this.
+
+Without the server (CLI-only use), start a worker:
 
 ```bash
 WEBFROST_DIR=./data webfrost schedule worker
 ```
 
-Run this as a persistent background process (systemd, Docker, or a process manager). The worker polls for due schedules and enqueues them.
+Run it as a persistent background process (systemd, Docker, or a process manager). It uses the same scheduler as the server and re-queues snapshots left `pending` by a previous run when it starts.
 
-If you are running the full server (`@webfrost/server`), the schedule worker is integrated — you do not need to start it separately.
+Running a worker next to the server on the same archive is safe: a due schedule is claimed atomically, so only one of them runs it. Set `WEBFROST_SCHEDULER=false` on the server if you want the worker to be the only one.
 
 ---
 

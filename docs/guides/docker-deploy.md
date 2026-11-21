@@ -18,18 +18,16 @@ cd webfrost
 
 # Configure environment
 cp .env.example .env
-# Set SESSION_SECRET and WEBFROST_DIR in .env
+# Set SESSION_SECRET in .env (required): openssl rand -hex 32
+# Or in one step: echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
 
 # Start
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-Create the admin user (first time only):
+Open `http://localhost:3000` and create the admin user in the setup wizard on first visit (or via `POST /api/setup`). The image does not contain the `webfrost` CLI, so `webfrost admin create` cannot be run inside the container.
 
-```bash
-docker compose -f docker-compose.prod.yml exec server \
-  webfrost admin create --username admin --password <your-password>
-```
+The image bundles Chromium, `yt-dlp` and `ffmpeg`, sets `WEBFROST_DIR=/data` (a declared volume) and has a built-in `HEALTHCHECK`. The compose file reads `SESSION_SECRET` (required), `WEBFROST_TRUST_PROXY`, `WEBFROST_CONCURRENCY`, `TZ` and the storage variables from `.env`.
 
 ## Reverse proxy
 
@@ -40,6 +38,8 @@ archive.example.com {
   reverse_proxy localhost:3000
 }
 ```
+
+Behind a proxy, set `WEBFROST_TRUST_PROXY=true` so rate limits are keyed on the client address from `X-Forwarded-For` instead of the proxy's.
 
 ## Persistent volumes
 
@@ -70,8 +70,13 @@ docker compose -f docker-compose.prod.yml up -d
 
 - Set `SESSION_SECRET` from a secret manager, not a `.env` file in production.
 - Never set `AUTH_DISABLED=true` in production.
-- Restrict access to the container port — WebFrost has no rate limiting built in.
-- The schedule worker runs inside the server container — no extra process needed.
+- The API is rate limited per client IP (see [REST API](/reference/rest-api#rate-limits)), but still restrict access to the container port.
+- The scheduler runs inside the server container — no extra process needed (`WEBFROST_SCHEDULER=false` disables it).
+- See [Security](/SECURITY) for the hardening checklist.
+
+## Troubleshooting
+
+Logging in over plain HTTP on a LAN address bounces back to the login page: the session cookie is `Secure` and browsers drop it on non-localhost HTTP origins. Use TLS, or set `WEBFROST_INSECURE_COOKIES=true` for an HTTP-only deployment.
 
 ## Full deployment docs
 

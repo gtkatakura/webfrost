@@ -11,24 +11,26 @@ Everything WebFrost stores lives in the directory pointed to by `WEBFROST_DIR`.
 
 ```
 $WEBFROST_DIR/
-├── archive.db              # SQLite database — all metadata, FTS index, schedules
-└── <snapshot-id>/          # One directory per snapshot (UUID)
-    ├── response.warc       # Raw HTTP archive
-    ├── readability.json    # Extracted article text (title, content, byline)
-    ├── page.pdf            # Full-page PDF
-    ├── screenshot.png      # Full-page screenshot
-    ├── dom-snapshot.json   # Serialized DOM tree
-    ├── singlefile.html     # Self-contained offline HTML
-    ├── page.html           # Raw HTML source
-    ├── media.mp4           # Video/audio (if yt-dlp ran)
-    └── media-metadata.json # yt-dlp metadata JSON
+├── archive.db              # SQLite database — all metadata, FTS index, schedules, sessions
+└── snapshots/
+    └── <snapshot-id>/      # One directory per snapshot (integer id)
+        ├── archive.warc        # Raw HTTP archive
+        ├── page.pdf            # Full-page PDF
+        ├── screenshot.png      # Full-page screenshot
+        ├── dom.html            # Serialized DOM
+        ├── singlefile.html     # Self-contained offline HTML
+        └── media/              # Only when yt-dlp found media
+            ├── media.mp4       # Video (or media.mp3 for the audio-only fallback)
+            └── media-metadata.json
 ```
+
+The `html` and `readability` results are stored in the database, not as files.
 
 Not every file is present in every snapshot. Files are only written if the extractor ran and succeeded.
 
 ## Snapshot IDs
 
-Each snapshot gets a UUID as its directory name, matching the `id` column in the `snapshots` table. The directory is created when the snapshot is first inserted.
+Each snapshot's directory is named after its integer id, matching the `id` column in the `snapshots` table. The directory is created when the snapshot is first inserted.
 
 ## Database location
 
@@ -42,7 +44,7 @@ When using the S3 backend, objects are stored at:
 <S3_PATH_PREFIX>/<snapshot-id>/<filename>
 ```
 
-Default prefix is `snapshots`, so a screenshot is at `snapshots/abc123.../screenshot.png`.
+Default prefix is `snapshots`, so a screenshot is at `snapshots/42/screenshot.png`.
 
 ## Backup
 

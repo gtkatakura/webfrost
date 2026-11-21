@@ -29,26 +29,30 @@ const client = new WebFrostClient(options: WebFrostClientOptions);
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `baseUrl` | `string` | Yes | Server URL, e.g. `http://localhost:3000` |
-| `apiKey` | `string` | Yes | API key created via `webfrost admin key create` |
+| `baseUrl` | `string` | Yes | API base URL **including the `/api` prefix**, e.g. `http://localhost:3000/api`. The client appends paths such as `/snapshots` to it. |
+| `apiKey` | `string` | No | API key (create via the setup wizard, **Settings → API Keys**, or `webfrost admin key create`). Sent as `Authorization: Bearer <key>` on every request. |
+
+Failed requests throw `WebFrostError` with the HTTP `status` and, on `429`, `retryAfter` (seconds, from the `Retry-After` header).
 
 ---
 
 ## Snapshots
 
-### `createSnapshot(url: string): Promise<Snapshot>`
+### `createSnapshot(url: string): Promise<SnapshotCreated>`
 
 Submit a URL for archiving. Returns immediately with `status: "pending"`.
 
 ```typescript
 const snapshot = await client.createSnapshot("https://example.com");
-// { id: 1, url: "https://example.com", status: "pending", createdAt: "..." }
+// { id: 1, url: "https://example.com", status: "pending" }
 ```
 
-### `listSnapshots(options?): Promise<{ items: Snapshot[], total: number }>`
+### `listSnapshots(options?: { page?, limit?, status? }): Promise<SnapshotPage>`
+
+Returns `{ items, total, page, limit }`.
 
 ```typescript
-const { items, total } = await client.listSnapshots({ page: 1, limit: 20 });
+const { items, total, page, limit } = await client.listSnapshots({ page: 1, limit: 20 });
 
 // Filter by status
 const pending = await client.listSnapshots({ status: "pending" });
@@ -60,16 +64,34 @@ Full-text search across archived content.
 
 ```typescript
 const results = await client.searchSnapshots("climate change");
-// [{ id, url, snippet: "...<mark>climate change</mark>...", rank }]
+// [{ id, url, snippet: "...<mark>climate change</mark>...", rank,
+//    status, createdAt, title, extractors, tags }]
 ```
 
-### `getSnapshot(id: number): Promise<Snapshot>`
+Snippets are HTML-escaped by the server; the only markup is literal `<mark>`/`</mark>`. Render them as text, never as raw HTML.
+
+### `searchSnapshotsPage(query: string, options?: { page?: number; limit?: number }): Promise<SearchPage>`
+
+Paginated full-text search. `searchSnapshots` returns only the first page's items.
+
+```typescript
+const { items, total, page, limit } = await client.searchSnapshotsPage("climate change", {
+  page: 2,
+  limit: 20,
+});
+```
+
+### `getSnapshot(id: number): Promise<SnapshotDetail | null>`
+
+Resolves to `null` when the snapshot does not exist.
 
 ```typescript
 const snapshot = await client.getSnapshot(1);
 ```
 
-### `deleteSnapshot(id: number): Promise<void>`
+### `deleteSnapshot(id: number): Promise<boolean>`
+
+Resolves to `true` when deleted, `false` when the snapshot did not exist.
 
 ```typescript
 await client.deleteSnapshot(1);
@@ -91,13 +113,15 @@ const tag = await client.createTag("research", "#4f46e5");
 const tags = await client.listTags();
 ```
 
-### `deleteTag(id: number): Promise<void>`
+### `deleteTag(id: number): Promise<boolean>`
+
+`false` when the tag did not exist.
 
 ### `listSnapshotTags(snapshotId: number): Promise<Tag[]>`
 
-### `addTagToSnapshot(snapshotId: number, tagId: number): Promise<void>`
+### `addTagToSnapshot(snapshotId: number, tagId: number): Promise<Tag>`
 
-### `removeTagFromSnapshot(snapshotId: number, tagId: number): Promise<void>`
+### `removeTagFromSnapshot(snapshotId: number, tagId: number): Promise<boolean>`
 
 ---
 
@@ -146,29 +170,70 @@ const result = await client.importUrls({
 
 ---
 
+## Import history
+
+### `listImports(): Promise<ImportRecord[]>`
+
+## Auth, setup and administration
+
+| Method | Returns |
+|---|---|
+| `getSetupStatus()` | `{ needsSetup }` |
+| `completeSetup(username, password)` | `{ apiKey }` — password must be at least 8 characters |
+| `login(username, password)` | `{ ok }` |
+| `logout()` | `void` |
+| `getMe()` | `{ username }` (`null` for API-key auth) |
+| `changePassword(currentPassword, newPassword)` | `void` — throws `WebFrostError` with status `403` when the current password is wrong |
+| `getStats()` | `DashboardStats` |
+| `getServerInfo()` | `{ version, storagePath, snapshotCount }` |
+| `listApiKeys()` | `ApiKey[]` |
+| `createApiKey(name)` | `ApiKeyCreated` (includes `rawKey`, shown once) |
+| `revokeApiKey(id)` | `boolean` |
+
+---
+
 ## Types
 
 ```typescript
+interface SnapshotCreated {
+  id: number;
+  url: string;
+  status: string; // "pending"
+}
+
 interface Snapshot {
   id: number;
   url: string;
-  status: "pending" | "complete" | "failed";
+  status: string; // "pending" | "done" | "failed"
   createdAt: string;
-  extractors?: ExtractorResult[];
-  tags?: Tag[];
+  extractors: string[]; // extractors that succeeded
+  tags: Tag[];
+  title: string | null;
+  excerpt: string | null;
+  screenshotUrl: string | null;
 }
 
-interface ExtractorResult {
-  extractor: string;
-  filePath: string;
-  mimeType: string;
-  createdAt: string;
+interface SnapshotDetail extends Snapshot {
+  archiveResults: { id: number; extractor: string; content: string | null; createdAt: string }[];
+  extractorMeta: Record<
+    string,
+    { status: "success" | "failed"; durationMs: number | null; fileSizeBytes: number | null; error?: string }
+  >;
+}
+
+interface SnapshotPage {
+  items: Snapshot[];
+  total: number;
+  page: number;
+  limit: number;
 }
 
 interface Tag {
   id: number;
   name: string;
+  slug: string;
   color: string | null;
+  createdAt: string;
 }
 
 interface SearchResult {
@@ -176,6 +241,18 @@ interface SearchResult {
   url: string;
   snippet: string;
   rank: number;
+  status: string;
+  createdAt: string;
+  title: string | null;
+  extractors: string[];
+  tags: Tag[];
+}
+
+interface SearchPage {
+  items: SearchResult[];
+  total: number;
+  page: number;
+  limit: number;
 }
 
 interface Schedule {
@@ -194,6 +271,6 @@ interface ImportResult {
   queued: number;
   skipped: number;
   total: number;
-  format: string;
+  format: "rss" | "opml" | "netscape" | "text";
 }
 ```

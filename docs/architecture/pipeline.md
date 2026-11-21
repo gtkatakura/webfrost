@@ -15,30 +15,32 @@ A single URL archive run from start to completion.
 sequenceDiagram
   actor User
   participant CLI as CLI / Server / SDK
+  participant Runner as JobRunner (core)
   participant Pipeline as Pipeline (core)
   participant Cache as Fetch Cache
   participant Browser as Chromium (Playwright)
   participant Extractors as Extractors (parallel)
   participant DB as SQLite
-  participant FS as Filesystem
+  participant FS as Storage backend
 
-  User->>CLI: webfrost add <url>
-  CLI->>DB: INSERT snapshot (status=pending)
-  CLI->>Pipeline: run(url, snapshotId)
+  User->>CLI: webfrost add <url> or POST /api/snapshots
+  CLI->>DB: INSERT snapshot (status=pending) and job_queue row
+  CLI->>Runner: enqueue (server and import: up to WEBFROST_CONCURRENCY at once, webfrost add runs inline)
+  Runner->>Pipeline: run(url, snapshotId) on its own DB connection
 
-  Pipeline->>Cache: init shared HTTP cache
-  Pipeline->>Browser: launch headless Chromium
+  Pipeline->>Cache: fetch page (SSRF-guarded)
+  Pipeline->>Browser: launch headless Chromium (every browser request SSRF-guarded)
   Browser-->>Pipeline: page handle
 
   Pipeline->>Extractors: run all in parallel
   note over Extractors: warc, readability, html<br/>use Fetch Cache (no browser)<br/><br/>pdf, screenshot, dom-snapshot,<br/>singlefile use Browser page<br/><br/>media, media-metadata<br/>spawn yt-dlp subprocess
 
-  Extractors-->>Pipeline: results (buffers / JSON)
+  Extractors-->>Pipeline: results (buffers / JSON) or errors
 
   Pipeline->>FS: write archive files
-  Pipeline->>DB: UPDATE extractor_results
-  Pipeline->>DB: UPDATE snapshot (status=complete)
-  Pipeline->>Browser: close page
+  Pipeline->>DB: INSERT archive_results (output or error per extractor)
+  Pipeline->>DB: UPDATE snapshot (status=done if any extractor succeeded, else failed)
+  Pipeline->>Browser: close
 ```
 
 ## Download flow
@@ -57,8 +59,8 @@ sequenceDiagram
   Server->>Auth: verify Bearer token or session cookie
   Auth-->>Server: authenticated
 
-  Server->>DB: lookup extractor_result (snapshotId, extractor)
-  DB-->>Server: { filePath, mimeType }
+  Server->>DB: lookup archive_results (snapshot_id, extractor)
+  DB-->>Server: { content (storage ref) }
 
   alt filesystem backend
     Server->>Storage: read file from WEBFROST_DIR/filePath
@@ -79,30 +81,31 @@ Bulk URL import from a file or feed.
 sequenceDiagram
   actor User
   participant CLI as CLI / API
-  participant Import as Import module
-  participant RSS as RSS parser
+  participant Import as Import module (core)
+  participant Parser as Format parser
   participant DB as SQLite
-  participant Pipeline as Pipeline
+  participant Runner as JobRunner (core)
+  participant Pipeline as Pipeline (core)
 
-  User->>CLI: webfrost import <file-or-url>
+  User->>CLI: webfrost import urls.txt
   CLI->>Import: parse(input, format)
 
-  alt RSS / Atom feed
-    Import->>RSS: fetch and parse feed
-    RSS-->>Import: item URLs
-  else OPML
-    Import->>RSS: fetch each feed in OPML
-    RSS-->>Import: all item URLs
-  else plain text / Netscape HTML
-    Import->>Import: parse URLs from file
+  Import->>Parser: parse file (text/opml/rss/netscape)
+  Parser-->>Import: URL list
+
+  loop for each URL
+    Import->>DB: skip if the URL already has a snapshot (RSS imports)
+    Import->>DB: INSERT snapshot (status=pending)
+    Import->>Runner: enqueue
   end
 
-  Import->>DB: filter out URLs in import_history
+  Import->>DB: INSERT imports row
   Import-->>CLI: { queued, skipped, total }
+  CLI-->>User: Queued N URLs
 
-  loop for each new URL
-    Import->>DB: INSERT import_history entry
-    Import->>Pipeline: run(url)
+  loop for each queued URL (concurrently, up to WEBFROST_CONCURRENCY)
+    Runner->>Pipeline: run(url)
+    Pipeline-->>DB: snapshot stored (done or failed)
   end
 ```
 
@@ -112,23 +115,24 @@ How due schedules are detected and dispatched.
 
 ```mermaid
 sequenceDiagram
-  participant Worker as Schedule worker
+  participant Scheduler as Scheduler (embedded in server or CLI worker)
   participant DB as SQLite
-  participant Import as Import module
-  participant Pipeline as Pipeline
+  participant Runner as JobRunner (core)
+  participant Pipeline as Pipeline (core)
 
-  loop every minute
-    Worker->>DB: SELECT schedules WHERE nextRunAt <= now AND paused = 0
-    DB-->>Worker: due schedules
+  loop every 30 seconds
+    Scheduler->>DB: SELECT schedules WHERE next_run_at <= now AND paused=0
+    DB-->>Scheduler: due schedules
 
     loop for each due schedule
-      alt URL schedule
-        Worker->>Pipeline: run(url)
-      else RSS schedule
-        Worker->>Import: importUrls(feedUrl, "rss")
-        Import->>Pipeline: run(each item URL)
+      Scheduler->>DB: claim (UPDATE next_run_at WHERE next_run_at unchanged)
+      alt claimed by this process
+        Scheduler->>Runner: enqueue snapshot (feed schedules enqueue each new item)
+        Runner->>Pipeline: run(url)
+        Scheduler->>DB: UPDATE schedule (lastStatus, consecutiveFailures)
+      else already claimed elsewhere
+        note over Scheduler: skip - another process won the claim
       end
-      Worker->>DB: UPDATE schedule (lastRunAt, lastStatus, consecutiveFailures)
     end
   end
 ```

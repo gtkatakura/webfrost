@@ -4,27 +4,26 @@ sequenceDiagram
   participant Import as Import module (core)
   participant Parser as Format parser
   participant DB as SQLite
-  participant Queue as Archive queue
+  participant Runner as JobRunner (core)
   participant Pipeline as Pipeline (core)
 
   User->>CLI: webfrost import urls.txt
-  CLI->>Import: importFile(path, format)
+  CLI->>Import: parse(input, format)
 
   Import->>Parser: parse file (text/opml/rss/netscape)
   Parser-->>Import: URL list
 
   loop for each URL
-    Import->>DB: check import_history (skip if already imported)
-    alt not yet imported
-      Import->>DB: INSERT import_history
-      Import->>Queue: enqueue URL
-    end
+    Import->>DB: skip if the URL already has a snapshot (RSS imports)
+    Import->>DB: INSERT snapshot (status=pending)
+    Import->>Runner: enqueue
   end
 
+  Import->>DB: INSERT imports row
   Import-->>CLI: { queued, skipped, total }
   CLI-->>User: Queued N URLs
 
   loop for each queued URL (concurrently, up to WEBFROST_CONCURRENCY)
-    Queue->>Pipeline: run(url)
-    Pipeline-->>DB: snapshot stored
+    Runner->>Pipeline: run(url)
+    Pipeline-->>DB: snapshot stored (done or failed)
   end

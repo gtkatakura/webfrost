@@ -19,7 +19,7 @@ WEBFROST_DIR=./data bun run webfrost <command>
 WEBFROST_DIR=./data webfrost add https://example.com
 ```
 
-Six extractors run in parallel: WARC, Readability, PDF, screenshot, DOM snapshot, and SingleFile.
+The extractors run in parallel: HTML, WARC, Readability, PDF, screenshot, DOM snapshot, SingleFile, and media when `yt-dlp` finds a media page. The snapshot ends `done` if at least one produced output, `failed` otherwise.
 
 ## List snapshots
 
@@ -40,7 +40,7 @@ Results include a snippet with matched terms highlighted.
 ## Delete a snapshot
 
 ```bash
-WEBFROST_DIR=./data webfrost delete abc123
+WEBFROST_DIR=./data webfrost delete 1
 ```
 
 Removes the database record and all archive files for that snapshot.
@@ -52,10 +52,10 @@ Removes the database record and all archive files for that snapshot.
 WEBFROST_DIR=./data webfrost tag create "research" --color "#4f46e5"
 
 # Add tag to a snapshot
-WEBFROST_DIR=./data webfrost tag add abc123 research
+WEBFROST_DIR=./data webfrost tag add 1 research
 
 # List tags on a snapshot
-WEBFROST_DIR=./data webfrost tag list abc123
+WEBFROST_DIR=./data webfrost tag list 1
 
 # List all tags
 WEBFROST_DIR=./data webfrost tag list
@@ -71,7 +71,7 @@ WEBFROST_DIR=./data webfrost import urls.txt
 WEBFROST_DIR=./data webfrost import bookmarks.html
 
 # RSS feed
-WEBFROST_DIR=./data webfrost import --format rss https://example.com/feed.xml
+WEBFROST_DIR=./data webfrost import --format=rss https://example.com/feed.xml
 ```
 
 See [Bulk import](/guides/bulk-import) for more detail.
@@ -85,7 +85,7 @@ WEBFROST_DIR=./data webfrost schedule add https://example.com --cron "0 0 * * *"
 # Archive an RSS feed every hour
 WEBFROST_DIR=./data webfrost schedule add --rss https://example.com/feed.xml --cron "0 * * * *"
 
-# Start the schedule worker (not needed if running the full server)
+# Start the schedule worker (not needed if running the full server, which embeds the scheduler)
 WEBFROST_DIR=./data webfrost schedule worker
 ```
 

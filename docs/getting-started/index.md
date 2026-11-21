@@ -27,7 +27,7 @@ No cloud account. No API keys. No subscription fees. Runs on your laptop, a Rasp
 
 ## Packages
 
-WebFrost is a monorepo with four packages:
+WebFrost is a monorepo with these packages (plus the React UI, `@webfrost/ui`, which the server serves):
 
 | Package | Description |
 |---|---|
@@ -42,14 +42,14 @@ For every URL you archive, WebFrost runs these extractors:
 
 | Format | File | Description |
 |---|---|---|
-| WARC | `response.warc` | Raw HTTP archive — all request/response pairs |
-| Readability | `readability.json` | Article text, title, and byline |
+| WARC | `archive.warc` | Raw HTTP archive — all request/response pairs |
+| Readability | JSON, in the database | Article text, title, and byline |
 | PDF | `page.pdf` | Full-page PDF from the headless browser |
 | Screenshot | `screenshot.png` | Full-page PNG |
-| DOM snapshot | `dom-snapshot.json` | Serialized DOM tree |
+| DOM snapshot | `dom.html` | Serialized DOM |
 | SingleFile | `singlefile.html` | Offline HTML with all assets inlined |
-| HTML | `page.html` | Raw HTML source |
-| Media | varies | Video/audio via yt-dlp (if installed) |
+| HTML | in the database | Raw HTML source |
+| Media | `media/` | Video/audio via yt-dlp (if installed) |
 
 ## Next steps
 

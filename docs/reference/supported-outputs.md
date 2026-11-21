@@ -11,20 +11,20 @@ WebFrost runs up to nine extractors per snapshot. All run in parallel after a si
 
 | Extractor | File | Format | Requires | Description |
 |---|---|---|---|---|
-| `warc` | `response.warc` | WARC 1.1 | — | Raw HTTP archive — all request/response pairs, headers, and bodies. |
-| `readability` | `readability.json` | JSON | — | Article title, byline, and body text extracted via Mozilla Readability. |
-| `html` | `page.html` | HTML | — | Raw HTML source (response body). |
+| `warc` | `archive.warc` | WARC 1.1 | — | Raw HTTP archive — all request/response pairs, headers, and bodies. |
+| `readability` | stored in the database | JSON | — | Article title, byline, and body text extracted via Mozilla Readability. |
+| `html` | stored in the database | HTML | — | Raw HTML source (response body). |
 | `pdf` | `page.pdf` | PDF | Chromium | Full-page PDF rendered by the headless browser. |
 | `screenshot` | `screenshot.png` | PNG | Chromium | Full-page screenshot. |
-| `dom-snapshot` | `dom-snapshot.json` | JSON | Chromium | Serialized DOM tree at capture time. |
+| `dom-snapshot` | `dom.html` | HTML | Chromium | Serialized DOM at capture time. |
 | `singlefile` | `singlefile.html` | HTML | Chromium | Self-contained offline HTML with all assets inlined as data URIs. |
 | `media` | varies | varies | yt-dlp | Video or audio file downloaded via yt-dlp. |
-| `media-metadata` | `media-metadata.json` | JSON | yt-dlp | Title, uploader, duration, formats, and more from yt-dlp. |
+| `media-metadata` | `media/media-metadata.json` | JSON | yt-dlp | Title, uploader, duration, formats, and more from yt-dlp. |
 
 ## Optional extractors
 
-- **Chromium extractors** (PDF, screenshot, DOM snapshot, SingleFile) — skipped if Chromium is not installed. The snapshot still completes with the remaining extractors.
-- **yt-dlp extractors** (media, media-metadata) — skipped if yt-dlp is not installed or the URL is not a recognized media source.
+- **Chromium extractors** (PDF, screenshot, DOM snapshot, SingleFile) — recorded as failed (with an error) if Chromium is missing, navigation fails, or the SSRF policy is violated. The snapshot is still `done` if any other extractor produced output.
+- **yt-dlp extractors** (media, media-metadata) — skipped silently if yt-dlp is not installed or the URL is not a recognized media source.
 - **Media file size limit** — files larger than 500 MB are skipped.
 
 ## Downloading outputs
@@ -32,7 +32,7 @@ WebFrost runs up to nine extractors per snapshot. All run in parallel after a si
 **CLI (filesystem):**
 
 ```bash
-ls ./data/<snapshot-id>/
+ls ./data/snapshots/<snapshot-id>/
 ```
 
 **REST API:**

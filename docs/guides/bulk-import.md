@@ -44,7 +44,7 @@ Each feed in the OPML is fetched and all items are enqueued.
 ## RSS feed URL
 
 ```bash
-WEBFROST_DIR=./data webfrost import --format rss https://example.com/feed.xml
+WEBFROST_DIR=./data webfrost import --format=rss https://example.com/feed.xml
 ```
 
 ## Via the REST API
@@ -76,4 +76,4 @@ WEBFROST_CONCURRENCY=5 WEBFROST_DIR=./data webfrost import urls.txt
 
 ## Deduplication
 
-WebFrost tracks imported URLs in `import_history` to avoid re-archiving the same URL on subsequent imports from the same feed or file. URLs already in the archive are counted as `skipped` in the result.
+RSS imports skip URLs that already have a snapshot and count them as `skipped` in the result, so re-importing the same feed only archives new items. Every import is also recorded in the `imports` history table.

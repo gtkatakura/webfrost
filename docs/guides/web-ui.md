@@ -23,7 +23,11 @@ See [Docker setup](/getting-started/docker).
 
 ## First-run setup
 
-On first visit, WebFrost shows a setup wizard to create your admin account. After that, log in with your username and password.
+On first visit, WebFrost shows a setup wizard to create your admin account (a username and a password of at least 8 characters). After that, log in with your username and password.
+
+::: warning Logging in over plain HTTP
+The session cookie is `Secure`, so browsers drop it on plain-HTTP origins other than `localhost`. If login bounces back to the login page on a LAN address, serve WebFrost over TLS or set `WEBFROST_INSECURE_COOKIES=true`.
+:::
 
 ---
 
@@ -80,7 +84,7 @@ After import, a result summary shows total URLs found and how many were queued. 
 ### Settings
 
 - Toggle light/dark theme
-- Change your account password
+- Change your account password (all other sessions are signed out)
 - View server info (version, storage path)
 
 ### API Keys
@@ -88,6 +92,15 @@ After import, a result summary shows total URLs found and how many were queued. 
 Create and revoke API keys for use with the REST API and SDK. Keys are shown once on creation — copy them to a safe place.
 
 ---
+
+## Read-only guest view
+
+Start the server with `WEBFROST_PUBLIC_READ=true` to let people browse the archive without an
+account. Guests get the Dashboard, Snapshots, Search and Tags pages, can open any snapshot and
+download or preview its files, and see a small **Read-only** marker with a **Sign in** link in
+the sidebar. Everything that changes the archive — archiving, deleting, tagging, importing,
+schedules, settings, API keys — only appears after signing in. Opening one of those pages as a
+guest leads to the login screen and back to the page afterwards.
 
 ## Navigation
 

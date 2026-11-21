@@ -1,6 +1,6 @@
 # WebFrost
 
-A self-hosted web archiving toolkit. Archive URLs to WARC, Readability JSON, PDF, full-page screenshots, DOM snapshots, and self-contained HTML with one command.
+A self-hosted web archiving toolkit. Archive URLs to WARC, Readability JSON, PDF, full-page screenshots, DOM snapshots, self-contained HTML and media with one command.
 
 One shared HTTP cache, one browser navigation per snapshot, durable open formats (files + SQLite), no lock-in.
 
@@ -8,43 +8,125 @@ One shared HTTP cache, one browser navigation per snapshot, durable open formats
 
 ## Quickstart
 
-**Requirements:** [Bun](https://bun.sh) v1.x, Chromium (for PDF/screenshot extractors)
+### Docker (server + web UI + scheduler)
+
+```bash
+git clone https://github.com/gtkatakura/webfrost.git
+cd webfrost
+echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
+docker compose -f docker-compose.prod.yml up -d
+# Open http://localhost:3000 and create the admin user
+```
+
+The image bundles Chromium, yt-dlp and ffmpeg, so every extractor works out of the box.
+See [How-to: Docker deploy](docs/how-to/docker-deploy.md).
+
+### From source
+
+**Requirements:** [Bun](https://bun.sh) v1.x. Optional but recommended: Chromium (PDF, screenshot, DOM snapshot, SingleFile) and `yt-dlp` + `ffmpeg` (media). Without Chromium the browser extractors are recorded as failed on each snapshot; without yt-dlp media extraction is skipped. Everything else still runs.
 
 ```bash
 git clone https://github.com/gtkatakura/webfrost.git
 cd webfrost
 bun install
-
-mkdir -p ./data
-WEBFROST_DIR=./data bun run webfrost init
-WEBFROST_DIR=./data bun run webfrost add https://example.com
-WEBFROST_DIR=./data bun run webfrost list
-```
-
-Or run the server with UI:
-
-```bash
-bun run build
-export SESSION_SECRET=$(openssl rand -hex 32)
-WEBFROST_DIR=./data SESSION_SECRET=$SESSION_SECRET bun run packages/server/src/index.ts
-# Open http://localhost:3000
+bunx playwright install chromium   # or: export WEBFROST_CHROMIUM_PATH=/usr/bin/chromium
 ```
 
 ---
 
-## Web UI
+## Getting started
+
+WebFrost has four surfaces over the same archive directory (`WEBFROST_DIR`).
+
+### CLI
+
+```bash
+export WEBFROST_DIR=./data && mkdir -p "$WEBFROST_DIR"
+
+bun run webfrost init
+bun run webfrost add https://example.com
+bun run webfrost list
+bun run webfrost search "example domain"
+
+bun run webfrost import bookmarks.html                 # Netscape, OPML, RSS/Atom or plain text
+bun run webfrost schedule add https://example.com --cron "0 * * * *"
+bun run webfrost schedule worker                       # runs due schedules (the server does this itself)
+bun run webfrost --help
+```
+
+Full reference: [docs/reference/cli.md](docs/reference/cli.md).
+
+### Server API
+
+```bash
+bun run build
+export SESSION_SECRET=$(openssl rand -hex 32)
+WEBFROST_DIR=./data bun run packages/server/src/index.ts
+```
+
+Create the admin user in the browser (first visit) or with
+`bun run webfrost admin create --username admin --password <password>`, which also prints an API key.
+
+```bash
+API=http://localhost:3000/api
+KEY=<your-api-key>
+
+# Queue an archive (202 Accepted; the pipeline runs in the background)
+curl -X POST "$API/snapshots" -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" -d '{"url":"https://example.com"}'
+
+curl "$API/snapshots?page=1&limit=20&status=done" -H "Authorization: Bearer $KEY"
+curl "$API/snapshots?q=example" -H "Authorization: Bearer $KEY"          # full-text search
+curl "$API/snapshots/1" -H "Authorization: Bearer $KEY"                   # detail + per-extractor status
+curl -OJ "$API/snapshots/1/archives/pdf/download" -H "Authorization: Bearer $KEY"
+```
+
+| Route | Purpose |
+|---|---|
+| `POST /api/setup`, `GET /api/setup/status` | First-run admin creation |
+| `POST /api/auth/login` · `logout` · `change-password`, `GET /api/auth/me` | Session auth |
+| `GET/POST /api/snapshots`, `GET/DELETE /api/snapshots/:id` | List (newest first), search (`?q=`), create, inspect, delete |
+| `GET /api/snapshots/:id/archives/:extractor/download` | Download one archived format |
+| `GET /api/snapshots/:id/archives/:extractor/preview` | Sandboxed HTML preview (`dom-snapshot`, `singlefile`) |
+| `GET/POST /api/tags`, `DELETE /api/tags/:id`, `GET/POST/DELETE /api/snapshots/:id/tags` | Tags |
+| `GET/POST /api/schedules`, `GET/PATCH/DELETE /api/schedules/:id` | Cron schedules (pause/resume via `PATCH`) |
+| `POST /api/import`, `POST /api/import/file`, `GET /api/imports` | Bulk import and import history |
+| `GET /api/stats`, `GET /api/settings/info`, `GET/POST/DELETE /api/settings/keys` | Stats, version, API keys |
+| `GET /health` | Unauthenticated health check |
+
+Full reference: [docs/reference/rest-api.md](docs/reference/rest-api.md).
+
+### SDK
+
+```ts
+import { WebFrostClient } from "@webfrost/sdk";
+
+const client = new WebFrostClient({
+  baseUrl: "http://localhost:3000/api", // include the /api prefix
+  apiKey: process.env.WEBFROST_API_KEY,
+});
+
+const { id } = await client.createSnapshot("https://example.com");
+const { items, total } = await client.listSnapshots({ page: 1, limit: 20 });
+const hits = await client.searchSnapshotsPage("example", { page: 1 });
+```
+
+Full reference: [docs/reference/sdk.md](docs/reference/sdk.md). The package is not on npm yet; use it from this workspace.
+
+### Web UI
 
 The server serves a React SPA at `http://localhost:3000`. Key features:
 
 - **Dashboard** — stats cards, Quick Archive form, recent activity feed
-- **Snapshots** — virtualized list, density toggle, inline filtering, bulk delete, slide-over detail panel
-- **Search** — SQLite FTS5 full-text search with snippet highlighting and saved searches
-- **Schedules** — cron-based scheduling with health badges (On schedule / Overdue / Paused)
-- **Tags** — color-coded tag management
+- **Snapshots** — virtualized list, density toggle, inline filtering, bulk delete, slide-over detail panel with per-extractor status and a sandboxed preview of the archived page
+- **Search** — SQLite FTS5 full-text search with highlighted snippets, pagination and saved searches
+- **Schedules** — cron-based scheduling with health badges (On schedule / Overdue / Paused); run by the server itself
+- **Tags** — color-coded tag management; tag names are searchable
 - **Import** — RSS, OPML, Netscape bookmarks, plain-text URL list
 - **Light/dark theme** — follows system preference, persisted to `localStorage`
 - **Keyboard shortcuts** — `⌘K` search palette, `?` shortcut help, `g h/s/t/i` navigation
 - **Collapsible sidebar** — 240 px expanded, 56 px icon-only; state persisted
+- **Read-only guest view** — with `WEBFROST_PUBLIC_READ=true`, visitors can browse and search without an account; every control that changes something is shown only after signing in
 
 Stack: React 18, React Router v6, Tailwind CSS v4 (CSS variable design system), `@tanstack/react-query`, `@tanstack/react-virtual`, `lucide-react`, `sonner`.
 
@@ -52,13 +134,36 @@ See [Web UI guide](docs/guides/web-ui.md) for full documentation.
 
 ---
 
+## Configuration
+
+The variables you are most likely to need. Everything else is in [Reference: Environment variables](docs/reference/environment-variables.md) and `.env.example`.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `WEBFROST_DIR` | cwd (CLI) / `~/.webfrost` (server) / `/data` (Docker) | Archive directory: `archive.db` + `snapshots/` |
+| `SESSION_SECRET` | — (required by the server) | Signs session cookies; ≥ 32 random characters |
+| `PORT` | `3000` | Server port |
+| `WEBFROST_CONCURRENCY` | `3` | Archive pipelines run in parallel |
+| `WEBFROST_DOMAIN_DELAY_MS` | `1000` | Minimum gap between two archives of the same host |
+| `WEBFROST_SCHEDULER` | `true` | Set `false` to stop the server from running schedules |
+| `WEBFROST_TRUST_PROXY` | `false` | Honour `X-Forwarded-For` (only behind a reverse proxy) |
+| `WEBFROST_PUBLIC_READ` | `false` | Let anonymous visitors browse the archive (read-only); writes still need a login |
+| `WEBFROST_INSECURE_COOKIES` | `false` | Allow session cookies over plain HTTP on a non-localhost address |
+| `WEBFROST_ALLOW_PRIVATE_URLS` | `false` | Allow archiving private/loopback addresses |
+| `WEBFROST_CHROMIUM_PATH` | — | Use an existing Chromium instead of Playwright's download |
+| `WEBFROST_STORAGE_BACKEND` | `filesystem` | `filesystem` or `s3` (plus the `S3_*` variables) |
+| `WEBFROST_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
+| `TZ` | system | Time zone used to evaluate cron expressions |
+
+---
+
 ## Packages
 
 | Package | Description |
 |---|---|
-| `@webfrost/core` | Database, pipeline, extractors library |
+| `@webfrost/core` | Database, pipeline, extractors, job runner, scheduler, storage backends |
 | `@webfrost/cli` | `webfrost` CLI binary |
-| `@webfrost/server` | Elysia HTTP server + React UI |
+| `@webfrost/server` | Elysia HTTP server + React UI + embedded scheduler |
 | `@webfrost/sdk` | TypeScript client for the server API |
 | `@webfrost/ui` | React single-page app |
 
@@ -66,7 +171,7 @@ See [Web UI guide](docs/guides/web-ui.md) for full documentation.
 
 ## Documentation
 
-Full documentation site: `bun run docs:dev` → `http://localhost:5173`
+Full documentation site: `bun run docs:dev` → `http://localhost:5174`
 
 | Section | Contents |
 |---|---|
@@ -75,7 +180,7 @@ Full documentation site: `bun run docs:dev` → `http://localhost:5173`
 | [How-to: Bulk import](docs/how-to/bulk-import.md) | Import URLs from files, feeds, and bookmarks |
 | [How-to: Scheduled archives](docs/how-to/scheduled-archives.md) | Set up recurring archive jobs |
 | [How-to: Docker deploy](docs/how-to/docker-deploy.md) | Run as a persistent server with Docker |
-| [How-to: S3 storage](docs/how-to/s3-storage.md) | Configure remote storage (coming soon) |
+| [How-to: S3 storage](docs/how-to/s3-storage.md) | Store archives in S3, MinIO, R2 or B2 |
 | [Reference: CLI](docs/reference/cli.md) | All CLI commands and flags |
 | [Reference: REST API](docs/reference/rest-api.md) | All API endpoints |
 | [Reference: SDK](docs/reference/sdk.md) | TypeScript client usage |
@@ -87,7 +192,8 @@ Full documentation site: `bun run docs:dev` → `http://localhost:5173`
 | [Deploy](docs/DEPLOY.md) | CI/CD pipeline and deployment targets |
 | [Release](docs/RELEASE.md) | Release process |
 | [Versioning](docs/VERSIONING.md) | Version bump policy |
-| [Security](docs/SECURITY.md) | Security policy |
+| [Security](docs/SECURITY.md) | Auth, rate limits, SSRF guard, deployment checklist |
+| [Threat model](docs/THREAT-MODEL.md) | Attack surface, controls and open risks |
 
 ---
 
@@ -103,7 +209,7 @@ bun run typecheck    # TypeScript type checking
 bun run bench        # Benchmarks
 ```
 
-Run `make` (or `make help`) for the full list of contributor workflows.
+Run `make` (or `make help`) for the full list of contributor workflows, and see [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 Benchmark results: [BENCHMARKS.md](BENCHMARKS.md)
 
@@ -117,4 +223,12 @@ See [ROADMAP.md](ROADMAP.md) for the full feature roadmap.
 
 **Shipped in 0.2.0 (UI):** Redesigned React UI — light/dark theme, command palette, keyboard shortcuts, virtualized snapshot list, bulk delete, schedule health tracking, import history, API key management.
 
-**Coming next:** Browser extension, rate limiting, public-read/private-write access control.
+**Unreleased (hardening):** scheduler embedded in the server, bounded job runner with crash recovery, public-read/private-write mode, per-domain rate limiting, extractor timeouts, SSRF guard extended to the headless browser, revocable sessions, login rate limiting, Docker image with Chromium and yt-dlp.
+
+**Coming next:** Browser extension, webhooks, OpenAPI docs, npm packages.
+
+---
+
+## License
+
+[MIT](LICENSE)

@@ -11,8 +11,8 @@ description: Set up a local development environment for WebFrost.
 |---|---|---|
 | [Bun](https://bun.sh) | v1.x | Runtime and package manager |
 | [mise](https://mise.jdx.dev/) | any | Tool version management (`.tool-versions`) |
-| Chromium | any | Browser extractors (PDF, screenshot, etc.) |
-| yt-dlp | any | Media extraction (optional) |
+| Chromium | any | Browser extractors (PDF, screenshot, etc.). Installed by Playwright, or point `WEBFROST_CHROMIUM_PATH` at an existing binary |
+| yt-dlp, ffmpeg | any | Media extraction (optional) |
 
 ## Bootstrap
 
@@ -41,6 +41,13 @@ WEBFROST_DIR=./data AUTH_DISABLED=true bun run packages/server/src/index.ts
 
 # Terminal 2 — UI dev server
 cd packages/ui && bun run dev
+```
+
+## Docs
+
+```bash
+bun run docs:dev      # VitePress dev server on http://localhost:5174
+bun run docs:build    # Production build (output in dist/docs)
 ```
 
 ## Build
@@ -92,4 +99,4 @@ Hooks are installed automatically on `bun install` via the `prepare` script.
 - Use `bun run --filter '*' <script>` to run a script across all packages.
 - New packages go in `packages/<name>/`.
 - Shared types and utilities belong in `@webfrost/core`.
-- The UI (`@webfrost/ui`) is built into `packages/server/public/` and served statically.
+- The UI (`@webfrost/ui`) is built into `packages/ui/dist/` and served statically by the server.

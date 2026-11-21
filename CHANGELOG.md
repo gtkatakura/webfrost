@@ -8,7 +8,38 @@ Format: [Versioning Strategy](docs/VERSIONING.md) · [Keep a Changelog](https://
 
 ## [Unreleased]
 
-No unreleased changes. See [0.1.0] below.
+Reliability and security hardening. The full entry is generated from
+[`.changeset/hardening-pass.md`](.changeset/hardening-pass.md) when the next version is cut.
+
+### Fixed
+
+- Server-side imports never archived anything (snapshots stayed `pending`)
+- Schedules created in the web UI never ran — the server now runs the scheduler itself
+- Docker image shipped without Chromium and yt-dlp; `docker-compose.prod.yml` did not pass `SESSION_SECRET`
+- Snapshots orphaned as `pending` by a restart are re-queued at startup
+- Tags added after archiving were not searchable
+- Web UI: Reader tab, search pagination, pending-state refresh, bulk-action reporting, expired-session handling
+
+### Security
+
+- SSRF guard extended to every request made by the headless browser
+- Server-side sessions, revoked on logout and on password change (existing sessions are invalidated by the upgrade)
+- Login rate limiting; `X-Forwarded-For` only trusted with `WEBFROST_TRUST_PROXY=true`
+- Search snippets HTML-escaped
+
+### Added
+
+- Public read / private write (`WEBFROST_PUBLIC_READ`) with a read-only guest view in the web UI
+- Snapshot lists are newest first
+- Per-domain rate limiting, fetch/extractor/yt-dlp timeouts, shared concurrency limit for all pipelines
+- `WEBFROST_CHROMIUM_PATH`, `WEBFROST_SCHEDULER`, `WEBFROST_TRUST_PROXY`, `WEBFROST_INSECURE_COOKIES`, `WEBFROST_DOMAIN_DELAY_MS`
+- SDK: `searchSnapshotsPage()`, `WebFrostError.retryAfter`
+- `LICENSE` (MIT) and `CONTRIBUTING.md`
+
+### Changed
+
+- `POST /api/auth/change-password`: wrong current password is now `403` (was `401`)
+- Admin passwords must be at least 8 characters
 
 ---
 

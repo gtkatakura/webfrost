@@ -36,13 +36,20 @@ The shared library. Nothing in this package is user-facing directly.
 
 ```
 packages/core/src/
-├── pipeline.ts          # Archive orchestrator
-├── db.ts                # SQLite access layer
+├── pipeline.ts          # Archive orchestrator (one snapshot)
+├── jobs.ts              # JobRunner — bounded background pipelines, pending-snapshot recovery
+├── scheduler.ts         # Scheduler — polls for due schedules, claims them atomically
+├── db.ts                # SQLite access layer, schema migration
 ├── fetch-cache.ts       # Shared HTTP cache
+├── throttle.ts          # Per-host politeness delay
+├── ssrf-guard.ts        # SSRF protection for fetches
+├── browser-guard.ts     # SSRF protection for headless-browser requests
 ├── import.ts            # Bulk import logic
 ├── cron.ts              # Cron expression evaluation
-├── schedules.ts         # Schedule execution
-├── auth.ts              # Auth helpers
+├── schedules.ts         # Schedule storage (CRUD, due lookup)
+├── auth.ts              # Admin users, API keys, sessions
+├── search.ts            # FTS5 search
+├── tags.ts              # Tags (kept in sync with the FTS index)
 ├── rss.ts               # RSS/Atom feed parser
 └── extractors/
     ├── warc.ts
@@ -62,11 +69,11 @@ Thin command-line wrapper over `@webfrost/core`. Uses a CLI framework (Cliffy or
 
 ### `@webfrost/server`
 
-[Elysia](https://elysiajs.com/) HTTP server. Defines all REST API routes and serves the built React UI from `public/`. The schedule worker runs as a background task inside the same process.
+[Elysia](https://elysiajs.com/) HTTP server. Defines all REST API routes and serves the built React UI from `public/`. The scheduler (`startScheduler` from core) and the background job runner run inside the same process; `WEBFROST_SCHEDULER=false` disables the scheduler.
 
 ### `@webfrost/ui`
 
-React single-page application. Built with Vite. Output goes to `packages/server/public/` so the server can serve it statically. During development, Vite proxies API requests to the server.
+React single-page application. Built with Vite. Output goes to `packages/ui/dist/`, which the server serves statically (the Docker image copies it to `public/`). During development, Vite proxies API requests to the server.
 
 ### `@webfrost/sdk`
 

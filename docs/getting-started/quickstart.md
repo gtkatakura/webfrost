@@ -30,24 +30,23 @@ WEBFROST_DIR=./data bun run webfrost init
 ```bash
 WEBFROST_DIR=./data bun run webfrost add https://example.com
 # Archiving https://example.com...
-# ✓ snapshot abc123 — warc, pdf, screenshot, readability, dom-snapshot, singlefile
+# Snapshot 1 archived.
 ```
 
-All six extractors run in parallel. The snapshot is saved to `./data/`.
+All extractors run in parallel. The snapshot is saved to `./data/` and its status is `done` when at least one extractor produced output.
 
 ## 4. List snapshots
 
 ```bash
 WEBFROST_DIR=./data bun run webfrost list
-# ID       URL                    Date
-# abc123   https://example.com    2024-01-15 10:23:01
+# 1    done    https://example.com
 ```
 
 ## 5. Search
 
 ```bash
 WEBFROST_DIR=./data bun run webfrost search "illustrative"
-# abc123   https://example.com    score: 1.42
+# 1    https://example.com
 #   "...This domain is for use in <mark>illustrative</mark> examples..."
 ```
 

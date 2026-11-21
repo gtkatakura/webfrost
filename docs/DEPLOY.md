@@ -26,7 +26,7 @@ File: `.github/workflows/ci.yml`
 
 ### 1. Docker → GitHub Container Registry (GHCR)
 
-**Image:** `ghcr.io/<org>/webfrost/server`
+**Image:** `ghcr.io/gtkatakura/webfrost/server`
 
 **Triggers:**
 - Push a semver tag (e.g. `v0.1.0`) — tags image as `v<semver>`, `<major>.<minor>`, and `sha-<sha>`.
@@ -47,7 +47,9 @@ File: `.github/workflows/ci.yml`
 |-------|------|--------------|
 | `ui-builder` | `oven/bun:1` | Builds `@webfrost/ui` with Vite → `packages/ui/dist/` |
 | `server-builder` | `oven/bun:1` | Builds `@webfrost/core` + `@webfrost/server` → `packages/server/dist/` |
-| runtime | `oven/bun:1-slim` | Copies `dist/` (server bundle) and `public/` (UI assets) |
+| runtime | `oven/bun:1-slim` | Copies `dist/` (server bundle) and `public/` (UI assets); installs Chromium (Playwright headless shell), `yt-dlp` and `ffmpeg`; sets `WEBFROST_DIR=/data`, declares `/data` as a volume and defines a `HEALTHCHECK` |
+
+The image does **not** contain the `webfrost` CLI.
 
 **To release a versioned image:**
 
@@ -62,20 +64,19 @@ git push origin v0.1.0
 
 ```bash
 # Latest from main
-docker pull ghcr.io/<org>/webfrost/server:latest
+docker pull ghcr.io/gtkatakura/webfrost/server:latest
 
 # Pinned version
-docker pull ghcr.io/<org>/webfrost/server:v0.1.0
+docker pull ghcr.io/gtkatakura/webfrost/server:v0.1.0
 ```
 
 **Running with Docker Compose (recommended):**
 
-A production-ready Compose file is at `docker-compose.prod.yml`. It mounts a named volume, sets `WEBFROST_DIR=/data`, and configures a health-check.
+A production-ready Compose file is at `docker-compose.prod.yml`. It mounts a named volume, sets `WEBFROST_DIR=/data`, and configures a health-check. Compose substitutes `${VAR}` from `.env`: `SESSION_SECRET` is required; `WEBFROST_TRUST_PROXY`, `WEBFROST_CONCURRENCY`, `TZ` and the storage variables are optional.
 
 ```bash
-# Copy and customise env vars
-cp .env.example .env
-# Edit .env as needed, then start
+# Quick start: only SESSION_SECRET is required
+echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
 docker compose -f docker-compose.prod.yml up -d
 # Verify health
 curl http://localhost:3000/health
@@ -93,9 +94,9 @@ IMAGE_TAG=v0.1.0 docker compose -f docker-compose.prod.yml up -d
 ```bash
 docker run -d \
   -p 3000:3000 \
-  -e WEBFROST_DIR=/data \
+  -e SESSION_SECRET=$(openssl rand -hex 32) \
   -v /path/to/local/data:/data \
-  ghcr.io/<org>/webfrost/server:latest
+  ghcr.io/gtkatakura/webfrost/server:latest
 ```
 
 **Environment variables:**
@@ -103,13 +104,13 @@ docker run -d \
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `3000` | HTTP port the server listens on |
-| `WEBFROST_DIR` | `~/.webfrost` | Directory for SQLite database and archive files |
+| `WEBFROST_DIR` | `~/.webfrost` (`/data` in the Docker image) | Directory for SQLite database and archive files |
 | `SESSION_SECRET` | — | **Required.** Random string ≥ 32 chars. Signs session cookies. Generate with `openssl rand -hex 32`. |
 | `AUTH_DISABLED` | `false` | Set to `true` to bypass all auth checks. Dev/testing only — never in production. |
-| `GITHUB_REPOSITORY` | `your-org/webfrost` | Used by `docker-compose.prod.yml` to construct the image name (`ghcr.io/$GITHUB_REPOSITORY/server`) |
+| `GITHUB_REPOSITORY` | `gtkatakura/webfrost` | Used by `docker-compose.prod.yml` to construct the image name (`ghcr.io/$GITHUB_REPOSITORY/server`) |
 | `IMAGE_TAG` | `latest` | Docker image tag to pull — set to a version like `v0.1.0` to pin a release |
 
-See `.env.example` at the repo root for a template. Never commit `.env` to version control.
+Other variables the server reads (`WEBFROST_TRUST_PROXY`, `WEBFROST_INSECURE_COOKIES`, `WEBFROST_CONCURRENCY`, `WEBFROST_SCHEDULER`, `TZ`, timeouts, storage) are listed in [Environment variables](/reference/environment-variables). See `.env.example` at the repo root for a template. Never commit `.env` to version control.
 
 **Secrets handling:**
 
@@ -121,7 +122,7 @@ See `.env.example` at the repo root for a template. Never commit `.env` to versi
 
 | Container path | Purpose |
 |----------------|---------|
-| `/data` (or your `WEBFROST_DIR`) | Persists the SQLite database (`webfrost.db`) and snapshot archive files across container restarts |
+| `/data` (or your `WEBFROST_DIR`) | Persists the SQLite database (`archive.db`) and snapshot archive files across container restarts |
 
 > **Important:** always mount a volume for `WEBFROST_DIR`. Without it, all snapshots are lost when the container stops.
 
@@ -135,10 +136,10 @@ See `.env.example` at the repo root for a template. Never commit `.env` to versi
 | `POST /api/auth/logout` | Clear session cookie |
 | `GET /api/auth/me` | Returns current authenticated username |
 | `POST /api/snapshots` | Submit a URL for archiving |
-| `GET /api/snapshots` | List all snapshots (supports `?q=` for full-text search) |
+| `GET /api/snapshots` | List all snapshots (supports `?q=` for full-text search, `page`, `limit`, `status`) |
 | `GET /api/snapshots/:id` | Get snapshot detail |
 | `DELETE /api/snapshots/:id` | Delete a snapshot and its archive files |
-| `GET /api/snapshots/:id/archives/:extractor/download` | Download raw archive file (extractor: `warc`, `pdf`, `readability`, `html`, `screenshot`, `dom-snapshot`, `singlefile`) |
+| `GET /api/snapshots/:id/archives/:extractor/download` | Download raw archive file (extractor: `warc`, `pdf`, `readability`, `html`, `screenshot`, `dom-snapshot`, `singlefile`, `media`, `media-metadata`) |
 | `POST /api/schedules` | Create a recurring archive schedule |
 | `GET /api/schedules` | List all schedules |
 | `DELETE /api/schedules/:id` | Remove a schedule |
@@ -186,7 +187,7 @@ After each Docker push, the `verify-docker` job in `release.yml` performs a brow
 
 ## Auth Setup
 
-WebFrost uses API key (Bearer token) and session cookie authentication. All `/api/*` routes require authentication except `POST /api/auth/login`.
+WebFrost uses API key (Bearer token) and session cookie authentication. All `/api/*` routes require authentication except `POST /api/auth/login`, `GET /api/setup/status` and `POST /api/setup`. Sessions are stored server-side: logout revokes the session, and changing the password revokes all sessions.
 
 ### 1. Generate a session secret
 
@@ -198,10 +199,21 @@ Set this as `SESSION_SECRET` in your environment or `.env` file.
 
 ### 2. Create the admin user
 
-Use the `webfrost admin create` CLI command. This creates the admin user and generates a default API key in one step.
+**Docker / server:** open the server in a browser. On first visit the setup wizard asks for a username and a password of at least 8 characters, then logs you in. The same step is available over HTTP and returns the first API key (shown once):
 
 ```bash
-# With the CLI installed globally
+curl -X POST http://localhost:3000/api/setup \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"<at-least-8-chars>"}'
+# { "apiKey": "<key>" }
+```
+
+`POST /api/setup` answers 400 if `username` is empty or `password` is shorter than 8 characters, and 409 once an admin user exists.
+
+**CLI (non-Docker installs):** the `webfrost` CLI can create the admin user directly against the archive directory. The Docker image does not contain the CLI, so do not `docker exec` into the container for this.
+
+```bash
+# With the CLI installed globally (password must be at least 8 characters)
 webfrost admin create --username admin --password <your-password>
 
 # Or from the repo directly
@@ -233,12 +245,14 @@ With the SDK:
 import { WebFrostClient } from "@webfrost/sdk";
 
 const client = new WebFrostClient({
-  baseUrl: "http://localhost:3000",
+  baseUrl: "http://localhost:3000/api",
   apiKey: process.env.WEBFROST_API_KEY,
 });
 
 const snapshots = await client.listSnapshots();
 ```
+
+> Plain HTTP on a non-localhost address: the session cookie is `Secure`, so browsers drop it and login bounces back to the login page. Use TLS, or set `WEBFROST_INSECURE_COOKIES=true`.
 
 ### 4. Session login (browser / UI)
 
@@ -287,8 +301,8 @@ WebFrost state lives in two places inside `WEBFROST_DIR` (default `/data` in Doc
 
 | Path | Contents |
 |------|----------|
-| `webfrost.db` | SQLite database — snapshot metadata, extractor results |
-| `snapshots/` | Archive files (WARC, PDF, readability JSON) |
+| `archive.db` | SQLite database — snapshot metadata, extractor results, sessions |
+| `snapshots/` | Archive files (WARC, PDF, screenshot, DOM, SingleFile, media) |
 
 ### Backup
 
@@ -304,9 +318,9 @@ tar -czf "webfrost-backup-$(date +%Y%m%d-%H%M%S).tar.gz" \
 docker compose -f docker-compose.prod.yml start
 ```
 
-> **Hot backup (no downtime):** Use SQLite's `.backup` command to copy `webfrost.db` online:
+> **Hot backup (no downtime):** Use SQLite's `.backup` command to copy `archive.db` online:
 > ```bash
-> sqlite3 /data/webfrost.db ".backup /backups/webfrost-$(date +%Y%m%d).db"
+> sqlite3 /data/archive.db ".backup /backups/webfrost-$(date +%Y%m%d).db"
 > ```
 > Then copy the `snapshots/` directory separately.
 
@@ -333,7 +347,7 @@ curl http://localhost:3000/api/snapshots
 Example cron entry (backs up nightly at 2 AM, keeps 7 days):
 
 ```cron
-0 2 * * * sqlite3 /data/webfrost.db ".backup /backups/webfrost-$(date +\%Y\%m\%d).db" && find /backups -name 'webfrost-*.db' -mtime +7 -delete
+0 2 * * * sqlite3 /data/archive.db ".backup /backups/webfrost-$(date +\%Y\%m\%d).db" && find /backups -name 'webfrost-*.db' -mtime +7 -delete
 ```
 
 ---

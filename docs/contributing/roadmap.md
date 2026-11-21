@@ -19,6 +19,7 @@ WebFrost is compared against [ArchiveBox](https://archivebox.io/) as the referen
 - React web UI with first-run setup wizard
 - `@webfrost/sdk` TypeScript client
 - S3-compatible storage backend
+- Security headers (CSP, `X-Frame-Options`, `X-Content-Type-Options`), SSRF protection, server-side sessions, per-IP rate limits (see [Security](/SECURITY))
 
 ## Current priorities
 
@@ -29,7 +30,6 @@ WebFrost is compared against [ArchiveBox](https://archivebox.io/) as the referen
 | P1 | Full-page replay (Browsertrix integration or WACZ output) |
 | P1 | Webhook triggers — archive on RSS item, GitHub event, etc. |
 | P1 | Export/download entire archive as ZIP or WACZ |
-| P2 | Server Content-Security-Policy hardening |
 | P2 | OPDS catalog support |
 | P2 | Annotation and highlighting on archived pages |
 
@@ -45,5 +45,7 @@ The best way to contribute is to:
 2. Check the roadmap and existing issues for duplicates.
 3. If it's a new feature, discuss the approach before opening a PR.
 4. Follow the [development setup](/contributing/development) guide.
+
+See [CONTRIBUTING.md](https://github.com/gtkatakura/webfrost/blob/main/CONTRIBUTING.md) in the repo root for the full contribution guide. WebFrost is released under the [MIT license](https://github.com/gtkatakura/webfrost/blob/main/LICENSE).
 
 Docs improvements are always welcome — open a PR against `docs/` directly.

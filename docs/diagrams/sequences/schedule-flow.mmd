@@ -1,23 +1,21 @@
 sequenceDiagram
-  participant Worker as Schedule worker
+  participant Scheduler as Scheduler (embedded in server or CLI worker)
   participant DB as SQLite
-  participant Cron as Cron evaluator
+  participant Runner as JobRunner (core)
   participant Pipeline as Pipeline (core)
 
-  loop every poll interval
-    Worker->>DB: SELECT schedules WHERE paused=false
-    DB-->>Worker: schedule list
+  loop every 30 seconds
+    Scheduler->>DB: SELECT schedules WHERE next_run_at <= now AND paused=0
+    DB-->>Scheduler: due schedules
 
-    loop for each schedule
-      Worker->>Cron: isDue(schedule.cron, schedule.lastRunAt)
-      alt due
-        Worker->>DB: UPDATE schedule (lastRunAt=now)
-        Worker->>Pipeline: run(schedule.url)
-        alt success
-          Worker->>DB: UPDATE schedule (lastStatus=success, consecutiveFailures=0)
-        else failure
-          Worker->>DB: UPDATE schedule (lastStatus=error, consecutiveFailures++)
-        end
+    loop for each due schedule
+      Scheduler->>DB: claim (UPDATE next_run_at WHERE next_run_at unchanged)
+      alt claimed by this process
+        Scheduler->>Runner: enqueue snapshot (feed schedules enqueue each new item)
+        Runner->>Pipeline: run(url)
+        Scheduler->>DB: UPDATE schedule (lastStatus, consecutiveFailures)
+      else already claimed elsewhere
+        note over Scheduler: skip - another process won the claim
       end
     end
   end

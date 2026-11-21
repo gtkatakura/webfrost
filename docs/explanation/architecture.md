@@ -20,7 +20,7 @@ C4Context
   System(webfrost, "WebFrost", "Self-hosted web archiving toolkit. Archives URLs to WARC, PDF, screenshots, and structured text.")
 
   System_Ext(web, "Public Web", "Websites, RSS feeds, media URLs (YouTube, Vimeo, etc.)")
-  System_Ext(storage, "Local Filesystem / S3 (future)", "Durable archive file storage")
+  System_Ext(storage, "Local Filesystem / S3", "Durable archive file storage")
   System_Ext(browser, "Chromium", "Headless browser for rendering pages and running extractors")
   System_Ext(ytdlp, "yt-dlp", "Media downloader for video/audio URLs")
 
@@ -46,13 +46,13 @@ C4Container
 
   Container_Boundary(mono, "WebFrost Monorepo") {
     Container(cli, "@webfrost/cli", "Bun / TypeScript", "Command-line interface. Direct archive, import, schedule, tag, and admin commands.")
-    Container(server, "@webfrost/server", "Elysia / Bun", "HTTP server. REST API + serves the React UI. Embeds schedule worker.")
+    Container(server, "@webfrost/server", "Elysia / Bun", "HTTP server. REST API + serves the React UI. Embeds the scheduler and background job runner.")
     Container(ui, "@webfrost/ui", "React / Vite", "Single-page application. Browse snapshots, manage tags and schedules, import URLs.")
     Container(sdk, "@webfrost/sdk", "TypeScript", "Typed HTTP client for the server REST API. Published as an npm package.")
     Container(core, "@webfrost/core", "TypeScript / Bun", "Shared library. Database layer, archive pipeline, extractors, scheduler, import, RSS.")
   }
 
-  ContainerDb(db, "SQLite (archive.db)", "SQLite / FTS5", "Snapshots, extractor results, tags, schedules, API keys, import history.")
+  ContainerDb(db, "SQLite (archive.db)", "SQLite / FTS5", "Snapshots, extractor results, tags, schedules, users, sessions, API keys, import history.")
   ContainerDb(files, "Archive Files", "Filesystem", "WARC, PDF, PNG, JSON, HTML files per snapshot.")
 
   System_Ext(browser, "Chromium")
@@ -83,13 +83,14 @@ C4Component
   title @webfrost/core — Components
 
   Container_Boundary(core, "@webfrost/core") {
-    Component(pipeline, "Pipeline", "pipeline.ts", "Orchestrates a full snapshot: launches browser, runs all extractors in parallel, writes results to DB and disk.")
+    Component(pipeline, "Pipeline", "pipeline.ts", "Orchestrates a full snapshot: fetches the page, launches browser, runs all extractors in parallel, writes results to DB and disk.")
+    Component(jobs, "Job Runner", "jobs.ts", "Runs pipelines in the background, bounded by WEBFROST_CONCURRENCY. Each job opens its own DB connection. Re-queues snapshots left pending by a previous run.")
     Component(extractors, "Extractors", "extractors/", "Individual extractor modules: warc, readability, pdf, screenshot, dom-snapshot, singlefile, html, media, media-metadata.")
-    Component(db, "Database", "db.ts", "SQLite access layer. Snapshots, extractor results, tags, schedules, API keys, import history, FTS index.")
+    Component(db, "Database", "db.ts", "SQLite access layer. Snapshots, extractor results, tags, schedules, sessions, API keys, import history, FTS index.")
     Component(fetchCache, "Fetch Cache", "fetch-cache.ts", "In-memory HTTP cache shared across extractors within one snapshot. Ensures one network request per resource.")
     Component(importModule, "Import", "import.ts", "Parses and enqueues URLs from plain text, OPML, Netscape HTML, and RSS feeds.")
-    Component(scheduler, "Scheduler", "cron.ts / schedules.ts", "Cron expression evaluation and schedule execution logic.")
-    Component(auth, "Auth", "auth.ts", "Password hashing, API key generation and verification, session management.")
+    Component(scheduler, "Scheduler", "scheduler.ts / cron.ts / schedules.ts", "Polls for due schedules every 30 s, claims each atomically and queues it. Cron is evaluated in the process time zone.")
+    Component(auth, "Auth", "auth.ts", "Password hashing, API key generation and verification, server-side sessions.")
     Component(rss, "RSS", "rss.ts", "Fetches and parses RSS/Atom feeds.")
   }
 
@@ -105,8 +106,9 @@ C4Component
   Rel(extractors, browser, "pdf, screenshot, dom-snapshot, singlefile")
   Rel(extractors, ytdlp, "media, media-metadata")
   Rel(importModule, rss, "RSS feed import")
-  Rel(importModule, pipeline, "Enqueues URLs")
-  Rel(scheduler, pipeline, "Triggers due schedules")
+  Rel(importModule, jobs, "Enqueues URLs")
+  Rel(scheduler, jobs, "Queues due schedules")
+  Rel(jobs, pipeline, "Runs pipelines")
   Rel(db, db_file, "SQLite queries")
 ```
 
