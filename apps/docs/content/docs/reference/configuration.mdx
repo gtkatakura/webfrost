@@ -43,6 +43,9 @@ Numeric variables (`WEBFROST_CONCURRENCY` and the millisecond settings) ignore v
 | `WEBFROST_FETCH_TIMEOUT_MS` | `30000` | Timeout for the page fetch, redirects included. Also applies to feed and import fetches. `0` disables it. |
 | `WEBFROST_EXTRACTOR_TIMEOUT_MS` | `60000` | Timeout for each extractor. One that exceeds it is recorded as failed. `0` disables it. |
 | `WEBFROST_MEDIA_TIMEOUT_MS` | `600000` | Timeout for each `yt-dlp` run. A media archive can run it up to three times, and the media extractor as a whole is allowed three times this value. |
+| `WEBFROST_READABILITY_MAX_BYTES` | `10485760` | HTML longer than this (10 MB) is cut before the readable-text extraction, which blocks the process while it runs. `0` turns the cap off. |
+| `WEBFROST_SINGLEFILE_CONCURRENCY` | `8` | Images, stylesheets and fonts the self-contained HTML downloads at the same time. |
+| `WEBFROST_SINGLEFILE_MAX_BYTES` | `104857600` | Total bytes the self-contained HTML may inline (100 MB). Assets past the budget stay as links to the live site. |
 | `WEBFROST_CHROMIUM_PATH` | none | Use this Chromium or Chrome binary instead of the build Playwright downloads. |
 | `WEBFROST_ALLOW_PRIVATE_URLS` | `false` | `true` allows archiving loopback, private and link-local addresses (intranet archiving). Leave it off when people you do not fully trust can submit URLs. See [Security](/docs/architecture/security#ssrf-protection). |
 

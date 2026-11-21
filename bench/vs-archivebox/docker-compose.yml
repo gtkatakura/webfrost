@@ -38,6 +38,8 @@ services:
       PORT: "3000"
       WEBFROST_DIR: /data
       AUTH_DISABLED: "true"
+      # With auth disabled the server listens on 127.0.0.1 unless HOST says otherwise.
+      HOST: "0.0.0.0"
       # Fixture server resolves to a private Docker bridge IP (172.x.x.x).
       # Allow private URLs so WebFrost can fetch fixture pages during benchmarks.
       WEBFROST_ALLOW_PRIVATE_URLS: "true"

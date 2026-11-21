@@ -134,12 +134,29 @@ deployments that intentionally archive intranet pages. The `http(s)`-only rule s
   first lookup and a private one to the second.
 - **Blind requests through browser redirects**, as described above.
 - **yt-dlp** makes its own requests and follows its own redirects. It is only invoked for a URL
-  that already passed `safeFetch`, but it is not otherwise constrained.
+  that already passed `safeFetch`, and it is limited as described in
+  [Media extraction](#media-extraction-yt-dlp), but its requests do not go through the guard.
 
 If WebFrost archives URLs from people you do not fully trust, treat the application-level guard as
 one layer and add a network-level one: run the container in a network with no route to your
 internal ranges and to `169.254.169.254`, or apply egress firewall rules.
 
+### Media extraction (yt-dlp)
+
+The archived URL is untrusted input to yt-dlp, so every call passes:
+
+- `--ignore-config`: no config file on the host or in `$HOME` can inject options such as `--exec`
+  or change output paths;
+- `--no-playlist --playlist-items 1`: a playlist or channel URL cannot fan out into hundreds of
+  downloads;
+- `--use-extractors default,-generic`: only sites yt-dlp explicitly supports. The generic extractor
+  would fetch and scan arbitrary pages for embedded media, a second request outside the SSRF guard.
+
+The URL always comes after `--`, so it can never be read as an option. yt-dlp runs in its own
+process group with a hard timeout (`WEBFROST_MEDIA_TIMEOUT_MS`); on timeout, cancellation or
+shutdown the whole group is killed, ffmpeg included, so no download keeps running outside the
+concurrency limit. Its network requests still do not go through WebFrost's guard: isolate the
+network at the container or firewall level when archiving untrusted URLs.
 
 ## Content security
 

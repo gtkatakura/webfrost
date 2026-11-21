@@ -164,7 +164,8 @@ export const importRouter = new Elysia({ prefix: "/import" })
         ? (formatHint as ImportFormat)
         : detectFormat(filename, rawContent);
 
-      const urls = parseUrls(rawContent, format);
+      // Relative links in a fetched feed resolve against the feed's own URL.
+      const urls = parseUrls(rawContent, format, sourceUrl);
       const refusal = overLimit(urls);
       if (refusal) {
         set.status = 413;

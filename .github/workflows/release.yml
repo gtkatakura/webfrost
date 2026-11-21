@@ -207,6 +207,7 @@ jobs:
           docker run -d --name webfrost-verify \
             -p 3000:3000 \
             -e AUTH_DISABLED=true \
+            -e HOST=0.0.0.0 \
             -e SESSION_SECRET=$(openssl rand -hex 32) \
             "$IMAGE"
           echo "Container started from $IMAGE"

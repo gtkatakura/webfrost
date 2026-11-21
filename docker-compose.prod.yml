@@ -13,6 +13,8 @@ services:
     #   context: .
     #   dockerfile: packages/server/Dockerfile
     restart: unless-stopped
+    # Room for the server to finish running archives on shutdown (WEBFROST_SHUTDOWN_TIMEOUT_MS, 20 s).
+    stop_grace_period: 30s
     # Reaps the Chromium and yt-dlp child processes the extractors spawn.
     init: true
     ports:
@@ -22,6 +24,8 @@ services:
       WEBFROST_DIR: /data
       # Required: signs session cookies. The server refuses to start without it.
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET — generate one with "openssl rand -hex 32"}
+      # Optional: the first-run setup asks for this token, so nobody else can claim a fresh instance.
+      WEBFROST_SETUP_TOKEN: ${WEBFROST_SETUP_TOKEN:-}
       # Set to "true" only behind a reverse proxy that sets X-Forwarded-For.
       WEBFROST_TRUST_PROXY: ${WEBFROST_TRUST_PROXY:-false}
       # Pipelines run in parallel (each launches a headless Chromium).
