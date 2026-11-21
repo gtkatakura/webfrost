@@ -1,0 +1,212 @@
+---
+title: SDK
+description: The typed TypeScript client for the WebFrost REST API, with every method, type and error.
+icon: Braces
+---
+
+`@webfrost/sdk` is a typed TypeScript client for the [REST API](/docs/reference/rest-api). It wraps `fetch`, has no dependency on `@webfrost/core`, and works anywhere `fetch` does.
+
+<Callout type="info" title="Not on npm yet">
+The package is not published. Use it from the repository workspace, for example by adding `"@webfrost/sdk": "workspace:*"` to another workspace package.
+</Callout>
+
+## Create a client
+
+```ts
+import { WebFrostClient } from "@webfrost/sdk";
+
+const client = new WebFrostClient({
+  baseUrl: "http://localhost:3000/api",
+  apiKey: process.env.WEBFROST_API_KEY,
+});
+```
+
+| Option | Type | Required | Description |
+|---|---|---|---|
+| `baseUrl` | `string` | yes | API base URL **including the `/api` prefix**. The client appends paths such as `/snapshots`, so a server on port 3000 is `http://localhost:3000/api`. A trailing slash is removed. |
+| `apiKey` | `string` | no | Sent as `Authorization: Bearer <key>` on every request. Create one in the UI, with `webfrost admin key create`, or through `completeSetup`. |
+
+Failed requests throw `WebFrostError`:
+
+```ts
+import { WebFrostError } from "@webfrost/sdk";
+
+try {
+  await client.createSnapshot("https://example.com");
+} catch (err) {
+  if (err instanceof WebFrostError && err.status === 429) {
+    console.log(`retry in ${err.retryAfter}s`); // from the Retry-After header
+  }
+}
+```
+
+`WebFrostError` has the HTTP `status` and, on `429`, `retryAfter` in seconds.
+
+## Snapshots
+
+### `createSnapshot(url: string): Promise<SnapshotCreated>`
+
+Queue a URL. Returns at once with `status: "pending"`.
+
+```ts
+const snapshot = await client.createSnapshot("https://example.com");
+// { id: 1, url: "https://example.com", status: "pending" }
+```
+
+The server archives in the background. Poll `getSnapshot` until `status` is no longer `pending`; it becomes `done` (at least one extractor produced output) or `failed`.
+
+### `listSnapshots(options?): Promise<SnapshotPage>`
+
+`options` is `{ page?, limit?, status? }`. Results are newest first.
+
+```ts
+const { items, total, page, limit } = await client.listSnapshots({ page: 1, limit: 20 });
+const pending = await client.listSnapshots({ status: "pending" });
+```
+
+### `searchSnapshots(query): Promise<SearchResult[]>`
+
+Full-text search; returns the first page of results.
+
+```ts
+const results = await client.searchSnapshots("climate change");
+// [{ id, url, snippet: "...climate <mark>change</mark>...", rank, status, createdAt, title, extractors, tags }]
+```
+
+Snippets are HTML-escaped by the server; the only markup is a literal `<mark>` and `</mark>`. Render them as text, never as raw HTML.
+
+### `searchSnapshotsPage(query, options?): Promise<SearchPage>`
+
+Paginated search. `options` is `{ page?, limit? }`.
+
+```ts
+const { items, total } = await client.searchSnapshotsPage("climate change", { page: 2, limit: 20 });
+```
+
+### `getSnapshot(id: number): Promise<SnapshotDetail | null>`
+
+Resolves to `null` when the snapshot does not exist. Otherwise the list fields plus `archiveResults` and `extractorMeta`.
+
+```ts
+const detail = await client.getSnapshot(1);
+detail?.extractorMeta["pdf"]; // { status: "success", durationMs, fileSizeBytes }
+```
+
+### `deleteSnapshot(id: number): Promise<boolean>`
+
+`true` when deleted, `false` when it did not exist.
+
+## Tags
+
+| Method | Returns | Notes |
+|---|---|---|
+| `listTags()` | `Tag[]` | |
+| `createTag(name, color?)` | `Tag` | `color` is a hex string such as `"#4f46e5"`. Throws on a duplicate name (`409`). |
+| `deleteTag(id)` | `boolean` | `false` when it did not exist |
+| `listSnapshotTags(snapshotId)` | `Tag[]` | |
+| `addTagToSnapshot(snapshotId, tagId)` | `Tag` | |
+| `removeTagFromSnapshot(snapshotId, tagId)` | `boolean` | |
+
+```ts
+const tag = await client.createTag("research", "#4f46e5");
+await client.addTagToSnapshot(1, tag.id);
+```
+
+## Schedules
+
+| Method | Returns | Notes |
+|---|---|---|
+| `listSchedules()` | `Schedule[]` | |
+| `createSchedule(url, cron)` | `Schedule` | URL schedules only |
+| `updateSchedule(id, { paused })` | `Schedule` | Pause or resume |
+| `deleteSchedule(id)` | `boolean` | |
+
+```ts
+const schedule = await client.createSchedule("https://example.com", "0 9 * * *");
+await client.updateSchedule(schedule.id, { paused: true });
+```
+
+## Import
+
+### `importUrls(options): Promise<ImportResult>`
+
+```ts
+const result = await client.importUrls({
+  url: "https://example.com/feed.xml",
+  format: "rss", // "rss" | "opml" | "netscape" | "text"
+});
+// { queued: 12, skipped: 3, total: 15, format: "rss" }
+```
+
+`options` is `{ url?, content?, format? }`: pass a `url` to fetch or raw `content` to parse. `format` is detected when omitted. `listImports()` returns the history.
+
+## Auth, setup and administration
+
+| Method | Returns |
+|---|---|
+| `getSetupStatus()` | `{ needsSetup, publicRead }` |
+| `completeSetup(username, password)` | `{ apiKey }`. The password needs at least 8 characters. |
+| `login(username, password)` | `{ ok }` |
+| `logout()` | `void` |
+| `getMe()` | `{ username }`, with `null` for API-key auth |
+| `changePassword(currentPassword, newPassword)` | `void`. Throws `WebFrostError` with status `403` when the current password is wrong, `400` for a short new password. |
+| `getStats()` | `DashboardStats` |
+| `getServerInfo()` | `{ version, storagePath, snapshotCount }` |
+| `listApiKeys()` | `ApiKey[]` |
+| `createApiKey(name)` | `ApiKeyCreated`, which includes `rawKey`, shown once |
+| `revokeApiKey(id)` | `boolean` |
+
+## Types
+
+```ts
+interface SnapshotCreated { id: number; url: string; status: string } // "pending"
+
+interface Snapshot {
+  id: number;
+  url: string;
+  status: string; // "pending" | "done" | "failed"
+  createdAt: string;
+  extractors: string[]; // extractors that succeeded
+  tags: Tag[];
+  title: string | null;
+  excerpt: string | null;
+  screenshotUrl: string | null;
+}
+
+interface SnapshotDetail extends Snapshot {
+  archiveResults: { id: number; extractor: string; content: string | null; createdAt: string }[];
+  extractorMeta: Record<
+    string,
+    { status: "success" | "failed"; durationMs: number | null; fileSizeBytes: number | null; error?: string }
+  >;
+}
+
+interface SnapshotPage { items: Snapshot[]; total: number; page: number; limit: number }
+
+interface Tag { id: number; name: string; slug: string; color: string | null; createdAt: string }
+
+interface SearchResult {
+  id: number; url: string; snippet: string; rank: number; status: string;
+  createdAt: string; title: string | null; extractors: string[]; tags: Tag[];
+}
+interface SearchPage { items: SearchResult[]; total: number; page: number; limit: number }
+
+interface Schedule {
+  id: number; url: string; cron: string; createdAt: string;
+  lastRunAt: string | null; nextRunAt: string | null;
+  paused: boolean; lastStatus: string | null; consecutiveFailures: number;
+}
+
+interface ImportResult { queued: number; skipped: number; total: number; format: "rss" | "opml" | "netscape" | "text" }
+```
+
+`DashboardStats`, `ServerInfo`, `ApiKey`, `ApiKeyCreated` and `ImportRecord` match the response shapes in the [REST API reference](/docs/reference/rest-api#stats-and-settings).
+
+<Cards>
+  <Card title="REST API" href="/docs/reference/rest-api">
+    The routes behind each method.
+  </Card>
+  <Card title="Bulk import" href="/docs/guides/bulk-import">
+    Import formats and deduplication.
+  </Card>
+</Cards>

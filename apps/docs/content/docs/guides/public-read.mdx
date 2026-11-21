@@ -1,0 +1,58 @@
+---
+title: Public read
+description: Let anyone browse the archive read-only with WEBFROST_PUBLIC_READ, and what guests can and cannot do.
+icon: Eye
+---
+
+Set `WEBFROST_PUBLIC_READ=true` to let anonymous visitors browse, search and download from the archive without an account. Everything that changes anything still requires signing in.
+
+```bash
+WEBFROST_PUBLIC_READ=true
+```
+
+With Docker Compose, put it in `.env`; the production Compose file passes it through.
+
+<Callout type="warn" title="The whole archive becomes readable">
+Public read exposes every snapshot, not a chosen subset, including pages that were private when you captured them: anything behind a login that you archived, internal pages (with `WEBFROST_ALLOW_PRIVATE_URLS`), or content you forgot about. Turn it on only if everything in the archive may be seen by anyone who can reach the server. Deleting a snapshot is the only way to hide one.
+</Callout>
+
+## What guests can do
+
+Guests can make `GET` and `HEAD` requests to this fixed list of API routes. The list is matched on method and exact path, so a new route is private unless it is added to it.
+
+| Route | Purpose |
+|---|---|
+| `GET /api/snapshots` | List snapshots and full-text search (`?q=`) |
+| `GET /api/snapshots/:id` | Snapshot detail with per-extractor status |
+| `GET /api/snapshots/:id/tags` | Tags on a snapshot |
+| `GET /api/snapshots/:id/archives/:extractor/download` | Download an archived file |
+| `GET /api/snapshots/:id/archives/:extractor/preview` | Sandboxed HTML preview |
+| `GET /api/tags` | List tags |
+| `GET /api/stats` | Dashboard statistics |
+
+`GET /health`, `POST /api/auth/login`, `GET /api/setup/status` and `POST /api/setup` (only while no admin exists) work without credentials with or without public read.
+
+## What guests cannot do
+
+Every other route answers `401`: all `POST`, `PATCH` and `DELETE` requests, and also `/api/schedules`, `/api/imports`, `/api/import`, `/api/settings/*` (info and API keys) and `GET /api/auth/me`. Guests cannot archive, delete, tag, import, schedule, change settings or read API keys.
+
+## Storage paths are hidden
+
+For a guest, the `content` field of a file-backed archive result is the download URL (`/api/snapshots/1/archives/pdf/download`) instead of the server's local path or S3 key. The `storagePath` in server info is behind login.
+
+## The web UI as a guest
+
+Guests see the Dashboard, Snapshots, Search and Tags pages, can open any snapshot, and can download or preview its files. A **Read-only** marker and a **Sign in** link appear in the sidebar. Controls for archiving, deleting, tagging, importing, schedules, settings and API keys appear only after signing in. Opening one of those pages as a guest leads to the login screen and back to the page afterwards. The UI learns about public read from `GET /api/setup/status`, which returns `{ needsSetup, publicRead }`.
+
+## Rate limits
+
+Guests share the read limit of 300 requests per minute per client address. Behind a reverse proxy set `WEBFROST_TRUST_PROXY=true`, or every guest counts as the proxy. See [Rate limits](/docs/reference/rest-api#rate-limits).
+
+<Cards>
+  <Card title="Security" href="/docs/architecture/security#public-read-and-private-write">
+    Authentication and what is exposed.
+  </Card>
+  <Card title="Deploy" href="/docs/guides/deploy">
+    Reverse proxy and TLS in front of a public archive.
+  </Card>
+</Cards>

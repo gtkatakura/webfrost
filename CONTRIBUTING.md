@@ -1,8 +1,8 @@
 # Contributing to WebFrost
 
 Thanks for helping out. This page is the short version; the full guide lives in
-[docs/contributing/development.md](docs/contributing/development.md) and the code layout in
-[docs/contributing/project-structure.md](docs/contributing/project-structure.md).
+[contributing/development.mdx](apps/docs/content/docs/contributing/development.mdx) and the code layout in
+[contributing/project-structure.mdx](apps/docs/content/docs/contributing/project-structure.mdx).
 
 ## Setup
 
@@ -60,7 +60,7 @@ Chromium is available, so run them at least once with one installed if you touch
 ## Security issues
 
 Please do not open a public issue for a vulnerability. See
-[docs/SECURITY.md](docs/SECURITY.md#reporting-vulnerabilities).
+[SECURITY.md](SECURITY.md).
 
 ## License
 

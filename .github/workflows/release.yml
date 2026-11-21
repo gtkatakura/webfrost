@@ -1,7 +1,7 @@
 name: Release
 
 # Triggered on version tags, merges to main, or manually.
-# See docs/DEPLOY.md for full deploy path documentation.
+# See apps/docs/content/docs/contributing/releasing.mdx for full deploy path documentation.
 on:
   push:
     tags:

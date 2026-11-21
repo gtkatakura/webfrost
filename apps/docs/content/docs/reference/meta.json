@@ -1,0 +1,5 @@
+{
+  "title": "Reference",
+  "icon": "BookBookmark",
+  "pages": ["cli", "rest-api", "sdk", "configuration", "extractors", "database", "disk-layout"]
+}

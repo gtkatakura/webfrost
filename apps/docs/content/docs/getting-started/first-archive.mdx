@@ -1,0 +1,142 @@
+---
+title: Archive your first page
+description: Archive a page, open every format WebFrost saved, and search it, from the CLI and the web UI.
+icon: Archive
+---
+
+In about ten minutes you archive `https://example.com`, look at each saved format, and search the text. You need a [source install](/docs/getting-started/install), or a running [Docker server](/docs/getting-started/quickstart) for the UI part.
+
+## 1. Archive a URL
+
+<Tabs items={["CLI", "Web UI", "API"]}>
+<Tab value="CLI">
+
+```bash
+export WEBFROST_DIR=./data
+mkdir -p "$WEBFROST_DIR"
+
+bun run webfrost init
+bun run webfrost add https://example.com
+# [14:02:11] INFO  Archiving https://example.com...
+# [14:02:14] INFO  Snapshot 1 archived.
+```
+
+`add` runs the whole pipeline in your terminal and returns when it finishes. If the snapshot ends `failed`, it prints a warning with the status instead.
+
+</Tab>
+<Tab value="Web UI">
+
+Open the dashboard, paste `https://example.com` into **Quick Archive** and submit. The snapshot appears in **Snapshots** as `pending` and turns `done` after a few seconds.
+
+</Tab>
+<Tab value="API">
+
+```bash
+curl -X POST http://localhost:3000/api/snapshots \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com"}'
+# HTTP 202 { "id": 1, "url": "https://example.com", "status": "pending" }
+```
+
+The server queues the job and answers immediately. Poll `GET /api/snapshots/1` until `status` is no longer `pending`.
+
+</Tab>
+</Tabs>
+
+What happened: WebFrost fetched the page once, opened it in headless Chromium once, and ran every extractor against those two results in parallel. A snapshot is `done` when at least one extractor produced output.
+
+## 2. List snapshots
+
+```bash
+bun run webfrost list
+# 1    done    https://example.com
+```
+
+The CLI lists oldest first. The web UI and the API list newest first.
+
+## 3. Look at every format
+
+Files for snapshot 1 are in `data/snapshots/1/`:
+
+```bash
+ls data/snapshots/1/
+# archive.warc  dom.html  page.pdf  screenshot.png  singlefile.html
+```
+
+| Format | How to look at it |
+|---|---|
+| `screenshot.png` | Open it in any image viewer. It is the full page. |
+| `page.pdf` | Open it in any PDF viewer. |
+| `singlefile.html` | Open it in a browser. Stylesheets and images are inlined, so it works offline. |
+| `dom.html` | The DOM after the page loaded. Useful when the page builds its content with JavaScript. |
+| `archive.warc` | Open it in [ReplayWeb.page](https://replayweb.page/) or process it with `warcio`. |
+| Readability | Stored in the database. See the query below. |
+| HTML | The raw response body, also stored in the database. |
+
+Read the extracted article text straight from SQLite:
+
+```bash
+sqlite3 data/archive.db \
+  "SELECT content FROM archive_results WHERE snapshot_id = 1 AND extractor = 'readability';"
+# {"title":"Example Domain","byline":null,"textContent":"...","excerpt":"..."}
+```
+
+In the web UI, open the snapshot to see each extractor with its duration, file size and a download link, plus a sandboxed preview of the DOM snapshot and the SingleFile copy.
+
+Which extractors ran, and why one may be missing, is in [Extractors](/docs/reference/extractors).
+
+## 4. Search it
+
+WebFrost indexes the extracted text, the URL, the title and tag names with SQLite FTS5 when a snapshot finishes.
+
+<Tabs items={["CLI", "Web UI", "API"]}>
+<Tab value="CLI">
+
+```bash
+bun run webfrost search "illustrative examples"
+# 1	https://example.com
+#   ...This domain is for use in illustrative examples in documents...
+```
+
+</Tab>
+<Tab value="Web UI">
+
+Press `Ctrl+K` (or `Cmd+K`) to open the search palette, or use the **Search** page for ranked results with highlighted snippets and filters.
+
+</Tab>
+<Tab value="API">
+
+```bash
+curl "http://localhost:3000/api/snapshots?q=illustrative" \
+  -H "Authorization: Bearer $KEY"
+```
+
+</Tab>
+</Tabs>
+
+## 5. Tag it
+
+```bash
+bun run webfrost tag add 1 reference
+bun run webfrost tag list 1
+```
+
+Tag names are searchable too.
+
+## Where next
+
+<Cards>
+  <Card title="Bulk import" href="/docs/guides/bulk-import">
+    Archive a list of URLs, bookmarks or an RSS feed.
+  </Card>
+  <Card title="Scheduled archiving" href="/docs/guides/scheduled-archiving">
+    Re-archive a page or follow a feed on a cron schedule.
+  </Card>
+  <Card title="Web UI" href="/docs/guides/web-ui">
+    Everything the browser interface can do.
+  </Card>
+  <Card title="How the pipeline works" href="/docs/architecture/pipeline">
+    From request to done.
+  </Card>
+</Cards>

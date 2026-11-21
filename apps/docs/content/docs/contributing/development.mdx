@@ -1,0 +1,153 @@
+---
+title: Development
+description: Set up a WebFrost dev environment, run the tests, lint and typecheck, and work on this documentation site.
+icon: Wrench
+---
+
+## Prerequisites
+
+| Tool | Purpose |
+|---|---|
+| [Bun](https://bun.sh) | Runtime and package manager. The version is pinned in `.tool-versions` (the CI and the Docker image use it too). [mise](https://mise.jdx.dev/) reads that file. |
+| Chromium | The browser extractors and some tests. Installed by Playwright, or use your own with `WEBFROST_CHROMIUM_PATH`. |
+| yt-dlp, ffmpeg | Media extraction. Optional, and needed by the media end-to-end tests. |
+
+## Set up
+
+```bash
+git clone https://github.com/gtkatakura/webfrost.git
+cd webfrost
+make setup        # bun install + bunx playwright install --with-deps chromium
+```
+
+Already have a Chromium? Skip the Playwright download and point WebFrost at it. This also applies to the tests:
+
+```bash
+export WEBFROST_CHROMIUM_PATH=/usr/bin/chromium
+```
+
+## Run the dev stack
+
+```bash
+make dev
+```
+
+Starts the API on port 3000 with `AUTH_DISABLED=true` and `WEBFROST_DIR=./data`, and the Vite UI dev server on port 5173, which proxies API calls to the server. The same by hand:
+
+```bash
+# terminal 1
+WEBFROST_DIR=./data AUTH_DISABLED=true bun run packages/server/src/index.ts
+# terminal 2
+cd packages/ui && bun run dev
+```
+
+Run `make help` for every target.
+
+## Build
+
+```bash
+bun run build     # builds every package
+```
+
+## Tests
+
+```bash
+bun run test                              # unit and integration tests, every package
+cd packages/server && bun run test:e2e    # HTTP API end to end
+cd packages/ui && bunx playwright test    # browser end to end (needs Chromium and yt-dlp); same as make test-e2e
+```
+
+Notes:
+
+- **Browser tests.** The tests that drive a real Chromium (for example `packages/core/src/browser-guard.test.ts`) are **skipped, not failed**, when no Chromium is found. Run them at least once if you change the pipeline or the guard: install Chromium with Playwright, or set `WEBFROST_CHROMIUM_PATH=/usr/bin/chromium`.
+- **S3 integration tests** run only when `MINIO_TEST_ENDPOINT` is set (also `MINIO_TEST_BUCKET`, `MINIO_TEST_ACCESS_KEY`, `MINIO_TEST_SECRET_KEY`). `docker compose -f docker-compose.dev.yml up -d` starts MinIO with a `webfrost` bucket.
+- **UI end to end tests** run with `AUTH_DISABLED=true` in CI.
+- Assert the final state (snapshot status, stored files), not only the response: bugs here have mostly been of the "returns 202 but nothing happens afterwards" kind.
+
+## Lint, format and typecheck
+
+```bash
+bun run lint        # Biome check
+bun run format      # Biome format, writes files
+bun run typecheck   # tsc --noEmit for the packages, then the docs site
+make ci             # lint + typecheck + test, like CI
+```
+
+## Commit hooks
+
+[Lefthook](https://github.com/evilmartians/lefthook) runs on every commit, installed by `bun install` through the `prepare` script:
+
+- **lint**: `biome check --staged` on staged `js`, `ts`, `jsx`, `tsx`, `json` and `css` files;
+- **typecheck**: `bun run typecheck`.
+
+Fix what they report; do not skip them with `--no-verify`.
+
+## Benchmarks
+
+```bash
+bun run bench                  # microbenchmarks
+make bench-vs-archivebox       # head-to-head comparison (starts Docker services)
+```
+
+## Monorepo conventions
+
+- Run a script in every package with `bun run --filter '*' <script>`.
+- New packages go in `packages/<name>/`. Apps (like the docs site) go in `apps/<name>/`.
+- Shared logic belongs in `@webfrost/core`. Keep the CLI, server and SDK thin.
+- `README.md` and `ROADMAP.md` must match what the code does. New CLI commands, routes, variables and extractors need a mention, and a shipped roadmap item flips to done.
+- Add a changeset (`bun changeset`) for anything users will notice. See [Releasing](/docs/contributing/releasing).
+
+## This documentation site
+
+The docs are in `apps/docs`: React Router and Vite with Fumadocs, and MDX pages prerendered to static files.
+
+```bash
+bun run docs:dev       # dev server with hot reload, http://localhost:5174
+bun run docs:build     # prerender to apps/docs/build/client
+bun run docs:preview   # serve the build, http://localhost:5175
+```
+
+### Add a page
+
+<Steps>
+<Step>
+
+Create `apps/docs/content/docs/<section>/<name>.mdx` with frontmatter:
+
+```mdx
+---
+title: Short title
+description: One sentence saying what the reader gets from this page.
+icon: LucideIconName
+---
+
+Start with the point. No H1: the title comes from the frontmatter.
+```
+
+</Step>
+<Step>
+
+Add the file name (without extension) to `pages` in that section's `meta.json`. The order there is the order in the sidebar. A page not listed in `meta.json` is still built but is not in the navigation.
+
+</Step>
+<Step>
+
+Run `bun run docs:build`. It prerenders every page and fails on invalid MDX. Link to other pages with absolute site paths such as `/docs/reference/cli`.
+
+</Step>
+</Steps>
+
+Components available without an import: `Callout` (`type` is `info`, `warn` or `error`), `Steps` and `Step`, `Tabs` and `Tab`, `Cards` and `Card`, and `Mermaid` for diagrams.
+
+<Callout type="warn" title="MDX pitfalls">
+In prose, write a bare `<` as `&lt;` or put it in backticks, and do the same for `{`. Comments are `{/* */}`, not `<!-- -->`. Inside fenced code blocks anything goes.
+</Callout>
+
+<Cards>
+  <Card title="Project structure" href="/docs/contributing/project-structure">
+    Where the code lives and how to add an extractor.
+  </Card>
+  <Card title="Releasing" href="/docs/contributing/releasing">
+    Changesets, versions and the release workflow.
+  </Card>
+</Cards>

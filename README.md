@@ -19,7 +19,7 @@ docker compose -f docker-compose.prod.yml up -d
 ```
 
 The image bundles Chromium, yt-dlp and ffmpeg, so every extractor works out of the box.
-See [How-to: Docker deploy](docs/how-to/docker-deploy.md).
+See [How-to: Docker deploy](apps/docs/content/docs/guides/deploy.mdx).
 
 ### From source
 
@@ -54,7 +54,7 @@ bun run webfrost schedule worker                       # runs due schedules (the
 bun run webfrost --help
 ```
 
-Full reference: [docs/reference/cli.md](docs/reference/cli.md).
+Full reference: [reference/cli.mdx](apps/docs/content/docs/reference/cli.mdx).
 
 ### Server API
 
@@ -94,7 +94,7 @@ curl -OJ "$API/snapshots/1/archives/pdf/download" -H "Authorization: Bearer $KEY
 | `GET /api/stats`, `GET /api/settings/info`, `GET/POST/DELETE /api/settings/keys` | Stats, version, API keys |
 | `GET /health` | Unauthenticated health check |
 
-Full reference: [docs/reference/rest-api.md](docs/reference/rest-api.md).
+Full reference: [reference/rest-api.mdx](apps/docs/content/docs/reference/rest-api.mdx).
 
 ### SDK
 
@@ -111,7 +111,7 @@ const { items, total } = await client.listSnapshots({ page: 1, limit: 20 });
 const hits = await client.searchSnapshotsPage("example", { page: 1 });
 ```
 
-Full reference: [docs/reference/sdk.md](docs/reference/sdk.md). The package is not on npm yet; use it from this workspace.
+Full reference: [reference/sdk.mdx](apps/docs/content/docs/reference/sdk.mdx). The package is not on npm yet; use it from this workspace.
 
 ### Web UI
 
@@ -130,13 +130,13 @@ The server serves a React SPA at `http://localhost:3000`. Key features:
 
 Stack: React 18, React Router v6, Tailwind CSS v4 (CSS variable design system), `@tanstack/react-query`, `@tanstack/react-virtual`, `lucide-react`, `sonner`.
 
-See [Web UI guide](docs/guides/web-ui.md) for full documentation.
+See [Web UI guide](apps/docs/content/docs/guides/web-ui.mdx) for full documentation.
 
 ---
 
 ## Configuration
 
-The variables you are most likely to need. Everything else is in [Reference: Environment variables](docs/reference/environment-variables.md) and `.env.example`.
+The variables you are most likely to need. Everything else is in [Reference: Environment variables](apps/docs/content/docs/reference/configuration.mdx) and `.env.example`.
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -166,34 +166,21 @@ The variables you are most likely to need. Everything else is in [Reference: Env
 | `@webfrost/server` | Elysia HTTP server + React UI + embedded scheduler |
 | `@webfrost/sdk` | TypeScript client for the server API |
 | `@webfrost/ui` | React single-page app |
+| `@webfrost/docs` | This documentation site (`apps/docs`) |
 
 ---
 
 ## Documentation
 
-Full documentation site: `bun run docs:dev` → `http://localhost:5174`
+The documentation is a site in [`apps/docs`](apps/docs) (React Router + Vite + Fumadocs, every page prerendered). Run it with `bun run docs:dev` → `http://localhost:5174`. The pages are MDX files you can also read on GitHub:
 
 | Section | Contents |
 |---|---|
-| [Tutorials](docs/tutorials/first-archive.md) | Archive your first page end-to-end |
-| [Guide: Web UI](docs/guides/web-ui.md) | Keyboard shortcuts, theme, search palette, all pages |
-| [How-to: Bulk import](docs/how-to/bulk-import.md) | Import URLs from files, feeds, and bookmarks |
-| [How-to: Scheduled archives](docs/how-to/scheduled-archives.md) | Set up recurring archive jobs |
-| [How-to: Docker deploy](docs/how-to/docker-deploy.md) | Run as a persistent server with Docker |
-| [How-to: S3 storage](docs/how-to/s3-storage.md) | Store archives in S3, MinIO, R2 or B2 |
-| [Reference: CLI](docs/reference/cli.md) | All CLI commands and flags |
-| [Reference: REST API](docs/reference/rest-api.md) | All API endpoints |
-| [Reference: SDK](docs/reference/sdk.md) | TypeScript client usage |
-| [Reference: Environment variables](docs/reference/environment-variables.md) | All env vars |
-| [Reference: Extractors](docs/reference/extractors.md) | WARC, PDF, screenshot, and more |
-| [Explanation: Architecture](docs/explanation/architecture.md) | C4 diagrams — system, containers, components |
-| [Explanation: Pipeline](docs/explanation/pipeline.md) | Sequence diagrams for archive, import, schedule flows |
-| [Explanation: Storage model](docs/explanation/storage-model.md) | How archive files and SQLite are organized |
-| [Deploy](docs/DEPLOY.md) | CI/CD pipeline and deployment targets |
-| [Release](docs/RELEASE.md) | Release process |
-| [Versioning](docs/VERSIONING.md) | Version bump policy |
-| [Security](docs/SECURITY.md) | Auth, rate limits, SSRF guard, deployment checklist |
-| [Threat model](docs/THREAT-MODEL.md) | Attack surface, controls and open risks |
+| [Getting started](apps/docs/content/docs/getting-started/quickstart.mdx) | Quickstart with Docker, install from source, archive your first page |
+| [Guides](apps/docs/content/docs/guides) | Web UI, bulk import, schedules, public read, storage, production deploy, troubleshooting |
+| [Reference](apps/docs/content/docs/reference) | CLI, REST API, SDK, configuration, extractors, database, disk layout |
+| [Architecture](apps/docs/content/docs/architecture) | Overview, pipeline, storage model, security, threat model |
+| [Contributing](apps/docs/content/docs/contributing) | Development setup, project structure, releasing |
 
 ---
 

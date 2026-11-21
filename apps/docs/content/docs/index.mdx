@@ -1,0 +1,55 @@
+---
+title: Introduction
+description: What WebFrost is, what it saves for every page, and where to start.
+icon: BookOpen
+---
+
+WebFrost is a self-hosted web archiver. Give it a URL and it saves the page in several formats at once, then makes the text searchable. Everything lives in one directory you control: a SQLite database plus plain files.
+
+You can drive it from four surfaces over the same archive: a **CLI**, a **web UI**, a **REST API** and a **TypeScript SDK**.
+
+## What you get for every URL
+
+| Format | File | What it is |
+|---|---|---|
+| WARC | `archive.warc` | The page response in the standard archival format |
+| Readability | stored in the database | Article title, byline, excerpt and plain text |
+| HTML | stored in the database | The raw HTML the server returned |
+| PDF | `page.pdf` | Full-page PDF from headless Chromium |
+| Screenshot | `screenshot.png` | Full-page PNG |
+| DOM snapshot | `dom.html` | The rendered DOM after the page loaded |
+| SingleFile | `singlefile.html` | One self-contained HTML file, viewable offline |
+| Media | `media/` | Video or audio through yt-dlp, when the URL is a media page |
+
+See [Extractors](/docs/reference/extractors) for what each format contains and when it is skipped.
+
+## Why it works this way
+
+- **One browser navigation per snapshot.** All browser formats come from the same page load, and the text formats share one HTTP fetch.
+- **Open formats.** WARC, PDF, PNG, HTML and SQLite need no WebFrost to read. If the project disappears, your archive does not.
+- **One directory.** Back it up with `rsync`. No database server is required. S3-compatible storage is optional.
+- **Self-hosted.** No account, no cloud service. Your data stays on your machine.
+- **Safe by default.** Requests to private networks are blocked, archived content is sandboxed in the UI, and the API is rate limited. See [Security](/docs/architecture/security).
+
+## Start here
+
+<Cards>
+  <Card title="Run it with Docker Compose" href="/docs/getting-started/quickstart">
+    The fastest path: server, web UI, scheduler, Chromium and yt-dlp in one container.
+  </Card>
+  <Card title="Install from source" href="/docs/getting-started/install">
+    Bun, Chromium, yt-dlp and the CLI.
+  </Card>
+  <Card title="Archive your first page" href="/docs/getting-started/first-archive">
+    A short tutorial: archive, inspect every format, search.
+  </Card>
+  <Card title="Deploy to production" href="/docs/guides/deploy">
+    Volumes, reverse proxy, TLS, backups and health checks.
+  </Card>
+  <Card title="REST API" href="/docs/reference/rest-api">
+    Every route, status code and rate limit.
+  </Card>
+  <Card title="How it works" href="/docs/architecture/overview">
+    Components, the archive pipeline and the storage model.
+  </Card>
+</Cards>

@@ -66,7 +66,7 @@ Returns `SearchResult[]` (first page): `{ id, url, snippet, rank, status, create
 Returns `{ items, total, page, limit }` for paginated search.
 
 The client also covers tags, schedules, imports, stats, API keys and auth — see the
-[SDK reference](../../docs/reference/sdk-api.md) for every method.
+[SDK reference](../../apps/docs/content/docs/reference/sdk.mdx) for every method.
 
 ## Error handling
 

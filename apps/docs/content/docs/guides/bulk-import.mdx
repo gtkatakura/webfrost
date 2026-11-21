@@ -1,0 +1,122 @@
+---
+title: Bulk import
+description: Import many URLs at once from text files, browser bookmarks, OPML lists or RSS and Atom feeds.
+icon: Upload
+---
+
+Import turns a file or feed into one snapshot per URL. Pick the format that matches what you have; if you omit the format, WebFrost detects it.
+
+## Formats
+
+| Format | Value | Typical input | What is imported |
+|---|---|---|---|
+| Plain text | `text` | `.txt` | One URL per line. Blank lines, lines starting with `#` and non-http(s) lines are ignored. |
+| Netscape bookmarks | `netscape` | `.html`, `.htm` | Every `href` of an `a` element. Chrome, Firefox and Safari export this format. |
+| OPML | `opml` | `.opml` | The `xmlUrl` (and `htmlUrl`) attribute of every `outline` element. These are the feed or site addresses themselves. |
+| RSS or Atom | `rss` | a feed URL or `.rss`, `.atom`, `.xml` | The article link of every item or entry. |
+
+<Callout type="info" title="OPML imports archive the feed URLs">
+An OPML import does not open each feed and archive its articles. It archives the URLs listed in the file. To archive the articles of a feed, import the feed itself with the `rss` format, or follow it with an [RSS schedule](/docs/guides/scheduled-archiving#rss-feeds).
+</Callout>
+
+URLs that are not `http` or `https` are dropped, and duplicates inside one file are collapsed.
+
+**Detection** when no format is given: `.opml` means OPML; `.rss` and `.atom` mean RSS; `.xml` with RSS or Atom content means RSS; `.html` or `.htm` with a Netscape bookmark header means Netscape; anything whose content looks like RSS or Atom is RSS; everything else is plain text.
+
+## Import
+
+<Tabs items={["CLI", "Web UI", "API", "SDK"]}>
+<Tab value="CLI">
+
+```bash
+# Plain text, one URL per line
+webfrost import urls.txt
+
+# Browser bookmarks
+webfrost import bookmarks.html
+
+# OPML subscription list
+webfrost import subscriptions.opml
+
+# An RSS feed by URL
+webfrost import --format=rss https://example.com/feed.xml
+```
+
+The argument is a file path or an `http(s)` URL. `--format=` accepts `text`, `opml`, `netscape` or `rss`.
+
+The CLI waits for every pipeline to finish and ends with a summary:
+
+```
+Import complete: total=15, done=11, skipped=3, failed=1 (84.2s)
+```
+
+</Tab>
+<Tab value="Web UI">
+
+Open **Import**, choose a format card (RSS feed, OPML, Netscape bookmarks, plain text), then enter a URL or upload a file. The result shows how many URLs were found and queued. The import history is in a tab next to the form.
+
+</Tab>
+<Tab value="API">
+
+From a URL (feed or file):
+
+```bash
+curl -X POST http://localhost:3000/api/import \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/feed.xml", "format": "rss"}'
+# HTTP 202 { "queued": 12, "skipped": 3, "total": 15, "format": "rss" }
+```
+
+From inline content: send `{"content": "https://a.example\nhttps://b.example", "format": "text"}` instead of `url`.
+
+From an uploaded file:
+
+```bash
+curl -X POST http://localhost:3000/api/import/file \
+  -H "Authorization: Bearer $KEY" \
+  -F "file=@bookmarks.html" \
+  -F "format=netscape"
+# HTTP 202 { "queued": 45, "skipped": 2, "total": 47, "format": "netscape" }
+```
+
+`GET /api/imports` returns the import history. Details are in the [REST API reference](/docs/reference/rest-api#import).
+
+</Tab>
+<Tab value="SDK">
+
+```ts
+const result = await client.importUrls({
+  url: "https://example.com/feed.xml",
+  format: "rss",
+});
+// { queued: 12, skipped: 3, total: 15, format: "rss" }
+
+const history = await client.listImports();
+```
+
+</Tab>
+</Tabs>
+
+## What happens next
+
+The import call returns as soon as the snapshots are created as `pending`; the server archives them in the background. `WEBFROST_CONCURRENCY` (default 3) pipelines run at once, and archives of the same host are spaced by about `WEBFROST_DOMAIN_DELAY_MS` (default 1000 ms), so a large import of one site takes a while on purpose.
+
+```bash
+WEBFROST_CONCURRENCY=5 webfrost import urls.txt
+```
+
+Each pipeline can launch its own Chromium, so raise concurrency only if the machine has the memory.
+
+## Duplicates
+
+Only `rss` imports skip URLs that already have a snapshot, and they count as `skipped`. Re-importing the same feed therefore archives only new items. Text, OPML and Netscape imports archive every URL again, each as a new snapshot. A URL that cannot be queued also counts as `skipped`. Every import is recorded in the `imports` table.
+
+<Cards>
+  <Card title="Scheduled archiving" href="/docs/guides/scheduled-archiving">
+    Follow a feed automatically.
+  </Card>
+  <Card title="CLI reference" href="/docs/reference/cli#import">
+    All import options.
+  </Card>
+</Cards>

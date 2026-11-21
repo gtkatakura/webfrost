@@ -7,7 +7,7 @@
  * Residual risk: the check resolves the hostname and the HTTP client resolves it
  * again, so a DNS-rebinding attacker with a very short TTL can still slip through.
  * Deployments that archive untrusted URLs should also block private ranges at the
- * network layer (see docs/SECURITY.md).
+ * network layer (see apps/docs/content/docs/architecture/security.mdx).
  */
 
 const MAX_RESPONSE_BYTES = 50 * 1024 * 1024; // 50 MB

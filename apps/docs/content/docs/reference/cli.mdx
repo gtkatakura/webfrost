@@ -1,0 +1,153 @@
+---
+title: CLI
+description: Every webfrost command, flag and environment variable, with examples.
+icon: Terminal
+---
+
+The `webfrost` CLI (`@webfrost/cli`) works directly on an archive directory. It does not talk to a server. From a source checkout, run it with `bun run webfrost <command>` from the repository root; the examples below show the short form `webfrost`.
+
+```bash
+export WEBFROST_DIR=$HOME/webfrost-data   # default: the current directory
+webfrost add https://example.com
+```
+
+<Callout type="info" title="No CLI in the Docker image">
+The server image does not contain the CLI. Create the admin user in the browser or with `POST /api/setup`. See [Deploy](/docs/guides/deploy#the-image).
+</Callout>
+
+## Global flags
+
+| Flag | Effect |
+|---|---|
+| `--help`, `-h` | Show help and list all commands |
+| `--version`, `-v` | Show the version |
+| `--verbose` | Debug-level output (same as `WEBFROST_LOG_LEVEL=debug`) |
+| `--quiet` | Only warnings and errors |
+| `<command> --help` | Help for `schedule`, `tag` or `admin` |
+
+`--verbose` and `--quiet` go **after** the command: `webfrost add https://example.com --verbose`. Placed before it they are read as the command name and fail with `Unknown command`.
+
+Log lines look like `[14:02:11] INFO  Snapshot 1 archived.` Info goes to stdout, warnings and errors to stderr. Command results such as `list` and `search` are plain tab-separated text.
+
+## Archive
+
+### `webfrost init`
+
+Create the archive database in `WEBFROST_DIR`: `Archive initialized at <dir>`. Optional; every command opens or creates it.
+
+### `webfrost add <url>`
+
+Archive one `http` or `https` URL and wait until the pipeline finishes. Runs all extractors, with media extraction too when `yt-dlp` recognizes the URL. Prints `Snapshot <id> archived.` when the snapshot is `done`, otherwise a warning with its final status (`failed`).
+
+```bash
+webfrost add https://example.com
+```
+
+### `webfrost list`
+
+List all snapshots, oldest first, as `id`, `status`, `url` separated by tabs. (The API and web UI list newest first.)
+
+```bash
+webfrost list
+# 1	done	https://example.com
+```
+
+### `webfrost delete <id>`
+
+Delete a snapshot, its database rows and its stored files. There is no trash. Exits with an error if the id does not exist.
+
+### `webfrost search <query>`
+
+Full-text search (SQLite FTS5) over URL, title, text and tags, best match first. Prints `id` and URL, then a plain-text snippet. Prints the first 20 matches, or `No results.`. The query uses FTS5 syntax: `"exact phrase"`, prefix `term*`, column filters such as `title:term`. An invalid expression returns no results.
+
+```bash
+webfrost search "climate change"
+```
+
+### `webfrost search:rebuild`
+
+Rebuild the search index from existing data. Use it after index corruption or a failed import.
+
+## Tags
+
+| Command | Description |
+|---|---|
+| `tag create <name> [--color <hex>]` | Create a tag. Fails if the name exists. |
+| `tag add <snapshot-id> <name>` | Add a tag to a snapshot, creating the tag if needed. |
+| `tag list [<snapshot-id>]` | List all tags, or the tags on one snapshot. Columns: id, slug, name, color. |
+| `tag remove <tag-id>` | Delete a tag and remove it from every snapshot. Takes the tag id, not a name. |
+
+```bash
+webfrost tag create research --color "#4f46e5"
+webfrost tag add 1 research
+webfrost tag list 1
+```
+
+## Schedules
+
+| Command | Description |
+|---|---|
+| `schedule add <url> --cron <expr>` | Archive a URL on a cron schedule. |
+| `schedule add --rss <feed-url> --cron <expr>` | Archive the new items of an RSS or Atom feed on a cron schedule. |
+| `schedule list` | List schedules: id, kind (`[url]` or `[rss]`), cron, URL, last run, next run. |
+| `schedule remove <id>` | Remove a schedule. |
+| `schedule worker` | Run due schedules in this process. |
+
+```bash
+webfrost schedule add https://example.com --cron "0 0 * * *"
+webfrost schedule add --rss https://example.com/feed.xml --cron "0 * * * *"
+```
+
+`schedule worker` polls every 30 seconds, runs due schedules through the same scheduler the server embeds, runs pipelines at `WEBFROST_CONCURRENCY`, and re-queues snapshots left `pending` by an interrupted run. You do not need it when the server runs; it is for CLI-only setups. It is safe next to a server on one archive, because due schedules are claimed atomically. Set `WEBFROST_SCHEDULER=false` on the server to make the worker the only one. Cron is evaluated in the process time zone (`TZ`). See [Scheduled archiving](/docs/guides/scheduled-archiving).
+
+## Import
+
+### `webfrost import [--format=<fmt>] <url-or-file>`
+
+Archive every URL found in a file or at a feed URL. `--format=` is one of `text`, `opml`, `netscape` or `rss`; without it the format is detected from the file name and content. The command runs all pipelines and ends with `Import complete: total=…, done=…, skipped=…, failed=… (…s)`.
+
+```bash
+webfrost import urls.txt
+webfrost import bookmarks.html
+webfrost import subscriptions.opml
+webfrost import --format=rss https://example.com/feed.xml
+```
+
+Only `rss` imports skip URLs that already have a snapshot. Details and format rules: [Bulk import](/docs/guides/bulk-import).
+
+## Admin
+
+| Command | Description |
+|---|---|
+| `admin create --username <name> --password <pass>` | Create the admin user and a key named `default`. The password needs at least 8 characters. Prints the key once. |
+| `admin key create --name <label> [--expires <date>]` | Create an API key. `--expires` takes an ISO 8601 date, for example `2026-12-31T23:59:59Z`. Prints the key once. |
+| `admin key list` | List active keys: id, name, expiry, last used. |
+| `admin key revoke <id>` | Revoke a key. |
+
+```bash
+webfrost admin create --username admin --password 'at-least-8-chars'
+webfrost admin key create --name ci --expires 2026-12-31T23:59:59Z
+```
+
+The CLI writes straight to the database, so it works with or without a server running.
+
+## Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `WEBFROST_DIR` | current directory | Directory with `archive.db` and `snapshots/` |
+| `WEBFROST_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. `--verbose` and `--quiet` override it. |
+| `WEBFROST_CONCURRENCY` | `3` | Pipelines in parallel for `import` and `schedule worker` |
+| `WEBFROST_DOMAIN_DELAY_MS` | `1000` | Spacing of archives of the same host, in milliseconds |
+| `WEBFROST_CHROMIUM_PATH` | none | Use an existing Chromium or Chrome binary |
+
+Timeouts, storage and the server-only variables are in [Configuration](/docs/reference/configuration).
+
+<Cards>
+  <Card title="Configuration" href="/docs/reference/configuration">
+    Every environment variable.
+  </Card>
+  <Card title="REST API" href="/docs/reference/rest-api">
+    The same operations over HTTP.
+  </Card>
+</Cards>

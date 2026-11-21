@@ -164,7 +164,7 @@ export interface ApiKeyCreated extends ApiKey {
 
 /** Single record from GET /imports */
 export interface ImportRecord {
-  id: number;
+  id: string;
   sourceUrl: string | null;
   format: "rss" | "opml" | "netscape" | "text";
   queued: number;

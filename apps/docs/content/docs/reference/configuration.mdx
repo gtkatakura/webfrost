@@ -1,0 +1,115 @@
+---
+title: Configuration
+description: Every WebFrost environment variable, grouped by area, with defaults and where each one applies.
+icon: SlidersHorizontal
+---
+
+All configuration is through environment variables. There is no config file. A template with comments is in [`.env.example`](https://github.com/gtkatakura/webfrost/blob/main/.env.example).
+
+Numeric variables (`WEBFROST_CONCURRENCY` and the millisecond settings) ignore values that are not whole numbers and fall back to their default. Boolean variables count only the exact value `true`.
+
+## Archive and logging
+
+| Variable | Default | Description |
+|---|---|---|
+| `WEBFROST_DIR` | current directory (CLI), `~/.webfrost` (server), `/data` (Docker image) | Directory holding `archive.db` and the `snapshots/` files. Use an absolute path: file references in the database are paths. |
+| `WEBFROST_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. On the CLI, `--verbose` and `--quiet` override it. The server also accepts the older name `LOG_LEVEL` when this one is unset. |
+| `TZ` | system time zone (`UTC` in Docker) | Time zone used to evaluate cron expressions in schedules. |
+
+## Server
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `PORT` | no | `3000` | HTTP port the server listens on. In Compose, `PORT` sets the host port only. |
+| `SESSION_SECRET` | yes | none | Signs session cookies. At least 32 random characters: `openssl rand -hex 32`. The server refuses to start without it unless `AUTH_DISABLED=true`; a shorter secret starts with a warning. Rotating it signs everyone out. |
+| `AUTH_DISABLED` | no | `false` | `true` turns off all authentication. Local development and tests only. Never expose it. |
+| `WEBFROST_TRUST_PROXY` | no | `false` | `true` makes rate limits use the first `X-Forwarded-For` entry. Set only behind a reverse proxy that overwrites the header. |
+| `WEBFROST_PUBLIC_READ` | no | `false` | `true` lets anonymous visitors browse the archive read-only. See [Public read](/docs/guides/public-read). |
+| `WEBFROST_INSECURE_COOKIES` | no | `false` | `true` drops the `Secure` flag from the session cookie, for HTTP-only deployments on a non-localhost address. Prefer TLS. |
+| `WEBFROST_SCHEDULER` | no | enabled | `false` stops the server from running due schedules, for when a separate `webfrost schedule worker` does it. |
+
+## Pipeline
+
+| Variable | Default | Description |
+|---|---|---|
+| `WEBFROST_CONCURRENCY` | `3` | Archive pipelines running in parallel (server job runner, `import`, `schedule worker`). Each running pipeline can launch its own headless Chromium. |
+| `WEBFROST_DOMAIN_DELAY_MS` | `1000` | Spaces archives of the same hostname by about this many milliseconds. `0` turns it off. Different hosts never wait on each other. |
+| `WEBFROST_FETCH_TIMEOUT_MS` | `30000` | Timeout for the page fetch, redirects included. Also applies to feed and import fetches. `0` disables it. |
+| `WEBFROST_EXTRACTOR_TIMEOUT_MS` | `60000` | Timeout for each extractor. One that exceeds it is recorded as failed. `0` disables it. |
+| `WEBFROST_MEDIA_TIMEOUT_MS` | `600000` | Timeout for each `yt-dlp` run. A media archive can run it up to three times, and the media extractor as a whole is allowed three times this value. |
+| `WEBFROST_CHROMIUM_PATH` | none | Use this Chromium or Chrome binary instead of the build Playwright downloads. |
+| `WEBFROST_ALLOW_PRIVATE_URLS` | `false` | `true` allows archiving loopback, private and link-local addresses (intranet archiving). Leave it off when people you do not fully trust can submit URLs. See [Security](/docs/architecture/security#ssrf-protection). |
+
+Fixed limits that are not configurable: browser navigation 30 seconds, response body 50 MB, media file 500 MB, browser shutdown 5 seconds, 5 redirects per fetch.
+
+## Storage
+
+| Variable | Default | Description |
+|---|---|---|
+| `WEBFROST_STORAGE_BACKEND` | `filesystem` | `filesystem` or `s3` |
+| `S3_ENDPOINT` | none | Endpoint URL. Required for `s3`. |
+| `S3_BUCKET` | none | Bucket name. Required for `s3`. |
+| `S3_ACCESS_KEY_ID` | none | Access key ID. Required for `s3`. |
+| `S3_SECRET_ACCESS_KEY` | none | Secret access key. Required for `s3`. |
+| `S3_REGION` | `us-east-1` | Bucket region |
+| `S3_PATH_PREFIX` | `snapshots` | Object key prefix inside the bucket |
+
+Setup and provider endpoints: [Storage](/docs/guides/storage).
+
+## Docker Compose only
+
+| Variable | Default | Description |
+|---|---|---|
+| `IMAGE_TAG` | `latest` | Image tag that `docker-compose.prod.yml` pulls |
+| `GITHUB_REPOSITORY` | `gtkatakura/webfrost` | Builds the image name `ghcr.io/$GITHUB_REPOSITORY/server` |
+
+## Where to set them
+
+<Tabs items={["CLI", "Server", "Docker", "Compose"]}>
+<Tab value="CLI">
+
+```bash
+WEBFROST_DIR=$HOME/webfrost-data WEBFROST_LOG_LEVEL=debug bun run webfrost add https://example.com
+```
+
+</Tab>
+<Tab value="Server">
+
+```bash
+export SESSION_SECRET=$(openssl rand -hex 32)
+export WEBFROST_DIR=$HOME/webfrost-data
+export WEBFROST_CONCURRENCY=5
+bun run packages/server/src/index.ts
+```
+
+</Tab>
+<Tab value="Docker">
+
+```bash
+docker run -d -p 3000:3000 \
+  -e SESSION_SECRET=<secret> \
+  -e WEBFROST_CONCURRENCY=5 \
+  -v webfrost_data:/data \
+  ghcr.io/gtkatakura/webfrost/server:latest
+```
+
+</Tab>
+<Tab value="Compose">
+
+`docker-compose.prod.yml` substitutes `${VAR}` from `.env`. `SESSION_SECRET` is required; the other variables above, including the storage ones, are optional and passed through.
+
+```bash
+echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
+```
+
+</Tab>
+</Tabs>
+
+<Cards>
+  <Card title="Deploy" href="/docs/guides/deploy">
+    Which settings matter in production.
+  </Card>
+  <Card title="Troubleshooting" href="/docs/guides/troubleshooting">
+    Settings that fix common symptoms.
+  </Card>
+</Cards>

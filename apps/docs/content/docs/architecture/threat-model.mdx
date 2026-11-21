@@ -1,0 +1,168 @@
+---
+title: Threat model
+description: What WebFrost protects, who can attack it through which component, the controls in place and the risks that remain open.
+icon: Bug
+---
+
+Revised 2026-11-21. Scope: `@webfrost/core`, `@webfrost/cli`, `@webfrost/server`, `@webfrost/sdk`, `@webfrost/ui`
+
+This document maps what WebFrost protects, who can attack it and through which component, and
+which risks remain open. Configuration details for each control are in [Security](/docs/architecture/security).
+
+
+## System overview
+
+WebFrost is single-tenant and self-hosted. One operator runs the server; one admin account (plus
+API keys) uses it. Users submit URLs; the server fetches them with an HTTP client and a headless
+Chromium, and stores the results as files plus a SQLite database.
+
+```
+Browser (UI) / SDK / curl
+      │  session cookie or API key
+      ▼
+┌───────────────────────────┐
+│ @webfrost/server (Elysia) │  auth · rate limits · CSP · static UI
+└───────────┬───────────────┘
+            │ enqueue
+            ▼
+┌───────────────────────────┐      ┌───────────────────────────────┐
+│ JobRunner (bounded)       │─────▶│ pipeline                      │
+│ Scheduler (30 s poll)     │      │  safeFetch ───────▶ Internet  │
+└───────────────────────────┘      │  Chromium + guard ─▶ Internet │
+                                   │  yt-dlp ───────────▶ Internet │
+                                   └───────┬───────────────────────┘
+                                           ▼
+                              SQLite (archive.db) + snapshots/ or S3
+```
+
+The CLI drives the same core library directly against the data directory, without the HTTP layer.
+
+
+## Assets
+
+| Asset | Why it matters |
+|---|---|
+| The archive (files + database) | The product. Loss or tampering defeats the purpose. |
+| Admin password hash, session rows, API key hashes | Grant full control of the instance. |
+| `SESSION_SECRET` | Signs session cookies. |
+| The server's network position | It can reach hosts that outside users cannot (intranet, cloud metadata). |
+| Host resources (CPU, memory, disk) | Each pipeline launches a browser and writes files. |
+
+
+## Trust boundaries
+
+| Actor / input | Trust |
+|---|---|
+| Operator (shell access, environment, data directory) | Fully trusted |
+| Authenticated admin / API key holder | Trusted to manage the archive. **Not** trusted to reach the internal network through it. |
+| Unauthenticated network client | Untrusted. Can reach `/health`, the static UI, login and (before first run) setup. |
+| Submitted URLs, feeds and import files | Untrusted input |
+| Fetched pages and every resource they load | **Untrusted and potentially hostile** |
+| DNS answers | Untrusted |
+| Reverse proxy | Trusted only if `WEBFROST_TRUST_PROXY=true` |
+
+
+## Attack surface and controls
+
+### 1. Authentication and sessions
+
+| Threat | Control | Status |
+|---|---|---|
+| Unauthenticated API access | All `/api/*` routes require a session or API key | Mitigated |
+| Anonymous visitor changing the archive when public read is on | `WEBFROST_PUBLIC_READ` admits only `GET`s on an explicit allowlist of read routes; storage paths are withheld from anonymous responses | Mitigated |
+| Operator enables public read on an archive holding private captures | None — the whole archive becomes readable | Operator responsibility |
+| Password brute force | 10 attempts/min per client; bcrypt; uniform timing for unknown users | Mitigated |
+| Rate-limit evasion with a forged `X-Forwarded-For` | Header ignored unless `WEBFROST_TRUST_PROXY=true` | Mitigated |
+| Stolen session cookie | `HttpOnly`/`SameSite=Strict`/`Secure`; server-side sessions revoked on logout and on password change | Mitigated |
+| Forged cookie | HMAC-SHA256 with `SESSION_SECRET`, constant-time compare, must match a session row | Mitigated |
+| Leaked API key | Stored hashed; revocable; optional expiry | Mitigated |
+| First-run takeover: whoever reaches a fresh instance first creates the admin | Setup only works while no admin exists | **Open (by design)** — finish setup before exposing the port |
+| CSRF | `SameSite=Strict` cookie; JSON bodies; `form-action 'self'` | Mitigated |
+| Everything above bypassed by `AUTH_DISABLED=true` | Warning logged at startup | Operator responsibility |
+
+### 2. URL submission — snapshots, imports, schedules
+
+| Threat | Control | Status |
+|---|---|---|
+| SSRF to loopback / private / link-local / metadata addresses | `safeFetch` resolves and rejects on every hop; IPv4-mapped and NAT64 forms covered | Mitigated |
+| SSRF through redirects | Redirects followed manually and re-validated (max 5) | Mitigated |
+| Non-HTTP schemes (`file:`, `ftp:`) | Rejected at the route, the CLI and in `safeFetch` | Mitigated |
+| DNS rebinding between check and connect | None at application level | **Open** — use network egress controls |
+| Memory exhaustion via huge responses | 50 MB cap, streamed | Mitigated |
+| Slow-loris upstream holding a worker | 30 s fetch timeout | Mitigated |
+| Flooding the pipeline | 60 creations/min per client; `WEBFROST_CONCURRENCY` bounds running pipelines | Mitigated |
+| Unbounded queue from one very large import | None — queued jobs are rows plus a small in-memory entry each | Accepted |
+| Hammering a third-party site | Per-host gap between archives (`WEBFROST_DOMAIN_DELAY_MS`) | Mitigated |
+
+### 3. Headless Chromium
+
+The page being archived controls what the browser requests.
+
+| Threat | Control | Status |
+|---|---|---|
+| Page embeds an internal URL (iframe, image, `fetch`, WebSocket) and it is captured in the screenshot/PDF/DOM | Every browser request is checked; blocked hosts are aborted | Mitigated |
+| Subresource or navigation **redirects** to an internal host | Detected; browser extractors are skipped for the snapshot so nothing is captured | Mitigated for disclosure; the request itself is still sent (**blind SSRF, open**) |
+| Script waits until after load, then loads an internal URL | All further requests are refused once the page has loaded, before capture | Mitigated |
+| Service worker making unchecked requests | Service workers blocked | Mitigated |
+| Page stalls or loops forever | 30 s navigation timeout; 60 s per extractor; browser closed afterwards | Mitigated |
+| Renderer exploit | Chromium runs without its own sandbox inside the container; the container is the boundary | **Open** — keep the image updated, do not add capabilities |
+
+### 4. Media extraction (yt-dlp)
+
+| Threat | Control | Status |
+|---|---|---|
+| Argument injection through the URL | URL passed as a single argv element, no shell | Mitigated |
+| Runaway download | 500 MB size cap; process killed after 10 min | Mitigated |
+| Pipeline waiting forever on a finished subprocess (lost exit notification, pipe held open) | Output collection gives up 3 s after the process exits or its pipes close | Mitigated |
+| yt-dlp following redirects to internal hosts | Only the initial URL is validated | **Open** |
+
+### 5. Serving archived content
+
+| Threat | Control | Status |
+|---|---|---|
+| Stored XSS from archived HTML | Downloads are `Content-Disposition: attachment`; the in-app preview is served with `CSP: sandbox` (opaque origin, no scripts, no network) inside `<iframe sandbox="">`; strict CSP on the app itself | Mitigated |
+| Archived page phoning home when previewed | Preview policy allows only inline styles and `data:` URIs | Mitigated |
+| HTML injection through search snippets | Server escapes archived text; UI renders snippets as text nodes | Mitigated |
+| Path traversal via a stored file reference | Reference normalised and checked against the storage root / S3 prefix | Mitigated |
+| Unknown extractor name | Allowlist | Mitigated |
+| Clickjacking | `frame-ancestors 'none'`, `X-Frame-Options: DENY` | Mitigated |
+
+### 6. Data at rest
+
+| Threat | Control | Status |
+|---|---|---|
+| SQL injection | Bound parameters everywhere | Mitigated |
+| Concurrent writers corrupting or losing writes | WAL mode, `busy_timeout`, one connection per job | Mitigated |
+| Snapshots lost in limbo after a crash | Jobs are leased by heartbeat; a `pending` job whose lease expired is re-queued (checked at startup and every minute), up to 3 times | Mitigated |
+| Two processes on one archive (server + CLI worker) stealing each other's jobs | Only jobs with an expired lease are adopted, inside an immediate transaction | Mitigated |
+| First-run setup raced by two requests | Admin row inserted only if none exists, atomically | Mitigated |
+| Local user reading the archive | None — plain files | Operator responsibility (file permissions, disk encryption) |
+| S3 credentials in the environment | None | Operator responsibility |
+
+### 7. CLI
+
+The CLI runs with the operator's own privileges against a local directory, so it is trusted input
+by definition. It still refuses non-HTTP(S) URLs and applies the same SSRF guard as the server.
+
+
+## Open risks, ranked
+
+| # | Risk | Severity | What to do today |
+|---|---|---|---|
+| 1 | DNS rebinding past the SSRF guard | Medium | Block egress to internal ranges at the network layer |
+| 2 | Blind SSRF through browser redirect hops and yt-dlp | Medium | Same as above |
+| 3 | Chromium without its own sandbox | Medium | Keep the image current; treat the container as the sandbox |
+| 4 | First-run setup race | Low | Complete setup before exposing the port |
+| 5 | Container process runs as root | Low | No extra capabilities, no host mounts beyond the data volume |
+| 6 | Rate-limit state is per process and in memory | Low | Single-instance deployments only; limits reset on restart |
+
+Items 1–2 would be closed by routing all outbound traffic through a filtering egress proxy that
+pins the validated IP; that is tracked in the [roadmap](https://github.com/gtkatakura/webfrost/blob/main/ROADMAP.md).
+
+
+## Out of scope
+
+- **Multi-tenant isolation.** There is one admin; every credential sees the whole archive.
+- **TLS.** Terminate it at a reverse proxy.
+- **Authenticity of archived content.** WebFrost records what the server returned at capture
+  time; it does not sign or notarise it.

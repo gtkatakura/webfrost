@@ -1,0 +1,36 @@
+---
+title: Authenticated pages
+description: WebFrost cannot archive pages behind a login yet. What happens, and what to do instead.
+icon: Lock
+---
+
+WebFrost archives every page as an anonymous visitor. There is no way to pass cookies, headers or a browser profile, so a page behind a login is saved as the login page or an error page, not as the content you see when signed in.
+
+<Callout type="warn" title="Not supported">
+There is no cookie file option in the CLI, the server or the SDK. Every snapshot gets a fresh headless Chromium context with no stored session.
+</Callout>
+
+## What is not supported
+
+- Passing a cookies file, for example in Netscape format, to the pipeline.
+- Reusing a browser profile that is already signed in. `WEBFROST_CHROMIUM_PATH` only changes which Chromium binary is used, never its profile.
+- Sending an `Authorization` header or any custom header with the fetch.
+
+## What to do instead
+
+1. **Archive a public URL.** If the content is also available without logging in (a share link, a public export, a cached or print view), archive that address.
+2. **Save the page yourself.** Use a browser extension such as SingleFile while signed in, and keep the file next to your archive.
+3. **Wait for support.** Cookie and browser-profile support is tracked in the [roadmap](https://github.com/gtkatakura/webfrost/blob/main/ROADMAP.md). A SingleFile export cannot be imported into WebFrost yet.
+
+## Related
+
+Archiving addresses on your own network is a different limitation: private, loopback and link-local addresses are blocked by default. See [Security](/docs/architecture/security#ssrf-protection) for `WEBFROST_ALLOW_PRIVATE_URLS`.
+
+<Cards>
+  <Card title="Troubleshooting" href="/docs/guides/troubleshooting">
+    Other reasons a snapshot may come out empty.
+  </Card>
+  <Card title="Extractors" href="/docs/reference/extractors">
+    What each format captures.
+  </Card>
+</Cards>

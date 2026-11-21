@@ -40,7 +40,7 @@ services:
       # Set to "false" if a separate `webfrost schedule worker` runs the schedules.
       WEBFROST_SCHEDULER: ${WEBFROST_SCHEDULER:-true}
       WEBFROST_LOG_LEVEL: ${WEBFROST_LOG_LEVEL:-info}
-      # Storage backend: filesystem (default) or s3. See docs/how-to/s3-storage.md.
+      # Storage backend: filesystem (default) or s3. See apps/docs/content/docs/guides/storage.mdx.
       WEBFROST_STORAGE_BACKEND: ${WEBFROST_STORAGE_BACKEND:-filesystem}
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_BUCKET: ${S3_BUCKET:-}

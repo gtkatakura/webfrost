@@ -1,0 +1,85 @@
+---
+title: Storage model
+description: How WebFrost stores an archive in one directory, with SQLite for metadata and plain files or S3 for content, and why.
+icon: Archive
+---
+
+A WebFrost archive is a directory. SQLite holds the metadata and search index, and ordinary files hold what was captured. Optionally the files can live in an S3-compatible bucket, while the database stays local.
+
+## One directory
+
+```
+$WEBFROST_DIR/
+├── archive.db              SQLite: metadata, FTS5 index, schedules, sessions
+└── snapshots/
+    └── <snapshot-id>/      one directory per snapshot
+        ├── archive.warc
+        ├── page.pdf
+        ├── screenshot.png
+        ├── dom.html
+        ├── singlefile.html
+        └── media/          only when yt-dlp found media
+            ├── media.mp4   or media.mp3
+            └── media-metadata.json
+```
+
+The `html` and `readability` results live in the database. Files exist only for extractors that ran and succeeded. See [Disk layout](/docs/reference/disk-layout).
+
+## What the database holds
+
+- **snapshots**: one row per URL, with its status (`pending`, `done` or `failed`) and timestamp.
+- **archive_results**: per snapshot and extractor, the output (inline content or a storage reference), the duration, and the `error` when it failed.
+- **job_queue**: background job state with the lease heartbeat and attempt count.
+- **tags** and **snapshot_tags**.
+- **schedules**: cron definitions with last-run state and failure counts.
+- **admin_users**, **sessions**, **api_keys**: the admin account, login sessions and hashed API keys.
+- **imports**: history of bulk imports.
+- **snapshots_fts**: the FTS5 table over URL, title, text and tags.
+
+Column detail is in [Database](/docs/reference/database).
+
+## Storage backends
+
+Both backends implement one interface (write, read, size, delete, presigned URL), so the pipeline does not care which one is active.
+
+| | Filesystem | S3 |
+|---|---|---|
+| Files at | `WEBFROST_DIR/snapshots/<id>/` | `<prefix>/<id>/<file>` |
+| Stored reference | absolute path | `s3:<key>` |
+| Download | streamed by the server | `302` to a presigned URL |
+| Database | local | local |
+
+Writes from Chromium and yt-dlp go to a temporary file first. With S3 the file is then uploaded and the temporary copy removed.
+
+The reference stored in the database is checked on every read: a filesystem path must lie inside `snapshots/` and an S3 key under the configured prefix. This blocks path traversal through a tampered row, and it is also why a backend cannot be switched on a populated archive without breaking old downloads. See [Storage](/docs/guides/storage#switching-backends-on-an-existing-archive).
+
+## Why this design
+
+**No external services.** SQLite and a directory are enough. No database server, no object store required.
+
+**Self-contained backup.** Copy the directory. Restore by copying it back to the same path.
+
+**Open formats.** WARC is readable by [ReplayWeb.page](https://replayweb.page/) and other tools. PDF, PNG and HTML need nothing special. SQLite opens in any client.
+
+**No lock-in.** If WebFrost disappears, the files remain readable. The WARC files alone are enough for long-term preservation.
+
+## Concurrency
+
+Several processes can share one archive: the server, CLI commands and a schedule worker. SQLite runs in WAL mode with a 5-second busy timeout, and each background job uses its own connection. Schedules are claimed and jobs adopted with atomic updates, so processes do not run the same work twice.
+
+## Backing up
+
+```bash
+rsync -av --progress "$WEBFROST_DIR"/ /backup/webfrost/
+```
+
+With S3, also back up the bucket. For hot backups and restores, see [Deploy](/docs/guides/deploy#backups).
+
+<Cards>
+  <Card title="Storage guide" href="/docs/guides/storage">
+    Set up S3, MinIO, R2 or B2.
+  </Card>
+  <Card title="Disk layout" href="/docs/reference/disk-layout">
+    Paths and backup.
+  </Card>
+</Cards>

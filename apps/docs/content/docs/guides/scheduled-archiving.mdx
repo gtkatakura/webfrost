@@ -1,0 +1,112 @@
+---
+title: Scheduled archiving
+description: Re-archive a URL or follow an RSS feed on a cron schedule, run by the server or by a separate worker.
+icon: CalendarClock
+---
+
+A schedule archives a URL, or the new items of a feed, whenever its cron expression fires. The server runs due schedules by itself, so schedules created in the web UI or API need no extra process.
+
+## Create a schedule
+
+<Tabs items={["CLI", "Web UI", "API", "SDK"]}>
+<Tab value="CLI">
+
+```bash
+# Archive a page every day at midnight
+webfrost schedule add https://example.com/news --cron "0 0 * * *"
+
+# Follow an RSS feed every hour
+webfrost schedule add --rss https://example.com/feed.xml --cron "0 * * * *"
+
+webfrost schedule list
+webfrost schedule remove 1
+```
+
+</Tab>
+<Tab value="Web UI">
+
+Open **Schedules**, enter a URL and a cron expression or preset. Rows show a health badge, last status and a preview of the next 5 runs. You can pause, resume and delete.
+
+</Tab>
+<Tab value="API">
+
+```bash
+# Create (201)
+curl -X POST http://localhost:3000/api/schedules \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/news", "cron": "0 0 * * *"}'
+
+# Pause or resume
+curl -X PATCH http://localhost:3000/api/schedules/1 \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"paused": true}'
+
+# Delete (204)
+curl -X DELETE http://localhost:3000/api/schedules/1 \
+  -H "Authorization: Bearer $KEY"
+```
+
+An invalid cron expression or a non-http(s) URL answers `400`.
+
+</Tab>
+<Tab value="SDK">
+
+```ts
+const schedule = await client.createSchedule("https://example.com/news", "0 0 * * *");
+await client.updateSchedule(schedule.id, { paused: true });
+await client.deleteSchedule(schedule.id);
+```
+
+</Tab>
+</Tabs>
+
+## RSS feeds
+
+`schedule add --rss` creates a feed schedule. On each run WebFrost fetches the feed, skips items that already have a snapshot, and archives the rest. The API, SDK and web UI create URL schedules only; use the CLI to add a feed schedule. It then runs in the server like any other.
+
+A URL schedule creates a new snapshot on every run, even when the page has not changed.
+
+## Cron syntax
+
+Five fields: `minute hour day-of-month month day-of-week`, with day-of-week from 0 to 6. Each field supports `*`, a number, a range (`1-5`), a list (`1,15`) and a step over everything (`*/15`). Names such as `mon` and steps over a range are not supported.
+
+| Expression | Meaning |
+|---|---|
+| `*/15 * * * *` | Every 15 minutes |
+| `0 * * * *` | Every hour |
+| `0 0 * * *` | Every day at midnight |
+| `0 9 * * 1` | Every Monday at 9:00 |
+
+Cron is evaluated in the time zone of the process that runs the schedule: `TZ`, or the system time zone, which is UTC in the Docker image. Set `TZ=America/Sao_Paulo` to change it.
+
+## Who runs the schedules
+
+The server starts a scheduler at boot and polls every 30 seconds. Set `WEBFROST_SCHEDULER=false` to turn that off.
+
+Without the server (CLI-only use), run a worker as a long-lived process under systemd, Docker or a process manager:
+
+```bash
+WEBFROST_DIR=./data webfrost schedule worker
+```
+
+The worker uses the same scheduler as the server, runs pipelines with the same concurrency limit, and re-queues snapshots left `pending` by an interrupted run.
+
+Running a worker next to the server on one archive is safe: a due schedule is claimed atomically, so only one process runs it. Set `WEBFROST_SCHEDULER=false` on the server if the worker should be the only one. See [Deploy](/docs/guides/deploy#a-separate-schedule-worker).
+
+## Failures
+
+Each schedule keeps `lastStatus` (`success` or `failed`) and `consecutiveFailures`, which resets on success.
+
+- A URL schedule is `success` when its snapshot ends `done`, and `failed` otherwise.
+- A feed schedule is `success` when the feed could be read. Failures of individual articles show on their own snapshots.
+
+Failing schedules stay active and retry on the next run. There is no automatic disabling; pause a schedule yourself to stop retries. If a run is still going when the next one is due, the next one waits until it finishes.
+
+<Cards>
+  <Card title="Architecture: pipeline" href="/docs/architecture/pipeline#schedules">
+    How due schedules are claimed and queued.
+  </Card>
+  <Card title="Troubleshooting" href="/docs/guides/troubleshooting#schedules-do-not-run">
+    Schedules that do not fire.
+  </Card>
+</Cards>

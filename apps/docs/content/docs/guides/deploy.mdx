@@ -1,0 +1,231 @@
+---
+title: Deploy
+description: Run WebFrost in production with Docker Compose, a reverse proxy, TLS, backups and health checks.
+icon: Server
+---
+
+A production deployment is the Docker image, one persistent volume, and a reverse proxy that terminates TLS. This page covers each piece. For a first try, use the [Quickstart](/docs/getting-started/quickstart).
+
+## The image
+
+The image is `ghcr.io/gtkatakura/webfrost/server`, built from `packages/server/Dockerfile` in three stages:
+
+| Stage | Base | What it does |
+|---|---|---|
+| `ui-builder` | `oven/bun` | Builds the SDK and `@webfrost/ui` with Vite |
+| `server-builder` | `oven/bun` | Builds `@webfrost/core` and `@webfrost/server` into `dist/` |
+| runtime | `oven/bun` slim | Copies the server bundle and the UI assets, installs Chromium (Playwright headless shell), `yt-dlp` and ffmpeg |
+
+The runtime image:
+
+- sets `WEBFROST_DIR=/data` and declares `/data` as a volume;
+- exposes port 3000 and runs `bun run dist/index.js`;
+- has a built-in `HEALTHCHECK` against `/health`;
+- runs the process as root, with Chromium started without its own sandbox. The container is the sandbox: add no capabilities and mount nothing from the host except the data volume;
+- does **not** contain the `webfrost` CLI. Create the admin user in the browser or with `POST /api/setup`.
+
+<Callout type="info" title="Which tags exist">
+The release workflow builds the image when a `v*.*.*` tag is pushed or when it is dispatched manually, not on every merge to `main`. Tag pushes publish the semver tags (`<version>` and `<major>.<minor>`, without a leading `v`) and `sha-<short-sha>`. `latest` is published by a manual dispatch from `main`. Pin a version with `IMAGE_TAG` once releases exist, or build the image yourself (see below).
+</Callout>
+
+To build the image yourself:
+
+```bash
+docker build -f packages/server/Dockerfile -t webfrost-server .
+```
+
+## Docker Compose
+
+`docker-compose.prod.yml` in the repository root is the recommended setup:
+
+```bash
+echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Compose substitutes `${VAR}` from `.env`. `SESSION_SECRET` is required; the rest are optional.
+
+| Compose variable | Default | Passed to the container as |
+|---|---|---|
+| `SESSION_SECRET` | none, required | `SESSION_SECRET` |
+| `PORT` | `3000` | Host port only (the container always listens on 3000) |
+| `GITHUB_REPOSITORY` | `gtkatakura/webfrost` | Builds the image name `ghcr.io/$GITHUB_REPOSITORY/server` |
+| `IMAGE_TAG` | `latest` | Image tag |
+| `WEBFROST_TRUST_PROXY` | `false` | `WEBFROST_TRUST_PROXY` |
+| `WEBFROST_CONCURRENCY` | `3` | `WEBFROST_CONCURRENCY` |
+| `TZ` | `UTC` | `TZ` |
+| `WEBFROST_PUBLIC_READ` | `false` | `WEBFROST_PUBLIC_READ` |
+| `WEBFROST_INSECURE_COOKIES` | `false` | `WEBFROST_INSECURE_COOKIES` |
+| `WEBFROST_ALLOW_PRIVATE_URLS` | `false` | `WEBFROST_ALLOW_PRIVATE_URLS` |
+| `WEBFROST_DOMAIN_DELAY_MS` | `1000` | `WEBFROST_DOMAIN_DELAY_MS` |
+| `WEBFROST_SCHEDULER` | `true` | `WEBFROST_SCHEDULER` |
+| `WEBFROST_LOG_LEVEL` | `info` | `WEBFROST_LOG_LEVEL` |
+| `WEBFROST_STORAGE_BACKEND`, `S3_*` | filesystem | [Storage](/docs/guides/storage) |
+
+The file also sets `restart: unless-stopped` and `init: true` (it reaps the Chromium and yt-dlp child processes), and defines a health check. To pin a release:
+
+```bash
+IMAGE_TAG=0.2.0 docker compose -f docker-compose.prod.yml up -d
+```
+
+A single `docker run` also works:
+
+```bash
+docker run -d -p 3000:3000 \
+  -e SESSION_SECRET=$(openssl rand -hex 32) \
+  -v webfrost_data:/data \
+  ghcr.io/gtkatakura/webfrost/server:latest
+```
+
+### Update
+
+```bash
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Snapshots that were `pending` when the old container stopped are re-queued automatically by the new one: a snapshot is adopted once its lease (45 seconds) has expired, at the next recovery sweep (every minute). See [Pipeline](/docs/architecture/pipeline#jobs-leases-and-recovery).
+
+### Roll back
+
+```bash
+docker compose -f docker-compose.prod.yml stop
+IMAGE_TAG=<previous-version> docker compose -f docker-compose.prod.yml up -d
+curl http://localhost:3000/health
+```
+
+If the release changed the database schema, restore a backup taken before the upgrade first.
+
+## Volumes
+
+Always mount a volume at `WEBFROST_DIR` (`/data` in the image). Without one, every snapshot is lost when the container is removed. The directory holds `archive.db` and `snapshots/`.
+
+The database stores absolute paths to the files it saved, so keep the same mount point (`/data`) across restores and upgrades.
+
+## Reverse proxy
+
+WebFrost does not terminate TLS. Put nginx, Caddy or Traefik in front. A Caddyfile:
+
+```text
+archive.example.com {
+  reverse_proxy localhost:3000
+}
+```
+
+Behind a proxy, set `WEBFROST_TRUST_PROXY=true`. Rate limits are keyed on the client address, which is the TCP peer by default, so without this every client shares the proxy's address and its limit. With it, the first entry of `X-Forwarded-For` is used. Set it only if the proxy **overwrites** the header instead of appending to what the client sent; otherwise a client can pick its own address and dodge the limits.
+
+## TLS and cookies
+
+The session cookie is `HttpOnly`, `SameSite=Strict` and `Secure`. Browsers drop `Secure` cookies on plain-HTTP origins other than `localhost`, so signing in over `http://192.168.1.10:3000` appears to work and then returns to the login page.
+
+- **Recommended:** serve over HTTPS through the reverse proxy.
+- **HTTP-only LAN deployment:** set `WEBFROST_INSECURE_COOKIES=true` to drop the `Secure` flag. Accept that cookies then travel in clear text.
+
+## Secrets
+
+- Set `SESSION_SECRET` from a secret manager or Docker secret, not a committed `.env`. It must be at least 32 random characters; rotating it signs everyone out.
+- Never set `AUTH_DISABLED=true` on a reachable server.
+- Keep `.env` out of version control.
+
+## Health check
+
+```bash
+curl http://localhost:3000/health
+# {"status":"ok"}
+```
+
+`/health` needs no authentication, so it suits load balancers and uptime monitors. The image and the Compose file already use it.
+
+## Backups
+
+State lives in two places inside `WEBFROST_DIR`: `archive.db` (metadata, search index, schedules, sessions, API key hashes) and `snapshots/` (files). With S3 storage the files are in the bucket and only `archive.db` is local; back up both. The archive is only usable with its database.
+
+<Tabs items={["Cold backup", "Hot backup", "Restore"]}>
+<Tab value="Cold backup">
+
+Stop the container so nothing is writing, then archive the volume:
+
+```bash
+docker compose -f docker-compose.prod.yml stop
+
+docker run --rm -v webfrost_data:/data -v "$PWD":/backup alpine \
+  tar -czf "/backup/webfrost-$(date +%Y%m%d-%H%M%S).tar.gz" -C /data .
+
+docker compose -f docker-compose.prod.yml start
+```
+
+Compose prefixes the volume name with the project name (the directory name by default); check with `docker volume ls`.
+
+</Tab>
+<Tab value="Hot backup">
+
+Use SQLite's online backup for the database, and copy the files separately:
+
+```bash
+sqlite3 /data/archive.db ".backup /backups/archive-$(date +%Y%m%d).db"
+rsync -a /data/snapshots/ /backups/snapshots/
+```
+
+Nightly at 2:00, keeping 7 days:
+
+```text
+0 2 * * * sqlite3 /data/archive.db ".backup /backups/webfrost-$(date +\%Y\%m\%d).db" && find /backups -name 'webfrost-*.db' -mtime +7 -delete
+```
+
+</Tab>
+<Tab value="Restore">
+
+```bash
+docker compose -f docker-compose.prod.yml stop
+
+docker run --rm -v webfrost_data:/data -v "$PWD":/backup alpine \
+  tar -xzf /backup/webfrost-20260101-120000.tar.gz -C /data
+
+docker compose -f docker-compose.prod.yml start
+curl http://localhost:3000/health
+curl -H "Authorization: Bearer $KEY" http://localhost:3000/api/snapshots
+```
+
+Confirm `/health` answers `ok` and the snapshot list shows your history.
+
+</Tab>
+</Tabs>
+
+## A separate schedule worker
+
+The server runs schedules itself. You only need a worker if you want scheduled archiving in a different process, for example to keep it off the web server's resources. Disable the server's scheduler and run the CLI worker against the same data directory:
+
+```bash
+# server: .env
+WEBFROST_SCHEDULER=false
+
+# worker: from a source install, same archive and storage settings
+WEBFROST_DIR=/path/to/data webfrost schedule worker
+```
+
+The worker needs the same `WEBFROST_DIR`, `TZ` and storage variables as the server. The Docker image has no CLI, so run the worker from a source install on the same host or volume. Running both at once is safe, because a due schedule is claimed atomically and only one process runs it. See [Scheduled archiving](/docs/guides/scheduled-archiving#who-runs-the-schedules).
+
+## Hardening checklist
+
+- [ ] `SESSION_SECRET` set from a secret store, 32 or more random characters.
+- [ ] `AUTH_DISABLED` unset.
+- [ ] TLS in front of the server, and `WEBFROST_TRUST_PROXY=true` if, and only if, the proxy overwrites `X-Forwarded-For`.
+- [ ] `WEBFROST_ALLOW_PRIVATE_URLS` unset unless you archive intranet pages on purpose.
+- [ ] `WEBFROST_PUBLIC_READ` set only if everything archived may be seen by anyone who can reach the server.
+- [ ] Container egress to internal networks and `169.254.169.254` blocked.
+- [ ] Data directory readable only by the service user.
+- [ ] Backups tested with a restore.
+
+Details and reasoning: [Security](/docs/architecture/security#deployment-checklist).
+
+<Cards>
+  <Card title="Configuration" href="/docs/reference/configuration">
+    Every environment variable.
+  </Card>
+  <Card title="Troubleshooting" href="/docs/guides/troubleshooting">
+    Fix common problems.
+  </Card>
+  <Card title="Releasing" href="/docs/contributing/releasing">
+    How images and versions are published.
+  </Card>
+</Cards>

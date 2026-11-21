@@ -1,0 +1,240 @@
+---
+title: REST API
+description: Every WebFrost HTTP route with authentication, request and response shapes, status codes and rate limits.
+icon: Globe
+---
+
+The server exposes a JSON REST API under `/api`, plus an unauthenticated `GET /health`. The web UI and the [SDK](/docs/reference/sdk) use these same routes. Examples assume `API=http://localhost:3000/api` and `KEY` holds an API key.
+
+## Authentication
+
+Every `/api/*` route requires authentication except `POST /api/auth/login`, `GET /api/setup/status` and `POST /api/setup`. Unauthenticated requests get `401 { "error": "unauthorized" }`.
+
+**API key.** Send it as a bearer token:
+
+```bash
+curl -H "Authorization: Bearer $KEY" $API/snapshots
+```
+
+Create keys in the UI (**Settings, API keys**), with `webfrost admin key create`, or with `POST /api/settings/keys`. Keys are stored as SHA-256 hashes and shown once.
+
+**Session cookie.** Browsers use the cookie set by `POST /api/auth/login` or `POST /api/setup`. It is `HttpOnly`, `SameSite=Strict` and `Secure`, valid for 7 days, and backed by a server-side session: logging out revokes it, and changing the password revokes every session of the user.
+
+**Public read.** With `WEBFROST_PUBLIC_READ=true`, a fixed set of `GET` routes also works without credentials. See [Public read](/docs/guides/public-read) for the list.
+
+`AUTH_DISABLED=true` turns authentication off. For development only.
+
+## Conventions
+
+- Bodies and responses are JSON, except downloads and `POST /api/import/file` (multipart).
+- Errors are `{ "error": "message" }` with an appropriate status.
+- Timestamps are UTC strings from SQLite, such as `2026-01-31 14:02:11`.
+- Lists of snapshots are newest first.
+- Snapshot `status` is exactly one of `pending`, `done` or `failed`.
+
+## Rate limits
+
+Limits are per client IP over a sliding one-minute window, held in memory:
+
+| Scope | Limit |
+|---|---|
+| `GET` and `HEAD` on `/api/*` | 300 per minute |
+| `POST /api/snapshots`, `POST /api/import`, `POST /api/import/file` | 60 per minute |
+| `POST /api/auth/login`, `POST /api/auth/change-password`, `POST /api/setup` | 10 per minute |
+
+A limited request gets `429` with a `Retry-After` header (seconds). The client IP is the TCP peer address. `X-Forwarded-For` is used only when `WEBFROST_TRUST_PROXY=true`, which you should set behind a reverse proxy that overwrites the header.
+
+## Health
+
+| Method | Route | Auth | Description |
+|---|---|---|---|
+| `GET` | `/health` | none | `{ "status": "ok" }` |
+
+## Setup
+
+| Method | Route | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/setup/status` | none | `{ needsSetup, publicRead }` |
+| `POST` | `/api/setup` | none | Create the admin user (first run only) |
+
+`POST /api/setup` takes `{ "username", "password" }`. The username must not be empty and the password needs at least 8 characters, otherwise `400`. On success it returns `{ "apiKey": "..." }` (shown once) and sets a session cookie. Once an admin exists it answers `409`.
+
+## Auth
+
+| Method | Route | Description |
+|---|---|---|
+| `POST` | `/api/auth/login` | `{ username, password }`. Sets the session cookie, returns `{ "ok": true }`. `401` for wrong credentials. |
+| `POST` | `/api/auth/logout` | Revokes the session and clears the cookie. |
+| `GET` | `/api/auth/me` | `{ username }`. `username` is `null` when authenticated by API key. |
+| `POST` | `/api/auth/change-password` | `{ currentPassword, newPassword }` |
+
+`change-password` answers `400` if `newPassword` has fewer than 8 characters and **`403`** (not `401`) if `currentPassword` is wrong, because the caller is authenticated and clients treat `401` as an expired session. On success every session of the user is revoked and a browser caller receives a fresh cookie.
+
+## Snapshots
+
+| Method | Route | Description |
+|---|---|---|
+| `POST` | `/api/snapshots` | Queue a URL for archiving. `202`. |
+| `GET` | `/api/snapshots` | List snapshots, or search with `?q=`. |
+| `GET` | `/api/snapshots/:id` | One snapshot with archive results and per-extractor metadata. |
+| `DELETE` | `/api/snapshots/:id` | Delete a snapshot and its files. `204`, or `404`. |
+
+### Create
+
+```bash
+curl -X POST $API/snapshots -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" -d '{"url": "https://example.com"}'
+# 202 { "id": 1, "url": "https://example.com", "status": "pending" }
+```
+
+The URL must be `http` or `https`, otherwise `400 { "error": "invalid url" }`. The pipeline runs in the background; poll the snapshot until `status` leaves `pending`.
+
+### List
+
+```bash
+curl "$API/snapshots?page=1&limit=20&status=done" -H "Authorization: Bearer $KEY"
+# { "items": [...], "total": 42, "page": 1, "limit": 20 }
+```
+
+| Query | Default | Description |
+|---|---|---|
+| `page` | `1` | 1-based page |
+| `limit` | `20` | Page size, from 1 to 10000 |
+| `status` | none | Filter by `pending`, `done` or `failed` |
+| `q` | none | Full-text search term |
+
+Each item is `{ id, url, status, createdAt, extractors, title, excerpt, screenshotUrl, tags }`. `extractors` lists only extractors that succeeded. `title` and `excerpt` come from Readability. `screenshotUrl` is a download path, or `null` when there is no screenshot.
+
+### Search
+
+```bash
+curl "$API/snapshots?q=climate+change&page=1&limit=20" -H "Authorization: Bearer $KEY"
+```
+
+The query uses SQLite FTS5 syntax (`"exact phrase"`, prefix `term*`, column filters). It searches URL, title, extracted text and tag names. An invalid expression returns no results. Results are ranked by relevance, `status` filters them like the list, and each item adds `snippet` and `rank` to the list fields:
+
+```json
+{ "id": 1, "url": "https://example.com", "snippet": "...climate <mark>change</mark>...", "rank": -1.2, "status": "done" }
+```
+
+The snippet is HTML-escaped; its only markup is the literal `<mark>` tag. Render it as text with highlights, never as raw HTML from an untrusted source.
+
+### Detail
+
+`GET /api/snapshots/:id` returns the list fields plus:
+
+- `archiveResults`: `[{ id, extractor, content, createdAt }]` for extractors that succeeded. For file-backed formats `content` is the server's storage path or S3 key; for guests it is the download URL instead.
+- `extractorMeta`: an object keyed by extractor name, `{ status: "success" | "failed", durationMs, fileSizeBytes, error? }`.
+
+Browser extractors that could not run (Chromium missing, navigation failed, SSRF violation) appear in `extractorMeta` with `status: "failed"` and an `error`, and are absent from `extractors` and `archiveResults`. `media` is skipped silently, with no entry, when `yt-dlp` is missing or the URL is not a media page. An unknown id answers `404`.
+
+## Archive files
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/api/snapshots/:id/archives/:extractor/download` | Download one format |
+| `GET` | `/api/snapshots/:id/archives/:extractor/preview` | Render archived HTML inline in a sandbox |
+
+`:extractor` is one of `warc`, `pdf`, `screenshot`, `readability`, `dom-snapshot`, `singlefile`, `html`, `media`, `media-metadata`. An unknown name answers `400`, a snapshot or result that does not exist `404`.
+
+```bash
+curl -OJ $API/snapshots/1/archives/screenshot/download -H "Authorization: Bearer $KEY"
+```
+
+| Extractor | Content type | File name |
+|---|---|---|
+| `warc` | `application/warc` | `archive.warc` |
+| `pdf` | `application/pdf` | `page.pdf` |
+| `screenshot` | `image/png` | `screenshot.png` |
+| `dom-snapshot` | `text/html` | `dom.html` |
+| `singlefile` | `text/html` | `singlefile.html` |
+| `media` | `video/mp4` or `audio/mpeg` | `media.mp4` or `media.mp3` |
+| `media-metadata` | `application/json` | `media-metadata.json` |
+| `readability`, `html` | `application/json` | `readability.json`, `html.json` (the stored value as is) |
+
+Downloads carry `Content-Disposition: attachment`. With the S3 backend every file format except `media-metadata` answers `302` to a presigned URL valid for one hour. See [Storage](/docs/guides/storage#downloads-with-s3).
+
+`preview` works only for `dom-snapshot` and `singlefile` (`400` otherwise). It serves the page with `Content-Security-Policy: sandbox; default-src 'none'; ...`, so scripts, forms and network requests are disabled even if the URL is opened directly. The UI frames it in `<iframe sandbox="">`.
+
+## Tags
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/api/tags` | List tags: `[{ id, name, slug, color, createdAt }]` |
+| `POST` | `/api/tags` | `{ name, color? }`. `201`. `409` if the name exists. |
+| `DELETE` | `/api/tags/:id` | Delete a tag and remove it from all snapshots. `204`, or `404`. |
+| `GET` | `/api/snapshots/:id/tags` | Tags on a snapshot |
+| `POST` | `/api/snapshots/:id/tags` | `{ tagId }`. `201`. `404` for an unknown snapshot or tag. |
+| `DELETE` | `/api/snapshots/:id/tags/:tagId` | Remove a tag from a snapshot. `204`, or `404`. |
+
+Tag names are part of the search index and stay in sync when you add or remove tags after archiving.
+
+## Schedules
+
+| Method | Route | Description |
+|---|---|---|
+| `POST` | `/api/schedules` | `{ url, cron }`. `201`. `400` for an invalid URL or cron expression. |
+| `GET` | `/api/schedules` | List schedules |
+| `GET` | `/api/schedules/:id` | One schedule, or `404` |
+| `PATCH` | `/api/schedules/:id` | `{ "paused": true }` or `{ "paused": false }` |
+| `DELETE` | `/api/schedules/:id` | `204`, or `404` |
+
+A schedule is `{ id, url, cron, createdAt, lastRunAt, nextRunAt, paused, lastStatus, consecutiveFailures }`. `lastStatus` is `success`, `failed` or `null`. The API creates URL schedules only; add an RSS feed schedule with `webfrost schedule add --rss`. See [Scheduled archiving](/docs/guides/scheduled-archiving).
+
+## Import
+
+| Method | Route | Description |
+|---|---|---|
+| `POST` | `/api/import` | Import from a URL or inline content. `202`. |
+| `POST` | `/api/import/file` | Import an uploaded file (`multipart/form-data`). `202`. |
+| `GET` | `/api/imports` | Import history |
+
+`POST /api/import` takes JSON `{ url?, content?, format? }`. Send `url` (a feed or file to fetch) or `content` (raw text), otherwise `400`. `format` is `rss`, `opml`, `netscape` or `text`; it is detected when omitted. A `url` without a format is tried as an RSS feed first. `POST /api/import/file` takes a `file` field and an optional `format` field.
+
+```bash
+curl -X POST $API/import -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/feed.xml", "format": "rss"}'
+# 202 { "queued": 12, "skipped": 3, "total": 15, "format": "rss" }
+
+curl -X POST $API/import/file -H "Authorization: Bearer $KEY" \
+  -F "file=@bookmarks.html" -F "format=netscape"
+```
+
+`GET /api/imports` returns `[{ id, sourceUrl, format, queued, skipped, createdAt }]`. Format rules and deduplication: [Bulk import](/docs/guides/bulk-import).
+
+## Stats and settings
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/api/stats` | `{ snapshotCount, storageBytes, storageByExtractor, successRate, activeScheduleCount, failedToday }`. Cached for 60 seconds. |
+| `GET` | `/api/settings/info` | `{ version, storagePath, snapshotCount }` |
+| `GET` | `/api/settings/keys` | List active API keys: `[{ id, name, expiresAt, lastUsedAt, createdAt }]` |
+| `POST` | `/api/settings/keys` | `{ name }`. `201` with the key and `rawKey`, shown once. |
+| `DELETE` | `/api/settings/keys/:id` | Revoke a key. `204`, or `404`. |
+
+`successRate` is the percentage of `done` snapshots among those finished in the last 30 days. `failedToday` counts snapshots that failed since 00:00 UTC.
+
+## Status codes at a glance
+
+| Code | Meaning |
+|---|---|
+| `200`, `201` | Success, created |
+| `202` | Accepted; work continues in the background (snapshot, import) |
+| `204` | Deleted |
+| `302` | Download redirect to a presigned S3 URL |
+| `400` | Invalid input |
+| `401` | Not authenticated |
+| `403` | Wrong current password on `change-password`; storage reference refused on download |
+| `404` | Not found |
+| `409` | Already exists (tag name, setup already done) |
+| `429` | Rate limited; see `Retry-After` |
+
+<Cards>
+  <Card title="SDK" href="/docs/reference/sdk">
+    A typed client for these routes.
+  </Card>
+  <Card title="Security" href="/docs/architecture/security">
+    Headers, SSRF and rate limiting.
+  </Card>
+</Cards>

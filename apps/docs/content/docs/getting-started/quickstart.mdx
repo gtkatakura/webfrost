@@ -1,0 +1,117 @@
+---
+title: Quickstart
+description: Run the WebFrost server, web UI and scheduler with Docker Compose in a few minutes.
+icon: Zap
+---
+
+The fastest way to run WebFrost is the production Compose file from the repository. The image bundles Chromium, yt-dlp and ffmpeg, so every extractor works out of the box.
+
+<Steps>
+<Step>
+
+### Get the Compose file
+
+```bash
+git clone https://github.com/gtkatakura/webfrost.git
+cd webfrost
+```
+
+</Step>
+<Step>
+
+### Set a session secret
+
+`SESSION_SECRET` signs login cookies and is required. Compose refuses to start without it.
+
+```bash
+echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
+```
+
+</Step>
+<Step>
+
+### Start the stack
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+curl http://localhost:3000/health
+# {"status":"ok"}
+```
+
+Data lives in the named volume `webfrost_data`, mounted at `/data`.
+
+</Step>
+<Step>
+
+### Create the admin user
+
+Open `http://localhost:3000`. On the first visit a setup wizard asks for a username and a password of at least 8 characters, then signs you in. The same step is available over HTTP and returns your first API key, shown once:
+
+```bash
+curl -X POST http://localhost:3000/api/setup \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"change-me-please"}'
+# { "apiKey": "..." }
+```
+
+</Step>
+<Step>
+
+### Archive a page
+
+Paste a URL into **Quick Archive** on the dashboard, or use the API:
+
+```bash
+curl -X POST http://localhost:3000/api/snapshots \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com"}'
+# HTTP 202 { "id": 1, "url": "https://example.com", "status": "pending" }
+```
+
+The snapshot is `pending` while the pipeline runs and becomes `done` or `failed`.
+
+</Step>
+</Steps>
+
+<Callout type="info" title="The CLI is not in the image">
+The Docker image does not contain the `webfrost` CLI, so `webfrost admin create` cannot be run in the container. Create the admin user in the browser or with `POST /api/setup`. To use the CLI, [install from source](/docs/getting-started/install).
+</Callout>
+
+<Callout type="warn" title="Image tags">
+Compose pulls `ghcr.io/gtkatakura/webfrost/server:latest` by default (set `IMAGE_TAG` to pin another tag). If that tag is not published yet, build the image locally: uncomment the `build:` block in `docker-compose.prod.yml`, comment out `image:`, and run `docker compose -f docker-compose.prod.yml up -d --build`.
+</Callout>
+
+## Plain HTTP on a LAN address
+
+If you open `http://192.168.x.x:3000` and login bounces back to the login page, the session cookie is the cause: it is marked `Secure`, and browsers drop it on plain-HTTP origins other than `localhost`. Serve WebFrost over TLS, or set `WEBFROST_INSECURE_COOKIES=true` in `.env` for an HTTP-only deployment. See [Deploy](/docs/guides/deploy#tls-and-cookies).
+
+## Common settings
+
+Compose reads these from `.env`. Only `SESSION_SECRET` is required.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SESSION_SECRET` | none | Required. At least 32 random characters. |
+| `PORT` | `3000` | Host port mapped to the container |
+| `WEBFROST_CONCURRENCY` | `3` | Pipelines run in parallel |
+| `WEBFROST_TRUST_PROXY` | `false` | `true` behind a reverse proxy |
+| `WEBFROST_PUBLIC_READ` | `false` | Let anonymous visitors browse read-only |
+| `TZ` | `UTC` | Time zone for cron schedules |
+| `IMAGE_TAG` | `latest` | Image tag to pull |
+
+Every variable is listed in [Configuration](/docs/reference/configuration).
+
+## Next
+
+<Cards>
+  <Card title="Archive your first page" href="/docs/getting-started/first-archive">
+    Look at every format and search it.
+  </Card>
+  <Card title="Production deployment" href="/docs/guides/deploy">
+    Reverse proxy, TLS, backups.
+  </Card>
+  <Card title="Web UI" href="/docs/guides/web-ui">
+    A tour of the pages and shortcuts.
+  </Card>
+</Cards>

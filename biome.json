@@ -23,6 +23,13 @@
     }
   },
   "files": {
-    "ignore": ["**/dist/**", "**/node_modules/**", "**/*.lock", "docs/.vitepress/cache/**"]
+    "ignore": [
+      "**/dist/**",
+      "**/node_modules/**",
+      "**/*.lock",
+      "apps/docs/build/**",
+      "apps/docs/.react-router/**",
+      "apps/docs/.source/**"
+    ]
   }
 }

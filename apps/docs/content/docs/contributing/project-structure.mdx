@@ -1,0 +1,107 @@
+---
+title: Project structure
+description: The monorepo layout, what each package owns, how they depend on each other, and how to add an extractor.
+icon: FolderTree
+---
+
+WebFrost is a Bun monorepo. Libraries and services are in `packages/`, and the documentation site is in `apps/`.
+
+```
+webfrost/
+├── packages/
+│   ├── core/       @webfrost/core    library
+│   ├── cli/        @webfrost/cli     the webfrost command
+│   ├── server/     @webfrost/server  HTTP API and static UI
+│   ├── ui/         @webfrost/ui      React SPA
+│   └── sdk/        @webfrost/sdk     TypeScript API client
+├── apps/
+│   └── docs/       @webfrost/docs    this site (React Router, Fumadocs)
+├── bench/          benchmark scripts
+├── .github/        CI and release workflows
+├── .changeset/     pending release notes
+├── package.json    workspace root scripts
+├── biome.json      lint and format config
+├── lefthook.yml    git hooks
+└── Makefile        developer targets
+```
+
+## Packages
+
+### `@webfrost/core`
+
+The shared library; nothing in it is user-facing on its own.
+
+```
+packages/core/src/
+├── pipeline.ts          archive orchestrator for one snapshot
+├── jobs.ts              JobRunner: bounded background pipelines, leases, recovery
+├── scheduler.ts         polls due schedules and claims them atomically
+├── schedules.ts         schedule storage (add, list, due lookup, status)
+├── cron.ts              cron expression parsing and next-run calculation
+├── concurrency.ts       concurrency limiter (WEBFROST_CONCURRENCY)
+├── db.ts                SQLite access, schema migration
+├── fetch-cache.ts       shared per-snapshot HTTP cache
+├── throttle.ts          per-host spacing (WEBFROST_DOMAIN_DELAY_MS)
+├── ssrf-guard.ts        SSRF protection and safeFetch
+├── browser-guard.ts     SSRF protection for browser requests
+├── subprocess.ts        process runner with timeouts (yt-dlp)
+├── import.ts            import parsing: text, OPML, Netscape, RSS
+├── import-history.ts    import history
+├── rss.ts               RSS and Atom fetching, URL deduplication
+├── auth.ts              admin users, API keys, sessions
+├── search.ts            FTS5 indexing and search
+├── tags.ts              tags, kept in sync with the FTS index
+├── list.ts, snapshot.ts, stats.ts   queries
+├── storage/             filesystem and S3 backends
+└── extractors/          warc, readability, html, pdf, screenshot,
+                         dom-snapshot, singlefile, media, media-metadata
+```
+
+### `@webfrost/cli`
+
+A thin command-line layer over core, in `packages/cli/src/index.ts`. It parses arguments and calls core functions.
+
+### `@webfrost/server`
+
+An [Elysia](https://elysiajs.com/) server: the REST API routes (`src/routes/`), rate limiting, security headers, and static hosting of the built UI. It starts the job runner's recovery sweep and the scheduler in the same process (`WEBFROST_SCHEDULER=false` disables the scheduler).
+
+### `@webfrost/ui`
+
+The React single-page app, built with Vite to `packages/ui/dist/`, which the server serves. The Docker image copies it to `public/`. In development Vite proxies API calls to the server. It talks to the server only through the SDK.
+
+### `@webfrost/sdk`
+
+The typed REST client. It wraps `fetch` and has no dependency on core.
+
+### `@webfrost/docs`
+
+This documentation site in `apps/docs`. See [Development](/docs/contributing/development#this-documentation-site).
+
+## Dependencies
+
+<Mermaid chart={`flowchart LR
+  cli[cli] --> core[core]
+  server[server] --> core
+  ui[ui] --> sdk[sdk]
+  ui -.REST.-> server
+  sdk -.REST.-> server
+  docs[docs]
+`} />
+
+The CLI and server depend on core. The UI and SDK depend on nothing internal at runtime: they reach the server over HTTP.
+
+## Add an extractor
+
+1. Create `packages/core/src/extractors/<name>.ts` exporting a function that stores its result in `archive_results` (a storage reference for files, or inline content).
+2. Register it in `packages/core/src/pipeline.ts`, in the right group: text extractors use the fetch cache, browser extractors use the page, and `BROWSER_EXTRACTORS` lists those recorded as failed when Chromium is unavailable. Give it a timeout and honour the abort signal.
+3. Add its name to the download allowlist and, for files, to the content type table in `packages/server/src/routes/snapshots.ts`. Add it to the file-backed sets there and in `packages/core/src/stats.ts` if it stores a file.
+4. Write tests, then update [Extractors](/docs/reference/extractors), the [REST API](/docs/reference/rest-api#archive-files) page, `README.md` and `ROADMAP.md`.
+
+<Cards>
+  <Card title="Architecture overview" href="/docs/architecture/overview">
+    How the components fit together.
+  </Card>
+  <Card title="Development" href="/docs/contributing/development">
+    Set up and test.
+  </Card>
+</Cards>

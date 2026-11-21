@@ -1,0 +1,122 @@
+---
+title: Install from source
+description: Install WebFrost with Bun, set up Chromium, yt-dlp and ffmpeg, and run the CLI and the server.
+icon: Download
+---
+
+Running from source gives you the `webfrost` CLI and the server. Use Docker instead if you only want the server: see the [Quickstart](/docs/getting-started/quickstart).
+
+## Requirements
+
+| Dependency | Needed for | Notes |
+|---|---|---|
+| [Bun](https://bun.sh) 1.x | Everything | Runtime and package manager. The repo pins a version in `.tool-versions`. |
+| Chromium | PDF, screenshot, DOM snapshot, SingleFile | Install through Playwright or point WebFrost at an existing binary. |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Media extraction | Optional. |
+| ffmpeg | Merging video and audio streams | Optional, used by yt-dlp. |
+
+Without Chromium the four browser extractors are recorded as failed on each snapshot, and the snapshot still finishes `done` with WARC, Readability and HTML. Without yt-dlp, media extraction is skipped silently.
+
+## Install
+
+```bash
+git clone https://github.com/gtkatakura/webfrost.git
+cd webfrost
+bun install
+```
+
+## Chromium
+
+<Tabs items={["Playwright", "System Chromium"]}>
+<Tab value="Playwright">
+
+```bash
+bunx playwright install chromium
+```
+
+On a fresh Linux machine add `--with-deps` to install system libraries too.
+
+</Tab>
+<Tab value="System Chromium">
+
+Use a Chromium or Chrome you already have and set its path:
+
+```bash
+export WEBFROST_CHROMIUM_PATH=/usr/bin/chromium
+```
+
+Install one with your package manager, for example `brew install --cask chromium`, `apt-get install chromium` or `apk add chromium`.
+
+</Tab>
+</Tabs>
+
+`WEBFROST_CHROMIUM_PATH` is read by the CLI, the server and the browser tests, and replaces the build Playwright would download. It changes which binary is used, not its profile: every snapshot gets a fresh, anonymous browser context.
+
+## yt-dlp and ffmpeg
+
+```bash
+# macOS
+brew install yt-dlp ffmpeg
+
+# any platform with pip
+pip install yt-dlp
+```
+
+yt-dlp has to be on `PATH` as `yt-dlp`. Without it, media extraction is skipped and no failure is recorded.
+
+## Run the CLI
+
+From the repository root, `bun run webfrost` runs the CLI. Point it at an archive directory with `WEBFROST_DIR` (default: the current directory):
+
+```bash
+export WEBFROST_DIR=./data
+mkdir -p "$WEBFROST_DIR"
+
+bun run webfrost --version
+bun run webfrost init
+bun run webfrost add https://example.com
+```
+
+A successful archive prints `Snapshot 1 archived.` The full command list is in the [CLI reference](/docs/reference/cli).
+
+## Run the server
+
+The server serves the REST API and the web UI. Build the UI once, then start it:
+
+```bash
+bun run build
+export SESSION_SECRET=$(openssl rand -hex 32)
+WEBFROST_DIR=./data bun run packages/server/src/index.ts
+```
+
+Open `http://localhost:3000`. Create the admin user in the setup wizard, or from the CLI:
+
+```bash
+WEBFROST_DIR=./data bun run webfrost admin create --username admin --password 'at-least-8-chars'
+```
+
+The command prints a default API key once. The server runs schedules itself, so no separate worker is needed.
+
+<Callout type="info" title="Default directories">
+The CLI defaults `WEBFROST_DIR` to the current directory. The server defaults to `~/.webfrost`. Set the variable explicitly in both so they share one archive.
+
+Prefer an absolute path (`WEBFROST_DIR=$HOME/webfrost-data`). The database stores file references as paths, so a relative `./data` only works while you start every command from the same directory.
+</Callout>
+
+## Verify
+
+```bash
+bun run webfrost list
+curl http://localhost:3000/health
+```
+
+If something fails, see [Troubleshooting](/docs/guides/troubleshooting).
+
+<Cards>
+  <Card title="Archive your first page" href="/docs/getting-started/first-archive">
+    Archive, inspect every format, search.
+  </Card>
+  <Card title="Configuration" href="/docs/reference/configuration">
+    Every environment variable.
+  </Card>
+</Cards>

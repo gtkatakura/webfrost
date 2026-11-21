@@ -37,21 +37,21 @@ dev: ## Start API server + Vite UI dev server concurrently (Ctrl+C stops both)
 
 ## ─── Docs ─────────────────────────────────────────────────────────────────────
 
-docs-install: ## Install docs dependencies
-	cd docs && bun install 2>/dev/null || bun install
+docs-install: ## Install docs dependencies (part of the workspace)
+	bun install
 
-docs-dev: ## Start VitePress docs dev server with hot reload (http://localhost:5174/)
+docs-dev: ## Start the docs site (apps/docs) with hot reload (http://localhost:5174/)
 	bun run docs:dev
 
-docs-build: ## Build static docs site for production
+docs-build: ## Prerender the docs site to apps/docs/build/client
 	bun run docs:build
 
-docs-preview: ## Preview production docs build locally
+docs-preview: ## Serve the built docs site (http://localhost:5175/)
 	bun run docs:preview
 
 ## ─── Build ────────────────────────────────────────────────────────────────────
 
-build: ## Build all packages (cli, core, server, ui, sdk)
+build: ## Build all packages and the docs site
 	bun run build
 
 ## ─── Quality ──────────────────────────────────────────────────────────────────

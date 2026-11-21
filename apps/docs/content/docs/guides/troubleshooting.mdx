@@ -1,0 +1,119 @@
+---
+title: Troubleshooting
+description: Symptoms, causes and fixes for the problems people hit most when running WebFrost.
+icon: LifeBuoy
+---
+
+Run with `WEBFROST_LOG_LEVEL=debug` (or `--verbose` on the CLI) first. Debug output shows each extractor's duration, failures, and why a fetch failed.
+
+## Snapshot has no PDF, screenshot, DOM snapshot or SingleFile
+
+**Cause:** Chromium is missing or not found, navigation failed, or a request hit the SSRF policy. Those four extractors are recorded as failed, and the snapshot still ends `done` with WARC, Readability and HTML.
+
+`GET /api/snapshots/:id` shows each failure as `status: "failed"` with an `error` in `extractorMeta`. Read the message.
+
+**Fix:**
+
+```bash
+bunx playwright install chromium
+# or use a browser you already have
+export WEBFROST_CHROMIUM_PATH=/usr/bin/chromium
+```
+
+The Docker image already bundles Chromium. A message starting with `blocked:` means the page redirected to a private address: see [Security](/docs/architecture/security#ssrf-protection).
+
+## No media for a YouTube or Vimeo URL
+
+**Cause:** `yt-dlp` is not installed, or the URL is not a media page. Media extraction is then skipped silently and no failure is recorded. The Docker image bundles `yt-dlp` and ffmpeg.
+
+**Fix:** install it (`brew install yt-dlp` or `pip install yt-dlp`) and make sure `yt-dlp` is on `PATH`. If a media page yields metadata but no media file, the download may have exceeded the 500 MB cap or failed; check the debug log.
+
+## Snapshots stay `pending` or end `failed`
+
+A snapshot is `pending` while it waits in the job runner or runs. The runner executes at most `WEBFROST_CONCURRENCY` pipelines (default 3), and archives of the same host start about `WEBFROST_DOMAIN_DELAY_MS` apart (default 1000 ms), so a burst queues up.
+
+A snapshot ends `failed` when:
+
+- the page could not be fetched: a timeout (`WEBFROST_FETCH_TIMEOUT_MS`, default 30 s), a network error, or an SSRF block;
+- the server answered with an HTTP status of 400 or higher;
+- no extractor produced output;
+- it was interrupted three times and given up on.
+
+After a crash or restart, snapshots left `pending` are re-queued automatically: a snapshot is adopted once its lease (45 seconds) has expired, at the next recovery sweep, which runs at startup and every minute. Give it a minute or two.
+
+**Fix:** raise `WEBFROST_CONCURRENCY` if the machine can take it, check the debug log for the failure reason, and set `WEBFROST_ALLOW_PRIVATE_URLS=true` only if you really intend to archive intranet addresses.
+
+## Login bounces back to the login page
+
+**Cause:** the session cookie is `Secure`, and browsers drop it on plain-HTTP origins other than `localhost`. Typical when opening `http://<lan-ip>:3000`.
+
+**Fix:** serve WebFrost over TLS, or for an HTTP-only deployment set `WEBFROST_INSECURE_COOKIES=true`.
+
+## `429 Too Many Requests`
+
+**Cause:** the API limits requests per client IP (see [Rate limits](/docs/reference/rest-api#rate-limits)). Behind a reverse proxy every client shares the proxy's address unless `WEBFROST_TRUST_PROXY=true`.
+
+**Fix:** wait for the `Retry-After` period, and set `WEBFROST_TRUST_PROXY=true` behind a proxy that overwrites `X-Forwarded-For`.
+
+## Server exits with `SESSION_SECRET env var is required`
+
+The server refuses to start without `SESSION_SECRET` unless `AUTH_DISABLED=true`. With Docker Compose, `docker-compose.prod.yml` refuses to start until it is set in `.env`.
+
+```bash
+export SESSION_SECRET=$(openssl rand -hex 32)
+```
+
+A secret shorter than 32 characters starts, with a warning.
+
+## Schedules do not run
+
+**Cause:** the scheduler is off (`WEBFROST_SCHEDULER=false`) and no `webfrost schedule worker` is running, or the cron expression is evaluated in a different time zone than you expect. The time zone is `TZ`, which is UTC in Docker.
+
+**Fix:** remove `WEBFROST_SCHEDULER=false` or start a worker, and set `TZ`. A schedule whose previous run is still going waits until it ends.
+
+## Downloads fail with 403 or "file not found"
+
+**Cause:** the file reference stored in the database no longer matches the storage in use. This happens after switching `WEBFROST_STORAGE_BACKEND`, after moving the data directory to a different absolute path, or when a relative `WEBFROST_DIR` is used from a different working directory.
+
+**Fix:** use an absolute `WEBFROST_DIR` and keep it stable. See [Storage](/docs/guides/storage#switching-backends-on-an-existing-archive).
+
+## `database is locked`
+
+**Cause:** several processes write to one SQLite database. Connections wait up to 5 seconds for a competing writer, so a server plus CLI commands or a schedule worker on one archive is fine. The error appears when a writer is blocked longer, or after an unclean shutdown.
+
+**Fix:** look for a stuck process holding the database open. If it persists after a clean shutdown, checkpoint the write-ahead log:
+
+```bash
+sqlite3 ./data/archive.db "PRAGMA wal_checkpoint(TRUNCATE);"
+```
+
+## Search finds nothing after an import
+
+The full-text index may be out of sync. Rebuild it:
+
+```bash
+webfrost search:rebuild
+```
+
+Only snapshots that finished `done` are indexed.
+
+## `bun: command not found`
+
+Install Bun from [bun.sh](https://bun.sh) and add `~/.bun/bin` to `PATH`. With [mise](https://mise.jdx.dev/): `mise exec bun -- bun run webfrost add https://example.com`.
+
+## `Unknown command: --verbose`
+
+`--verbose` and `--quiet` go after the command: `webfrost add https://example.com --verbose`. You can also set `WEBFROST_LOG_LEVEL=debug`.
+
+## Archive a login-protected page
+
+Not supported. See [Authenticated pages](/docs/guides/authenticated-pages).
+
+<Cards>
+  <Card title="Configuration" href="/docs/reference/configuration">
+    Timeouts, concurrency and other settings.
+  </Card>
+  <Card title="Pipeline" href="/docs/architecture/pipeline">
+    How a snapshot is processed.
+  </Card>
+</Cards>

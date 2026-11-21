@@ -1,0 +1,97 @@
+---
+title: Storage
+description: Keep archive files on the local filesystem or in S3-compatible object storage such as S3, MinIO, R2 or B2.
+icon: HardDrive
+---
+
+WebFrost stores archive files in one of two backends. The SQLite database (`archive.db`) always stays on the local disk in `WEBFROST_DIR`, whichever you pick. It holds the metadata and the references to the files.
+
+| Backend | `WEBFROST_STORAGE_BACKEND` | Files go to |
+|---|---|---|
+| Filesystem | `filesystem` (default) | `WEBFROST_DIR/snapshots/<snapshot-id>/` |
+| S3-compatible | `s3` | `<S3_PATH_PREFIX>/<snapshot-id>/<filename>` in your bucket |
+
+## Filesystem
+
+Nothing to configure. The layout is described in [Disk layout](/docs/reference/disk-layout).
+
+## S3
+
+Set the backend and the four required variables before starting the server or the CLI. The bucket must already exist.
+
+```bash
+WEBFROST_STORAGE_BACKEND=s3
+S3_ENDPOINT=https://s3.amazonaws.com
+S3_BUCKET=my-webfrost-bucket
+S3_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+S3_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+S3_REGION=us-east-1
+S3_PATH_PREFIX=snapshots
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `WEBFROST_STORAGE_BACKEND` | `filesystem` | `filesystem` or `s3` |
+| `S3_ENDPOINT` | none | Endpoint URL. Required for `s3`. |
+| `S3_BUCKET` | none | Bucket name. Required for `s3`. |
+| `S3_ACCESS_KEY_ID` | none | Access key ID. Required for `s3`. |
+| `S3_SECRET_ACCESS_KEY` | none | Secret access key. Required for `s3`. |
+| `S3_REGION` | `us-east-1` | Bucket region |
+| `S3_PATH_PREFIX` | `snapshots` | Object key prefix inside the bucket |
+
+If the backend is `s3` and any of the four required variables is missing, archiving fails with an error naming them. With Docker Compose, put the same variables in `.env`; `docker-compose.prod.yml` passes them through.
+
+For files that Chromium or yt-dlp write, WebFrost writes to a temporary directory first, uploads the result, and deletes the temporary file.
+
+### Providers
+
+| Provider | `S3_ENDPOINT` |
+|---|---|
+| AWS S3 | `https://s3.amazonaws.com` or `https://s3.<region>.amazonaws.com` |
+| Cloudflare R2 | `https://<account-id>.r2.cloudflarestorage.com` |
+| Backblaze B2 | `https://s3.<region>.backblazeb2.com` |
+| MinIO (self-hosted) | Your MinIO URL, for example `http://localhost:9000` |
+| Hetzner Object Storage | `https://<region>.your-objectstorage.com` |
+
+### Try it locally with MinIO
+
+`docker-compose.dev.yml` in the repository starts MinIO and creates a `webfrost` bucket:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d
+
+WEBFROST_STORAGE_BACKEND=s3 \
+S3_ENDPOINT=http://localhost:9000 \
+S3_BUCKET=webfrost \
+S3_ACCESS_KEY_ID=minioadmin \
+S3_SECRET_ACCESS_KEY=minioadmin \
+WEBFROST_DIR=./data SESSION_SECRET=$(openssl rand -hex 32) \
+bun run packages/server/src/index.ts
+```
+
+The MinIO console is at `http://localhost:9001` (user and password `minioadmin`).
+
+## Downloads with S3
+
+For PDF, screenshot, WARC, DOM snapshot, SingleFile and media, `GET /api/snapshots/:id/archives/:extractor/download` answers `302` with a presigned bucket URL valid for one hour, instead of streaming the file through the server. `media-metadata` is the exception: the UI reads it with `fetch()`, so the server always streams it itself.
+
+Because the browser then loads screenshots and media from the bucket's origin, the server adds that one origin to the `img-src` and `media-src` directives of its Content-Security-Policy, and to nothing else.
+
+## Switching backends on an existing archive
+
+Changing the backend does not move files that are already stored. Each archive result keeps a reference to where its file was written: an absolute local path for the filesystem backend, `s3:<key>` for S3. The active backend rejects references that do not belong to it, so after you flip `WEBFROST_STORAGE_BACKEND` on a populated archive, downloads of the older snapshots fail (`403`). There is no built-in migration tool.
+
+Start a new archive directory when you change backend, or keep the old data and accept that only new snapshots use the new backend. Do not switch back and forth on one archive.
+
+## Backups
+
+Back up both: the bucket holds the files, but `archive.db` is what maps snapshots to them. See [Backups](/docs/guides/deploy#backups).
+
+<Cards>
+  <Card title="Storage model" href="/docs/architecture/storage-model">
+    Why the database stays local.
+  </Card>
+  <Card title="Configuration" href="/docs/reference/configuration#storage">
+    All storage variables.
+  </Card>
+</Cards>

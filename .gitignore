@@ -5,3 +5,6 @@ dist/
 !.env.example
 *.local
 bench/vs-archivebox/results/
+apps/docs/build/
+apps/docs/.react-router/
+apps/docs/.source/

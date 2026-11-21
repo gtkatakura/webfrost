@@ -1,0 +1,72 @@
+---
+title: Disk layout
+description: Where WebFrost puts the database and each snapshot's files on disk and in S3, and how to back them up.
+icon: FolderTree
+---
+
+Everything WebFrost stores lives under `WEBFROST_DIR` (S3 files aside).
+
+```
+$WEBFROST_DIR/
+├── archive.db                  SQLite database: metadata, search index, schedules, sessions
+└── snapshots/
+    └── <snapshot-id>/          one directory per snapshot (integer id)
+        ├── archive.warc        WARC
+        ├── page.pdf            PDF
+        ├── screenshot.png      full-page PNG
+        ├── dom.html            DOM snapshot
+        ├── singlefile.html     self-contained HTML
+        └── media/              only when yt-dlp found media
+            ├── media.mp4       video (or media.mp3 for the audio-only fallback)
+            └── media-metadata.json
+```
+
+The `html` and `readability` results are stored in the database, not as files. A file exists only if its extractor ran and succeeded, so most snapshots lack some of these.
+
+SQLite also creates `archive.db-wal` and `archive.db-shm` next to the database while it is in use (write-ahead logging). Keep them with the database.
+
+## Snapshot ids
+
+A snapshot's directory is named after its integer id, matching `snapshots.id`. The directory is created when the first file is written.
+
+## File references are paths
+
+The database refers to each file by the path it was written to: an absolute path with the filesystem backend (`WEBFROST_DIR/snapshots/<id>/<file>`), and `s3:<key>` with S3. That has two consequences:
+
+- Use an absolute `WEBFROST_DIR`. With a relative one (`./data`) the references are relative too, and break when you start WebFrost from another directory.
+- If you restore or move the archive, put it back at the same absolute path (in Docker, always `/data`).
+
+## S3 layout
+
+With `WEBFROST_STORAGE_BACKEND=s3`, `archive.db` stays local and the files go to:
+
+```
+<S3_PATH_PREFIX>/<snapshot-id>/<filename>
+```
+
+The default prefix is `snapshots`, so a screenshot is at `snapshots/42/screenshot.png`. See [Storage](/docs/guides/storage).
+
+## Backup
+
+Back up the whole directory. With S3, also back up the bucket: the database is what maps snapshots to their files.
+
+```bash
+rsync -av --progress "$WEBFROST_DIR"/ /backup/webfrost/
+# or
+tar -czf webfrost-backup-$(date +%Y%m%d).tar.gz "$WEBFROST_DIR"/
+```
+
+For a backup while the server runs, use SQLite's online backup for the database (`sqlite3 archive.db ".backup file.db"`) and copy `snapshots/` separately. Docker specifics are in [Deploy](/docs/guides/deploy#backups).
+
+## Deleting a snapshot
+
+`webfrost delete <id>` and `DELETE /api/snapshots/:id` remove the database rows, the search entry and the snapshot's files (the directory, or the S3 objects) on a best-effort basis. There is no trash: deletion is permanent.
+
+<Cards>
+  <Card title="Database" href="/docs/reference/database">
+    The tables behind the files.
+  </Card>
+  <Card title="Storage model" href="/docs/architecture/storage-model">
+    The reasoning behind this layout.
+  </Card>
+</Cards>

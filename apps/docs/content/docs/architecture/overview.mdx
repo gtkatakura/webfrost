@@ -1,0 +1,125 @@
+---
+title: Overview
+description: The parts of WebFrost, what runs where, and how they connect, with diagrams.
+icon: Network
+---
+
+WebFrost is a Bun monorepo with one shared library and thin layers on top. The server process is self-contained: it serves the API and UI, runs archive jobs and runs due schedules. No separate worker or queue service is required.
+
+## System context
+
+Who talks to WebFrost, and what WebFrost talks to.
+
+<Mermaid chart={`flowchart LR
+  user([User]) -->|archive, search, manage| wf[WebFrost]
+  admin([Operator]) -->|deploy, configure, create admin| wf
+  wf -->|fetch URLs and feeds| web[("Public web")]
+  wf -->|headless sessions| chromium[Chromium]
+  wf -->|media downloads| ytdlp[yt-dlp and ffmpeg]
+  wf -->|database always, files by choice| store[("Local disk or S3")]
+`} />
+
+## Packages and processes
+
+<Mermaid chart={`flowchart TB
+  subgraph clients[Clients]
+    cli[webfrost CLI]
+    ui[Web UI in the browser]
+    sdk[SDK, curl, scripts]
+  end
+
+  subgraph server["Server process (@webfrost/server)"]
+    api[Elysia REST API and static UI]
+    runner[JobRunner]
+    sched["Scheduler (polls every 30 s)"]
+    recover["Recovery sweep (every 60 s)"]
+    api --> runner
+    sched --> runner
+    recover --> runner
+  end
+
+  core[["@webfrost/core: pipeline, extractors, database, auth, import"]]
+
+  ui -->|REST| api
+  sdk -->|REST| api
+  cli -->|library calls| core
+  server -.uses.-> core
+
+  core --> db[("archive.db (SQLite and FTS5)")]
+  core --> files[("snapshots/ on disk or S3 bucket")]
+  core --> chromium[Chromium via Playwright]
+  core --> ytdlp[yt-dlp subprocess]
+  core --> web[("Public web")]
+`} />
+
+| Package | Role | Entry point |
+|---|---|---|
+| `@webfrost/core` | Library: database, pipeline, extractors, job runner, scheduler, import, auth, storage | not executable |
+| `@webfrost/cli` | The `webfrost` command, a thin layer over core | `packages/cli/src/index.ts` |
+| `@webfrost/server` | Elysia HTTP server: REST API, static UI, embedded job runner and scheduler | `packages/server/src/index.ts` |
+| `@webfrost/ui` | React single-page app, built to `packages/ui/dist/` and served by the server | `packages/ui/src/main.tsx` |
+| `@webfrost/sdk` | Typed REST client, with no dependency on core | `packages/sdk/src/index.ts` |
+
+Key relationships:
+
+- **CLI and server both use `core`.** Pipeline logic lives once, in core.
+- **The server embeds the scheduler and the job runner.** `WEBFROST_CONCURRENCY` bounds the pipelines of the whole process. `webfrost schedule worker` runs the same scheduler for CLI-only setups and can run next to the server on one archive, because due schedules are claimed atomically. `WEBFROST_SCHEDULER=false` turns off the server's scheduler.
+- **The UI talks only to the server**, through the same REST API as the SDK.
+- **The CLI works on the directory directly.** It does not call the server, so it works with no server running.
+
+## Inside `@webfrost/core`
+
+<Mermaid chart={`flowchart LR
+  import["import.ts and rss.ts"] --> jobs
+  scheduler["scheduler.ts, cron.ts, schedules.ts"] --> jobs
+  jobs["jobs.ts (JobRunner)"] --> pipeline[pipeline.ts]
+  pipeline --> cache["fetch-cache.ts and ssrf-guard.ts"]
+  pipeline --> guard[browser-guard.ts]
+  pipeline --> extractors[extractors/*]
+  pipeline --> throttle[throttle.ts]
+  pipeline --> db[db.ts]
+  pipeline --> storage[storage/*]
+  extractors --> chromium[Chromium]
+  extractors --> ytdlp[yt-dlp]
+  auth[auth.ts] --> db
+  search["search.ts, tags.ts"] --> db
+`} />
+
+| Component | Responsibility |
+|---|---|
+| Pipeline (`pipeline.ts`) | Orchestrates one snapshot: fetch, launch the browser once, fan out to the extractors, record results, set the final status. |
+| Job runner (`jobs.ts`) | Runs pipelines in the background, bounded by `WEBFROST_CONCURRENCY`. Each job gets its own database connection. Leases jobs and recovers orphans. |
+| Scheduler (`scheduler.ts`) | Polls for due schedules, claims each atomically and hands it to the job runner. |
+| Extractors (`extractors/`) | One module per format: `warc`, `readability`, `html`, `pdf`, `screenshot`, `dom-snapshot`, `singlefile`, `media`, `media-metadata`. |
+| Fetch cache (`fetch-cache.ts`) | Per-snapshot, in-memory: the page is fetched over HTTP once and shared by the text extractors. |
+| SSRF guards (`ssrf-guard.ts`, `browser-guard.ts`) | Block requests to private addresses, for the HTTP fetch and for every browser request. |
+| Throttle (`throttle.ts`) | Spaces archives of the same host. |
+| Database (`db.ts`) | SQLite access and migrations, plain SQL, no ORM. |
+| Storage (`storage/`) | Filesystem or S3 backend behind one interface. |
+| Auth, search, tags, import | Admin users, API keys and sessions; FTS5 queries; tag management; text, OPML, Netscape and RSS parsing. |
+
+## Design principles
+
+**One browser navigation per snapshot.** Many archivers start a separate browser session per format. WebFrost opens the page once and runs the PDF, screenshot, DOM snapshot and SingleFile extractors against that one load. This is the main source of speed.
+
+**One shared HTTP fetch.** The page is fetched once. WARC, Readability and HTML read that response.
+
+**Open formats.** WARC, PDF, PNG, HTML and SQLite. No proprietary binary format.
+
+**One directory.** The database and the files live together. Back up with `rsync`. S3 is optional.
+
+**Small and replaceable layers.** The CLI, server and SDK add no archive logic. A new interface implements against `core` without touching the pipeline.
+
+**In-process queue, durable state.** The job runner is in memory, but job state and heartbeats are in SQLite, so a restart or crash does not strand snapshots. A distributed queue is not needed for self-hosted use.
+
+<Cards>
+  <Card title="Pipeline" href="/docs/architecture/pipeline">
+    One snapshot from request to done.
+  </Card>
+  <Card title="Storage model" href="/docs/architecture/storage-model">
+    What is stored and where.
+  </Card>
+  <Card title="Project structure" href="/docs/contributing/project-structure">
+    Where the code lives.
+  </Card>
+</Cards>

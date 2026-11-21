@@ -1,0 +1,212 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/lib/default-colors.css";
+@import "fumadocs-ui/css/preset.css";
+@import "@fontsource-variable/plus-jakarta-sans/wght.css";
+@import "@fontsource-variable/jetbrains-mono/wght.css";
+
+/*
+ * The look of the site. Fumadocs gives the structure; the colors, type and radius come from the
+ * "Violet Dusk" theme on 21st.dev, which sits close to the web app's own violet accent.
+ * The shadcn token names (bg-primary, text-muted-foreground, …) are mapped onto Fumadocs' tokens at the
+ * bottom, so components taken from 21st.dev work without rewriting their classes.
+ */
+@theme {
+  --font-sans: "Plus Jakarta Sans Variable", "Plus Jakarta Sans", Inter, ui-sans-serif, system-ui,
+    sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo,
+    monospace;
+}
+
+:root {
+  --color-fd-background: hsl(210, 40%, 98%);
+  --color-fd-foreground: hsl(224, 71%, 4%);
+  --color-fd-card: hsl(0, 0%, 100%);
+  --color-fd-card-foreground: hsl(224, 71%, 4%);
+  --color-fd-popover: hsl(0, 0%, 100%);
+  --color-fd-popover-foreground: hsl(224, 71%, 4%);
+  --color-fd-primary: hsl(263, 70%, 50%);
+  --color-fd-primary-foreground: hsl(210, 40%, 98%);
+  --color-fd-secondary: hsl(263, 20%, 94%);
+  --color-fd-secondary-foreground: hsl(263, 70%, 30%);
+  --color-fd-muted: hsl(220, 14%, 96%);
+  --color-fd-muted-foreground: hsl(220, 9%, 42%);
+  --color-fd-accent: hsl(263, 80%, 96%);
+  --color-fd-accent-foreground: hsl(263, 70%, 45%);
+  --color-fd-border: hsl(220, 13%, 89%);
+  --color-fd-ring: hsl(263, 70%, 50%);
+  --radius: 1rem;
+}
+
+.dark {
+  --color-fd-background: hsl(260, 25%, 3%);
+  --color-fd-foreground: hsl(210, 40%, 98%);
+  --color-fd-card: hsl(260, 25%, 5%);
+  --color-fd-card-foreground: hsl(210, 40%, 98%);
+  --color-fd-popover: hsl(260, 25%, 6%);
+  --color-fd-popover-foreground: hsl(210, 40%, 98%);
+  --color-fd-primary: hsl(263, 85%, 68%);
+  --color-fd-primary-foreground: hsl(260, 25%, 3%);
+  --color-fd-secondary: hsl(263, 40%, 15%);
+  --color-fd-secondary-foreground: hsl(263, 85%, 85%);
+  --color-fd-muted: hsl(260, 20%, 11%);
+  --color-fd-muted-foreground: hsl(260, 10%, 70%);
+  --color-fd-accent: hsl(263, 50%, 15%);
+  --color-fd-accent-foreground: hsl(263, 85%, 78%);
+  --color-fd-border: hsl(260, 20%, 15%);
+  --color-fd-ring: hsl(263, 85%, 68%);
+}
+
+/* shadcn names → Fumadocs tokens, for the components taken from 21st.dev. */
+@theme inline {
+  --color-background: var(--color-fd-background);
+  --color-foreground: var(--color-fd-foreground);
+  --color-card: var(--color-fd-card);
+  --color-card-foreground: var(--color-fd-card-foreground);
+  --color-primary: var(--color-fd-primary);
+  --color-primary-foreground: var(--color-fd-primary-foreground);
+  --color-muted: var(--color-fd-muted);
+  --color-muted-foreground: var(--color-fd-muted-foreground);
+  --color-accent: var(--color-fd-accent);
+  --color-accent-foreground: var(--color-fd-accent-foreground);
+  --color-border: var(--color-fd-border);
+  --color-ring: var(--color-fd-ring);
+}
+
+html {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-fd-border) transparent;
+}
+html > body[data-scroll-locked] {
+  margin-right: 0px !important;
+  --removed-body-scroll-bar-size: 0px !important;
+}
+::selection {
+  background: color-mix(in oklab, var(--color-fd-primary) 24%, transparent);
+}
+:focus-visible {
+  outline: 2px solid var(--color-fd-ring);
+  outline-offset: 2px;
+}
+
+/* The search shortcut: both keys are rendered, the script in <head> picks one before the first paint. */
+.kbd-ctrl {
+  display: none;
+}
+[data-os="ctrl"] .kbd-ctrl {
+  display: inline;
+}
+[data-os="ctrl"] .kbd-mac {
+  display: none;
+}
+.repo-link-text {
+  font-size: 0.8125rem;
+}
+
+/* Page opener: the title carries the page, the description under it, then a rule before the text. */
+#nd-page h1 {
+  font-size: 2.25rem;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+#nd-page h1 + p {
+  margin-bottom: 0;
+  padding-bottom: 1.75rem;
+  border-bottom: 1px solid var(--color-fd-border);
+}
+
+/* Reading column. Text keeps a measure; code, tables and figures may use the whole width. */
+#nd-page .prose {
+  font-size: 1rem;
+  line-height: 1.7;
+}
+#nd-page .prose > :where(p, ul, ol, blockquote, h2, h3, h4) {
+  max-width: 70ch;
+  text-wrap: pretty;
+}
+#nd-page .prose > :where(h2, h3, h4) {
+  text-wrap: balance;
+  letter-spacing: -0.015em;
+}
+#nd-page .prose > h2 {
+  margin-top: 3rem;
+  margin-bottom: 0.9rem;
+  font-size: 1.5rem;
+}
+#nd-page .prose > h3 {
+  margin-top: 2rem;
+  font-size: 1.125rem;
+}
+#nd-page .prose a:not([data-card]) {
+  color: var(--color-fd-primary);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+#nd-page .prose a:not([data-card]):hover {
+  text-decoration-thickness: 2px;
+}
+
+/* Tables: rules between rows only, a heavier one under the header, numbers aligned. */
+#nd-page .prose table {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+#nd-page .prose :where(th, td) {
+  border: 0;
+  border-bottom: 1px solid var(--color-fd-border);
+  background: transparent;
+  padding: 0.6rem 1rem 0.6rem 0;
+  vertical-align: top;
+}
+#nd-page .prose th {
+  border-bottom: 1.5px solid var(--color-fd-foreground);
+  color: var(--color-fd-muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+#nd-page .prose tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Menu: the page you are on is a dot on the line, not a filled pill. */
+#nd-sidebar a[data-active="true"] {
+  background: transparent;
+  color: var(--color-fd-foreground);
+  font-weight: 600;
+}
+#nd-sidebar a[data-active="true"]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -7px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: var(--color-fd-primary);
+}
+
+/* Home page: things arrive in a short cascade, unless the reader asked for less motion. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: rise 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+@media (prefers-reduced-motion: reduce) {
+  .rise {
+    animation: none;
+  }
+}
