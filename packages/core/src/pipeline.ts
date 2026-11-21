@@ -1,5 +1,6 @@
 import type Database from "bun:sqlite";
 import { guardBrowserContext } from "./browser-guard";
+import { resolveChromium } from "./chromium";
 import { domSnapshotExtractor } from "./extractors/dom-snapshot";
 import { htmlExtractor } from "./extractors/html";
 import { mediaExtractor } from "./extractors/media";
@@ -64,13 +65,13 @@ export function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promis
 }
 
 /**
- * Launch options for the headless browser. WEBFROST_CHROMIUM_PATH points Playwright
- * at an existing Chromium/Chrome binary (distro package, container base image)
- * instead of the build downloaded by `playwright install chromium`.
+ * Launch options for the headless browser. The executable comes from `resolveChromium`:
+ * WEBFROST_CHROMIUM_PATH, then the Chromium `webfrost setup` installed, then a system
+ * Chrome/Chromium, then Playwright's own default (no path).
  */
 export function chromiumLaunchOptions(): { executablePath?: string } {
-  const executablePath = process.env.WEBFROST_CHROMIUM_PATH;
-  return executablePath ? { executablePath } : {};
+  const { path } = resolveChromium();
+  return path ? { executablePath: path } : {};
 }
 
 /** Close the browser, giving up (and killing nothing else) if it does not confirm in time. */

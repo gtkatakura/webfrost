@@ -7,11 +7,14 @@
     "webfrost": "src/index.ts"
   },
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target bun --external playwright --external jsdom",
+    "build": "bun build src/index.ts --outdir dist --target bun --external playwright --external playwright-core --external jsdom --external electron --external 'chromium-bidi/*'",
+    "build:binary": "bun run scripts/build-binary.ts",
     "test": "bun test",
     "benchmarks": "echo 'CLI benchmarks are covered by bench/cli-add.bench.ts at the repo root'"
   },
   "dependencies": {
-    "@webfrost/core": "workspace:*"
+    "@webfrost/core": "workspace:*",
+    "@webfrost/server": "workspace:*",
+    "playwright-core": "1.59.1"
   }
 }

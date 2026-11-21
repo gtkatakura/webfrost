@@ -37,6 +37,16 @@ export {
   safeFetch,
 } from "./ssrf-guard";
 export type { FetchedResponse, GuardedFetchResult, SafeFetchOptions } from "./ssrf-guard";
+export { webfrostDataDir } from "./data-dir";
+export {
+  cachedChromium,
+  chromiumPointerFile,
+  resolveChromium,
+  systemChromiumCandidates,
+  webfrostBrowsersDir,
+  webfrostCacheDir,
+} from "./chromium";
+export type { ChromiumSource, ResolvedChromium } from "./chromium";
 export { guardBrowserContext } from "./browser-guard";
 export type { BrowserGuard, HostCheck } from "./browser-guard";
 export { HostThrottle, domainThrottle } from "./throttle";

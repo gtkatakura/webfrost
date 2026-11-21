@@ -52,6 +52,8 @@
       },
       "dependencies": {
         "@webfrost/core": "workspace:*",
+        "@webfrost/server": "workspace:*",
+        "playwright-core": "1.59.1",
       },
     },
     "packages/core": {

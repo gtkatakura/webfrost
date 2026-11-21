@@ -209,8 +209,9 @@ describe("add URL (partial failure)", () => {
     const url = "http://localhost:19999/unreachable";
     const result = await runCli(["add", url], testDir);
 
-    // CLI must exit cleanly — partial failure is not a fatal error
-    expect(result.exitCode).toBe(0);
+    // A snapshot that ends "failed" is a failed command: exit code 1, no crash.
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("finished with status: failed");
 
     const db = openDb(testDir);
     const snapshot = db
@@ -241,7 +242,7 @@ describe("add URL (partial failure)", () => {
       const url = `http://localhost:${server.port}/error`;
       const result = await runCli(["add", url], testDir);
 
-      expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(1);
 
       const db = openDb(testDir);
       const snapshot = db
@@ -505,7 +506,7 @@ describe("log level flags", () => {
 
     const result = await runCli(["add", "--quiet"], testDir);
 
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(2);
     expect(result.stderr).toContain("Usage:");
   });
 

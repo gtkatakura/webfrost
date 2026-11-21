@@ -1,5 +1,4 @@
-import { existsSync, mkdirSync } from "node:fs";
-import { extname, resolve, sep } from "node:path";
+import { mkdirSync } from "node:fs";
 import { hasAdminUser, startScheduler } from "@webfrost/core";
 import { Elysia } from "elysia";
 import { getDb, getRunner, getWebfrostDir } from "./context";
@@ -17,78 +16,65 @@ import { setupRouter, setupToken } from "./routes/setup";
 import { snapshotsRouter } from "./routes/snapshots";
 import { statsRouter } from "./routes/stats";
 import { snapshotTagsRouter, tagsRouter } from "./routes/tags";
-import { installShutdownHandlers, shutdownTimeoutMs } from "./shutdown";
+import { gracefulShutdown, installShutdownHandlers, shutdownTimeoutMs } from "./shutdown";
+import { type UiAssets, defaultUiAssets, mimeTypeFor } from "./ui-assets";
 
-const PORT = Number(process.env.PORT ?? "3000");
+export type { UiAssets } from "./ui-assets";
+export { directoryAssets, embeddedAssets } from "./ui-assets";
 
 /** How often the server looks for snapshots orphaned by an interrupted run. */
 const RECOVERY_INTERVAL_MS = 60_000;
 
-// Resolve UI assets: prefer packages/ui/dist (monorepo dev), fall back to ./public (Docker/production)
-const uiDistPath = resolve(import.meta.dir, "../../ui/dist");
-const fallbackPublicPath = resolve(process.cwd(), "public");
-const staticAssetsPath = existsSync(uiDistPath)
-  ? uiDistPath
-  : existsSync(fallbackPublicPath)
-    ? fallbackPublicPath
-    : null;
+// The UI's static files. Resolved on first use (a directory of a monorepo checkout or ./public)
+// unless startServer() was given something else, such as the files embedded in a binary.
+let uiAssets: UiAssets | null | undefined;
+let warnedNoUi = false;
 
-if (!staticAssetsPath) {
-  logger.warn(
-    "No UI assets found. Run 'bun run build' to build the UI, or 'cd packages/ui && bun run build' for just the UI package.",
-  );
+/** Choose where the UI's static files come from. `null` means none; undefined restores auto-detection. */
+export function setUiAssets(assets: UiAssets | null | undefined): void {
+  uiAssets = assets;
 }
 
-const MIME_TYPES: Record<string, string> = {
-  ".html": "text/html",
-  ".js": "application/javascript",
-  ".css": "text/css",
-  ".json": "application/json",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".svg": "image/svg+xml",
-  ".ico": "image/x-icon",
-  ".woff": "font/woff",
-  ".woff2": "font/woff2",
-};
-
-// Refuse to start if auth is enabled but SESSION_SECRET is not configured
-if (process.env.AUTH_DISABLED !== "true" && !process.env.SESSION_SECRET) {
-  logger.error(
-    "SESSION_SECRET env var is required. Set it to a random string of at least 32 characters, or set AUTH_DISABLED=true for development.",
-  );
-  process.exit(1);
-}
-if (process.env.SESSION_SECRET && process.env.SESSION_SECRET.length < 32) {
-  logger.warn(
-    "SESSION_SECRET is shorter than 32 characters. Generate a strong one with: openssl rand -hex 32",
-  );
+function currentUiAssets(): UiAssets | null {
+  if (uiAssets !== undefined) return uiAssets;
+  const found = defaultUiAssets();
+  if (!found && !warnedNoUi) {
+    warnedNoUi = true;
+    logger.warn(
+      "No UI assets found. Run 'bun run build' to build the UI, or 'cd packages/ui && bun run build' for just the UI package.",
+    );
+  }
+  return found;
 }
 
-/** Serve a static file from the UI assets directory. Returns null if not found. */
+/** Refuse to start when auth is on but there is no SESSION_SECRET to sign sessions with. */
+function checkSessionSecret(): void {
+  if (process.env.AUTH_DISABLED !== "true" && !process.env.SESSION_SECRET) {
+    throw new StartupError(
+      "SESSION_SECRET env var is required. Set it to a random string of at least 32 characters, or set AUTH_DISABLED=true for development.",
+    );
+  }
+  if (process.env.SESSION_SECRET && process.env.SESSION_SECRET.length < 32) {
+    logger.warn(
+      "SESSION_SECRET is shorter than 32 characters. Generate a strong one with: openssl rand -hex 32",
+    );
+  }
+}
+
+/** A configuration problem that stops the server from starting. */
+export class StartupError extends Error {}
+
+/** Serve a static file from the UI assets. Returns null if not found. */
 async function serveStaticFile(pathname: string): Promise<Response | null> {
-  if (!staticAssetsPath) return null;
-
-  // Map URL path to file path
-  const filePath = resolve(
-    staticAssetsPath,
-    pathname.startsWith("/") ? pathname.slice(1) : pathname,
-  );
-
-  // Sandbox: must be within the assets directory
-  if (!filePath.startsWith(staticAssetsPath + sep)) return null;
-
-  const file = Bun.file(filePath);
-  if (!(await file.exists())) return null;
-
-  const ext = extname(filePath);
-  const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
+  const assets = currentUiAssets();
+  if (!assets) return null;
+  const file = await assets.find(pathname);
+  if (!file) return null;
   const cacheControl = pathname.startsWith("/assets/")
     ? "public, max-age=31536000, immutable"
     : "no-cache";
-
   return new Response(file, {
-    headers: { "content-type": contentType, "cache-control": cacheControl },
+    headers: { "content-type": mimeTypeFor(pathname), "cache-control": cacheControl },
   });
 }
 
@@ -181,12 +167,10 @@ export const app = new Elysia()
       return staticResp;
     }
     // SPA fallback: serve index.html for all other routes
-    if (staticAssetsPath) {
-      const indexFile = Bun.file(resolve(staticAssetsPath, "index.html"));
-      if (await indexFile.exists()) {
-        set.headers["content-type"] = "text/html";
-        return indexFile;
-      }
+    const indexFile = await currentUiAssets()?.find("/index.html");
+    if (indexFile) {
+      set.headers["content-type"] = "text/html";
+      return indexFile;
     }
     set.status = 404;
     return "Not Found";
@@ -261,20 +245,63 @@ function warnIfSetupUnprotected(): void {
   );
 }
 
-if (import.meta.main) {
+export interface StartServerOptions {
+  /** The UI's static files; defaults to the monorepo's packages/ui/dist or ./public. */
+  uiAssets?: UiAssets | null | undefined;
+  /** Handle SIGINT/SIGTERM with a graceful shutdown, then exit the process (default true). */
+  installSignalHandlers?: boolean;
+}
+
+export interface RunningServer {
+  port: number;
+  hostname: string;
+  /** Stop the scheduler and the HTTP listener, then wait for running archive jobs. */
+  stop: () => Promise<void>;
+}
+
+/**
+ * Start the HTTP server, the web UI, the scheduler and the pending-job recovery sweep in
+ * this process. Configured by the environment (PORT, HOST, SESSION_SECRET, WEBFROST_DIR...).
+ * Throws StartupError when the configuration is unusable.
+ */
+export function startServer(options: StartServerOptions = {}): RunningServer {
+  checkSessionSecret();
+  if (options.uiAssets !== undefined) setUiAssets(options.uiAssets);
   const background = startBackgroundWork();
   warnIfSetupUnprotected();
   const hostname = listenHostname();
-  app.listen({ port: PORT, hostname, maxRequestBodySize: maxRequestBodyBytes() });
-  logger.info({ hostname, port: app.server?.port ?? PORT }, "@webfrost/server listening");
+  const port = Number(process.env.PORT ?? "3000");
+  app.listen({ port, hostname, maxRequestBodySize: maxRequestBodyBytes() });
+  const boundPort = app.server?.port ?? port;
+  logger.info({ hostname, port: boundPort }, "@webfrost/server listening");
   if (process.env.AUTH_DISABLED === "true" && hostname !== "127.0.0.1" && hostname !== "::1") {
     logger.warn({ hostname }, "AUTH_DISABLED=true on a non-loopback address: anyone can reach it");
   }
-  installShutdownHandlers({
+  const shutdownDeps = {
     stopServer: () => app.stop(),
     stopBackgroundWork: background.stop,
     runner: getRunner(),
     timeoutMs: shutdownTimeoutMs(),
     logger,
-  });
+  };
+  if (options.installSignalHandlers !== false) installShutdownHandlers(shutdownDeps);
+  return {
+    port: boundPort,
+    hostname,
+    stop: async () => {
+      await gracefulShutdown(shutdownDeps);
+    },
+  };
+}
+
+if (import.meta.main) {
+  try {
+    startServer();
+  } catch (err) {
+    if (err instanceof StartupError) {
+      logger.error(err.message);
+      process.exit(1);
+    }
+    throw err;
+  }
 }

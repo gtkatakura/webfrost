@@ -9,7 +9,11 @@ export interface Logger {
 
 const LEVELS: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
 
-export function createLogger(level: LogLevel = "info"): Logger {
+/** `toStderr` sends every line to stderr, leaving stdout for a command's own output. */
+export function createLogger(
+  level: LogLevel = "info",
+  options: { toStderr?: boolean } = {},
+): Logger {
   const minLevel = LEVELS[level];
 
   function write(lvl: LogLevel, msg: string): void {
@@ -17,7 +21,7 @@ export function createLogger(level: LogLevel = "info"): Logger {
     const ts = new Date().toISOString().slice(11, 19); // HH:MM:SS
     const label = lvl.toUpperCase().padEnd(5);
     const line = `[${ts}] ${label} ${msg}\n`;
-    if (lvl === "error" || lvl === "warn") {
+    if (options.toStderr || lvl === "error" || lvl === "warn") {
       process.stderr.write(line);
     } else {
       process.stdout.write(line);
