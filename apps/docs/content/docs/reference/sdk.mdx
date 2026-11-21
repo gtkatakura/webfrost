@@ -4,11 +4,15 @@ description: The typed TypeScript client for the WebFrost REST API, with every m
 icon: Braces
 ---
 
-`@webfrost/sdk` is a typed TypeScript client for the [REST API](/docs/reference/rest-api). It wraps `fetch`, has no dependency on `@webfrost/core`, and works anywhere `fetch` does.
+`@webfrost/sdk` is a typed TypeScript client for the [REST API](/docs/reference/rest-api). It wraps `fetch`, has no dependencies, and runs on Node 18+, Bun and in browsers. It is ESM only and ships its type declarations.
 
-<Callout type="info" title="Not on npm yet">
-The package is not published. Use it from the repository workspace, for example by adding `"@webfrost/sdk": "workspace:*"` to another workspace package.
-</Callout>
+## Install
+
+```sh
+npm install @webfrost/sdk
+```
+
+Available from `0.1.0`.
 
 ## Create a client
 
@@ -21,26 +25,65 @@ const client = new WebFrostClient({
 });
 ```
 
-| Option | Type | Required | Description |
+| Option | Type | Default | Description |
 |---|---|---|---|
-| `baseUrl` | `string` | yes | API base URL **including the `/api` prefix**. The client appends paths such as `/snapshots`, so a server on port 3000 is `http://localhost:3000/api`. A trailing slash is removed. |
-| `apiKey` | `string` | no | Sent as `Authorization: Bearer <key>` on every request. Create one in the UI, with `webfrost admin key create`, or through `completeSetup`. |
+| `baseUrl` | `string` | required | API base URL **including the `/api` prefix**. The client appends paths such as `/snapshots`, so a server on port 3000 is `http://localhost:3000/api`. A trailing slash is removed. |
+| `apiKey` | `string` | none | Sent as `Authorization: Bearer <key>` on every request. Create one in the UI, with `webfrost admin key create`, or through `completeSetup`. |
+| `timeoutMs` | `number` | `30000` | Per-attempt timeout, covering the response headers and body. `0` disables it. |
+| `retries` | `number` | `0` | How many times to retry a failed GET or HEAD. See [Timeouts, retries and abort](#timeouts-retries-and-abort). |
+| `retryDelayMs` | `number` | `250` | Base delay for exponential backoff with jitter. |
+| `maxRetryDelayMs` | `number` | `30000` | Longest wait between attempts. A longer `Retry-After` is not waited out. |
+| `credentials` | `RequestCredentials` | `"same-origin"` | The `fetch` credentials mode. Use `"include"` for a browser page on another origin that relies on the session cookie. |
+| `fetch` | `typeof fetch` | global `fetch` | A custom `fetch` for SSR, tests or proxies. The global is looked up on every request. |
 
-Failed requests throw `WebFrostError`:
+## Authentication
+
+| Where | Use | Why |
+|---|---|---|
+| Node, Bun, scripts, servers | `apiKey` | Sent as `Authorization: Bearer <key>` on every request. |
+| A browser page served by WebFrost | the session cookie | `login()` sets it and the browser sends it. Leave `apiKey` out. |
+| A browser page on another origin | `credentials: "include"` | Needed for the cookie to be stored and sent cross-origin. |
+
+Outside a browser nothing keeps a session cookie, so `login()` is not useful there: use an API key.
+
+## Errors
+
+Every failure is a `WebFrostError`, never a bare `TypeError` or `AbortError`:
 
 ```ts
 import { WebFrostError } from "@webfrost/sdk";
 
 try {
-  await client.createSnapshot("https://example.com");
+  await client.createSnapshot("not-a-url");
 } catch (err) {
-  if (err instanceof WebFrostError && err.status === 429) {
-    console.log(`retry in ${err.retryAfter}s`); // from the Retry-After header
+  if (err instanceof WebFrostError) {
+    console.error(err.status, err.code, err.message); // 400 "BAD_REQUEST" "invalid url"
+    // err.retryAfter: seconds from the Retry-After header, when sent (typically on 429)
   }
 }
 ```
 
-`WebFrostError` has the HTTP `status` and, on `429`, `retryAfter` in seconds.
+| Field | Meaning |
+|---|---|
+| `status` | HTTP status, or `0` when there was no response |
+| `code` | Machine-readable: the server's `code` (`UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `VALIDATION`, `RATE_LIMITED`, ...), or from the client `NETWORK_ERROR`, `TIMEOUT`, `ABORTED`, `INVALID_RESPONSE`. Branch on this, not on `message`. |
+| `message` | The server's `error` text, or the status text |
+| `retryAfter` | Seconds to wait, from `Retry-After` |
+| `cause` | The underlying error for network failures and timeouts |
+
+**Not found.** A single lookup that finds nothing resolves `null` (`getSnapshot`); a delete of something missing resolves `false` (`deleteSnapshot`, `deleteTag`, `deleteSchedule`, `revokeApiKey`, `removeTagFromSnapshot`); listing the tags of a missing snapshot resolves `[]`. Every other 404 throws with code `NOT_FOUND`.
+
+## Timeouts, retries and abort
+
+Every method takes a final `{ signal }` argument. It is combined with the client's timeout, and either one ends the request: `ABORTED` for the signal, `TIMEOUT` for the timeout.
+
+```ts
+const controller = new AbortController();
+const page = client.listSnapshots({ status: "done" }, { signal: controller.signal });
+controller.abort(); // rejects with WebFrostError, code "ABORTED"
+```
+
+With `retries` set, **GET and HEAD** requests are retried on network errors, timeouts, `429` and `502`/`503`/`504`, with exponential backoff and jitter. A `Retry-After` header is honoured; if it is longer than `maxRetryDelayMs` the error is thrown instead of waiting. Writes are never retried: a POST or PATCH that reached the server could run twice, and a retried DELETE would report "not found" for something it had just deleted.
 
 ## Snapshots
 
@@ -62,6 +105,16 @@ The server archives in the background. Poll `getSnapshot` until `status` is no l
 ```ts
 const { items, total, page, limit } = await client.listSnapshots({ page: 1, limit: 20 });
 const pending = await client.listSnapshots({ status: "pending" });
+```
+
+### `iterateSnapshots(options?): AsyncGenerator<Snapshot>`
+
+Every snapshot matching the filters, one page at a time (100 per request unless `limit` says otherwise). `options` is `{ page?, limit?, status?, signal? }`. It is lazy: breaking out of the loop stops fetching.
+
+```ts
+for await (const snapshot of client.iterateSnapshots({ status: "done" })) {
+  console.log(snapshot.id, snapshot.url);
+}
 ```
 
 ### `searchSnapshots(query): Promise<SearchResult[]>`
@@ -96,6 +149,24 @@ detail?.extractorMeta["pdf"]; // { status: "success", durationMs, fileSizeBytes 
 
 `true` when deleted, `false` when it did not exist.
 
+### `archiveUrl(id, extractor, kind?): string`
+
+A URL for `<a href>`, `<img src>` or `<iframe src>`. `kind` is `"download"` (default) for the stored file, or `"preview"` for the sandboxed HTML preview that some extractors have. The URL carries no credentials: the browser sends the session cookie. An API key cannot go in a URL, so use `downloadArchive` with one.
+
+```ts
+client.archiveUrl(1, "screenshot"); // http://localhost:3000/api/snapshots/1/archives/screenshot/download
+client.archiveUrl(1, "singlefile", "preview");
+```
+
+### `downloadArchive(id, extractor, options?): Promise<Response>`
+
+Fetches an archived result with the client's auth, timeout and signal, and returns the `Response`: read it with `.blob()`, `.arrayBuffer()` or `.body`. `options` is `{ kind?, signal? }`. The timeout ends when the headers arrive, so a large body is not cut off. Throws `NOT_FOUND` when there is no such result.
+
+```ts
+const res = await client.downloadArchive(1, "warc");
+const blob = await res.blob();
+```
+
 ## Tags
 
 | Method | Returns | Notes |
@@ -103,9 +174,9 @@ detail?.extractorMeta["pdf"]; // { status: "success", durationMs, fileSizeBytes 
 | `listTags()` | `Tag[]` | |
 | `createTag(name, color?)` | `Tag` | `color` is a hex string such as `"#4f46e5"`. Throws on a duplicate name (`409`). |
 | `deleteTag(id)` | `boolean` | `false` when it did not exist |
-| `listSnapshotTags(snapshotId)` | `Tag[]` | |
+| `listSnapshotTags(snapshotId)` | `Tag[]` | `[]` when the snapshot does not exist |
 | `addTagToSnapshot(snapshotId, tagId)` | `Tag` | |
-| `removeTagFromSnapshot(snapshotId, tagId)` | `boolean` | |
+| `removeTagFromSnapshot(snapshotId, tagId)` | `boolean` | `false` when it did not exist |
 
 ```ts
 const tag = await client.createTag("research", "#4f46e5");
@@ -140,13 +211,22 @@ const result = await client.importUrls({
 
 `options` is `{ url?, content?, format? }`: pass a `url` to fetch or raw `content` to parse. `format` is detected when omitted. `listImports()` returns the history.
 
+### `importFile(file, format?, options?): Promise<ImportResult>`
+
+Uploads a file (OPML, Netscape bookmarks, RSS or plain text) as multipart form data. The format is detected from the file name and content unless `format` is given. A bare `Blob` has no name, so pass `options.filename` (such as `"bookmarks.html"`) to help detection. `options` is `{ filename?, signal? }`.
+
+```ts
+await client.importFile(new Blob([text]), "text", { filename: "urls.txt" });
+await client.importFile(fileInput.files[0]); // a File keeps its own name
+```
+
 ## Auth, setup and administration
 
 | Method | Returns |
 |---|---|
-| `getSetupStatus()` | `{ needsSetup, publicRead }` |
-| `completeSetup(username, password)` | `{ apiKey }`. The password needs at least 8 characters. |
-| `login(username, password)` | `{ ok }` |
+| `getSetupStatus()` | `{ needsSetup, publicRead, setupTokenRequired }` |
+| `completeSetup(username, password, setupToken?)` | `{ apiKey }`. The password needs at least 8 characters. Pass `setupToken` when the server sets `WEBFROST_SETUP_TOKEN` (`setupTokenRequired`). |
+| `login(username, password)` | `{ ok }`. Sets a session cookie, so it is for browsers; elsewhere use an API key. |
 | `logout()` | `void` |
 | `getMe()` | `{ username }`, with `null` for API-key auth |
 | `changePassword(currentPassword, newPassword)` | `void`. Throws `WebFrostError` with status `403` when the current password is wrong, `400` for a short new password. |
@@ -158,13 +238,19 @@ const result = await client.importUrls({
 
 ## Types
 
+Every type is exported from the package root, for example `import type { Snapshot, SnapshotStatus, SetupResult, ExtractorMeta, RequestOptions } from "@webfrost/sdk"`.
+
 ```ts
-interface SnapshotCreated { id: number; url: string; status: string } // "pending"
+type SnapshotStatus = "pending" | "done" | "failed";
+type ImportFormat = "rss" | "opml" | "netscape" | "text";
+type ScheduleRunStatus = "success" | "failed";
+
+interface SnapshotCreated { id: number; url: string; status: "pending" }
 
 interface Snapshot {
   id: number;
   url: string;
-  status: string; // "pending" | "done" | "failed"
+  status: SnapshotStatus;
   createdAt: string;
   extractors: string[]; // extractors that succeeded
   tags: Tag[];
@@ -186,7 +272,8 @@ interface SnapshotPage { items: Snapshot[]; total: number; page: number; limit: 
 interface Tag { id: number; name: string; slug: string; color: string | null; createdAt: string }
 
 interface SearchResult {
-  id: number; url: string; snippet: string; rank: number; status: string;
+  id: number; url: string; snippet: string; rank: number;
+  status: SnapshotStatus | null; // null when the server did not report one
   createdAt: string; title: string | null; extractors: string[]; tags: Tag[];
 }
 interface SearchPage { items: SearchResult[]; total: number; page: number; limit: number }
@@ -194,10 +281,10 @@ interface SearchPage { items: SearchResult[]; total: number; page: number; limit
 interface Schedule {
   id: number; url: string; cron: string; createdAt: string;
   lastRunAt: string | null; nextRunAt: string | null;
-  paused: boolean; lastStatus: string | null; consecutiveFailures: number;
+  paused: boolean; lastStatus: ScheduleRunStatus | null; consecutiveFailures: number;
 }
 
-interface ImportResult { queued: number; skipped: number; total: number; format: "rss" | "opml" | "netscape" | "text" }
+interface ImportResult { queued: number; skipped: number; total: number; format: ImportFormat }
 ```
 
 `DashboardStats`, `ServerInfo`, `ApiKey`, `ApiKeyCreated` and `ImportRecord` match the response shapes in the [REST API reference](/docs/reference/rest-api#stats-and-settings).
