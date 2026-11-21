@@ -209,7 +209,6 @@ jobs:
         working-directory: packages/ui
         env:
           CI: "true"
-          AUTH_DISABLED: "true"
 
       - name: Upload test traces
         if: failure()

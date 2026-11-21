@@ -46,7 +46,8 @@ export default defineConfig({
     {
       // Auth-enabled server on port 3001 with an empty data dir (no admin user yet).
       // It serves the UI build from packages/ui/dist, so it is listed after the build above.
-      command: `PORT=3001 WEBFROST_DIR=${authE2eDir} SESSION_SECRET=e2e-secret-for-testing-only-0123456789 bun run start`,
+      // `env -u` so an AUTH_DISABLED in the outer environment (CI sets one) cannot leak in.
+      command: `env -u AUTH_DISABLED PORT=3001 WEBFROST_DIR=${authE2eDir} SESSION_SECRET=e2e-secret-for-testing-only-0123456789 bun run start`,
       cwd: join(__dirname, "../server"),
       port: 3001,
       reuseExistingServer: !process.env.CI,
