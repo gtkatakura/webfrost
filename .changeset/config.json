@@ -6,8 +6,9 @@
     ["@webfrost/core", "@webfrost/cli", "@webfrost/server", "@webfrost/sdk", "@webfrost/ui"]
   ],
   "linked": [],
-  "access": "restricted",
+  "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["@webfrost/docs"]
+  "ignore": ["@webfrost/docs"],
+  "privatePackages": { "version": true, "tag": false }
 }
