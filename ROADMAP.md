@@ -16,6 +16,10 @@ Every breaking change is called out in the [changelog](CHANGELOG.md).
   format, and `@webfrost/sdk` on npm.
 - **Hardening.** CSRF protection for browser sessions, safer media downloads (yt-dlp), valid WARC files
   for compressed and binary responses, a non-root container, request size limits, graceful shutdown.
+- **Your choice of database.** SQLite stays the default for one person on one machine, with a guide
+  and an optional Compose service for continuous backups with Litestream. PostgreSQL and MySQL are
+  supported through `DATABASE_URL`, with full-text search on each, for teams and for running several
+  WebFrost servers against one database.
 - **A finished web UI.** The WebFrost look, clear error states, accessible dialogs, a usable phone layout.
 
 ## Next
