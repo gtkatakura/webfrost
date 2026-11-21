@@ -1,7 +1,16 @@
+// AVIF reaches the same look as WebP at a much lower quality setting, so each format gets its own.
+import mascotNarrowAvif from "@/assets/brand/mascot.webp?w=400;640;960&aspect=4:3&fit=cover&position=center&format=avif&quality=55&as=picture";
+import mascotNarrowWebp from "@/assets/brand/mascot.webp?w=400;640;960&aspect=4:3&fit=cover&position=center&format=webp;jpg&quality=80&as=picture";
+import shareImage from "@/assets/brand/mascot-full.webp?w=1200&h=630&fit=cover&position=top&format=jpg&quality=85&imagetools";
+import mascotBlur from "@/assets/brand/mascot.webp?w=24&format=webp&quality=50&imagetools";
+import mascotAvif from "@/assets/brand/mascot.webp?w=560;840;1120;1600&format=avif&quality=55&as=picture";
+import mascotWebp from "@/assets/brand/mascot.webp?w=560;840;1120;1600&format=webp;jpg&quality=80&as=picture";
 import { FeatureGrid, type Tile } from "@/components/features";
 import { type CodeTab, CodeWindow, SplitDeveloperHero } from "@/components/hero";
+import { Picture, mergePictures } from "@/components/picture";
 import { baseOptions } from "@/lib/layout.shared";
 import { repoUrl } from "@/lib/shared";
+import { siteUrl } from "@/lib/site";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 import {
   Archive,
@@ -15,6 +24,9 @@ import {
   Webhook,
 } from "lucide-react";
 
+const mascot = mergePictures(mascotAvif, mascotWebp);
+const mascotNarrow = mergePictures(mascotNarrowAvif, mascotNarrowWebp);
+
 export function meta() {
   return [
     { title: "WebFrost · self-hosted web archiving" },
@@ -24,7 +36,9 @@ export function meta() {
         "Archive web pages to WARC, PDF, screenshots, self-contained HTML and readable text, on your own machine. CLI, HTTP API, TypeScript SDK and web UI.",
     },
     { property: "og:title", content: "WebFrost · self-hosted web archiving" },
-    { property: "og:image", content: "/brand/og.jpg" },
+    { property: "og:image", content: `${siteUrl}${shareImage}` },
+    { property: "og:image:width", content: "1200" },
+    { property: "og:image:height", content: "630" },
     { name: "twitter:card", content: "summary_large_image" },
   ];
 }
@@ -137,12 +151,14 @@ export default function Home() {
           primaryAction={{ label: "Get started", href: "/docs/getting-started/quickstart" }}
           secondaryAction={{ label: "View on GitHub", href: repoUrl, external: true }}
           art={
-            <img
-              src="/brand/mascot.webp"
-              width={1100}
-              height={626}
+            <Picture
+              picture={mascot}
+              narrow={mascotNarrow}
+              placeholder={mascotBlur}
+              priority
+              sizes="(min-width: 1024px) 544px, calc(100vw - 48px)"
               alt="The WebFrost mascot, an arctic fox asleep on a frozen archive box, surrounded by the formats it keeps: a web page, a PDF, a video, a screenshot and source code."
-              className="w-full rounded-3xl border border-border bg-[#05091a] shadow-2xl shadow-blue-900/20"
+              className="rounded-3xl border border-border bg-[#05091a] shadow-2xl shadow-blue-900/20"
             />
           }
         />
