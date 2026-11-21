@@ -78,10 +78,10 @@ beforeAll(async () => {
 
 afterAll(() => {
   serverApp?.stop();
-  process.env.WEBFROST_DIR = undefined;
-  process.env.SESSION_SECRET = undefined;
-  process.env.NODE_ENV = undefined;
-  process.env.WEBFROST_TRUST_PROXY = undefined;
+  Reflect.deleteProperty(process.env, "WEBFROST_DIR");
+  Reflect.deleteProperty(process.env, "SESSION_SECRET");
+  Reflect.deleteProperty(process.env, "NODE_ENV");
+  Reflect.deleteProperty(process.env, "WEBFROST_TRUST_PROXY");
   try {
     rmSync(testDir, { recursive: true, force: true });
   } catch {
@@ -842,8 +842,8 @@ describe("archive → search round trip", () => {
 
   afterAll(() => {
     origin.stop(true);
-    process.env.WEBFROST_ALLOW_PRIVATE_URLS = undefined;
-    process.env.WEBFROST_DOMAIN_DELAY_MS = undefined;
+    Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
+    Reflect.deleteProperty(process.env, "WEBFROST_DOMAIN_DELAY_MS");
   });
 
   async function waitUntilSettled(id: number): Promise<string> {
@@ -1005,7 +1005,7 @@ describe("public read / private write", () => {
   });
 
   afterAll(() => {
-    process.env.WEBFROST_PUBLIC_READ = undefined;
+    Reflect.deleteProperty(process.env, "WEBFROST_PUBLIC_READ");
   });
 
   const anon = (path: string, init?: RequestInit) => fetch(`${baseUrl}${path}`, init);
@@ -1089,7 +1089,7 @@ describe("public read / private write", () => {
   });
 
   test("turning the mode off closes the archive again", async () => {
-    process.env.WEBFROST_PUBLIC_READ = undefined;
+    Reflect.deleteProperty(process.env, "WEBFROST_PUBLIC_READ");
     try {
       expect((await anon("/api/snapshots")).status).toBe(401);
       expect((await anon(`/api/snapshots/${snapshotId}`)).status).toBe(401);

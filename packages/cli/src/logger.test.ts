@@ -135,7 +135,7 @@ describe("resolveLogLevel", () => {
 
   afterEach(() => {
     if (origEnv === undefined) {
-      process.env.WEBFROST_LOG_LEVEL = undefined;
+      Reflect.deleteProperty(process.env, "WEBFROST_LOG_LEVEL");
     } else {
       process.env.WEBFROST_LOG_LEVEL = origEnv;
     }
@@ -169,7 +169,7 @@ describe("resolveLogLevel", () => {
   });
 
   test("default is info when no flags and no env", () => {
-    process.env.WEBFROST_LOG_LEVEL = undefined;
+    Reflect.deleteProperty(process.env, "WEBFROST_LOG_LEVEL");
     expect(resolveLogLevel({ verbose: false, quiet: false })).toBe("info");
   });
 });

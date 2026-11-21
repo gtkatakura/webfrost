@@ -70,7 +70,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  process.env.WEBFROST_ALLOW_PRIVATE_URLS = undefined;
+  Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
   try {
     rmSync(testDir, { recursive: true, force: true });
   } catch {

@@ -10,7 +10,7 @@ const S3_VARS = [
 ] as const;
 
 afterEach(() => {
-  for (const name of S3_VARS) process.env[name] = undefined;
+  for (const name of S3_VARS) Reflect.deleteProperty(process.env, name);
 });
 
 function directive(csp: string, name: string): string {

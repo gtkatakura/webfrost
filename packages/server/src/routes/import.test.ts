@@ -16,8 +16,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  process.env.WEBFROST_DIR = undefined;
-  process.env.AUTH_DISABLED = undefined;
+  Reflect.deleteProperty(process.env, "WEBFROST_DIR");
+  Reflect.deleteProperty(process.env, "AUTH_DISABLED");
   try {
     rmSync(testDir, { recursive: true, force: true });
   } catch {
@@ -475,8 +475,8 @@ describe("POST /import — background pipelines", () => {
         db.close();
       }
     } finally {
-      process.env.WEBFROST_ALLOW_PRIVATE_URLS = undefined;
-      process.env.WEBFROST_DOMAIN_DELAY_MS = undefined;
+      Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
+      Reflect.deleteProperty(process.env, "WEBFROST_DOMAIN_DELAY_MS");
       origin.stop(true);
     }
   }, 60_000);

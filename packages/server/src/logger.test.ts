@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 describe("logger", () => {
   afterEach(() => {
-    process.env.LOG_LEVEL = undefined;
+    Reflect.deleteProperty(process.env, "LOG_LEVEL");
   });
 
   test("exports a pino logger instance", async () => {
@@ -15,7 +15,7 @@ describe("logger", () => {
   });
 
   test("defaults to info level when LOG_LEVEL is not set", async () => {
-    process.env.LOG_LEVEL = undefined;
+    Reflect.deleteProperty(process.env, "LOG_LEVEL");
     // Re-import to test module-level env resolution
     const { logger } = await import("./logger");
     // Default pino level is "info" (30) unless LOG_LEVEL overrides

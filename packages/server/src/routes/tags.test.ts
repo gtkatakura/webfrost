@@ -15,7 +15,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  process.env.WEBFROST_DIR = undefined;
+  Reflect.deleteProperty(process.env, "WEBFROST_DIR");
   try {
     rmSync(testDir, { recursive: true, force: true });
   } catch {

@@ -9,7 +9,7 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  process.env.WEBFROST_TRUST_PROXY = undefined;
+  Reflect.deleteProperty(process.env, "WEBFROST_TRUST_PROXY");
 });
 
 function makeRequest(ip: string, method = "GET", path = "/"): Request {
@@ -110,7 +110,7 @@ describe("client identity", () => {
   const peer = (address: string) => ({ requestIP: () => ({ address }) });
 
   it("ignores X-Forwarded-For unless a proxy is trusted", () => {
-    process.env.WEBFROST_TRUST_PROXY = undefined;
+    Reflect.deleteProperty(process.env, "WEBFROST_TRUST_PROXY");
     try {
       const limiter = createRateLimiter({ limit: 1, windowMs: 60_000 });
       // Same TCP peer, a different spoofed header on every request: still one bucket.

@@ -52,11 +52,11 @@ describe("isPrivateIPv6", () => {
 
 describe("safeFetch SSRF protection", () => {
   beforeEach(() => {
-    process.env.WEBFROST_ALLOW_PRIVATE_URLS = undefined;
+    Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
   });
 
   afterEach(() => {
-    process.env.WEBFROST_ALLOW_PRIVATE_URLS = undefined;
+    Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
   });
 
   test("blocks loopback IP", async () => {
@@ -98,7 +98,7 @@ describe("safeFetch response size cap", () => {
   });
 
   afterEach(() => {
-    process.env.WEBFROST_ALLOW_PRIVATE_URLS = undefined;
+    Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
   });
 
   test("rejects response whose streamed body exceeds 50 MB", async () => {
@@ -171,7 +171,7 @@ describe("reserved ranges", () => {
 
 describe("assertPublicUrl", () => {
   beforeEach(() => {
-    process.env.WEBFROST_ALLOW_PRIVATE_URLS = undefined;
+    Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
   });
 
   test.each([
@@ -193,7 +193,7 @@ describe("assertPublicUrl", () => {
       // The protocol restriction is not part of the opt-out.
       await expect(assertPublicUrl("file:///etc/passwd")).rejects.toThrow("unsupported protocol");
     } finally {
-      process.env.WEBFROST_ALLOW_PRIVATE_URLS = undefined;
+      Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
     }
   });
 });
@@ -212,8 +212,8 @@ describe("safeFetch timeout", () => {
     try {
       await expect(safeFetch(`http://127.0.0.1:${server.port}/`)).rejects.toThrow("timed out");
     } finally {
-      process.env.WEBFROST_ALLOW_PRIVATE_URLS = undefined;
-      process.env.WEBFROST_FETCH_TIMEOUT_MS = undefined;
+      Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
+      Reflect.deleteProperty(process.env, "WEBFROST_FETCH_TIMEOUT_MS");
       server.stop(true);
     }
   });

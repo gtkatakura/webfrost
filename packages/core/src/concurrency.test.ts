@@ -68,7 +68,7 @@ describe("ConcurrencyLimiter", () => {
 describe("createConcurrencyLimiter", () => {
   it("uses default limit of 3", () => {
     const original = process.env.WEBFROST_CONCURRENCY;
-    process.env.WEBFROST_CONCURRENCY = undefined;
+    Reflect.deleteProperty(process.env, "WEBFROST_CONCURRENCY");
     try {
       const limiter = createConcurrencyLimiter();
       expect(limiter.limit).toBe(3);
@@ -87,7 +87,7 @@ describe("createConcurrencyLimiter", () => {
       if (original !== undefined) {
         process.env.WEBFROST_CONCURRENCY = original;
       } else {
-        process.env.WEBFROST_CONCURRENCY = undefined;
+        Reflect.deleteProperty(process.env, "WEBFROST_CONCURRENCY");
       }
     }
   });
@@ -102,7 +102,7 @@ describe("createConcurrencyLimiter", () => {
       if (original !== undefined) {
         process.env.WEBFROST_CONCURRENCY = original;
       } else {
-        process.env.WEBFROST_CONCURRENCY = undefined;
+        Reflect.deleteProperty(process.env, "WEBFROST_CONCURRENCY");
       }
     }
   });
@@ -117,7 +117,7 @@ describe("createConcurrencyLimiter", () => {
       if (original !== undefined) {
         process.env.WEBFROST_CONCURRENCY = original;
       } else {
-        process.env.WEBFROST_CONCURRENCY = undefined;
+        Reflect.deleteProperty(process.env, "WEBFROST_CONCURRENCY");
       }
     }
   });
