@@ -12,17 +12,17 @@ A snapshot is **`done`** when at least one extractor produced output and **`fail
 
 | Extractor | Output | Needs | What it contains |
 |---|---|---|---|
-| `warc` | `archive.warc` | none | A WARC 1.1 file with a `warcinfo` record and one `response` record: the page's HTTP status, headers and body as fetched. Subresources are not included. |
-| `readability` | JSON in the database | none | The article as found by Mozilla Readability: `title`, `byline`, `textContent` (plain text) and `excerpt`. Fields are `null` when no article is found. Feeds the search index. |
-| `html` | text in the database | none | The raw HTML response body. |
+| `warc` | `archive.warc` | none | A WARC 1.1 file of the HTTP fetch: the response as the server sent it, any redirects before it, and a metadata record. See [The WARC file](#the-warc-file). Subresources are not included. |
+| `readability` | JSON in the database | none | The article as found by Mozilla Readability: `title`, `byline`, `textContent` (plain text) and `excerpt`. Fields are `null` when no article is found. Feeds the search index. Only the first 10 MB of the page are parsed (`WEBFROST_READABILITY_MAX_BYTES`). |
+| `html` | text in the database | none | The HTML response body as text, decoded with the page's charset (the `Content-Type` charset, then `<meta charset>`, then UTF-8). |
 | `pdf` | `page.pdf` | Chromium | Full-page PDF rendered by the browser. |
 | `screenshot` | `screenshot.png` | Chromium | Full-page PNG. |
 | `dom-snapshot` | `dom.html` | Chromium | The serialized DOM after the page loaded, which includes content built by JavaScript. |
-| `singlefile` | `singlefile.html` | Chromium | The rendered page as one HTML file, with external stylesheets, their fonts and `img` images inlined as data URIs. Assets that cannot be downloaded stay as external links. |
-| `media` | `media/media.mp4` or `media/media.mp3` | yt-dlp | The video (best video and audio merged to mp4), or an audio-only mp3 when no video can be downloaded. Skipped over 500 MB. |
+| `singlefile` | `singlefile.html` | Chromium | The rendered page as one HTML file, with external stylesheets, their fonts and `img` images inlined as data URIs. Assets that cannot be downloaded, or that no longer fit in the 100 MB budget (`WEBFROST_SINGLEFILE_MAX_BYTES`), stay as external links. |
+| `media` | `media/media.mp4` or `media/media.mp3` | yt-dlp | The video (best video and audio merged to mp4), or an audio-only mp3 when no video can be downloaded. Skipped over 500 MB. For a playlist or channel URL, only the first item. |
 | `media-metadata` | `media/media-metadata.json` | yt-dlp | The yt-dlp metadata (title, uploader, duration, formats). |
 
-The PDF, screenshot, DOM snapshot and SingleFile files come from the browser; the WARC, Readability and HTML results come from the HTTP fetch. The `html` and `readability` results are stored in the database, not as files. File names are the same on the filesystem and in S3. See [Disk layout](/docs/reference/disk-layout).
+The PDF, screenshot, DOM snapshot and SingleFile files come from the browser; the WARC, Readability and HTML results come from the HTTP fetch. When the URL is not text (a PDF or an image linked directly), `html` and `readability` do not run and the file is kept, byte for byte, in the WARC. The `html` and `readability` results are stored in the database, not as files. File names are the same on the filesystem and in S3. See [Disk layout](/docs/reference/disk-layout).
 
 ## When something fails or is skipped
 
@@ -31,12 +31,40 @@ The PDF, screenshot, DOM snapshot and SingleFile files come from the browser; th
 | The page fetch fails or the server answers HTTP 400 or higher | No extractor runs. The snapshot is `failed`. |
 | Chromium is missing, navigation fails, or a request violates the SSRF policy | `pdf`, `screenshot`, `dom-snapshot` and `singlefile` are recorded as failed with an `error`. The rest still run. |
 | The page redirects to a private address inside the browser | The same four are recorded as failed (`blocked: page redirected to a non-public address`), so nothing from the internal host is captured. |
-| An extractor exceeds `WEBFROST_EXTRACTOR_TIMEOUT_MS` (60 s) | That extractor is recorded as failed and nothing it produces afterwards is kept. |
-| `yt-dlp` is not installed, or the URL is not a media page | `media` and `media-metadata` are skipped silently. No entry, no failure. |
+| An extractor exceeds `WEBFROST_EXTRACTOR_TIMEOUT_MS` (60 s) | That extractor is recorded as failed. Its downloads are cancelled and nothing it produces afterwards is kept. |
+| A yt-dlp call exceeds `WEBFROST_MEDIA_TIMEOUT_MS` (10 min) | yt-dlp is killed together with the processes it started (ffmpeg). |
+| `yt-dlp` is not installed, or the URL is not on a site yt-dlp supports | `media` and `media-metadata` are skipped silently. No entry, no failure. |
 | The media download fails or exceeds the size cap | `media-metadata` may exist without `media`. |
 | Readability finds no article | The `readability` result exists with `null` fields. |
 
 Failures show up as `status: "failed"` with an `error` in `extractorMeta` of `GET /api/snapshots/:id`, and in the snapshot detail view. Fixes are in [Troubleshooting](/docs/guides/troubleshooting).
+
+## The WARC file
+
+`archive.warc` holds, in order:
+
+1. A `warcinfo` record.
+2. One `response` record per redirect that was followed (`WARC-Target-URI` is the URL that answered with the redirect).
+3. The final `response` record. Its `WARC-Target-URI` is the URL that served the page, after redirects.
+4. A `metadata` record (`WARC-Concurrent-To` the final response) with `requested-url:`, the URL you archived, and one `redirect:` line per hop.
+
+Each response record holds the HTTP status line, the headers and the body exactly as the server sent it: a gzip or brotli response stays compressed, with its `Content-Encoding` header, and binary and non-UTF-8 bodies are not altered. The one change is the transfer framing, which the HTTP client removes: `Transfer-Encoding` is dropped and `Content-Length` is set to the length of the body that follows. Every record has a `WARC-Block-Digest` and responses a `WARC-Payload-Digest` (SHA-1, base32), so `warcio check` can verify the file.
+
+Header names are lower-case and repeated headers other than `Set-Cookie` are joined with commas, as the HTTP client reports them. There is no `request` record.
+
+## Limits
+
+| Variable | Default | What it limits |
+|---|---|---|
+| `WEBFROST_EXTRACTOR_TIMEOUT_MS` | `60000` | Time for each extractor except media. |
+| `WEBFROST_MEDIA_TIMEOUT_MS` | `600000` | Time for each yt-dlp call. |
+| `WEBFROST_READABILITY_MAX_BYTES` | `10485760` (10 MB) | Bytes of HTML given to Readability; the rest of a bigger page is ignored. `0` turns the cap off. Parsing blocks the server while it runs. |
+| `WEBFROST_SINGLEFILE_MAX_BYTES` | `104857600` (100 MB) | Total size of the assets inlined into one `singlefile.html`. |
+| `WEBFROST_SINGLEFILE_CONCURRENCY` | `8` | Asset downloads at once for one `singlefile.html`. |
+
+## yt-dlp options
+
+Every yt-dlp call gets `--ignore-config` (no config file on the host can add options), `--no-playlist --playlist-items 1` (one item, never a whole playlist or channel) and `--use-extractors default,-generic` (only sites yt-dlp knows; the generic extractor would download and scan any page for embedded media). The URL is passed after `--`. One `--dump-json` call both detects a media page and reads its metadata.
 
 ## Requirements
 

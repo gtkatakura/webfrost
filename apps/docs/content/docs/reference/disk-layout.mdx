@@ -11,7 +11,7 @@ $WEBFROST_DIR/
 ├── archive.db                  SQLite database: metadata, search index, schedules, sessions
 └── snapshots/
     └── <snapshot-id>/          one directory per snapshot (integer id)
-        ├── archive.warc        WARC
+        ├── archive.warc        WARC: the HTTP response as sent, plus redirects
         ├── page.pdf            PDF
         ├── screenshot.png      full-page PNG
         ├── dom.html            DOM snapshot
