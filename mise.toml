@@ -115,6 +115,10 @@ run = "bun run docs:preview"
 description = "Rewrite the brand images not built with the site (README banner, social preview, favicons)"
 run = "bun apps/docs/scripts/brand-images.ts"
 
+[tasks."github:setup"]
+description = "Apply the GitHub repository settings (topics, security, Actions, main ruleset); safe to re-run"
+run = "bun scripts/github-setup.ts"
+
 [tasks."docs:deploy"]
 
 

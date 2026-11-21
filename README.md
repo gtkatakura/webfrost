@@ -4,6 +4,10 @@
 
 # WebFrost
 
+[![CI](https://github.com/gtkatakura/webfrost/actions/workflows/ci.yml/badge.svg)](https://github.com/gtkatakura/webfrost/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-1d64d8)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-webfrost.dev-7cc4ff)](https://webfrost.dev)
+
 A self-hosted web archiving toolkit. Archive URLs to WARC, Readability JSON, PDF, full-page screenshots, DOM snapshots, self-contained HTML and media with one command.
 
 One shared HTTP cache, one browser navigation per snapshot, durable open formats (files + SQLite), no lock-in.

@@ -1,0 +1,23 @@
+name: Feature request
+description: Something WebFrost should do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do and why it is hard today. Start from the need, not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you have in mind
+      description: How it could work. Other tools that do it well are useful references.
+  - type: checkboxes
+    id: roadmap
+    attributes:
+      label: Checked
+      options:
+        - label: It is not already in [ROADMAP.md](https://github.com/gtkatakura/webfrost/blob/main/ROADMAP.md).
+          required: true

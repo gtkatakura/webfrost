@@ -1,0 +1,46 @@
+name: Bug report
+description: Something does not work as the docs say it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. For a security problem, do not open an issue: use **Security → Report a vulnerability** instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The commands, the URL being archived (if public), and the smallest setup that shows the problem.
+      placeholder: |
+        1. docker compose -f docker-compose.prod.yml up -d
+        2. webfrost add https://example.com
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Server output around the failure. Set WEBFROST_LOG_LEVEL=debug for more.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Image tag or commit, and how you run it (Docker, from source).
+      placeholder: ghcr.io/gtkatakura/webfrost/server:0.1.0 on Docker
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      multiple: true
+      options: [Web UI, HTTP API, CLI, SDK, Extractors, Scheduler or feeds, Storage (S3), Docs]

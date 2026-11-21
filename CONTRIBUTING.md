@@ -59,6 +59,10 @@ Chromium is available, so run them at least once with one installed if you touch
 | `packages/sdk` | Typed client for the HTTP API; no dependency on core |
 | `packages/ui` | React single-page app; talks to the server only through the SDK |
 
+## Conduct
+
+Be respectful and keep discussion about the work. See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
 ## Security issues
 
 Please do not open a public issue for a vulnerability. See

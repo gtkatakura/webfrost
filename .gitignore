@@ -8,3 +8,7 @@ bench/vs-archivebox/results/
 apps/docs/build/
 apps/docs/.react-router/
 apps/docs/.source/
+
+# Claude Code
+.claude/worktrees/
+.claude/settings.local.json
