@@ -132,7 +132,7 @@ export default function Home() {
     <HomeLayout {...baseOptions()}>
       <main className="flex-1">
         <SplitDeveloperHero
-          badge="Self-hosted · open source · MIT"
+          badge="Open Source"
           title={
             <>
               Keep the web pages <span className="text-frost">you care about</span>.
