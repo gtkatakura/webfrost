@@ -24,7 +24,7 @@ cd webfrost
 `SESSION_SECRET` signs login cookies and is required. Compose refuses to start without it.
 
 ```bash
-echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
+[ -f .env ] || echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
 ```
 
 </Step>
