@@ -13,7 +13,12 @@ const securityHeaders = {
   "permissions-policy": "camera=(), microphone=(), geolocation=()",
 };
 
+// The install scripts are fetched with `curl | sh` and `irm | iex`: served as plain text, so a browser
+// shows them instead of downloading them, and kept for a minute only, so a fix reaches users quickly.
+const installScripts = new Set(["/install.sh", "/install.ps1"]);
+
 function cacheControl(path: string): string {
+  if (installScripts.has(path)) return "public, max-age=60";
   // Files under /assets carry a hash of their content in the name, so they never change: browsers and
   // Cloudflare may keep them for a year.
   if (path.startsWith("/assets/")) return "public, max-age=31536000, immutable";
@@ -32,7 +37,12 @@ async function file(path: string): Promise<Response | null> {
   if (!full.startsWith(root)) return null;
   const f = Bun.file(full);
   if (!(await f.exists()) || (await f.stat()).isDirectory()) return null;
-  return new Response(f, { headers: { ...securityHeaders, "cache-control": cacheControl(path) } });
+  const headers: Record<string, string> = {
+    ...securityHeaders,
+    "cache-control": cacheControl(path),
+  };
+  if (installScripts.has(path)) headers["content-type"] = "text/plain; charset=utf-8";
+  return new Response(f, { headers });
 }
 
 const server = Bun.serve({

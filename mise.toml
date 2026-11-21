@@ -37,6 +37,10 @@ run = "bun run build"
 
 # ─── Quality ──────────────────────────────────────────────────────────────────
 
+[tasks."build:binary"]
+description = "Single-file webfrost executable for this machine in packages/cli/dist-binary (add -- --target all for every platform)"
+run = "bun run build:binary"
+
 [tasks.lint]
 description = "Biome lint and format check across the monorepo"
 run = "bun run lint"

@@ -6,6 +6,7 @@ dist/
 *.local
 bench/vs-archivebox/results/
 apps/docs/build/
+packages/cli/dist-binary/
 apps/docs/.react-router/
 apps/docs/.source/
 packages/ui/e2e/.auth/

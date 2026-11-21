@@ -7,6 +7,7 @@
   "scripts": {
     "webfrost": "bun run packages/cli/src/index.ts",
     "build": "bun run --filter '*' build",
+    "build:binary": "bun run --filter @webfrost/sdk build && bun run --filter @webfrost/ui build && bun packages/cli/scripts/build-binary.ts",
     "test": "bun run --filter '*' test",
     "bench": "bun run --filter '*' benchmarks && bun bench/page-load.ts && bun bench/fetch-cache.bench.ts && bun bench/playwright-navigation.bench.ts && bun bench/cli-add.bench.ts",
     "lint": "biome check .",
