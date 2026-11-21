@@ -1,7 +1,8 @@
 import touchIcon from "@/assets/brand/mark.svg?preset=touch-icon";
 import { PrefetchLink } from "@/components/prefetch-link";
-import SearchDialog from "@/components/search";
+import type { SharedProps } from "fumadocs-ui/components/dialog/search";
 import { RootProvider } from "fumadocs-ui/provider/react-router";
+import { Suspense, lazy, useState } from "react";
 import {
   Links,
   Meta,
@@ -13,6 +14,20 @@ import {
 import type { Route } from "./+types/root";
 import "./app.css";
 import NotFound from "./routes/not-found";
+
+// The search dialog and its index (about 150 KB) load the first time someone opens search, not with
+// every page: Fumadocs mounts the dialog on every page, closed, so it renders nothing until then.
+const LazySearch = lazy(() => import("@/components/search"));
+function SearchDialog(props: SharedProps) {
+  const [wanted, setWanted] = useState(props.open);
+  if (props.open && !wanted) setWanted(true);
+  if (!wanted) return null;
+  return (
+    <Suspense fallback={null}>
+      <LazySearch {...props} />
+    </Suspense>
+  );
+}
 
 // The search shortcut. Fumadocs picks Ctrl or ⌘ only after hydration, so the prerendered ⌘ would flicker to
 // Ctrl on Linux and Windows; both are rendered and CSS shows the one the script in <head> chose.
