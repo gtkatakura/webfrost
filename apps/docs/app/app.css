@@ -5,9 +5,9 @@
 @import "@fontsource-variable/jetbrains-mono/wght.css";
 
 /*
- * The look of the site: "Frost", built on the Nord palette (nordtheme.com, MIT) — Polar Night for dark
- * grounds, Snow Storm for light ones, and the four Frost blues as the accent. Status colors come from
- * Nord's Aurora. The blues are darkened a step in light mode so text on them passes WCAG AA.
+ * The look of the site, "Ice Blue": a near-black navy night, ice blue that runs from cobalt to cyan (the
+ * "Frost" gradient of the wordmark, from the WebFrost mascot art) and snow white. Light mode keeps the
+ * same hues on a snow ground, darkened so text on them passes WCAG AA.
  * The shadcn token names (bg-primary, text-muted-foreground, …) are mapped onto Fumadocs' tokens below,
  * so components taken from 21st.dev work without rewriting their classes.
  */
@@ -17,71 +17,76 @@
   --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo,
     monospace;
 
-  /* Nord, by name. */
-  --color-polar-0: #2e3440;
-  --color-polar-1: #3b4252;
-  --color-polar-2: #434c5e;
-  --color-polar-3: #4c566a;
-  --color-snow-0: #d8dee9;
-  --color-snow-1: #e5e9f0;
-  --color-snow-2: #eceff4;
-  --color-frost-0: #8fbcbb;
-  --color-frost-1: #88c0d0;
-  --color-frost-2: #81a1c1;
-  --color-frost-3: #5e81ac;
-  --color-aurora-red: #bf616a;
-  --color-aurora-orange: #d08770;
-  --color-aurora-yellow: #ebcb8b;
-  --color-aurora-green: #a3be8c;
-  --color-aurora-purple: #b48ead;
+  --color-ice-300: #8fd3ff;
+  --color-ice-400: #59b4ff;
+  --color-ice-500: #3d8bff;
+  --color-ice-600: #2a6cf0;
+  --color-ice-700: #1f56cc;
+  --color-glacier-indigo: #6366f1;
+  --color-night-950: #060a17;
+  --color-night-900: #0a1126;
+  --color-night-800: #0f1a38;
+  --color-night-700: #1a2a55;
 }
 
 :root {
-  --color-fd-background: #eceff4;
-  --color-fd-foreground: #2e3440;
-  --color-fd-card: #f7f9fb;
-  --color-fd-card-foreground: #2e3440;
-  --color-fd-popover: #f7f9fb;
-  --color-fd-popover-foreground: #2e3440;
-  --color-fd-primary: #4a6d96;
-  --color-fd-primary-foreground: #f7f9fb;
-  --color-fd-secondary: #e5e9f0;
-  --color-fd-secondary-foreground: #3b4252;
-  --color-fd-muted: #e5e9f0;
-  --color-fd-muted-foreground: #4c566a;
-  --color-fd-accent: #dde6ef;
-  --color-fd-accent-foreground: #3b5a80;
-  --color-fd-border: #d3dae6;
-  --color-fd-ring: #5e81ac;
+  --color-fd-background: #f7f9fd;
+  --color-fd-foreground: #0c1424;
+  --color-fd-card: #ffffff;
+  --color-fd-card-foreground: #0c1424;
+  --color-fd-popover: #ffffff;
+  --color-fd-popover-foreground: #0c1424;
+  --color-fd-primary: #1d64d8;
+  --color-fd-primary-foreground: #ffffff;
+  --color-fd-secondary: #edf2fa;
+  --color-fd-secondary-foreground: #0c1424;
+  --color-fd-muted: #edf2fa;
+  --color-fd-muted-foreground: #4d5b72;
+  --color-fd-accent: #e6efff;
+  --color-fd-accent-foreground: #1a56bb;
+  --color-fd-border: #dbe3f0;
+  --color-fd-ring: #1d64d8;
   --radius: 1rem;
-  /* Icon tints on the home page: one per Frost blue and the Aurora green. */
-  --tint-1: #4a6d96;
-  --tint-2: #3d8597;
-  --tint-3: #5b8a5a;
-  --tint-4: #a8743f;
+  /* The two ends of the "Frost" gradient, and the icon tints on the home page. */
+  --frost-from: #1d64d8;
+  --frost-to: #0891b2;
+  --tint-1: #1d64d8;
+  --tint-2: #0891b2;
+  --tint-3: #0d9488;
+  --tint-4: #7c3aed;
 }
 
 .dark {
-  --color-fd-background: #242933;
-  --color-fd-foreground: #eceff4;
-  --color-fd-card: #2b313c;
-  --color-fd-card-foreground: #eceff4;
-  --color-fd-popover: #2e3440;
-  --color-fd-popover-foreground: #eceff4;
-  --color-fd-primary: #88c0d0;
-  --color-fd-primary-foreground: #242933;
-  --color-fd-secondary: #3b4252;
-  --color-fd-secondary-foreground: #e5e9f0;
-  --color-fd-muted: #2e3440;
-  --color-fd-muted-foreground: #b4bccc;
-  --color-fd-accent: #343c4a;
-  --color-fd-accent-foreground: #8fbcbb;
-  --color-fd-border: #3b4252;
-  --color-fd-ring: #88c0d0;
-  --tint-1: #88c0d0;
-  --tint-2: #8fbcbb;
-  --tint-3: #a3be8c;
-  --tint-4: #ebcb8b;
+  --color-fd-background: #080c16;
+  --color-fd-foreground: #e9eef8;
+  --color-fd-card: #0e1422;
+  --color-fd-card-foreground: #e9eef8;
+  --color-fd-popover: #0e1422;
+  --color-fd-popover-foreground: #e9eef8;
+  --color-fd-primary: #7cc4ff;
+  --color-fd-primary-foreground: #06101e;
+  --color-fd-secondary: #111a2a;
+  --color-fd-secondary-foreground: #e9eef8;
+  --color-fd-muted: #111a2a;
+  --color-fd-muted-foreground: #97a3b8;
+  --color-fd-accent: #12223a;
+  --color-fd-accent-foreground: #a9d6ff;
+  --color-fd-border: #1b2538;
+  --color-fd-ring: #7cc4ff;
+  --frost-from: #4f9dff;
+  --frost-to: #7ee0ff;
+  --tint-1: #7cc4ff;
+  --tint-2: #67e8f9;
+  --tint-3: #6ee7b7;
+  --tint-4: #c4b5fd;
+}
+
+/* "Frost" in the wordmark, and any text that should read as ice. */
+.text-frost {
+  background: linear-gradient(90deg, var(--frost-from), var(--frost-to));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 /* shadcn names → Fumadocs tokens, for the components taken from 21st.dev. */

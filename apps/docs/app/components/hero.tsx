@@ -29,7 +29,7 @@ const TOKEN_CLASS: Record<TokenType, string> = {
   string: "text-[var(--tint-3)]",
   comment: "italic text-muted-foreground",
   keyword: "text-primary",
-  number: "text-[#8f6a8a] dark:text-aurora-purple",
+  number: "text-[var(--tint-3)]",
   function: "text-[var(--tint-2)]",
   flag: "text-[var(--tint-2)]",
 };
@@ -200,7 +200,7 @@ function CodeWindow({ tabs }: { tabs: CodeTab[] }) {
   const shell = /^(bash|shell|sh)$/i.test(current.language);
 
   return (
-    <div className="min-w-0 overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl shadow-slate-900/10 dark:shadow-black/50">
+    <div className="min-w-0 overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl shadow-blue-900/10 dark:shadow-blue-500/10 dark:shadow-black/50">
       <div className="flex items-center gap-3 border-b border-border bg-muted/40 px-4 py-2.5">
         <div className="hidden gap-1.5 sm:flex" aria-hidden="true">
           <span className="size-2.5 rounded-full bg-border" />

@@ -127,7 +127,7 @@ export default function Home() {
           badge="Self-hosted · open source · MIT"
           title={
             <>
-              Keep the web pages <span className="text-primary">you care about</span>.
+              Keep the web pages <span className="text-frost">you care about</span>.
             </>
           }
           description="WebFrost archives a URL to every format worth keeping, on your own machine, and lets you search what you saved. Run it from a terminal, a script or a browser."
