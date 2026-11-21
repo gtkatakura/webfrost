@@ -6,6 +6,8 @@ description: >
 license: MIT
 user-invocable: true
 metadata:
+  # For contributors to this repository, not for people installing WebFrost skills.
+  internal: true
   author: webfrost
   version: "0.1.0"
   argument-hint: "[workflow] [job] [--event push|pull_request]"

@@ -84,6 +84,19 @@ const client = new WebFrostClient({
 const { id } = await client.createSnapshot("https://example.com");
 ```
 
+## Agent skills
+
+Teach your coding agent (Claude Code, Codex, Cursor and others) to use and run WebFrost with
+[skills](https://skills.sh):
+
+```bash
+npx skills add gtkatakura/webfrost
+```
+
+- `webfrost`: archive pages, search the archive, download formats, import and schedule, from the CLI,
+  the HTTP API or the SDK.
+- `webfrost-self-host`: install, configure, secure, back up and troubleshoot your own server.
+
 ## Why WebFrost
 
 WebFrost is inspired by [ArchiveBox](https://archivebox.io), the most mature self-hosted web archiver,

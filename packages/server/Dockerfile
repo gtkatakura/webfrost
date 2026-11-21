@@ -12,7 +12,7 @@ ARG BUN_SLIM_IMAGE=oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bd
 FROM ${BUN_IMAGE} AS deps
 WORKDIR /app
 # Every workspace manifest, so bun can check the lockfile against the full workspace.
-COPY package.json bun.lock ./
+COPY package.json bun.lock tsconfig.json ./
 COPY apps/docs/package.json apps/docs/
 COPY packages/cli/package.json packages/cli/
 COPY packages/core/package.json packages/core/
