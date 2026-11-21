@@ -97,9 +97,17 @@ webfrost search:rebuild
 
 Only snapshots that finished `done` are indexed.
 
+## `webfrost: command not found`
+
+The installer puts the binary in `~/.local/bin`, which is not on every `PATH`. Add it (`export PATH="$HOME/.local/bin:$PATH"` in your shell profile) and open a new terminal, or install somewhere else with `WEBFROST_INSTALL_DIR`. See [Install](/docs/getting-started/install).
+
+## `webfrost doctor` reports no Chromium
+
+Run `webfrost setup`. It installs a headless Chromium into WebFrost's cache directory, unless it finds one. If setup says the downloaded browser does not start on Linux, a system library is missing: install Chromium from your package manager (`apt install chromium`) or the libraries Playwright lists. A `WEBFROST_CHROMIUM_PATH` that points at a missing file is an error on purpose; unset it or fix it.
+
 ## `bun: command not found`
 
-Install Bun from [bun.sh](https://bun.sh) and add `~/.bun/bin` to `PATH`. With [mise](https://mise.jdx.dev/): `mise exec bun -- bun run webfrost add https://example.com`.
+Only needed when running from a source checkout. Install Bun from [bun.sh](https://bun.sh) and add `~/.bun/bin` to `PATH`. With [mise](https://mise.jdx.dev/): `mise exec bun -- bun run webfrost add https://example.com`.
 
 ## `Unknown command: --verbose`
 

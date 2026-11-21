@@ -1,112 +1,179 @@
 ---
-title: Install from source
-description: Install WebFrost with Bun, set up Chromium, yt-dlp and ffmpeg, and run the CLI and the server.
+title: Install
+description: Install the webfrost binary on macOS, Linux or Windows, set up Chromium, and run the server.
 icon: Download
 ---
 
-Running from source gives you the `webfrost` CLI and the server. Use Docker instead if you only want the server: see the [Quickstart](/docs/getting-started/quickstart).
-
-## Requirements
-
-| Dependency | Needed for | Notes |
-|---|---|---|
-| [Bun](https://bun.sh) 1.x | Everything | Runtime and package manager. The repo pins a version in `mise.toml`; `mise install` gets it. |
-| Chromium | PDF, screenshot, DOM snapshot, SingleFile | Install through Playwright or point WebFrost at an existing binary. |
-| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Media extraction | Optional. |
-| ffmpeg | Merging video and audio streams | Optional, used by yt-dlp. |
-
-Without Chromium the four browser extractors are recorded as failed on each snapshot, and the snapshot still finishes `done` with WARC, Readability and HTML. Without yt-dlp, media extraction is skipped silently.
+WebFrost is one file, `webfrost`: the CLI, the server, the web UI and the scheduler. It needs no Bun, Node or Docker. To run from a source checkout instead, see [Development](/docs/contributing/development). To run only the server in a container, see the [Quickstart](/docs/getting-started/quickstart).
 
 ## Install
 
-```bash
-git clone https://github.com/gtkatakura/webfrost.git
-cd webfrost
-bun install
-```
+<Tabs items={["Script", "Homebrew", "Windows", "Manual"]}>
+<Tab value="Script">
 
-## Chromium
-
-<Tabs items={["Playwright", "System Chromium"]}>
-<Tab value="Playwright">
+macOS and Linux, x64 and arm64:
 
 ```bash
-bunx playwright install chromium
+curl -fsSL https://webfrost.dev/install.sh | sh
 ```
 
-On a fresh Linux machine add `--with-deps` to install system libraries too.
+The script downloads the archive for your machine from the latest [GitHub release](https://github.com/gtkatakura/webfrost/releases), checks its SHA-256 against the release's `checksums.txt` (and installs nothing if it does not match), and puts `webfrost` in `~/.local/bin`. It never uses `sudo`. If that directory is not on your `PATH` it tells you how to add it.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `WEBFROST_VERSION` | latest release | Install this version, for example `1.2.3` |
+| `WEBFROST_INSTALL_DIR` | `~/.local/bin` | Where to put the binary |
+| `WEBFROST_DOWNLOAD_BASE` | the GitHub release | URL that holds the archives and `checksums.txt`. For testing and mirrors. |
+
+```bash
+curl -fsSL https://webfrost.dev/install.sh | WEBFROST_VERSION=1.2.3 WEBFROST_INSTALL_DIR=/usr/local/bin sh
+```
+
+The Linux binaries need glibc. On Alpine and other musl systems use the Docker image.
 
 </Tab>
-<Tab value="System Chromium">
+<Tab value="Homebrew">
 
-Use a Chromium or Chrome you already have and set its path:
+macOS and Linux:
 
 ```bash
-export WEBFROST_CHROMIUM_PATH=/usr/bin/chromium
+brew install gtkatakura/tap/webfrost
 ```
 
-Install one with your package manager, for example `brew install --cask chromium`, `apt-get install chromium` or `apk add chromium`.
+Upgrade with `brew upgrade webfrost`.
+
+</Tab>
+<Tab value="Windows">
+
+PowerShell 5.1 or newer, no administrator rights needed:
+
+```powershell
+irm https://webfrost.dev/install.ps1 | iex
+```
+
+It installs `webfrost.exe` into `%LOCALAPPDATA%\Programs\webfrost\bin`, verifies the checksum the same way, and prints the command that adds the directory to your `PATH`. It reads the same `WEBFROST_VERSION`, `WEBFROST_INSTALL_DIR` and `WEBFROST_DOWNLOAD_BASE` variables.
+
+</Tab>
+<Tab value="Manual">
+
+Download the archive for your platform from the [releases page](https://github.com/gtkatakura/webfrost/releases), check it against `checksums.txt`, and put the `webfrost` binary on your `PATH`:
+
+| Platform | Archive |
+|---|---|
+| macOS, Apple Silicon | `webfrost-darwin-arm64.tar.gz` |
+| macOS, Intel | `webfrost-darwin-x64.tar.gz` |
+| Linux, x64 | `webfrost-linux-x64.tar.gz` |
+| Linux, arm64 | `webfrost-linux-arm64.tar.gz` |
+| Windows, x64 | `webfrost-windows-x64.zip` |
+
+```bash
+sha256sum --check --ignore-missing checksums.txt   # shasum -a 256 -c on macOS
+tar -xzf webfrost-linux-x64.tar.gz
+install -m 755 webfrost ~/.local/bin/webfrost
+```
 
 </Tab>
 </Tabs>
 
-`WEBFROST_CHROMIUM_PATH` is read by the CLI, the server and the browser tests, and replaces the build Playwright would download. It changes which binary is used, not its profile: every snapshot gets a fresh, anonymous browser context.
+The binary is 90 to 120 MB, because it contains the Bun runtime, the web UI and every dependency.
+
+Check it:
+
+```bash
+webfrost --version
+webfrost doctor
+```
+
+## Chromium
+
+WebFrost needs a Chromium or Chrome for four extractors: PDF, screenshot, DOM snapshot and SingleFile. Without one the snapshot still finishes `done` with WARC, Readability and HTML, and each missing extractor is recorded as failed.
+
+```bash
+webfrost setup
+```
+
+`setup` looks for a browser first and installs nothing if it finds a working one. Otherwise it downloads Playwright's headless Chromium (about 100 MB) into WebFrost's own cache directory: `~/.cache/webfrost` on Linux, `~/Library/Caches/webfrost` on macOS, `%LOCALAPPDATA%\webfrost` on Windows (`WEBFROST_CACHE_DIR` overrides it). Nothing is installed system-wide.
+
+Every command looks for the browser in this order, and uses the first match:
+
+1. `WEBFROST_CHROMIUM_PATH`, taken as given: a wrong path is an error, never a silent fallback.
+2. The Chromium `webfrost setup` installed in the cache directory.
+3. A system Chrome or Chromium: `/Applications/Google Chrome.app`, `/usr/bin/chromium`, `chromium-browser`, `google-chrome` on `PATH`, `C:\Program Files\Google\Chrome`, and Edge or Chromium in the equivalent places.
+4. Playwright's own browser cache (what `bunx playwright install chromium` fills).
+
+<Callout type="info" title="Linux libraries">
+The downloaded browser needs system libraries (nss, atk, gbm and others). A desktop Linux has them. On a minimal server install them with your package manager, or install Chromium itself (`apt install chromium`) and `setup` will find it.
+</Callout>
 
 ## yt-dlp and ffmpeg
+
+Optional. They add video and audio archiving: yt-dlp downloads the media and ffmpeg merges the streams.
 
 ```bash
 # macOS
 brew install yt-dlp ffmpeg
 
-# any platform with pip
-pip install yt-dlp
+# Debian, Ubuntu
+sudo apt install yt-dlp ffmpeg
+
+# Fedora (ffmpeg is in RPM Fusion)
+sudo dnf install yt-dlp ffmpeg
+
+# Windows
+winget install yt-dlp.yt-dlp Gyan.FFmpeg
 ```
 
-yt-dlp has to be on `PATH` as `yt-dlp`. Without it, media extraction is skipped and no failure is recorded.
+Both have to be on `PATH`. Without yt-dlp, media extraction is skipped and no failure is recorded.
 
-## Run the CLI
-
-From the repository root, `bun run webfrost` runs the CLI. Point it at an archive directory with `WEBFROST_DIR` (default: the current directory):
+## Check the setup
 
 ```bash
-export WEBFROST_DIR=./data
-mkdir -p "$WEBFROST_DIR"
-
-bun run webfrost --version
-bun run webfrost init
-bun run webfrost add https://example.com
+webfrost doctor
 ```
 
-A successful archive prints `Snapshot 1 archived.` The full command list is in the [CLI reference](/docs/reference/cli).
+```text
+[ok  ] WebFrost: v1.0.0 (compiled binary, Bun 1.4.4, linux/x64)
+[ok  ] Data directory: /home/you/.webfrost (writable, will be created on first use)
+[ok  ] Database: no archive.db yet (created on first use)
+[ok  ] Chromium: /home/you/.cache/webfrost/browsers/... (Google Chrome for Testing 147.0.7727.15; cache)
+[warn] yt-dlp: not found (optional: needed to archive video and audio)
+       -> sudo apt install yt-dlp   (Fedora: sudo dnf install yt-dlp; or pipx install yt-dlp)
+[ok  ] ffmpeg: /usr/bin/ffmpeg (ffmpeg version 7.1)
+[ok  ] Port 3000: free on 127.0.0.1
+```
+
+`doctor` exits 1 when something required is missing: a writable data directory, a database that opens, or a working Chromium. Missing yt-dlp or ffmpeg, or a busy port, is only a warning. `--json` prints the same checks for scripts.
 
 ## Run the server
 
-The server serves the REST API and the web UI. Build the UI once, then start it:
-
 ```bash
-bun run build
-export SESSION_SECRET=$(openssl rand -hex 32)
-WEBFROST_DIR=./data bun run packages/server/src/index.ts
+webfrost serve
 ```
 
-Open `http://localhost:3000`. Create the admin user in the setup wizard, or from the CLI:
+This starts the REST API, the web UI and the scheduler in one process, on `http://localhost:3000`. Open it and create the admin user in the setup wizard, or from the CLI:
 
 ```bash
-WEBFROST_DIR=./data bun run webfrost admin create --username admin --password 'at-least-8-chars'
+webfrost admin create --username admin
+# Password: (typed without echo)
 ```
 
-The command prints a default API key once. The server runs schedules itself, so no separate worker is needed.
+`serve` reads the same environment variables as the Docker image: `PORT`, `HOST`, `WEBFROST_DIR`, `SESSION_SECRET`, `AUTH_DISABLED` and the rest of the [configuration](/docs/reference/configuration). `--port` and `--host` override `PORT` and `HOST`.
 
-<Callout type="info" title="Default directories">
-The CLI defaults `WEBFROST_DIR` to the current directory. The server defaults to `~/.webfrost`. Set the variable explicitly in both so they share one archive.
-
-Prefer an absolute path (`WEBFROST_DIR=$HOME/webfrost-data`). The database stores file references as paths, so a relative `./data` only works while you start every command from the same directory.
+<Callout type="info" title="The session secret">
+`SESSION_SECRET` signs login cookies. When it is not set, `serve` generates one on first run and keeps it in `<data dir>/session-secret`, readable only by you (mode `0600`), so logins survive restarts. Keep the data directory private and back it up with the archive, or set `SESSION_SECRET` yourself to manage it elsewhere.
 </Callout>
+
+<Callout type="info" title="Data directory">
+The CLI and the server share one archive: `WEBFROST_DIR`, or `~/.webfrost` when it is not set. Prefer an absolute path if you set it. The database stores file references as paths, so a relative `./data` only works while you start every command from the same directory.
+</Callout>
+
+Stop it with Ctrl+C: the scheduler stops first, then running archives get up to 20 seconds (`WEBFROST_SHUTDOWN_TIMEOUT_MS`) to finish, and anything unfinished resumes the next time you start.
 
 ## Verify
 
 ```bash
-bun run webfrost list
+webfrost add https://example.com
+webfrost list
 curl http://localhost:3000/health
 ```
 
@@ -115,6 +182,9 @@ If something fails, see [Troubleshooting](/docs/guides/troubleshooting).
 <Cards>
   <Card title="Archive your first page" href="/docs/getting-started/first-archive">
     Archive, inspect every format, search.
+  </Card>
+  <Card title="CLI reference" href="/docs/reference/cli">
+    Every command, flag and exit code.
   </Card>
   <Card title="Configuration" href="/docs/reference/configuration">
     Every environment variable.

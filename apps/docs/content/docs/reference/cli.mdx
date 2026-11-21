@@ -1,13 +1,12 @@
 ---
 title: CLI
-description: Every webfrost command, flag and environment variable, with examples.
+description: Every webfrost command, flag, exit code and environment variable, with examples.
 icon: Terminal
 ---
 
-The `webfrost` CLI (`@webfrost/cli`) works directly on an archive directory. It does not talk to a server. From a source checkout, run it with `bun run webfrost <command>` from the repository root; the examples below show the short form `webfrost`.
+`webfrost` is one binary: the command-line tools and the server. The archive commands (`add`, `list`, `search`...) work directly on the archive directory and do not talk to a server; `serve` runs the server. [Install it](/docs/getting-started/install) first. From a source checkout, `bun run webfrost <command>` runs the same code (see [Development](/docs/contributing/development)).
 
 ```bash
-export WEBFROST_DIR=$HOME/webfrost-data   # default: the current directory
 webfrost add https://example.com
 ```
 
@@ -15,58 +14,143 @@ webfrost add https://example.com
 The server image does not contain the CLI. Create the admin user in the browser or with `POST /api/setup`. See [Deploy](/docs/guides/deploy#the-image).
 </Callout>
 
-## Global flags
+## Help, version and flags
+
+```bash
+webfrost --help               # every command
+webfrost help schedule add    # one command, same as: webfrost schedule add --help
+webfrost --version
+```
+
+Flags are parsed per command, and every command accepts both `--flag value` and `--flag=value`. Unknown flags and missing arguments are usage errors, not silently ignored.
 
 | Flag | Effect |
 |---|---|
-| `--help`, `-h` | Show help and list all commands |
-| `--version`, `-v` | Show the version |
-| `--verbose` | Debug-level output (same as `WEBFROST_LOG_LEVEL=debug`) |
+| `--help`, `-h` | Help for the command |
+| `--verbose` | Debug-level output, and a stack trace on unexpected errors (same as `WEBFROST_LOG_LEVEL=debug`) |
 | `--quiet` | Only warnings and errors |
-| `<command> --help` | Help for `schedule`, `tag` or `admin` |
+| `--json` | Machine-readable output, on the commands that list it below. Logs go to stderr, so stdout is only the JSON. |
 
-`--verbose` and `--quiet` go **after** the command: `webfrost add https://example.com --verbose`. Placed before it they are read as the command name and fail with `Unknown command`.
+`--verbose` and `--quiet` go **after** the command: `webfrost add https://example.com --verbose`.
 
-Log lines look like `[14:02:11] INFO  Snapshot 1 archived.` Info goes to stdout, warnings and errors to stderr. Command results such as `list` and `search` are plain tab-separated text.
+Log lines look like `[14:02:11] INFO  Snapshot 1 archived.` Info goes to stdout, warnings and errors to stderr. Results such as `list` and `search` are plain tab-separated text.
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | The command ran and failed: a snapshot ended `failed`, an import had failures, something was not found, `doctor` found a required piece missing |
+| `2` | Usage error: unknown command or flag, missing or invalid argument. No command at all also exits 2. |
+| `130`, `143` | Stopped by Ctrl+C (SIGINT) or SIGTERM |
+
+Errors print as one line, `Error: <message>`, on stderr. Unexpected errors show their stack trace only with `--verbose`.
+
+A snapshot is `done` when at least one extractor produced output. Individual extractors can still fail inside a `done` snapshot (the screenshot without a Chromium, for example): that is exit code 0. A snapshot is `failed` when the page could not be fetched (network error, or HTTP status 400 and above) or when no extractor produced anything: that is exit code 1.
+
+## Run
+
+### `webfrost serve`
+
+Run the HTTP API, the web UI and the scheduler in this process. The same server as the Docker image, with the same environment variables (`PORT`, `HOST`, `WEBFROST_DIR`, `SESSION_SECRET`, `AUTH_DISABLED`, ...: see [Configuration](/docs/reference/configuration)).
+
+| Flag | Effect |
+|---|---|
+| `--port <port>` | Overrides `PORT` (default 3000) |
+| `--host <address>` | Overrides `HOST` (default `0.0.0.0`, or `127.0.0.1` with `AUTH_DISABLED=true`) |
+
+When `SESSION_SECRET` is not set, `serve` generates one on first run and stores it in `<data dir>/session-secret` with mode `0600`, and reuses it afterwards. Keep the data directory private and back the file up with the archive, or set `SESSION_SECRET` yourself.
+
+Ctrl+C or SIGTERM stops gracefully: the scheduler first, then the listener, then running archives get up to `WEBFROST_SHUTDOWN_TIMEOUT_MS` (20 seconds) to finish. Unfinished snapshots stay `pending` and resume at the next start.
+
+### `webfrost setup`
+
+Install a headless Chromium unless a usable one is found. See [Chromium lookup order](#chromium-lookup-order). `--force` downloads one even when another is found. Exits 1 when the download or the browser fails.
+
+### `webfrost doctor`
+
+Check that WebFrost has what it needs, and say what to do about what is missing:
+
+- version, runtime (compiled binary or source), OS and CPU;
+- the data directory (exists, writable) and the database (opens, how many snapshots);
+- Chromium (which one, from where, and that it starts);
+- yt-dlp and ffmpeg (optional), with an install command for your OS: `brew`, `apt`, `dnf` or `winget`;
+- whether the server port is free.
+
+Exits 1 if a required check fails (data directory, database, Chromium). Missing yt-dlp or ffmpeg and a busy port are warnings. `--json` prints `{ ok, checks }`.
 
 ## Archive
 
 ### `webfrost init`
 
-Create the archive database in `WEBFROST_DIR`: `Archive initialized at <dir>`. Optional; every command opens or creates it.
+Create the archive database in the data directory: `Archive initialized at <dir>`. Optional; every command opens or creates it.
 
 ### `webfrost add <url>`
 
-Archive one `http` or `https` URL and wait until the pipeline finishes. Runs all extractors, with media extraction too when `yt-dlp` recognizes the URL. Prints `Snapshot <id> archived.` when the snapshot is `done`, otherwise a warning with its final status (`failed`).
+Archive one `http` or `https` URL and wait until the pipeline finishes. Runs all extractors, with media extraction too when `yt-dlp` recognizes the URL. Prints `Snapshot <id> archived.` and exits 0 when the snapshot is `done`; prints the final status and exits 1 otherwise.
+
+| Flag | Effect |
+|---|---|
+| `--json` | Print `{ id, url, status, extractors: [{ name, ok, error }] }` on stdout |
 
 ```bash
 webfrost add https://example.com
+webfrost add https://example.com --json | jq '.extractors[] | select(.ok | not)'
 ```
 
 ### `webfrost list`
 
-List all snapshots, oldest first, as `id`, `status`, `url` separated by tabs. (The API and web UI list newest first.)
+List snapshots, newest first, as `id`, `status`, `url` separated by tabs.
+
+| Flag | Effect |
+|---|---|
+| `--status <status>` | Only `pending`, `running`, `done` or `failed` snapshots |
+| `--limit <n>` | How many to show (default 50, at most 1000) |
+| `--page <n>` | Page of results, from 1 |
+| `--json` | Print `{ items, total, page, limit }` |
 
 ```bash
-webfrost list
-# 1	done	https://example.com
+webfrost list --status failed --limit 10
 ```
+
+When more exist than were shown, a hint on stderr gives the next `--page`.
 
 ### `webfrost delete <id>`
 
-Delete a snapshot, its database rows and its stored files. There is no trash. Exits with an error if the id does not exist.
+Delete a snapshot, its database rows and its stored files. There is no trash. Exits 1 if the id does not exist.
 
 ### `webfrost search <query>`
 
-Full-text search (SQLite FTS5) over URL, title, text and tags, best match first. Prints `id` and URL, then a plain-text snippet. Prints the first 20 matches, or `No results.`. The query uses FTS5 syntax: `"exact phrase"`, prefix `term*`, column filters such as `title:term`. An invalid expression returns no results.
+Full-text search (SQLite FTS5) over URL, title, text and tags, best match first. Prints `id` and URL, then a plain-text snippet, or `No results.`. The query uses FTS5 syntax: `"exact phrase"`, prefix `term*`, column filters such as `title:term`. An invalid expression returns no results.
+
+| Flag | Effect |
+|---|---|
+| `--limit <n>` | Results per page (default 20, at most 100) |
+| `--page <n>` | Page of results, from 1 |
+| `--json` | Print `{ items, total, page, limit }`, snippets as plain text |
 
 ```bash
-webfrost search "climate change"
+webfrost search "climate change" --limit 5 --json
 ```
 
 ### `webfrost search:rebuild`
 
 Rebuild the search index from existing data. Use it after index corruption or a failed import.
+
+## Import
+
+### `webfrost import [--format <fmt>] <url-or-file>`
+
+Archive every URL found in a file or at an `http(s)` address. `--format` is one of `text`, `opml`, `netscape` or `rss`; without it the format is detected from the file name and content. The command runs all pipelines and ends with `Import complete: total=…, done=…, skipped=…, failed=… (…s)`. It exits 1 if any URL could not be queued or ended `failed`, 0 otherwise.
+
+```bash
+webfrost import urls.txt
+webfrost import bookmarks.html
+webfrost import subscriptions.opml
+webfrost import --format=rss https://example.com/feed.xml
+```
+
+Only `rss` imports skip URLs that already have a snapshot. Ctrl+C stops at once; snapshots that did not finish stay `pending` and resume the next time `serve` or `schedule worker` runs. Details and format rules: [Bulk import](/docs/guides/bulk-import).
 
 ## Tags
 
@@ -91,57 +175,66 @@ webfrost tag list 1
 | `schedule add --rss <feed-url> --cron <expr>` | Archive the new items of an RSS or Atom feed on a cron schedule. |
 | `schedule list` | List schedules: id, kind (`[url]` or `[rss]`), cron, URL, last run, next run. |
 | `schedule remove <id>` | Remove a schedule. |
-| `schedule worker` | Run due schedules in this process. |
+| `schedule worker` | Run due schedules in this process until stopped. |
 
 ```bash
 webfrost schedule add https://example.com --cron "0 0 * * *"
 webfrost schedule add --rss https://example.com/feed.xml --cron "0 * * * *"
 ```
 
-`schedule worker` polls every 30 seconds, runs due schedules through the same scheduler the server embeds, runs pipelines at `WEBFROST_CONCURRENCY`, and re-queues snapshots left `pending` by an interrupted run. You do not need it when the server runs; it is for CLI-only setups. It is safe next to a server on one archive, because due schedules are claimed atomically. Set `WEBFROST_SCHEDULER=false` on the server to make the worker the only one. Cron is evaluated in the process time zone (`TZ`). See [Scheduled archiving](/docs/guides/scheduled-archiving).
-
-## Import
-
-### `webfrost import [--format=<fmt>] <url-or-file>`
-
-Archive every URL found in a file or at a feed URL. `--format=` is one of `text`, `opml`, `netscape` or `rss`; without it the format is detected from the file name and content. The command runs all pipelines and ends with `Import complete: total=…, done=…, skipped=…, failed=… (…s)`.
-
-```bash
-webfrost import urls.txt
-webfrost import bookmarks.html
-webfrost import subscriptions.opml
-webfrost import --format=rss https://example.com/feed.xml
-```
-
-Only `rss` imports skip URLs that already have a snapshot. Details and format rules: [Bulk import](/docs/guides/bulk-import).
+`schedule worker` polls every 30 seconds, runs due schedules through the same scheduler the server embeds, runs pipelines at `WEBFROST_CONCURRENCY`, and re-queues snapshots left `pending` by an interrupted run. You do not need it when `webfrost serve` or the Docker server runs; it is for CLI-only setups. It is safe next to a server on one archive, because due schedules are claimed atomically. Set `WEBFROST_SCHEDULER=false` on the server to make the worker the only one. Ctrl+C lets running archives finish (up to 20 seconds). Cron is evaluated in the process time zone (`TZ`). See [Scheduled archiving](/docs/guides/scheduled-archiving).
 
 ## Admin
 
 | Command | Description |
 |---|---|
-| `admin create --username <name> --password <pass>` | Create the admin user and a key named `default`. The password needs at least 8 characters. Prints the key once. |
-| `admin key create --name <label> [--expires <date>]` | Create an API key. `--expires` takes an ISO 8601 date, for example `2026-12-31T23:59:59Z`. Prints the key once. |
+| `admin create --username <name>` | Create the admin user and a key named `default`. The password needs at least 8 characters. Prints the key once. |
+| `admin key create --name <label> [--expires <date>]` | Create an API key. Prints the key once. |
 | `admin key list` | List active keys: id, name, expiry, last used. |
 | `admin key revoke <id>` | Revoke a key. |
 
+`--expires` takes an ISO 8601 date or date-time (`2027-12-31`, `2027-12-31T23:59:59Z`, with or without an offset) in the future. A date without a time means 00:00 UTC.
+
+### Password input
+
+`admin create` reads the password from the first match of:
+
+1. `--password-stdin`: the first line of standard input. `printf '%s' "$PW" | webfrost admin create --username admin --password-stdin`
+2. `--password <pass>`: still works, but warns, because the value ends up in your shell history and in the process list.
+3. The `WEBFROST_PASSWORD` environment variable.
+4. A prompt on the terminal, asked twice, without echo.
+
+With none of these and no terminal, the command is a usage error (exit 2).
+
 ```bash
-webfrost admin create --username admin --password 'at-least-8-chars'
-webfrost admin key create --name ci --expires 2026-12-31T23:59:59Z
+webfrost admin create --username admin
+webfrost admin key create --name ci --expires 2027-12-31
 ```
 
 The CLI writes straight to the database, so it works with or without a server running.
+
+## Chromium lookup order
+
+Every command that opens a browser (`add`, `import`, `schedule worker`, `serve`) and `doctor` look for it in this order and use the first match:
+
+1. **`WEBFROST_CHROMIUM_PATH`**, used as given. A path that does not exist is an error, not a silent fallback.
+2. **WebFrost's cache**: the headless Chromium `webfrost setup` installed.
+3. **A system Chrome or Chromium**: `/Applications/Google Chrome.app` (and Chromium, Edge, Brave there), `/usr/bin/chromium`, `chromium-browser`, `google-chrome` and `google-chrome-stable` on `PATH` and in `/usr/bin`, `/snap/bin/chromium`, and `Program Files\Google\Chrome` or Edge on Windows.
+4. **Playwright's own browser cache** (what `bunx playwright install chromium` fills).
 
 ## Environment variables
 
 | Variable | Default | Description |
 |---|---|---|
-| `WEBFROST_DIR` | current directory | Directory with `archive.db` and `snapshots/` |
+| `WEBFROST_DIR` | `~/.webfrost` | Directory with `archive.db` and `snapshots/`. The CLI and the server share it. |
+| `WEBFROST_CACHE_DIR` | `~/.cache/webfrost` (Linux), `~/Library/Caches/webfrost` (macOS), `%LOCALAPPDATA%\webfrost` (Windows) | Where `setup` installs Chromium |
 | `WEBFROST_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. `--verbose` and `--quiet` override it. |
 | `WEBFROST_CONCURRENCY` | `3` | Pipelines in parallel for `import` and `schedule worker` |
 | `WEBFROST_DOMAIN_DELAY_MS` | `1000` | Spacing of archives of the same host, in milliseconds |
 | `WEBFROST_CHROMIUM_PATH` | none | Use an existing Chromium or Chrome binary |
+| `WEBFROST_PASSWORD` | none | Password for `admin create` |
 
-Timeouts, storage and the server-only variables are in [Configuration](/docs/reference/configuration).
+Timeouts, storage and the server variables `serve` reads are in [Configuration](/docs/reference/configuration).
 
 <Cards>
   <Card title="Configuration" href="/docs/reference/configuration">

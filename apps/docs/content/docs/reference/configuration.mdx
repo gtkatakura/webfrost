@@ -12,7 +12,7 @@ Numeric variables (`WEBFROST_CONCURRENCY` and the millisecond settings) ignore v
 
 | Variable | Default | Description |
 |---|---|---|
-| `WEBFROST_DIR` | current directory (CLI), `~/.webfrost` (server), `/data` (Docker image) | Directory holding `archive.db` and the `snapshots/` files. Use an absolute path: file references in the database are paths. |
+| `WEBFROST_DIR` | `~/.webfrost` (CLI and server), `/data` (Docker image) | Directory holding `archive.db` and the `snapshots/` files. Use an absolute path: file references in the database are paths. |
 | `WEBFROST_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. On the CLI, `--verbose` and `--quiet` override it. The server also accepts the older name `LOG_LEVEL` when this one is unset. |
 | `TZ` | system time zone (`UTC` in Docker) | Time zone used to evaluate cron expressions in schedules. |
 
@@ -22,7 +22,7 @@ Numeric variables (`WEBFROST_CONCURRENCY` and the millisecond settings) ignore v
 |---|---|---|---|
 | `PORT` | no | `3000` | HTTP port the server listens on. In Compose, `PORT` sets the host port only. |
 | `HOST` | no | `0.0.0.0`; `127.0.0.1` with `AUTH_DISABLED=true` | Address the server binds to. With auth disabled the server only listens on loopback unless `HOST` is set explicitly. In a container, where the port is published from outside, set `HOST=0.0.0.0`. |
-| `SESSION_SECRET` | yes | none | Signs session cookies. At least 32 random characters: `openssl rand -hex 32`. The server refuses to start without it unless `AUTH_DISABLED=true`; a shorter secret starts with a warning. Rotating it signs everyone out. |
+| `SESSION_SECRET` | yes | none | Signs session cookies. At least 32 random characters: `openssl rand -hex 32`. The server refuses to start without it unless `AUTH_DISABLED=true`; a shorter secret starts with a warning. Rotating it signs everyone out. `webfrost serve` is the exception: when it is unset it generates one on first run and stores it in `<WEBFROST_DIR>/session-secret` (mode `0600`). |
 | `WEBFROST_SETUP_TOKEN` | no | none | When set, first-run setup (`POST /api/setup` and the setup page) must present this value, so whoever reaches a fresh instance first cannot claim it. When unset, setup stays open until an admin exists and the server logs a warning at startup while there is none. Generate one with `openssl rand -hex 16`. |
 | `AUTH_DISABLED` | no | `false` | `true` turns off all authentication. Local development and tests only. Never expose it: the server binds to `127.0.0.1` unless `HOST` says otherwise. |
 | `WEBFROST_TRUST_PROXY` | no | `false` | `true` makes rate limits read the client address from `X-Forwarded-For`. Set only behind a reverse proxy. The right-most entry is used (see `WEBFROST_TRUSTED_PROXY_HOPS`), never the left-most, which the client controls. |
@@ -46,7 +46,8 @@ Numeric variables (`WEBFROST_CONCURRENCY` and the millisecond settings) ignore v
 | `WEBFROST_READABILITY_MAX_BYTES` | `10485760` | HTML longer than this (10 MB) is cut before the readable-text extraction, which blocks the process while it runs. `0` turns the cap off. |
 | `WEBFROST_SINGLEFILE_CONCURRENCY` | `8` | Images, stylesheets and fonts the self-contained HTML downloads at the same time. |
 | `WEBFROST_SINGLEFILE_MAX_BYTES` | `104857600` | Total bytes the self-contained HTML may inline (100 MB). Assets past the budget stay as links to the live site. |
-| `WEBFROST_CHROMIUM_PATH` | none | Use this Chromium or Chrome binary instead of the build Playwright downloads. |
+| `WEBFROST_CHROMIUM_PATH` | none | Use this Chromium or Chrome binary. Checked first; without it WebFrost uses the Chromium `webfrost setup` installed, then a system Chrome or Chromium, then Playwright's own. See [the lookup order](/docs/reference/cli#chromium-lookup-order). |
+| `WEBFROST_CACHE_DIR` | `~/.cache/webfrost` (Linux), `~/Library/Caches/webfrost` (macOS), `%LOCALAPPDATA%\webfrost` (Windows) | Where `webfrost setup` installs Chromium. |
 | `WEBFROST_ALLOW_PRIVATE_URLS` | `false` | `true` allows archiving loopback, private and link-local addresses (intranet archiving). Leave it off when people you do not fully trust can submit URLs. See [Security](/docs/architecture/security#ssrf-protection). |
 
 Fixed limits that are not configurable: browser navigation 30 seconds, response body 50 MB, media file 500 MB, browser shutdown 5 seconds, 5 redirects per fetch.
@@ -78,17 +79,17 @@ Setup and provider endpoints: [Storage](/docs/guides/storage).
 <Tab value="CLI">
 
 ```bash
-WEBFROST_DIR=$HOME/webfrost-data WEBFROST_LOG_LEVEL=debug bun run webfrost add https://example.com
+WEBFROST_DIR=$HOME/webfrost-data WEBFROST_LOG_LEVEL=debug webfrost add https://example.com
 ```
 
 </Tab>
 <Tab value="Server">
 
 ```bash
-export SESSION_SECRET=$(openssl rand -hex 32)
+export SESSION_SECRET=$(openssl rand -hex 32)   # optional: serve generates one when unset
 export WEBFROST_DIR=$HOME/webfrost-data
 export WEBFROST_CONCURRENCY=5
-bun run packages/server/src/index.ts
+webfrost serve
 ```
 
 </Tab>

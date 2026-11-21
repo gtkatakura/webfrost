@@ -43,10 +43,37 @@ cd packages/ui && bun run dev
 
 Run `mise tasks` for every task.
 
+## Run the CLI from source
+
+```bash
+export WEBFROST_DIR=./data   # default: ~/.webfrost
+bun run webfrost --help
+bun run webfrost add https://example.com
+bun run webfrost serve       # API, UI (needs `bun run build` once) and scheduler
+```
+
+`bun run webfrost <command>` is the same program as the installed `webfrost` binary. Use `mise exec -- bun run webfrost ...` when your shell's `bun` is older than the pinned version.
+
 ## Build
 
 ```bash
 bun run build     # builds every package
+```
+
+### The single-file binary
+
+```bash
+mise run build:binary                     # for this machine: packages/cli/dist-binary/<os>-<arch>/webfrost
+bun run build:binary --target all         # darwin-arm64, darwin-x64, linux-x64, linux-arm64, windows-x64
+bun run build:binary --version 1.2.3      # the version `webfrost --version` reports
+```
+
+It builds the SDK and the UI, then compiles `packages/cli` with `bun build --compile` (`packages/cli/scripts/build-binary.ts`). Bun cross-compiles, so every target builds on one machine. The binary is 90 to 120 MB (macOS arm64 about 94 MB, Linux x64 about 112 MB, Windows x64 about 118 MB); each release archive is 41 to 54 MB. The build script embeds the UI and works around two jsdom details that a bundle cannot resolve (the default stylesheet it reads from disk, and css-tree's data files); if a dependency upgrade breaks it, it fails with a message naming the file. `bun run packages/cli/scripts/package-release.ts --outdir <dir>` makes the archives and `checksums.txt` the release workflow publishes.
+
+To try the installer against local files, serve a directory that holds the archives and `checksums.txt` and point the script at it:
+
+```bash
+WEBFROST_DOWNLOAD_BASE=http://127.0.0.1:8765 WEBFROST_INSTALL_DIR=/tmp/wf-bin sh apps/docs/public/install.sh
 ```
 
 ## Tests

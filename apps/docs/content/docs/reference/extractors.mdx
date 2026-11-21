@@ -68,7 +68,7 @@ Every yt-dlp call gets `--ignore-config` (no config file on the host can add opt
 
 ## Requirements
 
-**Chromium** is needed for four extractors. Install it with `bunx playwright install chromium`, or set `WEBFROST_CHROMIUM_PATH` to an existing binary. The Docker image bundles it. See [Install](/docs/getting-started/install#chromium).
+**Chromium** is needed for four extractors. Run `webfrost setup` to install one, or set `WEBFROST_CHROMIUM_PATH` to an existing binary; a system Chrome or Chromium is found on its own. The Docker image bundles it. See [Install](/docs/getting-started/install#chromium).
 
 **yt-dlp** (and ffmpeg for merging streams) is needed for media. Any URL yt-dlp supports qualifies: YouTube, Vimeo, SoundCloud, Twitch clips and [many more](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md). The Docker image bundles both.
 

@@ -86,7 +86,7 @@ The server starts a scheduler at boot and polls every 30 seconds. Set `WEBFROST_
 Without the server (CLI-only use), run a worker as a long-lived process under systemd, Docker or a process manager:
 
 ```bash
-WEBFROST_DIR=./data webfrost schedule worker
+WEBFROST_DIR=$HOME/webfrost-data webfrost schedule worker
 ```
 
 The worker uses the same scheduler as the server, runs pipelines with the same concurrency limit, and re-queues snapshots left `pending` by an interrupted run.

@@ -1,10 +1,73 @@
 ---
 title: Quickstart
-description: Run the WebFrost server, web UI and scheduler with Docker Compose in a few minutes.
+description: Install the webfrost binary and archive your first page in a few minutes, or run the server with Docker Compose.
 icon: Zap
 ---
 
-The fastest way to run WebFrost is the production Compose file from the repository. The image bundles Chromium, yt-dlp and ffmpeg, so every extractor works out of the box.
+Two ways to run WebFrost: the `webfrost` binary (a single file for macOS, Linux and Windows) or the Docker image. The binary also gives you the command-line tools; the image bundles Chromium, yt-dlp and ffmpeg, so every extractor works out of the box.
+
+<Tabs items={["Binary", "Docker Compose"]}>
+<Tab value="Binary">
+
+<Steps>
+<Step>
+
+### Install
+
+```bash
+curl -fsSL https://webfrost.dev/install.sh | sh
+# or: brew install gtkatakura/tap/webfrost
+# Windows: irm https://webfrost.dev/install.ps1 | iex
+```
+
+Details and manual downloads: [Install](/docs/getting-started/install).
+
+</Step>
+<Step>
+
+### Get a browser
+
+```bash
+webfrost setup     # a headless Chromium, if you have none
+webfrost doctor    # what is installed, what is missing
+```
+
+`setup` does nothing when a Chrome or Chromium is already on the machine.
+
+</Step>
+<Step>
+
+### Start the server
+
+```bash
+webfrost serve     # server, web UI and scheduler on :3000
+```
+
+Open `http://localhost:3000`. On the first visit a setup wizard asks for a username and a password of at least 8 characters, then signs you in. The session secret is generated for you and stored in the data directory (`~/.webfrost`).
+
+</Step>
+<Step>
+
+### Archive, search, import, schedule
+
+In another terminal:
+
+```bash
+webfrost add https://example.com
+webfrost search "example domain"
+webfrost import bookmarks.html
+webfrost schedule add https://example.com --cron "0 * * * *"
+```
+
+The CLI and the server use the same archive, so what `add` saves shows up in the web UI.
+
+</Step>
+</Steps>
+
+</Tab>
+<Tab value="Docker Compose">
+
+The production Compose file from the repository runs the server, web UI and scheduler.
 
 <Steps>
 <Step>
@@ -75,30 +138,33 @@ The snapshot is `pending` while the pipeline runs and becomes `done` or `failed`
 </Steps>
 
 <Callout type="info" title="The CLI is not in the image">
-The Docker image does not contain the `webfrost` CLI, so `webfrost admin create` cannot be run in the container. Create the admin user in the browser or with `POST /api/setup`. To use the CLI, [install from source](/docs/getting-started/install).
+The Docker image does not contain the `webfrost` CLI, so `webfrost admin create` cannot be run in the container. Create the admin user in the browser or with `POST /api/setup`. To use the CLI on the same archive, [install the binary](/docs/getting-started/install) and point `WEBFROST_DIR` at the volume's directory.
 </Callout>
 
 <Callout type="warn" title="Image tags">
 Compose pulls `ghcr.io/gtkatakura/webfrost/server:latest` by default (set `IMAGE_TAG` to pin another tag). If that tag is not published yet, build the image locally: uncomment the `build:` block in `docker-compose.prod.yml`, comment out `image:`, and run `docker compose -f docker-compose.prod.yml up -d --build`.
 </Callout>
 
+</Tab>
+</Tabs>
+
 ## Plain HTTP on a LAN address
 
-If you open `http://192.168.x.x:3000` and login bounces back to the login page, the session cookie is the cause: it is marked `Secure`, and browsers drop it on plain-HTTP origins other than `localhost`. Serve WebFrost over TLS, or set `WEBFROST_INSECURE_COOKIES=true` in `.env` for an HTTP-only deployment. See [Deploy](/docs/guides/deploy#tls-and-cookies).
+If you open `http://192.168.x.x:3000` and login bounces back to the login page, the session cookie is the cause: it is marked `Secure`, and browsers drop it on plain-HTTP origins other than `localhost`. Serve WebFrost over TLS, or set `WEBFROST_INSECURE_COOKIES=true` for an HTTP-only deployment. See [Deploy](/docs/guides/deploy#tls-and-cookies).
 
 ## Common settings
 
-Compose reads these from `.env`. Only `SESSION_SECRET` is required.
+Compose reads these from `.env`; `webfrost serve` reads them from the environment. Only `SESSION_SECRET` is required, and `serve` generates one when it is not set.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `SESSION_SECRET` | none | Required. At least 32 random characters. |
-| `PORT` | `3000` | Host port mapped to the container |
+| `SESSION_SECRET` | none | At least 32 random characters. Required by the Docker image. |
+| `PORT` | `3000` | Port to listen on (host port in Compose) |
 | `WEBFROST_CONCURRENCY` | `3` | Pipelines run in parallel |
 | `WEBFROST_TRUST_PROXY` | `false` | `true` behind a reverse proxy |
 | `WEBFROST_PUBLIC_READ` | `false` | Let anonymous visitors browse read-only |
 | `TZ` | `UTC` | Time zone for cron schedules |
-| `IMAGE_TAG` | `latest` | Image tag to pull |
+| `IMAGE_TAG` | `latest` | Image tag to pull (Compose) |
 
 Every variable is listed in [Configuration](/docs/reference/configuration).
 

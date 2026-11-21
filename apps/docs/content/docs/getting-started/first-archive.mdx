@@ -4,7 +4,7 @@ description: Archive a page, open every format WebFrost saved, and search it, fr
 icon: Archive
 ---
 
-In about ten minutes you archive `https://example.com`, look at each saved format, and search the text. You need a [source install](/docs/getting-started/install), or a running [Docker server](/docs/getting-started/quickstart) for the UI part.
+In about ten minutes you archive `https://example.com`, look at each saved format, and search the text. You need the [installed `webfrost` binary](/docs/getting-started/install), or a running [Docker server](/docs/getting-started/quickstart) for the UI part. Run `webfrost setup` once if you have no Chromium.
 
 ## 1. Archive a URL
 
@@ -12,16 +12,14 @@ In about ten minutes you archive `https://example.com`, look at each saved forma
 <Tab value="CLI">
 
 ```bash
-export WEBFROST_DIR=./data
-mkdir -p "$WEBFROST_DIR"
-
-bun run webfrost init
-bun run webfrost add https://example.com
+webfrost add https://example.com
 # [14:02:11] INFO  Archiving https://example.com...
 # [14:02:14] INFO  Snapshot 1 archived.
 ```
 
-`add` runs the whole pipeline in your terminal and returns when it finishes. If the snapshot ends `failed`, it prints a warning with the status instead.
+`add` runs the whole pipeline in your terminal and returns when it finishes. It exits 0 when the snapshot is `done` (at least one extractor produced output) and 1 when it ended `failed`, with the reason on stderr. `--json` prints the result and each extractor's outcome as JSON.
+
+The archive lives in `~/.webfrost` unless you set `WEBFROST_DIR`. `webfrost serve` uses the same directory.
 
 </Tab>
 <Tab value="Web UI">
@@ -49,18 +47,18 @@ What happened: WebFrost fetched the page once, opened it in headless Chromium on
 ## 2. List snapshots
 
 ```bash
-bun run webfrost list
+webfrost list
 # 1    done    https://example.com
 ```
 
-The CLI lists oldest first. The web UI and the API list newest first.
+Newest first, like the web UI and the API. `--limit`, `--page`, `--status failed` and `--json` narrow it.
 
 ## 3. Look at every format
 
-Files for snapshot 1 are in `data/snapshots/1/`:
+Files for snapshot 1 are in `~/.webfrost/snapshots/1/`:
 
 ```bash
-ls data/snapshots/1/
+ls ~/.webfrost/snapshots/1/
 # archive.warc  dom.html  page.pdf  screenshot.png  singlefile.html
 ```
 
@@ -77,7 +75,7 @@ ls data/snapshots/1/
 Read the extracted article text straight from SQLite:
 
 ```bash
-sqlite3 data/archive.db \
+sqlite3 ~/.webfrost/archive.db \
   "SELECT content FROM archive_results WHERE snapshot_id = 1 AND extractor = 'readability';"
 # {"title":"Example Domain","byline":null,"textContent":"...","excerpt":"..."}
 ```
@@ -94,10 +92,12 @@ WebFrost indexes the extracted text, the URL, the title and tag names with SQLit
 <Tab value="CLI">
 
 ```bash
-bun run webfrost search "illustrative examples"
+webfrost search "illustrative examples"
 # 1	https://example.com
 #   ...This domain is for use in illustrative examples in documents...
 ```
+
+`--json`, `--limit` and `--page` are available too.
 
 </Tab>
 <Tab value="Web UI">
@@ -118,8 +118,8 @@ curl "http://localhost:3000/api/snapshots?q=illustrative" \
 ## 5. Tag it
 
 ```bash
-bun run webfrost tag add 1 reference
-bun run webfrost tag list 1
+webfrost tag add 1 reference
+webfrost tag list 1
 ```
 
 Tag names are searchable too.

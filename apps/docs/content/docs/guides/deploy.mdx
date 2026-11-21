@@ -232,11 +232,11 @@ The server runs schedules itself. You only need a worker if you want scheduled a
 # server: .env
 WEBFROST_SCHEDULER=false
 
-# worker: from a source install, same archive and storage settings
+# worker: the webfrost binary, same archive and storage settings
 WEBFROST_DIR=/path/to/data webfrost schedule worker
 ```
 
-The worker needs the same `WEBFROST_DIR`, `TZ` and storage variables as the server. The Docker image has no CLI, so run the worker from a source install on the same host or volume. Running both at once is safe, because a due schedule is claimed atomically and only one process runs it. See [Scheduled archiving](/docs/guides/scheduled-archiving#who-runs-the-schedules).
+The worker needs the same `WEBFROST_DIR`, `TZ` and storage variables as the server. The Docker image has no CLI, so run the worker with the `webfrost` binary on the same host or volume. Running both at once is safe, because a due schedule is claimed atomically and only one process runs it. See [Scheduled archiving](/docs/guides/scheduled-archiving#who-runs-the-schedules).
 
 ## Hardening checklist
 

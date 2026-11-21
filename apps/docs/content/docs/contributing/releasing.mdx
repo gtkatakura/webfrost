@@ -81,11 +81,13 @@ Pushing a `v*.*.*` tag triggers the release workflow, which checks that CI passe
 </Step>
 <Step>
 
-### Create a GitHub release
+### Check the GitHub release
+
+The workflow creates the release itself: the five binaries, `checksums.txt` and the notes from the `CHANGELOG.md` section of the version (GitHub-generated notes when there is none). A tag with a suffix (`-rc.1`) is a pre-release, never "latest", and does not touch Homebrew.
 
 ```bash
-gh release create "v$NEW_VERSION" --title "v$NEW_VERSION" \
-  --notes "$(sed -n "/## $NEW_VERSION/,/## /p" CHANGELOG.md | head -n -1)"
+gh release view "v$NEW_VERSION"
+curl -fsSL https://webfrost.dev/install.sh | WEBFROST_VERSION=$NEW_VERSION sh
 ```
 
 </Step>
@@ -137,6 +139,10 @@ Benchmarks are not part of CI. `.github/workflows/bench-vs-archivebox.yml` runs 
 | CI gate | tag or dispatch | Fails unless the commit already has a successful CI run. It does not run the tests again. |
 | Changesets | CI succeeded on `main` | Creates or updates the `chore: version packages` pull request. When that pull request is merged, it publishes to npm with `changeset publish`, using npm trusted publishing (OIDC) with provenance. |
 | Docker to GHCR | tag or dispatch, after the gate | Builds `packages/server/Dockerfile` for `linux/amd64` and `linux/arm64` (QEMU and Buildx) and pushes `ghcr.io/gtkatakura/webfrost/server`. Layers are cached in GitHub Actions. |
+| Binaries | tag | `bun build --compile` for `darwin-arm64`, `darwin-x64`, `linux-x64`, `linux-arm64` and `windows-x64` on one Linux runner (Bun cross-compiles), with the UI embedded and the tag as the version. Packs `webfrost-<os>-<arch>.tar.gz` (`.zip` for Windows) and `checksums.txt` (SHA-256). |
+| Verify binary | after Binaries | Runs `--version`, `--help`, `init`, `list` and `doctor` from the archives on Linux, macOS (arm64) and Windows. A failure stops the release. |
+| GitHub Release | after Verify binary | Creates the release for the tag (or uploads to it) with the archives and `checksums.txt`. `install.sh`, `install.ps1` and the Homebrew formula read these file names. |
+| Homebrew tap | after GitHub Release, stable tags only | Writes `Formula/webfrost.rb` (URL and SHA-256 per OS and CPU) to `gtkatakura/homebrew-tap` and pushes it. Skipped, passing, when the `HOMEBREW_TAP_TOKEN` secret is not set. |
 | Visual verify | after the Docker job | Starts the pushed `sha-<short-sha>` image with `AUTH_DISABLED=true`, waits up to 60 s for `/health`, runs a Playwright check that the page renders without console errors, and uploads a screenshot as `deploy-screenshot-<sha>` for 90 days |
 
 Image tags: `<version>` and `<major>.<minor>` (no leading `v`) and `sha-<short-sha>` on a version tag, plus `latest` on a stable tag (a tag with a `-rc.1` style suffix does not move `latest`). A merge to `main` alone does not build an image.
@@ -153,6 +159,7 @@ Packages are `"private": true` today (except `@webfrost/sdk`, which is not), so 
 |---|---|
 | `GITHUB_TOKEN` | Injected automatically; pushes to GHCR and opens the Version Packages pull request |
 | npm trusted publisher | Replaces an npm token; configured on npmjs.com, not in the repository |
+| `HOMEBREW_TAP_TOKEN` | Repository secret. A fine-grained personal access token with **Contents: Read and write** on `gtkatakura/homebrew-tap` and nothing else. Without it the release still succeeds and the formula is not updated. |
 
 In repository settings, under Actions, allow workflows to create pull requests, and make the `ghcr.io/gtkatakura/webfrost/server` package public after the first push.
 
