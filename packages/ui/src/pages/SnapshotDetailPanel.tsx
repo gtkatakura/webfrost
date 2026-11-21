@@ -737,7 +737,7 @@ function MetadataSidebar({
         </div>
       </div>
 
-      {/* Storage (placeholder — depends on WEB-137) */}
+      {/* Delete action */}
       {onDelete && (
         <div className="mt-auto pt-3" style={{ borderTop: "1px solid var(--border-default)" }}>
           <button

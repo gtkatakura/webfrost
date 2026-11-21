@@ -22,7 +22,10 @@ interface AuthContextValue extends AuthState {
   canWrite: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** Creates the admin account and returns the one-time API key. Stays in the wizard. */
   completeSetup: (username: string, password: string) => Promise<string>;
+  /** Leaves the wizard for the app, signed in as the admin created by completeSetup. */
+  finishSetup: (username: string) => void;
   /** Called when the server rejects a request with 401 (expired/revoked session). */
   markUnauthenticated: () => void;
 }
@@ -38,6 +41,7 @@ const AuthContext = createContext<AuthContextValue>({
   login: async () => {},
   logout: async () => {},
   completeSetup: async () => "",
+  finishSetup: () => {},
   markUnauthenticated: () => {},
 });
 
@@ -132,20 +136,25 @@ export function AuthProvider({
     }));
   }, [client]);
 
+  // The wizard has a second step that shows the API key, so the app state only changes
+  // in finishSetup: flipping it here would unmount the wizard before the key is seen.
   const completeSetup = useCallback(
     async (username: string, password: string): Promise<string> => {
       const { apiKey } = await client.completeSetup(username, password);
-      setState((prev) => ({
-        ready: true,
-        needsSetup: false,
-        isAuthenticated: true,
-        username,
-        publicRead: prev.publicRead,
-      }));
       return apiKey;
     },
     [client],
   );
+
+  const finishSetup = useCallback((username: string) => {
+    setState((prev) => ({
+      ready: true,
+      needsSetup: false,
+      isAuthenticated: true,
+      username,
+      publicRead: prev.publicRead,
+    }));
+  }, []);
 
   const markUnauthenticated = useCallback(() => {
     setState((prev) =>
@@ -172,6 +181,7 @@ export function AuthProvider({
         login,
         logout,
         completeSetup,
+        finishSetup,
         markUnauthenticated,
       }}
     >

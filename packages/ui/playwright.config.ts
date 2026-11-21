@@ -3,8 +3,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defineConfig } from "@playwright/test";
 
-// Isolated data directory for each E2E run so tests never share state.
+// Isolated data directories for each E2E run so tests never share state.
+// Two servers run side by side:
+//   - :3000 has auth disabled and serves most of the suite (UI via vite preview on :4173).
+//   - :3001 has auth enabled and a fresh data directory, so the first-run setup wizard is
+//     reachable. It serves the built UI itself and backs the "setup" and "auth" projects.
 const e2eDir = mkdtempSync(join(tmpdir(), "webfrost-smoke-"));
+const authE2eDir = mkdtempSync(join(tmpdir(), "webfrost-auth-"));
+
+// Playwright's own browser download can be unavailable; point at a system Chromium instead.
+const executablePath = process.env.WEBFROST_CHROMIUM_PATH || undefined;
+
+// Specs that need the auth-enabled server on :3001. They depend on the setup spec,
+// which creates the admin user and saves its session.
+const authSpecs = ["**/api-keys.spec.ts", "**/auth.spec.ts"];
 
 export default defineConfig({
   testDir: "./e2e",
@@ -15,19 +27,9 @@ export default defineConfig({
 
   webServer: [
     {
-      // Start the @webfrost/server API on port 3000 with a throwaway data dir.
-      // AUTH_DISABLED=true skips session-secret requirement for Phase A/B tests.
-      //
-      // Phase C auth E2E tests (phase-c.spec.ts) require the server to run with
-      // auth enabled. When those tests are activated (after WEB-104 lands), this
-      // config must be updated to remove AUTH_DISABLED=true and set SESSION_SECRET:
-      //
-      //   command: `WEBFROST_DIR=${e2eDir} SESSION_SECRET=e2e-secret-for-testing-only bun run start`,
-      //
-      // A globalSetup file should also seed the admin user before tests run:
-      //   import { openDb, createAdminUser } from "@webfrost/core";
-      //   await createAdminUser(openDb(e2eDir), "admin", "password123");
-      command: `WEBFROST_DIR=${e2eDir} AUTH_DISABLED=true bun run start`,
+      // @webfrost/server API on port 3000 with a throwaway data dir and auth disabled.
+      // WEBFROST_ALLOW_PRIVATE_URLS lets the previews spec archive a page served from localhost.
+      command: `WEBFROST_DIR=${e2eDir} AUTH_DISABLED=true WEBFROST_ALLOW_PRIVATE_URLS=true bun run start`,
       cwd: join(__dirname, "../server"),
       port: 3000,
       reuseExistingServer: !process.env.CI,
@@ -35,22 +37,45 @@ export default defineConfig({
     },
     {
       // Build the SDK (needed by Vite's import export condition), then build
-      // the UI and serve it via vite preview (proxy /api → :3000).
+      // the UI and serve it via vite preview (proxy /api -> :3000).
       command: `(cd ${join(__dirname, "../sdk")} && bun run build) && bun run build && bunx vite preview --port 4173`,
       port: 4173,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
     },
+    {
+      // Auth-enabled server on port 3001 with an empty data dir (no admin user yet).
+      // It serves the UI build from packages/ui/dist, so it is listed after the build above.
+      command: `PORT=3001 WEBFROST_DIR=${authE2eDir} SESSION_SECRET=e2e-secret-for-testing-only-0123456789 bun run start`,
+      cwd: join(__dirname, "../server"),
+      port: 3001,
+      reuseExistingServer: !process.env.CI,
+      timeout: 15_000,
+    },
   ],
 
   use: {
     baseURL: "http://localhost:4173",
+    launchOptions: { executablePath },
   },
 
   projects: [
     {
       name: "chromium",
+      testIgnore: ["**/setup.spec.ts", ...authSpecs],
       use: { browserName: "chromium" },
+    },
+    {
+      // Runs the first-run wizard on the empty :3001 server and saves the admin session.
+      name: "setup",
+      testMatch: "**/setup.spec.ts",
+      use: { browserName: "chromium", baseURL: "http://localhost:3001" },
+    },
+    {
+      name: "auth",
+      testMatch: authSpecs,
+      dependencies: ["setup"],
+      use: { browserName: "chromium", baseURL: "http://localhost:3001" },
     },
   ],
 });

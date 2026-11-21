@@ -1,13 +1,11 @@
 import { type FormEvent, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/auth";
 import { setupErrorMessage } from "../lib/errors";
 
 type Step = "credentials" | "apikey";
 
 export function SetupPage() {
-  const { completeSetup } = useAuth();
-  const navigate = useNavigate();
+  const { completeSetup, finishSetup } = useAuth();
 
   const [step, setStep] = useState<Step>("credentials");
   const [username, setUsername] = useState("");
@@ -172,7 +170,7 @@ export function SetupPage() {
 
             <button
               type="button"
-              onClick={() => navigate("/", { replace: true })}
+              onClick={() => finishSetup(username)}
               className="mt-2 w-full py-2 px-4 rounded-lg bg-primary text-white text-sm font-medium hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors cursor-pointer border-0"
             >
               Go to dashboard

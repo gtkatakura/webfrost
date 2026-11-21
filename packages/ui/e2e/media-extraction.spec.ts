@@ -10,7 +10,7 @@ import { expect, test } from "@playwright/test";
  * These tests hit the real server with a real yt-dlp invocation.
  * They are skipped automatically when yt-dlp is not installed in the environment.
  *
- * Covers WEB-128 acceptance criteria:
+ * Covers these acceptance criteria:
  *   1. YouTube video extraction — file downloaded, content-type, size > 0
  *   2. Metadata extraction     — valid JSON with title, duration, uploader
  *   3. Non-media URL skip      — snapshot completes, no media extractor entry

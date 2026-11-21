@@ -8,6 +8,7 @@ bench/vs-archivebox/results/
 apps/docs/build/
 apps/docs/.react-router/
 apps/docs/.source/
+packages/ui/e2e/.auth/
 
 # Claude Code
 .claude/worktrees/
