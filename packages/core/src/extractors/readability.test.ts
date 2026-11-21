@@ -4,7 +4,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb } from "../db";
-import { readabilityExtractor } from "./readability";
+import { capHtml, readabilityExtractor } from "./readability";
 
 let testDir: string;
 let db: Database;
@@ -90,5 +90,34 @@ describe("readabilityExtractor", () => {
     expect(() => {
       readabilityExtractor(db, 1, "https://example.com", "");
     }).not.toThrow();
+  });
+});
+
+describe("readability input cap", () => {
+  afterEach(() => {
+    Reflect.deleteProperty(process.env, "WEBFROST_READABILITY_MAX_BYTES");
+  });
+
+  test("capHtml cuts at a UTF-8 byte budget without splitting a character", () => {
+    expect(capHtml("short", 100)).toBe("short");
+    expect(capHtml("ééé", 0)).toBe("ééé"); // 0 = no cap
+    // "é" is 2 bytes: 5 bytes fit two of them, the half character is dropped.
+    expect(capHtml("ééé", 5)).toBe("éé");
+  });
+
+  test("parses only the first WEBFROST_READABILITY_MAX_BYTES of a huge page", () => {
+    process.env.WEBFROST_READABILITY_MAX_BYTES = String(ARTICLE_HTML.length + 200);
+    // The article, then megabytes of markup that would take JSDOM seconds to build.
+    const huge = `${ARTICLE_HTML}<div>${"<p>FILLER-AFTER-CAP</p>".repeat(200_000)}</div>`;
+    const start = Date.now();
+    readabilityExtractor(db, 1, "https://example.com/article", huge);
+    expect(Date.now() - start).toBeLessThan(3000);
+
+    const row = db
+      .query<{ content: string }, []>("SELECT content FROM archive_results WHERE snapshot_id = 1")
+      .get();
+    const parsed = JSON.parse(row?.content ?? "{}") as { textContent: string | null };
+    expect(parsed.textContent).toContain("first paragraph");
+    expect((parsed.textContent ?? "").split("FILLER-AFTER-CAP").length).toBeLessThan(20);
   });
 });

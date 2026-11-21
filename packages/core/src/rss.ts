@@ -19,7 +19,7 @@ export async function fetchRssFeedUrls(feedUrl: string): Promise<string[]> {
     throw new Error(`Failed to fetch feed ${feedUrl}: HTTP ${response.status}`);
   }
   const content = await response.text();
-  return parseUrls(content, "rss");
+  return parseUrls(content, "rss", feedUrl);
 }
 
 /**

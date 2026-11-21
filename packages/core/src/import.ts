@@ -38,6 +38,45 @@ export function detectFormat(filename: string, content: string): ImportFormat {
   return "text";
 }
 
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: "\u00a0",
+};
+
+/**
+ * Decode the character references XML and HTML allow in an attribute or text
+ * value (`&amp;`, `&#38;`, `&#x26;`, ...). A feed's `?a=1&amp;b=2` is `?a=1&b=2`.
+ * Unknown named references are left as they are.
+ */
+export function decodeEntities(value: string): string {
+  return value.replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi, (match, ref: string) => {
+    if (ref[0] === "#") {
+      const code =
+        ref[1] === "x" || ref[1] === "X"
+          ? Number.parseInt(ref.slice(2), 16)
+          : Number.parseInt(ref.slice(1), 10);
+      return Number.isInteger(code) && code > 0 && code <= 0x10ffff
+        ? String.fromCodePoint(code)
+        : match;
+    }
+    return NAMED_ENTITIES[ref.toLowerCase()] ?? match;
+  });
+}
+
+/** Resolve `href` against `base` (when given) and return it if it is http(s). */
+function toHttpUrl(href: string, base?: string): string | null {
+  try {
+    const u = base ? new URL(href, base) : new URL(href);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
 function isHttpUrl(raw: string): boolean {
   try {
     const u = new URL(raw);
@@ -61,13 +100,13 @@ function parseOpmlUrls(content: string): string[] {
   const urls: string[] = [];
 
   for (const match of content.matchAll(/<outline\b[^>]*\bxmlUrl\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
-    const url = match[1]?.trim();
+    const url = decodeEntities(match[1] ?? "").trim();
     if (url && isHttpUrl(url) && !urls.includes(url)) urls.push(url);
   }
 
   // Also pick up htmlUrl if not already added via xmlUrl
   for (const match of content.matchAll(/<outline\b[^>]*\bhtmlUrl\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
-    const url = match[1]?.trim();
+    const url = decodeEntities(match[1] ?? "").trim();
     if (url && isHttpUrl(url) && !urls.includes(url)) urls.push(url);
   }
 
@@ -78,66 +117,91 @@ function parseOpmlUrls(content: string): string[] {
 function parseNetscapeUrls(content: string): string[] {
   const urls: string[] = [];
   for (const match of content.matchAll(/<a\b[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
-    const url = match[1]?.trim();
+    const url = decodeEntities(match[1] ?? "").trim();
     if (url && isHttpUrl(url) && !urls.includes(url)) urls.push(url);
   }
   return urls;
 }
 
-/** Extract article URLs from an RSS 2.0 or Atom feed. */
-function parseRssUrls(content: string): string[] {
+/** The text of an element, without a CDATA wrapper (whose content is literal) and with entities decoded. */
+function elementText(raw: string): string {
+  const cdata = /^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/.exec(raw);
+  return (cdata ? (cdata[1] ?? "") : decodeEntities(raw)).trim();
+}
+
+/** The value of attribute `name` in an attribute list, entities decoded. */
+function attr(attrs: string, name: string): string | undefined {
+  const m = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i").exec(attrs);
+  const raw = m?.[1] ?? m?.[2];
+  return raw === undefined ? undefined : decodeEntities(raw).trim();
+}
+
+/**
+ * Extract article URLs from an RSS 2.0 or Atom feed. Relative links (allowed in Atom)
+ * are resolved against `xml:base`, then the feed's own URL (`baseUrl`), then its
+ * `rel="self"` link.
+ */
+function parseRssUrls(content: string, baseUrl?: string): string[] {
   const urls: string[] = [];
+  const add = (url: string | null) => {
+    if (url && !urls.includes(url)) urls.push(url);
+  };
+
+  const feedTag = /<feed\b([^>]*)>/i.exec(content)?.[1] ?? "";
+  const selfLink = [...content.matchAll(/<link\b([^>]*)>/gi)]
+    .map((m) => m[1] ?? "")
+    .find((a) => attr(a, "rel")?.toLowerCase() === "self");
+  let base = baseUrl ?? toHttpUrl(selfLink ? (attr(selfLink, "href") ?? "") : "") ?? undefined;
+  const xmlBase = attr(feedTag, "xml:base");
+  if (xmlBase) base = toHttpUrl(xmlBase, base) ?? base;
 
   // RSS 2.0: <item> ... <link>url</link> ... </item>
   // The <link> element in RSS may contain a CDATA section or plain text.
   for (const itemMatch of content.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)) {
     const itemContent = itemMatch[1] ?? "";
-    const linkMatch = itemContent.match(/<link>\s*(?:<!\[CDATA\[)?\s*(https?:\/\/[^\]<\s]+)/i);
-    if (linkMatch?.[1]) {
-      const url = linkMatch[1].trim();
-      if (isHttpUrl(url) && !urls.includes(url)) urls.push(url);
-    }
+    const linkMatch = /<link>([\s\S]*?)<\/link>/i.exec(itemContent);
+    if (linkMatch?.[1] !== undefined) add(toHttpUrl(elementText(linkMatch[1]), base));
   }
 
   // Atom: <entry> ... <link href="url" .../> ... </entry>
-  // Prefer rel="alternate" links; fall back to any <link> with href.
-  for (const entryMatch of content.matchAll(/<entry\b[^>]*>([\s\S]*?)<\/entry>/gi)) {
-    const entryContent = entryMatch[1] ?? "";
+  // Prefer rel="alternate" links (the default rel); fall back to any <link> with href.
+  for (const entryMatch of content.matchAll(/<entry\b([^>]*)>([\s\S]*?)<\/entry>/gi)) {
+    const entryBase = attr(entryMatch[1] ?? "", "xml:base");
+    const entryBaseUrl = entryBase ? (toHttpUrl(entryBase, base) ?? base) : base;
+    const entryContent = entryMatch[2] ?? "";
 
-    // Collect all <link .../> elements in this entry and extract their href/rel attributes
-    let alternateUrl: string | undefined;
-    let firstUrl: string | undefined;
-
-    for (const linkMatch of entryContent.matchAll(/<link\b([^>]*?)\/?>|<link\b([^>]*)>/gi)) {
-      const attrs = linkMatch[1] ?? linkMatch[2] ?? "";
-      const hrefMatch = attrs.match(/\bhref\s*=\s*["']([^"']+)["']/i);
-      const relMatch = attrs.match(/\brel\s*=\s*["']([^"']+)["']/i);
-      const href = hrefMatch?.[1]?.trim();
-      const rel = relMatch?.[1]?.trim().toLowerCase();
-      if (!href || !isHttpUrl(href)) continue;
+    let alternateUrl: string | null = null;
+    let firstUrl: string | null = null;
+    for (const linkMatch of entryContent.matchAll(/<link\b([^>]*)>/gi)) {
+      const attrs = linkMatch[1] ?? "";
+      const href = attr(attrs, "href");
+      const url = href ? toHttpUrl(href, entryBaseUrl) : null;
+      if (!url) continue;
+      const rel = attr(attrs, "rel")?.toLowerCase() ?? "alternate";
       if (rel === "alternate") {
-        alternateUrl = href;
+        alternateUrl = url;
         break; // prefer alternate — no need to look further
       }
-      if (!firstUrl) firstUrl = href;
+      firstUrl ??= url;
     }
-
-    const url = alternateUrl ?? firstUrl;
-    if (url && !urls.includes(url)) urls.push(url);
+    add(alternateUrl ?? firstUrl);
   }
 
   return urls;
 }
 
-/** Parse URLs from `content` using the given format. */
-export function parseUrls(content: string, format: ImportFormat): string[] {
+/**
+ * Parse URLs from `content` using the given format. `baseUrl` is the URL the content
+ * was downloaded from, if any: relative links in a feed are resolved against it.
+ */
+export function parseUrls(content: string, format: ImportFormat, baseUrl?: string): string[] {
   switch (format) {
     case "opml":
       return parseOpmlUrls(content);
     case "netscape":
       return parseNetscapeUrls(content);
     case "rss":
-      return parseRssUrls(content);
+      return parseRssUrls(content, baseUrl);
     case "text":
       return parseTextUrls(content);
   }

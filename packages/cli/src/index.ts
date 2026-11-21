@@ -389,7 +389,8 @@ switch (command) {
     const format = VALID_FORMATS.includes(formatOverride as (typeof VALID_FORMATS)[number])
       ? (formatOverride as (typeof VALID_FORMATS)[number])
       : detectFormat(filename, content);
-    const urls = parseUrls(content, format);
+    // A feed fetched from a URL may use links relative to it.
+    const urls = parseUrls(content, format, isSourceUrl ? source : undefined);
     // For RSS imports, deduplicate against already-archived URLs
     const deduplicate = format === "rss";
 

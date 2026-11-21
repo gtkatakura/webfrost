@@ -208,3 +208,57 @@ describe("parseUrls — rss format (Atom)", () => {
     expect(urls).not.toContain("https://example.com/self");
   });
 });
+
+describe("parseUrls — entities and relative links", () => {
+  test("decodes &amp; and numeric references in RSS links", () => {
+    const rss = `<rss><channel>
+      <item><link>https://example.com/a?x=1&amp;y=2</link></item>
+      <item><link>https://example.com/b?x=1&#38;y=&#x32;</link></item>
+      <item><link><![CDATA[https://example.com/c?x=1&amp;y=2]]></link></item>
+    </channel></rss>`;
+    expect(parseUrls(rss, "rss")).toEqual([
+      "https://example.com/a?x=1&y=2",
+      "https://example.com/b?x=1&y=2",
+      // CDATA content is literal: &amp; there really is "&amp;".
+      "https://example.com/c?x=1&amp;y=2",
+    ]);
+  });
+
+  test("decodes entities in Atom hrefs and resolves relative ones against the feed URL", () => {
+    const atom = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">
+      <entry><link href="/posts/1?a=1&amp;b=2"/></entry>
+      <entry><link rel="alternate" href="posts/2"/></entry>
+      <entry><link href='https://other.example/3'/></entry>
+    </feed>`;
+    expect(parseUrls(atom, "rss", "https://blog.example/feed.xml")).toEqual([
+      "https://blog.example/posts/1?a=1&b=2",
+      "https://blog.example/posts/2",
+      "https://other.example/3",
+    ]);
+  });
+
+  test("uses xml:base, then the rel=self link, when there is no feed URL", () => {
+    const withBase = `<feed xmlns="http://www.w3.org/2005/Atom" xml:base="https://base.example/blog/">
+      <entry><link href="post-1"/></entry></feed>`;
+    expect(parseUrls(withBase, "rss")).toEqual(["https://base.example/blog/post-1"]);
+
+    const withSelf = `<feed xmlns="http://www.w3.org/2005/Atom">
+      <link rel="self" href="https://self.example/feed.atom"/>
+      <entry><link href="/p/1"/></entry></feed>`;
+    expect(parseUrls(withSelf, "rss")).toEqual(["https://self.example/p/1"]);
+  });
+
+  test("a relative Atom href with no base at all is skipped", () => {
+    const atom = `<feed xmlns="http://www.w3.org/2005/Atom"><entry><link href="/p/1"/></entry></feed>`;
+    expect(parseUrls(atom, "rss")).toEqual([]);
+  });
+
+  test("decodes entities in Netscape bookmarks and OPML", () => {
+    const bookmarks = `<!DOCTYPE NETSCAPE-Bookmark-file-1><DL>
+      <DT><A HREF="https://example.com/?q=a&amp;page=2">x</A></DL>`;
+    expect(parseUrls(bookmarks, "netscape")).toEqual(["https://example.com/?q=a&page=2"]);
+
+    const opml = `<opml><body><outline xmlUrl="https://example.com/feed?a=1&amp;b=2"/></body></opml>`;
+    expect(parseUrls(opml, "opml")).toEqual(["https://example.com/feed?a=1&b=2"]);
+  });
+});
