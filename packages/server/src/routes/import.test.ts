@@ -286,6 +286,44 @@ const NETSCAPE_CONTENT = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
 </DL></p>
 </BODY></HTML>`;
 
+describe("import limits", () => {
+  afterEach(() => {
+    Reflect.deleteProperty(process.env, "WEBFROST_IMPORT_MAX_URLS");
+    Reflect.deleteProperty(process.env, "WEBFROST_IMPORT_MAX_BYTES");
+  });
+
+  test("refuses more URLs than WEBFROST_IMPORT_MAX_URLS with 413 and queues none", async () => {
+    process.env.WEBFROST_IMPORT_MAX_URLS = "2";
+    const app = await getApp();
+    const res = await post(app, {
+      content: "https://a.example\nhttps://b.example\nhttps://c.example",
+      format: "text",
+    });
+    expect(res.status).toBe(413);
+    const body = (await res.json()) as { error: string; code: string };
+    expect(body.code).toBe("PAYLOAD_TOO_LARGE");
+    expect(body.error).toContain("limit is 2");
+    const { openDb } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    const row = db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM snapshots").get();
+    db.close();
+    expect(row?.n).toBe(0);
+  });
+
+  test("refuses content larger than WEBFROST_IMPORT_MAX_BYTES with 413", async () => {
+    process.env.WEBFROST_IMPORT_MAX_BYTES = "16";
+    const res = await post(await getApp(), { content: "https://example.com/long-enough" });
+    expect(res.status).toBe(413);
+  });
+
+  test("refuses an uploaded file larger than WEBFROST_IMPORT_MAX_BYTES with 413", async () => {
+    process.env.WEBFROST_IMPORT_MAX_BYTES = "16";
+    const res = await postFile(await getApp(), "https://example.com/long-enough", "urls.txt");
+    expect(res.status).toBe(413);
+    expect(((await res.json()) as { code: string }).code).toBe("PAYLOAD_TOO_LARGE");
+  });
+});
+
 function postFile(
   app: Awaited<ReturnType<typeof getApp>>,
   content: string,

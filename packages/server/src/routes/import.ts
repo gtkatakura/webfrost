@@ -9,6 +9,25 @@ import {
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
 import { getDb, getRunner } from "../context";
+import { apiErrorHandler } from "../errors";
+import { MAX_URL_LENGTH, importMaxBytes, importMaxUrls } from "../limits";
+
+/** The 413 body for an import over a limit, or null when it is within them. */
+function overLimit(urls: string[]): { error: string; code: "PAYLOAD_TOO_LARGE" } | null {
+  const max = importMaxUrls();
+  if (urls.length <= max) return null;
+  return {
+    error: `import has ${urls.length} URLs; the limit is ${max} (WEBFROST_IMPORT_MAX_URLS)`,
+    code: "PAYLOAD_TOO_LARGE",
+  };
+}
+
+function tooLarge(): { error: string; code: "PAYLOAD_TOO_LARGE" } {
+  return {
+    error: `import is larger than ${importMaxBytes()} bytes (WEBFROST_IMPORT_MAX_BYTES)`,
+    code: "PAYLOAD_TOO_LARGE",
+  };
+}
 
 type ImportFormat = "rss" | "opml" | "netscape" | "text";
 const VALID_FORMATS: ReadonlyArray<string> = ["rss", "opml", "netscape", "text"];
@@ -47,13 +66,7 @@ function queueUrls(urls: string[], deduplicate: boolean): { queued: number; skip
 }
 
 export const importRouter = new Elysia({ prefix: "/import" })
-  .onError(({ code, set }) => {
-    if (code === "VALIDATION") {
-      set.status = 400;
-      return { error: "invalid request" };
-    }
-    return undefined;
-  })
+  .onError(apiErrorHandler)
   /**
    * POST /api/import
    *
@@ -77,6 +90,10 @@ export const importRouter = new Elysia({ prefix: "/import" })
         set.status = 400;
         return { error: "either url or content is required" };
       }
+      if (content && Buffer.byteLength(content, "utf8") > importMaxBytes()) {
+        set.status = 413;
+        return tooLarge();
+      }
 
       // Fast path: fetch RSS feed by URL (SSRF-safe)
       if (sourceUrl && (formatHint === "rss" || !formatHint)) {
@@ -93,6 +110,11 @@ export const importRouter = new Elysia({ prefix: "/import" })
           urls = [];
         }
         if (urls.length > 0 || formatHint === "rss") {
+          const refusal = overLimit(urls);
+          if (refusal) {
+            set.status = 413;
+            return refusal;
+          }
           const { queued, skipped } = queueUrls(urls, true);
           const db = getDb();
           try {
@@ -127,6 +149,10 @@ export const importRouter = new Elysia({ prefix: "/import" })
           return { error: `HTTP ${response.status} fetching ${sourceUrl}` };
         }
         rawContent = await response.text();
+        if (Buffer.byteLength(rawContent, "utf8") > importMaxBytes()) {
+          set.status = 413;
+          return tooLarge();
+        }
         filename = new URL(sourceUrl).pathname.split("/").pop() ?? "";
       } else {
         // biome-ignore lint/style/noNonNullAssertion: content is guaranteed non-null (validated above)
@@ -139,6 +165,11 @@ export const importRouter = new Elysia({ prefix: "/import" })
         : detectFormat(filename, rawContent);
 
       const urls = parseUrls(rawContent, format);
+      const refusal = overLimit(urls);
+      if (refusal) {
+        set.status = 413;
+        return refusal;
+      }
       const { queued, skipped } = queueUrls(urls, format === "rss");
 
       const db = getDb();
@@ -159,9 +190,9 @@ export const importRouter = new Elysia({ prefix: "/import" })
     },
     {
       body: t.Object({
-        url: t.Optional(t.String()),
+        url: t.Optional(t.String({ maxLength: MAX_URL_LENGTH })),
         content: t.Optional(t.String()),
-        format: t.Optional(t.String()),
+        format: t.Optional(t.String({ maxLength: 16 })),
       }),
     },
   )
@@ -181,6 +212,10 @@ export const importRouter = new Elysia({ prefix: "/import" })
     async ({ body, set }) => {
       const { file, format: formatHint } = body;
 
+      if (file.size > importMaxBytes()) {
+        set.status = 413;
+        return tooLarge();
+      }
       const rawContent = await file.text();
       const filename = file.name ?? "";
 
@@ -189,6 +224,11 @@ export const importRouter = new Elysia({ prefix: "/import" })
         : detectFormat(filename, rawContent);
 
       const urls = parseUrls(rawContent, format);
+      const refusal = overLimit(urls);
+      if (refusal) {
+        set.status = 413;
+        return refusal;
+      }
       const { queued, skipped } = queueUrls(urls, format === "rss");
 
       const db = getDb();
@@ -210,7 +250,7 @@ export const importRouter = new Elysia({ prefix: "/import" })
     {
       body: t.Object({
         file: t.File(),
-        format: t.Optional(t.String()),
+        format: t.Optional(t.String({ maxLength: 16 })),
       }),
     },
   );

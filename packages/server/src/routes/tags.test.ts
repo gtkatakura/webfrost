@@ -73,6 +73,22 @@ describe("GET /tags", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /tags", () => {
+  test("rejects tag names longer than 100 characters", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getTagsApp();
+    const res = await app.handle(
+      new Request("http://localhost/tags", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "x".repeat(101) }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid request", code: "VALIDATION" });
+  });
+
   test("creates a tag and returns 201", async () => {
     const { openDb } = await import("@webfrost/core");
     openDb(testDir).close();

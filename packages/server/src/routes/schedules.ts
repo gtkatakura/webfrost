@@ -7,6 +7,8 @@ import {
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
 import { getDb } from "../context";
+import { apiErrorHandler } from "../errors";
+import { MAX_CRON_LENGTH, MAX_URL_LENGTH } from "../limits";
 
 function mapSchedule(s: ReturnType<typeof getSchedule>) {
   if (!s) return null;
@@ -24,13 +26,7 @@ function mapSchedule(s: ReturnType<typeof getSchedule>) {
 }
 
 export const schedulesRouter = new Elysia({ prefix: "/schedules" })
-  .onError(({ code, set }) => {
-    if (code === "VALIDATION") {
-      set.status = 400;
-      return { error: "invalid request" };
-    }
-    return undefined;
-  })
+  .onError(apiErrorHandler)
   .post(
     "/",
     ({ body, set }) => {
@@ -68,7 +64,10 @@ export const schedulesRouter = new Elysia({ prefix: "/schedules" })
       }
     },
     {
-      body: t.Object({ url: t.String(), cron: t.String() }),
+      body: t.Object({
+        url: t.String({ maxLength: MAX_URL_LENGTH }),
+        cron: t.String({ maxLength: MAX_CRON_LENGTH }),
+      }),
     },
   )
   .get("/", () => {

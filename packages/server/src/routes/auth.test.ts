@@ -90,7 +90,7 @@ describe("POST /auth/login", () => {
     expect(setCookie).toContain("session=");
   });
 
-  test("returns 422 for missing password field", async () => {
+  test("returns 400 { error, code } for missing password field", async () => {
     const { openDb } = await import("@webfrost/core");
     openDb(testDir).close();
 
@@ -102,7 +102,24 @@ describe("POST /auth/login", () => {
         body: JSON.stringify({ username: "admin" }),
       }),
     );
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid request", code: "VALIDATION" });
+  });
+
+  test("rejects passwords longer than 1024 characters before hashing them", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request("http://localhost/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "admin", password: "x".repeat(1025) }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("VALIDATION");
   });
 });
 
@@ -111,15 +128,38 @@ describe("POST /auth/login", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /auth/logout", () => {
-  test("returns 200 and clears session cookie", async () => {
+  test("returns 204 and clears the session cookie", async () => {
     const { openDb } = await import("@webfrost/core");
     openDb(testDir).close();
 
     const app = await getApp();
-    const res = await app.handle(new Request("http://localhost/auth/logout", { method: "POST" }));
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean };
-    expect(body.ok).toBe(true);
+    const res = await app.handle(
+      new Request("http://localhost/auth/logout", {
+        method: "POST",
+        headers: { cookie: "session=whatever" },
+      }),
+    );
+    expect(res.status).toBe(204);
+    const setCookie = res.headers.get("set-cookie") ?? "";
+    expect(setCookie).toContain("session=;");
+    expect(setCookie).toMatch(/Max-Age=0/i);
+  });
+
+  test("works with an expired or invalid session (auth enabled)", async () => {
+    const { openDb } = await import("@webfrost/core");
+    openDb(testDir).close();
+    process.env.SESSION_SECRET = "test-secret-32-chars-long-enough!!";
+    Reflect.deleteProperty(process.env, "AUTH_DISABLED");
+
+    const app = await getAppWithPlugin();
+    const res = await app.handle(
+      new Request("http://localhost/auth/logout", {
+        method: "POST",
+        headers: { cookie: "session=forged.or-expired" },
+      }),
+    );
+    expect(res.status).toBe(204);
+    expect(res.headers.get("set-cookie") ?? "").toMatch(/Max-Age=0/i);
   });
 });
 
@@ -305,10 +345,28 @@ describe("session revocation", () => {
     const out = await app.handle(
       new Request("http://localhost/auth/logout", { method: "POST", headers: { cookie } }),
     );
-    expect(out.status).toBe(200);
+    expect(out.status).toBe(204);
 
     // The same cookie replayed after logout no longer works.
     expect(await protectedStatus(app, cookie)).toBe(401);
+  });
+
+  test("logging in again revokes the session in the cookie it replaces", async () => {
+    await seed();
+    const app = await getAppWithPlugin();
+    const first = await login(app);
+    const res = await app.handle(
+      new Request("http://localhost/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: first },
+        body: JSON.stringify({ username: "admin", password: "password123" }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const second = (res.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+
+    expect(await protectedStatus(app, first)).toBe(401);
+    expect(await protectedStatus(app, second)).toBe(200);
   });
 
   test("logging out one browser leaves the other signed in", async () => {

@@ -1,8 +1,11 @@
 import { createApiKey, listApiKeys, revokeApiKey } from "@webfrost/core";
 import { Elysia, t } from "elysia";
 import { SERVER_VERSION, getDb, getWebfrostDir } from "../context";
+import { apiErrorHandler } from "../errors";
+import { MAX_API_KEY_NAME_LENGTH } from "../limits";
 
 export const settingsRouter = new Elysia({ prefix: "/settings" })
+  .onError(apiErrorHandler)
   .get("/info", () => {
     const webfrostDir = getWebfrostDir();
     const db = getDb();
@@ -43,7 +46,7 @@ export const settingsRouter = new Elysia({ prefix: "/settings" })
         db.close();
       }
     },
-    { body: t.Object({ name: t.String({ minLength: 1 }) }) },
+    { body: t.Object({ name: t.String({ minLength: 1, maxLength: MAX_API_KEY_NAME_LENGTH }) }) },
   )
   .delete("/keys/:id", ({ params, set }) => {
     const db = getDb();

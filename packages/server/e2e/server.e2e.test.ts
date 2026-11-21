@@ -252,13 +252,76 @@ describe("auth", () => {
       method: "POST",
       headers: { cookie: freshCookie },
     });
-    expect(logoutRes.status).toBe(200);
+    expect(logoutRes.status).toBe(204);
+    expect(logoutRes.headers.get("set-cookie") ?? "").toMatch(/session=;.*Max-Age=0/i);
 
     // The cookie is dead on the server, not just cleared in the browser.
     const replay = await fetch(`${baseUrl}/api/auth/me`, { headers: { cookie: freshCookie } });
     expect(replay.status).toBe(401);
     // Other sessions are untouched.
     expect((await authed("/api/auth/me")).status).toBe(200);
+
+    // Logging out again with the now-dead cookie still clears it.
+    const again = await fetch(`${baseUrl}/api/auth/logout`, {
+      method: "POST",
+      headers: { cookie: freshCookie },
+    });
+    expect(again.status).toBe(204);
+  });
+});
+
+describe("CSRF and content-type protection", () => {
+  test("a cross-site form post with the session cookie is refused", async () => {
+    const res = await authed("/api/tags", {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "sec-fetch-site": "same-site",
+      },
+      body: "name=csrf-tag",
+    });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("CROSS_ORIGIN_REQUEST");
+    const tags = (await (await authed("/api/tags")).json()) as { name: string }[];
+    expect(tags.some((t) => t.name === "csrf-tag")).toBe(false);
+  });
+
+  test("an Origin from another site is refused when fetch metadata is absent", async () => {
+    const res = await authed("/api/auth/logout", {
+      method: "POST",
+      headers: { origin: "https://evil.example" },
+    });
+    expect(res.status).toBe(403);
+    // The session survived.
+    expect((await authed("/api/auth/me")).status).toBe(200);
+  });
+
+  test("the UI's same-origin JSON fetch works", async () => {
+    const res = await authed("/api/tags", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "sec-fetch-site": "same-origin",
+        origin: baseUrl,
+      },
+      body: JSON.stringify({ name: "same-origin-tag" }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  test("a non-JSON body on a JSON route is a 415", async () => {
+    const res = await authed("/api/snapshots", {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: JSON.stringify({ url: "https://example.com" }),
+    });
+    expect(res.status).toBe(415);
+  });
+
+  test("unknown API routes are a JSON 404", async () => {
+    const res = await authed("/api/does-not-exist");
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "not found", code: "NOT_FOUND" });
   });
 });
 

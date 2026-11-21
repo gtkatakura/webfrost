@@ -8,7 +8,15 @@ import {
   verifySession,
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
-import { getDb, getSessionSecret, parseCookie, setSessionCookie } from "../context";
+import {
+  clearSessionCookie,
+  getDb,
+  getSessionSecret,
+  parseCookie,
+  setSessionCookie,
+} from "../context";
+import { apiErrorHandler } from "../errors";
+import { MAX_PASSWORD_LENGTH, MAX_USERNAME_LENGTH } from "../limits";
 import { logger } from "../logger";
 
 /** WEBFROST_PUBLIC_READ=true lets anonymous visitors browse the archive (never change it). */
@@ -33,6 +41,9 @@ const PUBLIC_READ_ROUTES = [
 
 // Routes that never require credentials (the /api prefix is optional for the same reason).
 const LOGIN_ROUTE = /^(?:\/api)?\/auth\/login\/?$/;
+// Logout must work with an expired or revoked session too, or the browser keeps a
+// dead cookie it cannot get rid of.
+const LOGOUT_ROUTE = /^(?:\/api)?\/auth\/logout\/?$/;
 const SETUP_STATUS_ROUTE = /^(?:\/api)?\/setup\/status\/?$/;
 const SETUP_ROUTE = /^(?:\/api)?\/setup\/?$/;
 
@@ -67,6 +78,7 @@ export function authPlugin(app: Elysia) {
     // match would also wave through any future route that merely ends the same way.
     const url = new URL(request.url);
     if (request.method === "POST" && LOGIN_ROUTE.test(url.pathname)) return;
+    if (request.method === "POST" && LOGOUT_ROUTE.test(url.pathname)) return;
     if (request.method === "GET" && SETUP_STATUS_ROUTE.test(url.pathname)) return;
     if (request.method === "POST" && SETUP_ROUTE.test(url.pathname)) return;
 
@@ -106,10 +118,26 @@ export function authPlugin(app: Elysia) {
   });
 }
 
+/** Delete the server-side session behind a cookie value, if it is one of ours. */
+function revokeCookieSession(request: Request): void {
+  const sessionToken = parseCookie(request.headers.get("cookie"), "session");
+  const secret = process.env.SESSION_SECRET;
+  if (!sessionToken || !secret) return;
+  const db = getDb();
+  try {
+    revokeSession(db, secret, sessionToken);
+  } finally {
+    db.close();
+  }
+}
+
+const passwordField = () => t.String({ maxLength: MAX_PASSWORD_LENGTH });
+
 export const authRouter = new Elysia({ prefix: "/auth" })
+  .onError(apiErrorHandler)
   .post(
     "/login",
-    async ({ body, set, cookie }) => {
+    async ({ body, set, cookie, request }) => {
       const { username, password } = body;
 
       let secret: string;
@@ -127,27 +155,28 @@ export const authRouter = new Elysia({ prefix: "/auth" })
           set.status = 401;
           return { error: "invalid credentials" };
         }
+        // The session this cookie replaces must not stay valid in a copy of the old one.
+        revokeCookieSession(request);
         setSessionCookie(cookie.session, createSession(db, secret, validUsername));
         return { ok: true };
       } finally {
         db.close();
       }
     },
-    { body: t.Object({ username: t.String(), password: t.String() }) },
+    {
+      body: t.Object({
+        username: t.String({ maxLength: MAX_USERNAME_LENGTH }),
+        password: passwordField(),
+      }),
+    },
   )
-  .post("/logout", ({ request, cookie }) => {
+  .post("/logout", ({ request, cookie, set }) => {
     // Remove the server-side session so the cookie is dead even if a copy survives.
-    const sessionToken = parseCookie(request.headers.get("cookie"), "session");
-    if (sessionToken && process.env.SESSION_SECRET) {
-      const db = getDb();
-      try {
-        revokeSession(db, process.env.SESSION_SECRET, sessionToken);
-      } finally {
-        db.close();
-      }
-    }
-    cookie.session?.remove();
-    return { ok: true };
+    // Public route: an expired or revoked session still gets its cookie cleared.
+    revokeCookieSession(request);
+    clearSessionCookie(cookie.session);
+    set.status = 204;
+    return null;
   })
   .get("/me", ({ request }) => {
     const authDisabled = process.env.AUTH_DISABLED === "true";
@@ -206,5 +235,5 @@ export const authRouter = new Elysia({ prefix: "/auth" })
         db.close();
       }
     },
-    { body: t.Object({ currentPassword: t.String(), newPassword: t.String() }) },
+    { body: t.Object({ currentPassword: passwordField(), newPassword: passwordField() }) },
   );

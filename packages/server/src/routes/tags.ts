@@ -10,16 +10,12 @@ import {
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
 import { getDb } from "../context";
+import { apiErrorHandler } from "../errors";
+import { MAX_TAG_COLOR_LENGTH, MAX_TAG_NAME_LENGTH } from "../limits";
 
 // GET/POST/DELETE /api/tags
 export const tagsRouter = new Elysia({ prefix: "/tags" })
-  .onError(({ code, set }) => {
-    if (code === "VALIDATION") {
-      set.status = 400;
-      return { error: "invalid request" };
-    }
-    return undefined;
-  })
+  .onError(apiErrorHandler)
   .get("/", () => {
     const db = getDb();
     try {
@@ -62,8 +58,8 @@ export const tagsRouter = new Elysia({ prefix: "/tags" })
     },
     {
       body: t.Object({
-        name: t.String({ minLength: 1 }),
-        color: t.Optional(t.String()),
+        name: t.String({ minLength: 1, maxLength: MAX_TAG_NAME_LENGTH }),
+        color: t.Optional(t.String({ maxLength: MAX_TAG_COLOR_LENGTH })),
       }),
     },
   )
@@ -93,13 +89,7 @@ export const tagsRouter = new Elysia({ prefix: "/tags" })
 
 // GET/POST/DELETE /api/snapshots/:id/tags
 export const snapshotTagsRouter = new Elysia({ prefix: "/snapshots" })
-  .onError(({ code, set }) => {
-    if (code === "VALIDATION") {
-      set.status = 400;
-      return { error: "invalid request" };
-    }
-    return undefined;
-  })
+  .onError(apiErrorHandler)
   .get(
     "/:id/tags",
     ({ params, set }) => {

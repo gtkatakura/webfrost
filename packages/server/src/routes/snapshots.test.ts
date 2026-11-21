@@ -880,3 +880,114 @@ describe("GET /snapshots/:id", () => {
     expect(arExtractors).not.toContain("pdf");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Limits, guests and S3 downloads
+// ---------------------------------------------------------------------------
+
+describe("GET /snapshots — limit cap", () => {
+  test("never returns more than 200 items per page", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    for (let i = 0; i < 205; i++) createSnapshot(db, `https://example.com/${i}`);
+    db.close();
+
+    const app = await getApp();
+    const res = await app.handle(new Request("http://localhost/snapshots?limit=10000"));
+    const body = (await res.json()) as { items: unknown[]; limit: number; total: number };
+    expect(body.total).toBe(205);
+    expect(body.limit).toBe(200);
+    expect(body.items).toHaveLength(200);
+  });
+});
+
+describe("GET /snapshots/:id — guests", () => {
+  test("anonymous visitors never see raw extractor errors", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = openDb(testDir);
+    const id = createSnapshot(db, "https://example.com/private");
+    db.query(
+      "INSERT INTO archive_results (snapshot_id, extractor, content, duration_ms, error) VALUES (?, ?, ?, ?, ?)",
+    ).run(id, "pdf", null, 5, "connect ECONNREFUSED 10.0.0.5:9222 (/opt/chrome/chrome)");
+    db.close();
+
+    const savedAuth = process.env.AUTH_DISABLED;
+    Reflect.deleteProperty(process.env, "AUTH_DISABLED");
+    process.env.SESSION_SECRET = "test-secret-32-chars-long-enough!!";
+    process.env.WEBFROST_PUBLIC_READ = "true";
+    try {
+      const { authPlugin } = await import("./auth");
+      const { snapshotsRouter } = await import("./snapshots");
+      const { Elysia } = await import("elysia");
+      const app = new Elysia().use(authPlugin).use(snapshotsRouter);
+      const res = await app.handle(new Request(`http://localhost/snapshots/${id}`));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { extractorMeta: Record<string, { error?: string }> };
+      expect(body.extractorMeta.pdf?.error).toBe("extraction failed");
+    } finally {
+      if (savedAuth !== undefined) process.env.AUTH_DISABLED = savedAuth;
+      Reflect.deleteProperty(process.env, "SESSION_SECRET");
+      Reflect.deleteProperty(process.env, "WEBFROST_PUBLIC_READ");
+    }
+
+    // The admin (here: auth disabled) still gets the real message.
+    const res = await (await getApp()).handle(new Request(`http://localhost/snapshots/${id}`));
+    const body = (await res.json()) as { extractorMeta: Record<string, { error?: string }> };
+    expect(body.extractorMeta.pdf?.error).toContain("ECONNREFUSED");
+  });
+});
+
+describe("GET /snapshots/:id/archives/:extractor/download — S3", () => {
+  const S3_ENV = [
+    "WEBFROST_STORAGE_BACKEND",
+    "S3_ENDPOINT",
+    "S3_BUCKET",
+    "S3_ACCESS_KEY_ID",
+    "S3_SECRET_ACCESS_KEY",
+  ];
+  let fakeS3: ReturnType<typeof Bun.serve> | undefined;
+
+  beforeEach(() => {
+    // Answers every HEAD (fileExists) with 200; downloads are never proxied.
+    fakeS3 = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("") });
+    process.env.WEBFROST_STORAGE_BACKEND = "s3";
+    process.env.S3_ENDPOINT = `http://127.0.0.1:${fakeS3.port}`;
+    process.env.S3_BUCKET = "archive";
+    process.env.S3_ACCESS_KEY_ID = "test";
+    process.env.S3_SECRET_ACCESS_KEY = "test";
+  });
+
+  afterEach(() => {
+    fakeS3?.stop(true);
+    for (const name of S3_ENV) Reflect.deleteProperty(process.env, name);
+  });
+
+  for (const [extractor, filename] of [
+    ["dom-snapshot", "dom.html"],
+    ["singlefile", "singlefile.html"],
+    ["pdf", "page.pdf"],
+  ] as const) {
+    test(`${extractor} redirects with a signed attachment disposition`, async () => {
+      const { openDb, createSnapshot } = await import("@webfrost/core");
+      const db = openDb(testDir);
+      const id = createSnapshot(db, "https://example.com/s3");
+      db.query(
+        "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, ?, ?)",
+      ).run(id, extractor, `s3:snapshots/${id}/${filename}`);
+      db.close();
+
+      const app = await getApp();
+      const res = await app.handle(
+        new Request(`http://localhost/snapshots/${id}/archives/${extractor}/download`),
+      );
+      expect(res.status).toBe(302);
+      const location = new URL(res.headers.get("location") ?? "");
+      expect(location.searchParams.get("response-content-disposition")).toBe(
+        `attachment; filename="${filename}"`,
+      );
+      expect(location.searchParams.get("response-content-type")).toBe(
+        extractor === "pdf" ? "application/pdf" : "text/html",
+      );
+    });
+  }
+});

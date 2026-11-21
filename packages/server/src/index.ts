@@ -1,19 +1,23 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { extname, resolve, sep } from "node:path";
-import { startScheduler } from "@webfrost/core";
+import { hasAdminUser, startScheduler } from "@webfrost/core";
 import { Elysia } from "elysia";
-import { getRunner, getWebfrostDir } from "./context";
+import { getDb, getRunner, getWebfrostDir } from "./context";
 import { appContentSecurityPolicy } from "./csp";
+import { apiErrorHandler, withErrorCode } from "./errors";
+import { maxRequestBodyBytes } from "./limits";
 import { logger } from "./logger";
 import { rateLimiterPlugin } from "./middleware/rateLimiter";
+import { requestGuardPlugin } from "./middleware/requestGuard";
 import { authPlugin, authRouter } from "./routes/auth";
 import { importRouter, importsRouter } from "./routes/import";
 import { schedulesRouter } from "./routes/schedules";
 import { settingsRouter } from "./routes/settings";
-import { setupRouter } from "./routes/setup";
+import { setupRouter, setupToken } from "./routes/setup";
 import { snapshotsRouter } from "./routes/snapshots";
 import { statsRouter } from "./routes/stats";
 import { snapshotTagsRouter, tagsRouter } from "./routes/tags";
+import { installShutdownHandlers, shutdownTimeoutMs } from "./shutdown";
 
 const PORT = Number(process.env.PORT ?? "3000");
 
@@ -89,26 +93,33 @@ async function serveStaticFile(pathname: string): Promise<Response | null> {
 }
 
 export const app = new Elysia()
-  .onRequest(({ request, store }) => {
+  .onRequest(({ request, store, set }) => {
     (store as Record<string, number>).requestStart = Date.now();
     logger.debug({ method: request.method, path: new URL(request.url).pathname }, "request");
+    // Set before routing so every response carries them — errors, 404s and requests
+    // refused before a route runs included. A route may still assign a stricter
+    // policy of its own: the archive preview does, to render untrusted HTML in an
+    // opaque, script-less sandbox.
+    set.headers["content-security-policy"] = appContentSecurityPolicy();
+    set.headers["x-content-type-options"] = "nosniff";
+    set.headers["x-frame-options"] = "DENY";
+    set.headers["referrer-policy"] = "strict-origin-when-cross-origin";
   })
-  .onAfterHandle(({ request, set, store }) => {
+  // CSRF and content-type checks, before any body is parsed.
+  .use(requestGuardPlugin)
+  // Malformed JSON, failed validation, unknown routes and thrown errors → { error, code }.
+  .onError(apiErrorHandler)
+  .onAfterHandle(({ request, set, store, response }) => {
     const start = (store as Record<string, number | undefined>).requestStart;
     const duration = start !== undefined ? Date.now() - start : undefined;
-    const status = set.status ?? 200;
+    const status = typeof set.status === "number" ? set.status : 200;
     logger.info(
       { method: request.method, path: new URL(request.url).pathname, status, duration },
       "response",
     );
-  })
-  .onAfterHandle(({ set }) => {
-    // `??=` so a route can ship a stricter policy of its own — the archive preview
-    // does, to render untrusted HTML in an opaque, script-less sandbox.
-    set.headers["content-security-policy"] ??= appContentSecurityPolicy();
-    set.headers["x-content-type-options"] = "nosniff";
-    set.headers["x-frame-options"] ??= "DENY";
-    set.headers["referrer-policy"] ??= "strict-origin-when-cross-origin";
+    // Give every `{ error }` a route returns a machine-readable `code` as well.
+    const coded = withErrorCode(response, status);
+    return coded === response ? undefined : coded;
   })
   .get("/health", () => ({ status: "ok" }))
   .group("/api", (app) =>
@@ -156,6 +167,11 @@ export const app = new Elysia()
   )
   .get("/*", async ({ set, request }) => {
     const url = new URL(request.url);
+    // An unknown API route is an API error, not a page of the single-page app.
+    if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
+      set.status = 404;
+      return { error: "not found", code: "NOT_FOUND" };
+    }
     // Try to serve the exact static file first (e.g. /assets/index-xxx.js)
     const staticResp = await serveStaticFile(url.pathname);
     if (staticResp) {
@@ -221,8 +237,44 @@ export function startBackgroundWork(): { stop: () => void } {
   };
 }
 
+/**
+ * The address to listen on. HOST wins when set; otherwise 0.0.0.0, except with
+ * AUTH_DISABLED=true, where an unauthenticated server must not be reachable from the
+ * network by accident: it binds to 127.0.0.1 unless HOST says otherwise.
+ */
+export function listenHostname(env: Record<string, string | undefined> = process.env): string {
+  if (env.HOST) return env.HOST;
+  return env.AUTH_DISABLED === "true" ? "127.0.0.1" : "0.0.0.0";
+}
+
+/** Warn when a fresh instance can be claimed by anyone who reaches POST /api/setup. */
+function warnIfSetupUnprotected(): void {
+  if (process.env.AUTH_DISABLED === "true" || setupToken() !== null) return;
+  const db = getDb();
+  try {
+    if (hasAdminUser(db)) return;
+  } finally {
+    db.close();
+  }
+  logger.warn(
+    "No admin user exists yet and WEBFROST_SETUP_TOKEN is not set: anyone who can reach this server can complete first-run setup and become its admin. Finish setup now, or set WEBFROST_SETUP_TOKEN.",
+  );
+}
+
 if (import.meta.main) {
-  startBackgroundWork();
-  app.listen(PORT);
-  logger.info({ port: PORT }, "@webfrost/server listening");
+  const background = startBackgroundWork();
+  warnIfSetupUnprotected();
+  const hostname = listenHostname();
+  app.listen({ port: PORT, hostname, maxRequestBodySize: maxRequestBodyBytes() });
+  logger.info({ hostname, port: app.server?.port ?? PORT }, "@webfrost/server listening");
+  if (process.env.AUTH_DISABLED === "true" && hostname !== "127.0.0.1" && hostname !== "::1") {
+    logger.warn({ hostname }, "AUTH_DISABLED=true on a non-loopback address: anyone can reach it");
+  }
+  installShutdownHandlers({
+    stopServer: () => app.stop(),
+    stopBackgroundWork: background.stop,
+    runner: getRunner(),
+    timeoutMs: shutdownTimeoutMs(),
+    logger,
+  });
 }

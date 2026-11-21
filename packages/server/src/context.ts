@@ -55,9 +55,25 @@ export function setSessionCookie(cookie: Cookie<unknown> | undefined, token: str
   // Browsers drop Secure cookies on plain-HTTP origins other than localhost, which
   // makes login silently fail on a LAN address. WEBFROST_INSECURE_COOKIES=true is the
   // explicit opt-out for deployments that really are HTTP-only.
-  const insecure =
-    process.env.NODE_ENV === "development" || process.env.WEBFROST_INSECURE_COOKIES === "true";
-  if (!insecure) cookie.secure = true;
+  if (!insecureCookies()) cookie.secure = true;
+}
+
+/** Expire the session cookie, with the same attributes it was set with. */
+export function clearSessionCookie(cookie: Cookie<unknown> | undefined): void {
+  if (!cookie) return;
+  cookie.set({
+    value: "",
+    httpOnly: true,
+    sameSite: "strict",
+    path: "/",
+    maxAge: 0,
+    expires: new Date(0),
+    ...(insecureCookies() ? {} : { secure: true }),
+  });
+}
+
+function insecureCookies(): boolean {
+  return process.env.NODE_ENV === "development" || process.env.WEBFROST_INSECURE_COOKIES === "true";
 }
 
 export function parseCookie(cookieHeader: string | null, name: string): string | null {

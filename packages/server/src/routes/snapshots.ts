@@ -8,6 +8,8 @@ import {
 import type { SnapshotWithExtractors, StorageBackend } from "@webfrost/core";
 import { Elysia, t } from "elysia";
 import { getDb, getRunner, getStorage } from "../context";
+import { apiErrorHandler } from "../errors";
+import { MAX_LIST_LIMIT, MAX_URL_LENGTH } from "../limits";
 import { isGuestRequest } from "./auth";
 
 /** List-level fields shared by the list, search and detail responses. */
@@ -67,6 +69,9 @@ const ALLOWED_EXTRACTORS = new Set([
   "media-metadata",
 ]);
 
+/** What anonymous visitors see instead of an extractor's error message. */
+const GUEST_EXTRACTOR_ERROR = "extraction failed";
+
 /** Archived HTML formats that can be shown in the sandboxed preview. */
 const PREVIEWABLE_EXTRACTORS = new Set(["dom-snapshot", "singlefile"]);
 
@@ -94,13 +99,7 @@ const FILE_EXTRACTORS: Record<string, { contentType: string; filename: string }>
 };
 
 export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
-  .onError(({ code, set }) => {
-    if (code === "VALIDATION") {
-      set.status = 400;
-      return { error: "invalid url" };
-    }
-    return undefined;
-  })
+  .onError(apiErrorHandler)
   .post(
     "/",
     ({ body, set }) => {
@@ -133,10 +132,10 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       return { id: snapshotId, url, status: "pending" };
     },
     {
-      body: t.Object({ url: t.String() }),
+      body: t.Object({ url: t.String({ maxLength: MAX_URL_LENGTH }) }),
       response: {
         202: t.Object({ id: t.Number(), url: t.String(), status: t.String() }),
-        400: t.Object({ error: t.String() }),
+        400: t.Object({ error: t.String(), code: t.Optional(t.String()) }),
       },
     },
   )
@@ -148,7 +147,8 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
         const q = query.q?.trim();
         // Whole numbers only: SQLite rejects a fractional LIMIT/OFFSET.
         const page = Math.max(1, Math.trunc(Number(query.page)) || 1);
-        const limit = Math.min(10000, Math.max(1, Math.trunc(Number(query.limit)) || 20));
+        // Capped for everyone, guests included: one request must not dump the archive.
+        const limit = Math.min(MAX_LIST_LIMIT, Math.max(1, Math.trunc(Number(query.limit)) || 20));
         const status = query.status?.trim() || undefined;
 
         if (q) {
@@ -233,7 +233,8 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
                 status: "failed",
                 durationMs: ar.duration_ms,
                 fileSizeBytes: null,
-                error: ar.error,
+                // Raw extractor errors can name internal hosts, paths and binaries.
+                error: guest ? GUEST_EXTRACTOR_ERROR : ar.error,
               };
             } else {
               extractorMeta[ar.extractor] = {
@@ -345,21 +346,13 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
     async ({ params, set }) => {
       const id = Number(params.id);
       const { extractor } = params;
+      const fail = (status: number, error: string) => {
+        set.status = status;
+        return { error };
+      };
 
-      if (!Number.isInteger(id) || id <= 0) {
-        set.status = 404;
-        return new Response(JSON.stringify({ error: "not found" }), {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      if (!ALLOWED_EXTRACTORS.has(extractor)) {
-        return new Response(JSON.stringify({ error: "unknown extractor" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
+      if (!Number.isInteger(id) || id <= 0) return fail(404, "not found");
+      if (!ALLOWED_EXTRACTORS.has(extractor)) return fail(400, "unknown extractor");
 
       const db = getDb();
       let content: string | null = null;
@@ -369,96 +362,57 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
             "SELECT content FROM archive_results WHERE snapshot_id = ? AND extractor = ? AND error IS NULL ORDER BY id DESC LIMIT 1",
           )
           .get(id, extractor);
-        if (!row) {
-          return new Response(JSON.stringify({ error: "not found" }), {
-            status: 404,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
+        if (!row) return fail(404, "not found");
         content = row.content;
       } finally {
         db.close();
       }
 
-      if (!content) {
-        return new Response(JSON.stringify({ error: "no content" }), {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
+      if (!content) return fail(404, "no content");
+
+      // Media files can be mp4 or mp3 depending on whether video or audio fallback was used.
+      const isAudio = extractor === "media" && content.endsWith(".mp3");
+      const file =
+        extractor === "media"
+          ? {
+              contentType: isAudio ? "audio/mpeg" : "video/mp4",
+              filename: isAudio ? "media.mp3" : "media.mp4",
+            }
+          : FILE_EXTRACTORS[extractor];
+
+      if (!file) {
+        // Inline extractors (readability JSON, html) keep their data in the database.
+        return new Response(content, {
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Disposition": `attachment; filename="${extractor}.json"`,
+          },
         });
       }
 
       const storage = getStorage();
+      if (!storage.validateRef(content)) return fail(403, "forbidden");
+      if (!(await storage.fileExists(content))) return fail(404, "file not found");
 
-      // Media files can be mp4 or mp3 depending on whether video or audio fallback was used
-      if (extractor === "media") {
-        if (!storage.validateRef(content)) {
-          return new Response(JSON.stringify({ error: "forbidden" }), {
-            status: 403,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-        if (!(await storage.fileExists(content))) {
-          return new Response(JSON.stringify({ error: "file not found" }), {
-            status: 404,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-        const presignedUrl = storage.presignedDownloadUrl(content);
-        if (presignedUrl) {
-          return new Response(null, {
-            status: 302,
-            headers: { Location: presignedUrl },
-          });
-        }
-        const bytes = await storage.getBytes(content);
-        const isAudio = content.endsWith(".mp3");
-        return new Response(bytes as unknown as BodyInit, {
-          headers: {
-            "Content-Type": isAudio ? "audio/mpeg" : "video/mp4",
-            "Content-Disposition": `attachment; filename="${isAudio ? "media.mp3" : "media.mp4"}"`,
-          },
-        });
+      const disposition = `attachment; filename="${file.filename}"`;
+      // The media metadata JSON is read by the UI with fetch(), which may not follow
+      // a redirect to the bucket's origin (connect-src 'self'); serve it from here.
+      // Everything else is redirected to the bucket with the type and an attachment
+      // disposition signed into the URL: archived HTML must never render inline on
+      // the bucket's origin, where its scripts would run.
+      const presignedUrl =
+        extractor === "media-metadata"
+          ? null
+          : storage.presignedDownloadUrl(content, undefined, {
+              contentType: file.contentType,
+              contentDisposition: disposition,
+            });
+      if (presignedUrl) {
+        return new Response(null, { status: 302, headers: { Location: presignedUrl } });
       }
-
-      const fileExtractor = FILE_EXTRACTORS[extractor];
-      if (fileExtractor) {
-        if (!storage.validateRef(content)) {
-          return new Response(JSON.stringify({ error: "forbidden" }), {
-            status: 403,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-        if (!(await storage.fileExists(content))) {
-          return new Response(JSON.stringify({ error: "file not found" }), {
-            status: 404,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-        // The media metadata JSON is read by the UI with fetch(), which may not follow
-        // a redirect to the bucket's origin (connect-src 'self'); serve it from here.
-        const presignedUrl =
-          extractor === "media-metadata" ? null : storage.presignedDownloadUrl(content);
-        if (presignedUrl) {
-          return new Response(null, {
-            status: 302,
-            headers: { Location: presignedUrl },
-          });
-        }
-        const bytes = await storage.getBytes(content);
-        return new Response(bytes as unknown as BodyInit, {
-          headers: {
-            "Content-Type": fileExtractor.contentType,
-            "Content-Disposition": `attachment; filename="${fileExtractor.filename}"`,
-          },
-        });
-      }
-
-      // Default: return raw content (e.g. readability JSON, html)
-      return new Response(content, {
-        headers: {
-          "Content-Type": "application/json",
-          "Content-Disposition": `attachment; filename="${extractor}.json"`,
-        },
+      const bytes = await storage.getBytes(content);
+      return new Response(bytes as unknown as BodyInit, {
+        headers: { "Content-Type": file.contentType, "Content-Disposition": disposition },
       });
     },
     {
