@@ -8,6 +8,8 @@ WebFrost is a self-hosted web archiver. Give it a URL and it saves the page in s
 
 You can drive it from four surfaces over the same archive: a **CLI**, a **web UI**, a **REST API** and a **TypeScript SDK**.
 
+WebFrost is inspired by [ArchiveBox](https://archivebox.io) and was built for performance: instead of fetching and rendering a page once per format, it fetches the page once and opens it in the browser once, and every format comes from those two visits. See [Pipeline](/docs/architecture/pipeline) for how.
+
 ## What you get for every URL
 
 | Format | File | What it is |

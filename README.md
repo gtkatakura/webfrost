@@ -86,20 +86,19 @@ const client = new WebFrostClient({
 const { id } = await client.createSnapshot("https://example.com");
 ```
 
-## How it compares
+## Why WebFrost
 
-[ArchiveBox](https://archivebox.io) is the most mature self-hosted web archiver, and if it already works for
-you there is no reason to switch. WebFrost is a different take on the same idea:
+WebFrost is inspired by [ArchiveBox](https://archivebox.io), the most mature self-hosted web archiver,
+and owes it the idea: archive every page in every format worth keeping, on your own machine. It was
+built for performance. ArchiveBox runs each extractor on its own, so one page is fetched and rendered
+several times. WebFrost fetches a page once and opens it in the browser once, and every format comes
+from those two visits. It runs as one Bun process with SQLite, so archiving many pages, on a schedule or from
+a big import, stays light enough for a small server.
 
-- **One visit per page.** WebFrost fetches a page once and opens it in the browser once; every format is
-  produced from those two visits. ArchiveBox runs each extractor on its own.
-- **Built to be embedded.** The CLI, the HTTP API and the SDK are first-class, with a typed client and
-  the same archive folder usable from all of them.
-- **TypeScript on Bun**, one process, SQLite. Easy to read, easy to run.
-
-ArchiveBox supports more inputs today (a browser extension, browser history, Pocket and Pinboard exports)
-and has years of real-world use behind it. A [benchmark harness](BENCHMARKS.md) comparing the two is in
-the repository; numbers will be published once it has run.
+It also treats the CLI, the HTTP API and the SDK as first-class, so it is easy to drive from scripts
+and other programs. ArchiveBox supports more inputs today (a browser extension, browser history, Pocket
+and Pinboard exports) and has years of real-world use behind it. A [benchmark](BENCHMARKS.md) comparing
+the two is in the repository; its numbers will be published once it has run.
 
 ## FAQ
 
