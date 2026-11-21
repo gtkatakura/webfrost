@@ -10,12 +10,39 @@ const DEFAULT_MEDIA_TIMEOUT_MS = 10 * 60_000;
 type SpawnResult = { exitCode: number | null; stdout: string; stderr: string };
 
 // Exported for testing — allows injecting a fake spawner via options._spawner
-export type YtDlpSpawner = (args: string[]) => Promise<SpawnResult>;
+export type YtDlpSpawner = (args: string[], signal?: AbortSignal) => Promise<SpawnResult>;
 
-function defaultSpawner(args: string[]): Promise<SpawnResult> {
+/**
+ * Options on every yt-dlp call. The URL is untrusted input, so:
+ * - `--ignore-config`: no config file on the host (or in $HOME) can add options
+ *   such as `--exec` or change where files go;
+ * - `--no-playlist`, `--playlist-items 1`: a video URL that is also part of a
+ *   playlist, or a playlist / channel URL, fetches one item, not hundreds;
+ * - `--use-extractors default,-generic`: only sites yt-dlp knows. The generic
+ *   extractor would download and scan any web page for embedded media, which is
+ *   a second full fetch of every archived page outside the SSRF guard.
+ * The URL always comes after `--` so it can never be read as an option.
+ */
+export const YT_DLP_BASE_ARGS = [
+  "--ignore-config",
+  "--no-playlist",
+  "--playlist-items",
+  "1",
+  "--use-extractors",
+  "default,-generic",
+] as const;
+
+function defaultSpawner(args: string[], signal?: AbortSignal): Promise<SpawnResult> {
   return runProcess(["yt-dlp", ...args], {
     timeoutMs: envInt("WEBFROST_MEDIA_TIMEOUT_MS", DEFAULT_MEDIA_TIMEOUT_MS),
+    // yt-dlp starts ffmpeg to merge streams; kill them together.
+    processGroup: true,
+    ...(signal ? { signal } : {}),
   });
+}
+
+function ytDlpArgs(options: string[], url: string): string[] {
+  return [...YT_DLP_BASE_ARGS, ...options, "--", url];
 }
 
 /**
@@ -45,10 +72,11 @@ export async function mediaExtractor(
   const logger = options?.logger;
   const signal = options?.signal;
 
-  // Step 1: Detect whether yt-dlp is installed and the URL is extractable
-  let detectResult: SpawnResult;
+  // Step 1: Extract the metadata. This doubles as the check that yt-dlp is
+  // installed and supports the URL (a non-zero exit means it is not a media page).
+  let metaResult: SpawnResult;
   try {
-    detectResult = await spawner(["--simulate", "--quiet", url]);
+    metaResult = await spawner(ytDlpArgs(["--dump-json", "--quiet"], url), signal);
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
       logger?.info("[media] yt-dlp not found — skipping media extraction");
@@ -57,19 +85,11 @@ export async function mediaExtractor(
     throw err;
   }
 
-  if (detectResult.exitCode !== 0) {
+  if (metaResult.exitCode !== 0) {
     // URL not supported by yt-dlp — not an error, just not a media URL
     return;
   }
-
-  // Step 2: Extract metadata JSON
-  let metadataJson: string;
-  try {
-    const metaResult = await spawner(["--dump-json", url]);
-    metadataJson = metaResult.stdout || "{}";
-  } catch {
-    metadataJson = "{}";
-  }
+  const metadataJson = metaResult.stdout.trim() || "{}";
 
   signal?.throwIfAborted();
   const metadataRef = await storage.putText(snapshotId, "media/media-metadata.json", metadataJson);
@@ -77,23 +97,28 @@ export async function mediaExtractor(
     "INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (?, 'media-metadata', ?)",
   ).run(snapshotId, metadataRef);
 
-  // Step 3: Attempt video download (bestvideo+bestaudio merged to mp4)
+  // Step 2: Attempt video download (bestvideo+bestaudio merged to mp4)
   const videoLocalPath = await storage.localPath(snapshotId, "media/media.mp4");
   let videoResult: SpawnResult;
   try {
-    videoResult = await spawner([
-      "-f",
-      "bestvideo+bestaudio/best",
-      "--merge-output-format",
-      "mp4",
-      "--max-filesize",
-      maxFileSize,
-      "-o",
-      videoLocalPath,
-      url,
-    ]);
+    videoResult = await spawner(
+      ytDlpArgs(
+        [
+          "-f",
+          "bestvideo+bestaudio/best",
+          "--merge-output-format",
+          "mp4",
+          "--max-filesize",
+          maxFileSize,
+          "-o",
+          videoLocalPath,
+        ],
+        url,
+      ),
+      signal,
+    );
   } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+    if (!signal?.aborted && (err as NodeJS.ErrnoException).code === "ENOENT") {
       logger?.info("[media] yt-dlp not found — skipping media download");
       return;
     }
@@ -109,23 +134,29 @@ export async function mediaExtractor(
     return;
   }
 
-  // Step 4: Audio-only fallback (for audio-only sources like SoundCloud, podcasts)
+  // Step 3: Audio-only fallback (for audio-only sources like SoundCloud, podcasts)
   const audioLocalPath = await storage.localPath(snapshotId, "media/media.mp3");
   let audioResult: SpawnResult;
   try {
-    audioResult = await spawner([
-      "-f",
-      "bestaudio",
-      "-x",
-      "--audio-format",
-      "mp3",
-      "--max-filesize",
-      maxFileSize,
-      "-o",
-      audioLocalPath,
-      url,
-    ]);
-  } catch {
+    audioResult = await spawner(
+      ytDlpArgs(
+        [
+          "-f",
+          "bestaudio",
+          "-x",
+          "--audio-format",
+          "mp3",
+          "--max-filesize",
+          maxFileSize,
+          "-o",
+          audioLocalPath,
+        ],
+        url,
+      ),
+      signal,
+    );
+  } catch (err) {
+    if (signal?.aborted) throw err;
     return;
   }
 

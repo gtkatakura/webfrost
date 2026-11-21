@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb } from "../db";
 import { FilesystemBackend } from "../storage";
-import { type YtDlpSpawner, mediaExtractor } from "./media";
+import { YT_DLP_BASE_ARGS, type YtDlpSpawner, mediaExtractor } from "./media";
 
 type SpawnResult = { exitCode: number | null; stdout: string; stderr: string };
 
@@ -75,7 +75,7 @@ describe("mediaExtractor", () => {
     expect(archiveRows()).toHaveLength(0);
   });
 
-  test("skips silently when URL is not media-extractable (detect exit 1)", async () => {
+  test("skips silently when URL is not media-extractable (metadata exit 1)", async () => {
     const spawner = makeSpawner([FAIL]);
 
     await expect(
@@ -87,7 +87,6 @@ describe("mediaExtractor", () => {
 
   test("stores metadata and video path on successful video download", async () => {
     const spawner = makeSpawner([
-      OK, // detect
       META_OK, // metadata
       OK, // video download
     ]);
@@ -108,7 +107,6 @@ describe("mediaExtractor", () => {
 
   test("falls back to audio-only (mp3) when video download fails", async () => {
     const spawner = makeSpawner([
-      OK, // detect
       META_OK, // metadata
       FAIL, // video fails
       OK, // audio fallback succeeds
@@ -126,7 +124,6 @@ describe("mediaExtractor", () => {
 
   test("stores only metadata row when both video and audio downloads fail", async () => {
     const spawner = makeSpawner([
-      OK, // detect
       META_OK, // metadata
       FAIL, // video fails
       FAIL, // audio fails
@@ -180,7 +177,6 @@ describe("mediaExtractor", () => {
 
   test("writes metadata JSON file to storage", async () => {
     const spawner = makeSpawner([
-      OK, // detect
       { exitCode: 0, stdout: '{"title":"Hello","duration":42}', stderr: "" }, // metadata
       OK, // video
     ]);
@@ -196,5 +192,54 @@ describe("mediaExtractor", () => {
     expect(await file.exists()).toBe(true);
     const text = await file.text();
     expect(text).toBe('{"title":"Hello","duration":42}');
+  });
+
+  test("probes and reads metadata in one call: --dump-json is the first and only probe", async () => {
+    const calls: string[][] = [];
+    const spawner: YtDlpSpawner = async (args) => {
+      calls.push(args);
+      return FAIL;
+    };
+    await mediaExtractor(db, 1, makeStorage(), "https://example.com/page", { _spawner: spawner });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("--dump-json");
+    expect(calls[0]).not.toContain("--simulate");
+  });
+
+  test("every call ignores config, refuses playlists and the generic extractor, and ends with -- URL", async () => {
+    const calls: string[][] = [];
+    const spawner: YtDlpSpawner = async (args) => {
+      calls.push(args);
+      return calls.length === 2 ? FAIL : OK; // video fails → audio fallback runs too
+    };
+    const url = "-oops-looks-like-an-option";
+    await mediaExtractor(db, 1, makeStorage(), url, { _spawner: spawner });
+    expect(calls).toHaveLength(3);
+    for (const args of calls) {
+      expect(args.slice(0, YT_DLP_BASE_ARGS.length)).toEqual([...YT_DLP_BASE_ARGS]);
+      expect(args).toContain("--ignore-config");
+      expect(args).toContain("--no-playlist");
+      expect(args[args.indexOf("--use-extractors") + 1]).toBe("default,-generic");
+      expect(args.slice(-2)).toEqual(["--", url]);
+    }
+  });
+
+  test("passes its signal to yt-dlp and records nothing once aborted", async () => {
+    const controller = new AbortController();
+    const seen: Array<AbortSignal | undefined> = [];
+    const spawner: YtDlpSpawner = async (_args, signal) => {
+      seen.push(signal);
+      // The pipeline gives up while the metadata call runs.
+      controller.abort(new Error("extractor media timed out"));
+      return META_OK;
+    };
+    await expect(
+      mediaExtractor(db, 1, makeStorage(), "https://youtube.com/watch?v=test", {
+        _spawner: spawner,
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow("timed out");
+    expect(seen).toEqual([controller.signal]);
+    expect(archiveRows()).toHaveLength(0);
   });
 });
