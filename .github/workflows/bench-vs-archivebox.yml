@@ -1,15 +1,63 @@
-name: Benchmark vs competitors (ArchiveBox, wget, monolith)
+name: Benchmarks
 
+# Slow and not a merge gate: run by hand, and weekly to catch drift (Mondays 05:00 UTC).
 on:
-  push:
-    branches: [main]
+  schedule:
+    - cron: "0 5 * * 1"
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # Internal microbenchmarks (extractors, cache, navigation, page load).
+  micro:
+    name: Microbenchmarks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      # Tools (Bun) at the versions pinned in mise.toml.
+      - uses: jdx/mise-action@v5.2.6
+        with:
+          install_args: bun
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v5.0.4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - run: bun install --frozen-lockfile
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v5.0.4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/bun.lock') }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: bunx playwright install --with-deps chromium
+
+      - run: bun run bench
+
+      - name: Upload bench results
+        uses: actions/upload-artifact@v7.0.0
+        with:
+          name: bench-results-${{ github.sha }}
+          path: bench/
+          if-no-files-found: ignore
+          retention-days: 90
+
   bench:
     name: WebFrost vs ArchiveBox + wget + monolith
     runs-on: ubuntu-24.04
