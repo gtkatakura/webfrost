@@ -154,7 +154,7 @@ function CopyButton({ text }: { text: string }) {
 
 /* ---------- Code window with tabs ---------- */
 
-function CodeWindow({ tabs }: { tabs: CodeTab[] }) {
+export function CodeWindow({ tabs }: { tabs: CodeTab[] }) {
   const baseId = React.useId();
   const [active, setActive] = React.useState(0);
   const [shown, setShown] = React.useState(0);
@@ -322,13 +322,16 @@ export function SplitDeveloperHero({
   primaryAction,
   secondaryAction,
   codeTabs,
+  art,
 }: {
   badge?: string;
   title: React.ReactNode;
   description: string;
   primaryAction: HeroAction;
   secondaryAction?: HeroAction;
-  codeTabs: CodeTab[];
+  codeTabs?: CodeTab[];
+  /** Shown in the right column instead of the code window. */
+  art?: React.ReactNode;
 }) {
   return (
     <section className="relative isolate overflow-hidden py-16 sm:py-20 lg:py-24">
@@ -375,7 +378,7 @@ export function SplitDeveloperHero({
             aria-hidden="true"
             className="absolute -inset-4 -z-10 rounded-[2rem] bg-gradient-to-tr from-primary/20 via-transparent to-primary/10 blur-2xl"
           />
-          <CodeWindow tabs={codeTabs} />
+          {art ?? (codeTabs && <CodeWindow tabs={codeTabs} />)}
         </div>
       </div>
     </section>

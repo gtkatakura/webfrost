@@ -1,5 +1,5 @@
 import { FeatureGrid, type Tile } from "@/components/features";
-import { type CodeTab, SplitDeveloperHero } from "@/components/hero";
+import { type CodeTab, CodeWindow, SplitDeveloperHero } from "@/components/hero";
 import { baseOptions } from "@/lib/layout.shared";
 import { repoUrl } from "@/lib/shared";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
@@ -23,6 +23,9 @@ export function meta() {
       content:
         "Archive web pages to WARC, PDF, screenshots, self-contained HTML and readable text, on your own machine. CLI, HTTP API, TypeScript SDK and web UI.",
     },
+    { property: "og:title", content: "WebFrost · self-hosted web archiving" },
+    { property: "og:image", content: "/brand/og.jpg" },
+    { name: "twitter:card", content: "summary_large_image" },
   ];
 }
 
@@ -133,8 +136,33 @@ export default function Home() {
           description="WebFrost archives a URL to every format worth keeping, on your own machine, and lets you search what you saved. Run it from a terminal, a script or a browser."
           primaryAction={{ label: "Get started", href: "/docs/getting-started/quickstart" }}
           secondaryAction={{ label: "View on GitHub", href: repoUrl, external: true }}
-          codeTabs={codeTabs}
+          art={
+            <img
+              src="/brand/mascot.webp"
+              width={1100}
+              height={626}
+              alt="The WebFrost mascot, an arctic fox asleep on a frozen archive box, surrounded by the formats it keeps: a web page, a PDF, a video, a screenshot and source code."
+              className="w-full rounded-3xl border border-border bg-[#05091a] shadow-2xl shadow-blue-900/20"
+            />
+          }
         />
+        <section className="py-12 sm:py-16">
+          <div className="mx-auto grid max-w-6xl items-center gap-10 px-6 lg:grid-cols-[2fr_3fr]">
+            <div>
+              <span className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
+                Up in a minute
+              </span>
+              <h2 className="mt-3 text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
+                Start the server, or just use the CLI.
+              </h2>
+              <p className="mt-4 text-pretty text-muted-foreground">
+                The Docker image bundles Chromium, yt-dlp and ffmpeg, so every format works out of
+                the box. The same archive folder works from the CLI and from code.
+              </p>
+            </div>
+            <CodeWindow tabs={codeTabs} />
+          </div>
+        </section>
         <FeatureGrid
           eyebrow="What it does"
           title="Archive once, keep it in every shape."

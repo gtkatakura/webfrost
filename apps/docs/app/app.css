@@ -205,22 +205,14 @@ html > body[data-scroll-locked] {
   border-bottom: 0;
 }
 
-/* Menu: the page you are on is a dot on the line, not a filled pill. */
+/* Menu: the page you are on gets a soft ice tint, with its text and icon in the accent color. */
 #nd-sidebar a[data-active="true"] {
-  background: transparent;
-  color: var(--color-fd-foreground);
+  background: color-mix(in oklab, var(--color-fd-primary) 12%, transparent);
+  color: var(--color-fd-primary);
   font-weight: 600;
 }
-#nd-sidebar a[data-active="true"]::before {
-  content: "";
-  position: absolute;
-  inset-inline-start: -7px;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  margin-top: -3.5px;
-  border-radius: 50%;
-  background: var(--color-fd-primary);
+#nd-sidebar a[data-active="true"] svg {
+  color: var(--color-fd-primary);
 }
 
 /* Home page: things arrive in a short cascade, unless the reader asked for less motion. */
