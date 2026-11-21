@@ -62,7 +62,7 @@ First public release. All packages stable enough for self-hosted use.
 - Docker image published to GHCR (`ghcr.io/<org>/webfrost/server`) on semver tag push and `main` merge; multi-stage build (UI → server → slim Bun runtime)
 - `docker-compose.prod.yml` — production Compose file with named volume, health check, and `IMAGE_TAG` override for pinned deploys
 - GitHub Actions CI: lint (Biome), typecheck, `bun test`, Playwright E2E, benchmark artifacts uploaded on `main`
-- Changeset-based versioning with `0.x` policy until board approves `1.x` (see [docs/VERSIONING.md](docs/VERSIONING.md))
+- Changeset-based versioning, `0.x` until the API is stable (see [Releasing](apps/docs/content/docs/contributing/releasing.mdx))
 
 ### Security
 

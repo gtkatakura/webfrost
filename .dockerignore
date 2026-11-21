@@ -3,7 +3,6 @@
 **/dist
 .git
 .github
-.agents
 .claude
 .changeset
 bench
