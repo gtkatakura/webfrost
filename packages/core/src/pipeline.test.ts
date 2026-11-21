@@ -1,6 +1,6 @@
 import type Database from "bun:sqlite";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb } from "./db";
@@ -156,7 +156,47 @@ describe("runPipeline: content and cancellation", () => {
     expect(Buffer.from(bytes).includes(Buffer.from(PDF_BYTES))).toBe(true);
     expect(statusOf(id)).toBe("done");
   }, 60_000);
+
+  test("a yt-dlp that hangs is killed together with its children", async () => {
+    // A stand-in yt-dlp that starts a helper (as yt-dlp starts ffmpeg) and hangs.
+    const binDir = join(testDir, "bin");
+    mkdirSync(binDir);
+    const pidFile = join(testDir, "helper.pid");
+    writeFileSync(
+      join(binDir, "yt-dlp"),
+      `#!/bin/sh\nsleep 60 &\necho $! > "${pidFile}"\nsleep 60\n`,
+    );
+    chmodSync(join(binDir, "yt-dlp"), 0o755);
+    const savedPath = process.env.PATH;
+    process.env.PATH = `${binDir}:${savedPath}`;
+    process.env.WEBFROST_MEDIA_TIMEOUT_MS = "500";
+    try {
+      const url = `${baseUrl}/article`;
+      const id = createSnapshot(db, url);
+      const start = Date.now();
+      await runPipeline(db, id, url, testDir);
+      expect(Date.now() - start).toBeLessThan(30_000);
+      expect(results(id).some((r) => r.extractor === "media")).toBe(false);
+
+      const helper = Number(readFileSync(pidFile, "utf8").trim());
+      expect(helper).toBeGreaterThan(0);
+      expect(processGone(helper)).toBe(true);
+    } finally {
+      process.env.PATH = savedPath;
+      Reflect.deleteProperty(process.env, "WEBFROST_MEDIA_TIMEOUT_MS");
+    }
+  }, 60_000);
 });
+
+/** True when `pid` is not running (gone, or a zombie waiting for init to reap it). */
+function processGone(pid: number): boolean {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    return stat.slice(stat.lastIndexOf(")") + 2).startsWith("Z");
+  } catch {
+    return true;
+  }
+}
 
 describe("JobRunner", () => {
   test("finishes a job after the caller closed its own connection", async () => {

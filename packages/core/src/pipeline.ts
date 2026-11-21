@@ -40,6 +40,8 @@ const DEFAULT_EXTRACTOR_TIMEOUT_MS = 60_000;
 const DEFAULT_MEDIA_TIMEOUT_MS = 10 * 60_000;
 /** Closing Chromium normally takes milliseconds; never let a lost exit hold up a pipeline. */
 const BROWSER_CLOSE_TIMEOUT_MS = 5_000;
+/** How long a timed-out extractor gets to stop after its signal was aborted. */
+const ABORT_GRACE_MS = 5_000;
 
 /**
  * How often a running pipeline refreshes `job_queue.heartbeat_at`. Recovery of
@@ -260,8 +262,10 @@ async function archive(
 
   // Run an extractor so it always resolves with a settled result + elapsed ms.
   // The thunk is invoked inside the promise chain so a synchronous throw is captured too.
-  // On timeout the signal is aborted: the extractor may still be running, but it
-  // checks the signal before storing anything, so no result shows up after the fact.
+  // On timeout the signal is aborted, which cancels the extractor's work (fetches,
+  // yt-dlp and its children); the extractor also checks it before storing anything,
+  // so no result shows up after the fact. The run is then given a moment to wind
+  // down so it does not keep working outside the pipeline's concurrency slot.
   function runTimed(
     name: string,
     fn: (signal: AbortSignal) => unknown,
@@ -272,9 +276,11 @@ async function archive(
     const run = Promise.resolve().then(() => fn(controller.signal));
     return withTimeout(run, timeoutMs, `extractor ${name}`).then(
       () => ({ name, durationMs: Date.now() - t0, error: null }),
-      (reason: unknown) => {
-        controller.abort();
-        return { name, durationMs: Date.now() - t0, error: errorMessage(reason) };
+      async (reason: unknown) => {
+        const durationMs = Date.now() - t0;
+        controller.abort(reason);
+        await withTimeout(run, ABORT_GRACE_MS, `extractor ${name} cancel`).catch(() => {});
+        return { name, durationMs, error: errorMessage(reason) };
       },
     );
   }
@@ -297,7 +303,7 @@ async function archive(
           ...(logger ? { logger } : {}),
           signal,
         }),
-      // Three yt-dlp invocations at most (probe, video, audio fallback), each capped on its own.
+      // Three yt-dlp invocations at most (metadata, video, audio fallback), each capped on its own.
       mediaTimeout * 3,
     ),
   ]);

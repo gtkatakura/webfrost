@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { runProcess } from "./subprocess";
 
 describe("runProcess", () => {
@@ -44,4 +46,81 @@ describe("runProcess", () => {
     }
     expect(code).toBe("ENOENT");
   });
+
+  test("kills the whole process group on timeout when processGroup is set", async () => {
+    // The shell starts a background sleep (like yt-dlp starting ffmpeg) and prints its pid.
+    const result = await runProcess(["sh", "-c", "sleep 30 & echo $!; wait"], {
+      timeoutMs: 300,
+      graceMs: 300,
+      processGroup: true,
+    });
+    const child = Number(result.stdout.trim());
+    expect(child).toBeGreaterThan(0);
+    expect(await isGone(child)).toBe(true);
+  });
+
+  test("aborting the signal kills the process group and rejects", async () => {
+    const controller = new AbortController();
+    const start = Date.now();
+    const run = runProcess(["sh", "-c", 'sleep 30 & echo $! > "$0"; wait', pidFile()], {
+      signal: controller.signal,
+      graceMs: 300,
+      processGroup: true,
+    });
+    const child = await waitForPid(lastPidFile);
+    controller.abort(new Error("given up"));
+    await expect(run).rejects.toThrow("given up");
+    expect(Date.now() - start).toBeLessThan(5000);
+    expect(await isGone(child)).toBe(true);
+  });
+
+  test("a signal aborted before the start spawns nothing", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(runProcess(["sleep", "5"], { signal: controller.signal })).rejects.toThrow();
+  });
+
+  test("without processGroup, abort still kills the direct child", async () => {
+    const controller = new AbortController();
+    const start = Date.now();
+    const run = runProcess(["sleep", "30"], { signal: controller.signal, graceMs: 300 });
+    setTimeout(() => controller.abort(), 100);
+    await expect(run).rejects.toThrow();
+    expect(Date.now() - start).toBeLessThan(5000);
+  });
 });
+
+let lastPidFile = "";
+function pidFile(): string {
+  lastPidFile = join(
+    tmpdir(),
+    `webfrost-pid-${process.pid}-${Math.random().toString(36).slice(2)}`,
+  );
+  return lastPidFile;
+}
+
+async function waitForPid(file: string): Promise<number> {
+  for (let i = 0; i < 100; i++) {
+    const f = Bun.file(file);
+    if (await f.exists()) {
+      const pid = Number((await f.text()).trim());
+      if (pid > 0) return pid;
+    }
+    await Bun.sleep(20);
+  }
+  throw new Error("child pid never written");
+}
+
+/** True once `pid` no longer runs (gone, or a zombie waiting to be reaped by init). */
+async function isGone(pid: number): Promise<boolean> {
+  for (let i = 0; i < 50; i++) {
+    try {
+      const stat = await Bun.file(`/proc/${pid}/stat`).text();
+      if (stat.slice(stat.lastIndexOf(")") + 2).startsWith("Z")) return true;
+    } catch {
+      return true;
+    }
+    await Bun.sleep(20);
+  }
+  return false;
+}

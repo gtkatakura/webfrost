@@ -26,6 +26,14 @@ export interface RunProcessOptions {
   timeoutMs?: number;
   /** How long to wait for the second of {exit, pipes closed} once the first has happened. */
   graceMs?: number;
+  /** Kill the process when this aborts; `runProcess` then rejects with the abort reason. */
+  signal?: AbortSignal;
+  /**
+   * Start the command in its own process group and, on timeout, abort or exit, kill
+   * the whole group — so helpers it started (yt-dlp runs ffmpeg) do not outlive it.
+   * POSIX only; elsewhere only the direct child is killed.
+   */
+  processGroup?: boolean;
 }
 
 const DEFAULT_GRACE_MS = 3000;
@@ -83,6 +91,49 @@ function settledWithin<T>(
 }
 
 /**
+ * Process groups started with `processGroup: true` that may still have members.
+ * They are detached from our own group, so a Ctrl+C in the terminal or a SIGTERM to
+ * this process no longer reaches them: kill them ourselves on the way out.
+ */
+const liveGroups = new Set<number>();
+const EXIT_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+let exitHooksInstalled = false;
+
+function killGroup(pgid: number): void {
+  try {
+    process.kill(-pgid, "SIGKILL");
+  } catch {
+    // The group is already gone.
+  }
+}
+
+function killLiveGroups(): void {
+  for (const pgid of liveGroups) killGroup(pgid);
+  liveGroups.clear();
+}
+
+function onExitSignal(signal: NodeJS.Signals): void {
+  killLiveGroups();
+  uninstallSignalHooks();
+  // Nobody else handles this signal: restore its default effect (terminate).
+  if (process.listenerCount(signal) === 0) process.kill(process.pid, signal);
+}
+
+function installSignalHooks(): void {
+  if (!exitHooksInstalled) {
+    exitHooksInstalled = true;
+    process.on("exit", killLiveGroups);
+  }
+  for (const sig of EXIT_SIGNALS) {
+    if (!process.listeners(sig).includes(onExitSignal)) process.on(sig, onExitSignal);
+  }
+}
+
+function uninstallSignalHooks(): void {
+  for (const sig of EXIT_SIGNALS) process.off(sig, onExitSignal);
+}
+
+/**
  * Spawn `command` and resolve with its exit code and output.
  * Throws (with `code: "ENOENT"`) if the executable does not exist.
  */
@@ -92,16 +143,53 @@ export async function runProcess(
 ): Promise<ProcessResult> {
   const graceMs = options.graceMs ?? DEFAULT_GRACE_MS;
   const timeoutMs = options.timeoutMs ?? 0;
+  const { signal } = options;
+  const group = options.processGroup === true && process.platform !== "win32";
 
+  signal?.throwIfAborted();
   const proc = Bun.spawn(command, {
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
-    ...(timeoutMs > 0 ? { timeout: timeoutMs } : {}),
+    // The current environment (Bun otherwise uses a copy taken at startup, so a PATH
+    // set later, e.g. by an embedding app, would not be used to find the command).
+    env: process.env,
+    // setsid(): the child leads a new process group whose id is its pid.
+    ...(group ? { detached: true } : {}),
   });
+  if (group) {
+    liveGroups.add(proc.pid);
+    installSignalHooks();
+  }
+
+  const kill = () => {
+    if (group) killGroup(proc.pid);
+    try {
+      proc.kill("SIGKILL");
+    } catch {
+      // Already gone.
+    }
+  };
+
   const stdout = collect(proc.stdout);
   const stderr = collect(proc.stderr);
   const pipesClosed = Promise.all([stdout.done, stderr.done]).then(() => undefined);
+
+  // Timeout and abort both kill the process (its whole group, if it has one); the
+  // exit then arrives through the race below like any other.
+  let killTimer: ReturnType<typeof setTimeout> | undefined;
+  if (timeoutMs > 0) killTimer = setTimeout(kill, timeoutMs);
+  // After an abort, wait at most graceMs for the killed process to be reported.
+  let abortGraceTimer: ReturnType<typeof setTimeout> | undefined;
+  let resolveAborted: (v: { what: "backstop" }) => void = () => {};
+  const aborted = new Promise<{ what: "backstop" }>((resolve) => {
+    resolveAborted = resolve;
+  });
+  const onAbort = () => {
+    kill();
+    abortGraceTimer = setTimeout(() => resolveAborted({ what: "backstop" }), graceMs);
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
 
   // Last resort if neither signal ever arrives: do not outlive the kill timeout by much.
   let backstopTimer: ReturnType<typeof setTimeout> | undefined;
@@ -117,6 +205,7 @@ export async function runProcess(
       proc.exited.then((code) => ({ what: "exit" as const, code })),
       pipesClosed.then(() => ({ what: "pipes" as const })),
       backstop,
+      aborted,
     ]);
 
     if (first.what === "exit") {
@@ -129,16 +218,22 @@ export async function runProcess(
 
     if (first.what === "backstop" || (exitCode === null && proc.exitCode === null)) {
       // Still (or possibly still) alive: make sure it does not linger.
-      try {
-        proc.kill("SIGKILL");
-      } catch {
-        // Already gone.
-      }
+      kill();
     }
   } finally {
     // A pending timer would keep a short-lived CLI process alive for the whole timeout.
     clearTimeout(backstopTimer);
+    clearTimeout(killTimer);
+    clearTimeout(abortGraceTimer);
+    signal?.removeEventListener("abort", onAbort);
+    if (group) {
+      // Whatever the command left running in its group goes with it.
+      killGroup(proc.pid);
+      liveGroups.delete(proc.pid);
+      if (liveGroups.size === 0) uninstallSignalHooks();
+    }
   }
 
+  signal?.throwIfAborted();
   return { exitCode, stdout: stdout.text(), stderr: stderr.text() };
 }
