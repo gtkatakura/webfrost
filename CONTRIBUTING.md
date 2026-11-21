@@ -6,14 +6,16 @@ Thanks for helping out. This page is the short version; the full guide lives in
 
 ## Setup
 
-Requirements: [Bun](https://bun.sh) (version pinned in `.tool-versions`), a Chromium for the
+Requirements: [mise](https://mise.jdx.dev), which installs the pinned Bun (`mise.toml`); a Chromium for the
 browser extractors, and optionally `yt-dlp` + `ffmpeg` for media extraction.
 
 ```bash
 git clone https://github.com/gtkatakura/webfrost.git
 cd webfrost
-make setup          # bun install + bunx playwright install --with-deps chromium
-make dev            # API on :3000 (auth disabled) + UI dev server on :5173
+mise install        # Bun (and Ruby, for the docs deploy) at the pinned versions
+mise run setup      # bun install + Playwright's Chromium
+mise run dev        # API on :3000 (auth disabled) + UI dev server on :5173
+mise tasks          # every task
 ```
 
 Already have a Chromium installed? Skip the Playwright download and point WebFrost at it:

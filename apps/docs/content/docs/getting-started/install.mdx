@@ -10,7 +10,7 @@ Running from source gives you the `webfrost` CLI and the server. Use Docker inst
 
 | Dependency | Needed for | Notes |
 |---|---|---|
-| [Bun](https://bun.sh) 1.x | Everything | Runtime and package manager. The repo pins a version in `.tool-versions`. |
+| [Bun](https://bun.sh) 1.x | Everything | Runtime and package manager. The repo pins a version in `mise.toml`; `mise install` gets it. |
 | Chromium | PDF, screenshot, DOM snapshot, SingleFile | Install through Playwright or point WebFrost at an existing binary. |
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Media extraction | Optional. |
 | ffmpeg | Merging video and audio streams | Optional, used by yt-dlp. |

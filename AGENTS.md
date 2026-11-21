@@ -67,7 +67,7 @@ docker compose -f docker-compose.prod.yml up -d
 |-------|-----------------|
 | CEO | Strategic decisions, hiring, resource allocation, cross-team coordination |
 | Product Owner | Specs, acceptance criteria, task scoping and routing |
-| Engineer | Backend features, API, pipeline, CLI, core logic, Makefile/DX |
+| Engineer | Backend features, API, pipeline, CLI, core logic, mise tasks/DX |
 | Frontend Engineer | UI features, React components, Vite config, Tailwind |
 | QA Engineer | Test verification, bug reproduction, E2E test authoring |
 | DevOps | CI/CD, Docker, GitHub Actions, infrastructure |

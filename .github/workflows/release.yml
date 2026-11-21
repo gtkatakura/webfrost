@@ -34,9 +34,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: oven-sh/setup-bun@v2.2.0
+      # Tools (Bun) at the versions pinned in mise.toml.
+      - uses: jdx/mise-action@v5.2.6
         with:
-          bun-version-file: .tool-versions
+          install_args: bun
       - name: Cache Bun dependencies
         uses: actions/cache@v5.0.4
         with:
@@ -60,9 +61,10 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: oven-sh/setup-bun@v2.2.0
+      # Tools (Bun) at the versions pinned in mise.toml.
+      - uses: jdx/mise-action@v5.2.6
         with:
-          bun-version-file: .tool-versions
+          install_args: bun
       - name: Cache Bun dependencies
         uses: actions/cache@v5.0.4
         with:
@@ -95,9 +97,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      - name: Read Bun version from .tool-versions
+      - name: Read Bun version from mise.toml
         id: bun-version
-        run: echo "version=$(grep '^bun ' .tool-versions | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(sed -n 's/^bun = "\(.*\)"$/\1/p' mise.toml)" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@v4.1.0
@@ -145,9 +147,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      - uses: oven-sh/setup-bun@v2.2.0
+      # Tools (Bun) at the versions pinned in mise.toml.
+      - uses: jdx/mise-action@v5.2.6
         with:
-          bun-version-file: .tool-versions
+          install_args: bun
 
       - name: Cache Bun dependencies
         uses: actions/cache@v5.0.4
@@ -226,9 +229,10 @@ jobs:
     if: false # Remove this line when packages are ready for npm publish
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: oven-sh/setup-bun@v2.2.0
+      # Tools (Bun) at the versions pinned in mise.toml.
+      - uses: jdx/mise-action@v5.2.6
         with:
-          bun-version-file: .tool-versions
+          install_args: bun
       - run: bun install --frozen-lockfile
       - run: bun run build
       - name: Publish @webfrost/core

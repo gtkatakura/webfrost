@@ -19,10 +19,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6.0.2
 
+      # Tools (Bun) at the versions pinned in mise.toml.
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2.2.0
+        uses: jdx/mise-action@v5.2.6
         with:
-          bun-version-file: .tool-versions
+          install_args: bun
 
       - name: Cache Bun dependencies
         uses: actions/cache@v5.0.4

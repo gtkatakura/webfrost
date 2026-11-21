@@ -196,7 +196,7 @@ bun run typecheck    # TypeScript type checking
 bun run bench        # Benchmarks
 ```
 
-Run `make` (or `make help`) for the full list of contributor workflows, and see [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+Run `mise tasks` for every contributor workflow (`mise run <task>`), and see [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 Benchmark results: [BENCHMARKS.md](BENCHMARKS.md)
 

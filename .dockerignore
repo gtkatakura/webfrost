@@ -13,3 +13,6 @@ data
 !packages/**/README.md
 .env
 .env.*
+**/build
+**/.react-router
+**/.source

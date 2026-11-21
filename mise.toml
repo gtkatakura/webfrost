@@ -1,0 +1,121 @@
+# Tools and tasks for the whole repository. `mise install` sets up the tools; `mise tasks` lists the
+# tasks; `mise run <task>` runs one. CI uses the same file (jdx/mise-action).
+
+[tools]
+bun = "1.3.11"
+ruby = "3.4.12"
+
+[env]
+
+# ─── Bootstrap ────────────────────────────────────────────────────────────────
+
+[tasks.setup]
+description = "Bootstrap a fresh clone: dependencies and Playwright's Chromium"
+run = ["bun install", "bunx playwright install --with-deps chromium"]
+
+[tasks.install]
+description = "Install dependencies only"
+run = "bun install"
+
+# ─── Development ──────────────────────────────────────────────────────────────
+
+[tasks.dev]
+description = "API server (:3000, auth disabled) and the UI dev server (:5173) together; Ctrl+C stops both"
+run = """
+mkdir -p ./data
+trap 'kill 0' INT
+(WEBFROST_DIR=./data AUTH_DISABLED=true bun run packages/server/src/index.ts) &
+(cd packages/ui && bun run dev) &
+wait
+"""
+
+[tasks.build]
+description = "Build every package and the docs site"
+run = "bun run build"
+
+# ─── Quality ──────────────────────────────────────────────────────────────────
+
+[tasks.lint]
+description = "Biome lint and format check across the monorepo"
+run = "bun run lint"
+
+[tasks.format]
+description = "Format every file with Biome"
+run = "bun run format"
+
+[tasks.typecheck]
+description = "TypeScript check of the packages and the docs site"
+run = "bun run typecheck"
+
+[tasks.test]
+description = "Unit and integration tests of every package"
+run = "bun run test"
+
+[tasks."test:e2e"]
+description = "Playwright end-to-end tests of the web UI (needs Chromium and yt-dlp)"
+dir = "packages/ui"
+run = "bunx playwright test"
+
+[tasks.ci]
+description = "The checks CI runs: lint, typecheck, tests"
+depends = ["lint", "typecheck", "test"]
+
+[tasks.act]
+description = "Run the CI workflow locally with nektos/act"
+run = "act -W .github/workflows/ci.yml"
+
+# ─── Benchmarks ───────────────────────────────────────────────────────────────
+
+[tasks.bench]
+description = "Internal microbenchmarks (extractors, cache, navigation, page load)"
+run = "bun run bench"
+
+[tasks."bench:up"]
+description = "Start the benchmark services (fixtures, WebFrost, ArchiveBox)"
+run = "docker compose -f bench/vs-archivebox/docker-compose.yml up -d --wait"
+
+[tasks."bench:down"]
+description = "Stop the benchmark services and remove their volumes"
+run = "docker compose -f bench/vs-archivebox/docker-compose.yml down -v"
+
+[tasks."bench:chart"]
+description = "HTML chart from bench/vs-archivebox/results/latest.json"
+run = "bun bench/vs-archivebox/chart.ts"
+
+[tasks."bench:vs-archivebox"]
+description = "Head-to-head comparison with ArchiveBox (starts and stops the services)"
+depends = ["bench:up"]
+run = ["bun bench/vs-archivebox/run.ts", "mise run bench:chart", "mise run bench:down"]
+
+# ─── Docker (production stack) ────────────────────────────────────────────────
+
+[tasks."docker:up"]
+description = "Start the production stack (docker-compose.prod.yml)"
+run = "docker compose -f docker-compose.prod.yml up -d"
+
+[tasks."docker:down"]
+description = "Stop the production stack"
+run = "docker compose -f docker-compose.prod.yml down"
+
+# ─── Docs site (apps/docs) ────────────────────────────────────────────────────
+
+[tasks."docs:dev"]
+description = "Docs site with hot reload on http://localhost:5174"
+run = "bun run docs:dev"
+
+[tasks."docs:build"]
+description = "Prerender the docs site to apps/docs/build/client"
+run = "bun run docs:build"
+
+[tasks."docs:preview"]
+description = "Serve the built docs site on http://localhost:5175"
+run = "bun run docs:preview"
+
+[tasks."docs:deploy"]
+
+
+# ─── Housekeeping ─────────────────────────────────────────────────────────────
+
+[tasks.clean]
+description = "Remove build output (dist/ in packages, build/ of the docs site)"
+run = "rm -rf packages/*/dist apps/docs/build apps/docs/.react-router"

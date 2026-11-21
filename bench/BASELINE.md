@@ -2,7 +2,7 @@
 
 Captured: 2026-04-02
 Pipeline: P1 (commit `da4d1b0`)
-Runtime: Bun (see `.tool-versions` or `package.json` for pinned version)
+Runtime: Bun (see `mise.toml` for the pinned version)
 
 ## Status
 

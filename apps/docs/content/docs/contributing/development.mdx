@@ -8,7 +8,7 @@ icon: Wrench
 
 | Tool | Purpose |
 |---|---|
-| [Bun](https://bun.sh) | Runtime and package manager. The version is pinned in `.tool-versions` (the CI and the Docker image use it too). [mise](https://mise.jdx.dev/) reads that file. |
+| [Bun](https://bun.sh) | Runtime and package manager. The version is pinned in `mise.toml`, which CI reads too. Run `mise install` to get it. |
 | Chromium | The browser extractors and some tests. Installed by Playwright, or use your own with `WEBFROST_CHROMIUM_PATH`. |
 | yt-dlp, ffmpeg | Media extraction. Optional, and needed by the media end-to-end tests. |
 
@@ -17,7 +17,7 @@ icon: Wrench
 ```bash
 git clone https://github.com/gtkatakura/webfrost.git
 cd webfrost
-make setup        # bun install + bunx playwright install --with-deps chromium
+mise run setup    # bun install + bunx playwright install --with-deps chromium
 ```
 
 Already have a Chromium? Skip the Playwright download and point WebFrost at it. This also applies to the tests:
@@ -29,7 +29,7 @@ export WEBFROST_CHROMIUM_PATH=/usr/bin/chromium
 ## Run the dev stack
 
 ```bash
-make dev
+mise run dev
 ```
 
 Starts the API on port 3000 with `AUTH_DISABLED=true` and `WEBFROST_DIR=./data`, and the Vite UI dev server on port 5173, which proxies API calls to the server. The same by hand:
@@ -41,7 +41,7 @@ WEBFROST_DIR=./data AUTH_DISABLED=true bun run packages/server/src/index.ts
 cd packages/ui && bun run dev
 ```
 
-Run `make help` for every target.
+Run `mise tasks` for every task.
 
 ## Build
 
@@ -54,7 +54,7 @@ bun run build     # builds every package
 ```bash
 bun run test                              # unit and integration tests, every package
 cd packages/server && bun run test:e2e    # HTTP API end to end
-cd packages/ui && bunx playwright test    # browser end to end (needs Chromium and yt-dlp); same as make test-e2e
+cd packages/ui && bunx playwright test    # browser end to end (needs Chromium and yt-dlp); same as mise run test:e2e
 ```
 
 Notes:
@@ -70,7 +70,7 @@ Notes:
 bun run lint        # Biome check
 bun run format      # Biome format, writes files
 bun run typecheck   # tsc --noEmit for the packages, then the docs site
-make ci             # lint + typecheck + test, like CI
+mise run ci         # lint + typecheck + test, like CI
 ```
 
 ## Commit hooks
@@ -86,7 +86,7 @@ Fix what they report; do not skip them with `--no-verify`.
 
 ```bash
 bun run bench                  # microbenchmarks
-make bench-vs-archivebox       # head-to-head comparison (starts Docker services)
+mise run bench:vs-archivebox   # head-to-head comparison (starts Docker services)
 ```
 
 ## Monorepo conventions
@@ -151,3 +151,16 @@ In prose, write a bare `<` as `&lt;` or put it in backticks, and do the same for
     Changesets, versions and the release workflow.
   </Card>
 </Cards>
+
+## Publishing the docs site
+
+The site in `apps/docs` is published at [webfrost.dev](https://webfrost.dev) on the VPS that
+the apps there. It needs a checkout of that repository next to this one (or `PLATFORM=/path/to/it`).
+
+```bash
+mise run docs:deploy                 # only from a commit on main that CI passed
+```
+
+The image (`apps/docs/Dockerfile`) prerenders every page and resizes the images at build time; what
+runs is a small Bun server that hands out the files. Pages are revalidated on every visit, files
+under `/assets` are cached for a year (their names change when their content does).

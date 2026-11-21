@@ -12,7 +12,7 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit -p tsconfig.json && bun run --filter @webfrost/docs typecheck",
-    "prepare": "lefthook install",
+    "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && lefthook install || true",
     "docs:dev": "bun run --filter @webfrost/docs dev",
     "docs:build": "bun run --filter @webfrost/docs build",
     "docs:preview": "bun run --filter @webfrost/docs start",
