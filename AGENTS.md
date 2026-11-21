@@ -35,7 +35,7 @@ If Chromium is already installed, set `WEBFROST_CHROMIUM_PATH=/usr/bin/chromium`
 ## Rules
 
 - **Tests:** a change comes with a test that fails without it. Assert on the final state (snapshot status, files on disk), not only on the HTTP response.
-- **Docs:** user-facing changes update `README.md`, `ROADMAP.md` and the pages in `apps/docs/content/docs` in the same change: CLI commands, API routes, environment variables, extractors.
+- **Docs:** user-facing changes update the pages in `apps/docs/content/docs` in the same change (CLI commands, API routes, environment variables, extractors). `README.md` only for the quickstart or the big picture; a shipped `ROADMAP.md` item moves to "Already there".
 - **Changesets:** anything users will notice gets one (`bun changeset`).
 - **Hooks:** Lefthook runs lint and typecheck before each commit. Fix what they report; never `--no-verify`.
 - **Security:** every outbound request goes through the SSRF guard (`safeFetch`, `guardBrowserContext` in `packages/core`). Read `apps/docs/content/docs/architecture/security.mdx` before touching auth, fetching or the browser.

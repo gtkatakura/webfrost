@@ -94,7 +94,7 @@ mise run bench:vs-archivebox   # head-to-head comparison (starts Docker services
 - Run a script in every package with `bun run --filter '*' <script>`.
 - New packages go in `packages/<name>/`. Apps (like the docs site) go in `apps/<name>/`.
 - Shared logic belongs in `@webfrost/core`. Keep the CLI, server and SDK thin.
-- `README.md` and `ROADMAP.md` must match what the code does. New CLI commands, routes, variables and extractors need a mention, and a shipped roadmap item flips to done.
+- The reference pages in this site must match what the code does: new CLI commands, routes, variables and extractors go there. `README.md` changes only with the quickstart or the big picture; a shipped `ROADMAP.md` item moves to "Already there".
 - Add a changeset (`bun changeset`) for anything users will notice. See [Releasing](/docs/contributing/releasing).
 
 ## This documentation site
@@ -175,11 +175,10 @@ After changing the mascot art in `app/assets/brand`, run `mise run brand`. It re
 
 ## Publishing the docs site
 
-The site in `apps/docs` is published at [webfrost.dev](https://webfrost.dev) on the VPS that
-the apps there. It needs a checkout of that repository next to this one (or `PLATFORM=/path/to/it`).
+This section is for the maintainer. The site in `apps/docs` is published at [webfrost.dev](https://webfrost.dev)
+setup as the apps there. It needs a checkout of that repository next to this one (or `PLATFORM=/path/to/it`).
 
 ```bash
-mise run docs:deploy                 # only from a commit on main that CI passed
 ```
 
 The image (`apps/docs/Dockerfile`) prerenders every page and resizes the images at build time; what

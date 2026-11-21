@@ -12,7 +12,7 @@ browser extractors, and optionally `yt-dlp` + `ffmpeg` for media extraction.
 ```bash
 git clone https://github.com/gtkatakura/webfrost.git
 cd webfrost
-mise install        # Bun (and Ruby, for the docs deploy) at the pinned versions
+mise install        # Bun at the pinned version
 mise run setup      # bun install + Playwright's Chromium
 mise run dev        # API on :3000 (auth disabled) + UI dev server on :5173
 mise tasks          # every task
@@ -43,9 +43,10 @@ Chromium is available, so run them at least once with one installed if you touch
 - **A test that fails without your change.** Bugs here have mostly been of the "returns 202 but
   nothing happens afterwards" kind, so assert on the final state (snapshot status, stored files),
   not just on the response.
-- **Docs in the same pull request.** `README.md` and `ROADMAP.md` must match what the code does:
-  new CLI commands, API routes, environment variables and extractors all need a mention, and a
-  shipped roadmap item flips to ✅.
+- **Docs in the same pull request.** The pages in `apps/docs/content/docs` must match what the code
+  does: new CLI commands, API routes, environment variables and extractors all go in the reference.
+  Touch `README.md` only when the quickstart or the big picture changes, and move a shipped item in
+  `ROADMAP.md` to "Already there".
 - **A changeset** for anything users will notice: `bun changeset`.
 - **Small and focused.** One concern per pull request; refactors separate from behaviour changes.
 
