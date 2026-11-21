@@ -38,6 +38,7 @@ jobs:
           path: |
             node_modules
             packages/*/node_modules
+            apps/*/node_modules
           key: node-modules-${{ github.sha }}
 
   lint:
@@ -58,6 +59,7 @@ jobs:
           path: |
             node_modules
             packages/*/node_modules
+            apps/*/node_modules
           key: node-modules-${{ github.sha }}
 
       - name: Install dependencies (cache miss fallback)
@@ -85,6 +87,7 @@ jobs:
           path: |
             node_modules
             packages/*/node_modules
+            apps/*/node_modules
           key: node-modules-${{ github.sha }}
 
       - name: Install dependencies (cache miss fallback)
@@ -116,6 +119,7 @@ jobs:
           path: |
             node_modules
             packages/*/node_modules
+            apps/*/node_modules
           key: node-modules-${{ github.sha }}
 
       - name: Install dependencies (cache miss fallback)
@@ -184,6 +188,7 @@ jobs:
           path: |
             node_modules
             packages/*/node_modules
+            apps/*/node_modules
           key: node-modules-${{ github.sha }}
 
       - name: Install dependencies (cache miss fallback)
@@ -212,6 +217,7 @@ jobs:
           path: |
             node_modules
             packages/*/node_modules
+            apps/*/node_modules
           key: node-modules-${{ github.sha }}
 
       - name: Install dependencies (cache miss fallback)
@@ -269,6 +275,7 @@ jobs:
           path: |
             node_modules
             packages/*/node_modules
+            apps/*/node_modules
           key: node-modules-${{ github.sha }}
 
       - name: Install dependencies (cache miss fallback)
