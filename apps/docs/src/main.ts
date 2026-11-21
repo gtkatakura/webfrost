@@ -13,18 +13,26 @@ const securityHeaders = {
   "permissions-policy": "camera=(), microphone=(), geolocation=()",
 };
 
+function cacheControl(path: string): string {
+  // Files under /assets carry a hash of their content in the name, so they never change: browsers and
+  // Cloudflare may keep them for a year.
+  if (path.startsWith("/assets/")) return "public, max-age=31536000, immutable";
+  // Pages and their route data (`.data`, fetched on client-side navigation and prefetched when a link
+  // is hovered): a minute, so the prefetched copy serves the click, and a deploy shows up within it.
+  if (path.endsWith(".html") || path.endsWith(".data")) {
+    return "public, max-age=60, stale-while-revalidate=600";
+  }
+  // Everything else in public/ (the favicon): a day.
+  return "public, max-age=86400";
+}
+
 async function file(path: string): Promise<Response | null> {
   // Never outside the build directory, whatever the address says.
   const full = normalize(join(root, path));
   if (!full.startsWith(root)) return null;
   const f = Bun.file(full);
   if (!(await f.exists()) || (await f.stat()).isDirectory()) return null;
-  // Files under /assets carry a hash of their content in the name, so they never change: browsers and
-  // Cloudflare may keep them for a year. Pages are revalidated, so a deploy shows up at once.
-  const cache = path.startsWith("/assets/")
-    ? "public, max-age=31536000, immutable"
-    : "public, max-age=0, must-revalidate";
-  return new Response(f, { headers: { ...securityHeaders, "cache-control": cache } });
+  return new Response(f, { headers: { ...securityHeaders, "cache-control": cacheControl(path) } });
 }
 
 const server = Bun.serve({

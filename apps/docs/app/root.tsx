@@ -1,4 +1,5 @@
 import touchIcon from "@/assets/brand/mark.svg?preset=touch-icon";
+import { PrefetchLink } from "@/components/prefetch-link";
 import SearchDialog from "@/components/search";
 import { RootProvider } from "fumadocs-ui/provider/react-router";
 import {
@@ -48,7 +49,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body className="flex min-h-screen flex-col">
-        <RootProvider search={{ SearchDialog, hotKey }}>{children}</RootProvider>
+        <RootProvider search={{ SearchDialog, hotKey }} components={{ Link: PrefetchLink }}>
+          {children}
+        </RootProvider>
         <ScrollRestoration />
         <Scripts />
       </body>
