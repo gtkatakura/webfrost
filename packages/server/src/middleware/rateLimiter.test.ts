@@ -44,18 +44,15 @@ describe("createRateLimiter", () => {
     expect(limiter.check(makeRequest("10.0.0.2")).allowed).toBe(true);
   });
 
-  it("uses the first IP from x-forwarded-for chain", () => {
+  it("uses the right-most IP of the x-forwarded-for chain", () => {
     const limiter = createRateLimiter({ limit: 1, windowMs: 60_000 });
-    const req = new Request("http://localhost/", {
-      headers: { "x-forwarded-for": "5.6.7.8, 9.10.11.12" },
-    });
-    expect(limiter.check(req).allowed).toBe(true);
-    expect(limiter.check(req).allowed).toBe(false);
-    // Different first IP should be allowed
-    const req2 = new Request("http://localhost/", {
-      headers: { "x-forwarded-for": "9.10.11.12" },
-    });
-    expect(limiter.check(req2).allowed).toBe(true);
+    const req = (xff: string) =>
+      new Request("http://localhost/", { headers: { "x-forwarded-for": xff } });
+    expect(limiter.check(req("5.6.7.8, 9.10.11.12")).allowed).toBe(true);
+    // A client rotating the entry it controls (the left one) stays in its bucket.
+    expect(limiter.check(req("1.1.1.1, 9.10.11.12")).allowed).toBe(false);
+    expect(limiter.check(req("9.10.11.12")).allowed).toBe(false);
+    expect(limiter.check(req("5.6.7.8")).allowed).toBe(true);
   });
 
   it("falls back to 'unknown' when no IP header present", () => {
@@ -131,6 +128,42 @@ describe("client identity", () => {
 
   it("uses the forwarded address behind a trusted proxy", () => {
     expect(getClientIp(makeRequest("9.9.9.9"), peer("10.0.0.1"))).toBe("9.9.9.9");
+  });
+
+  it("ignores spoofed left-most X-Forwarded-For entries", () => {
+    expect(getClientIp(makeRequest("6.6.6.6, 9.9.9.9"), peer("10.0.0.1"))).toBe("9.9.9.9");
+  });
+
+  it("skips WEBFROST_TRUSTED_PROXY_HOPS entries from the right", () => {
+    process.env.WEBFROST_TRUSTED_PROXY_HOPS = "2";
+    try {
+      // client-supplied, real client (added by the CDN), CDN (added by nginx)
+      const req = makeRequest("6.6.6.6, 9.9.9.9, 172.16.0.5");
+      expect(getClientIp(req, peer("10.0.0.1"))).toBe("9.9.9.9");
+      // Fewer entries than hops: take the left-most there is.
+      expect(getClientIp(makeRequest("9.9.9.9"), peer("10.0.0.1"))).toBe("9.9.9.9");
+    } finally {
+      Reflect.deleteProperty(process.env, "WEBFROST_TRUSTED_PROXY_HOPS");
+    }
+  });
+
+  it("buckets IPv6 clients by /64", () => {
+    expect(getClientIp(new Request("http://localhost/"), peer("2001:db8:1:2:aaaa::1"))).toBe(
+      "2001:db8:1:2::/64",
+    );
+    const limiter = createRateLimiter({ limit: 1, windowMs: 60_000 });
+    expect(limiter.check(makeRequest("2001:db8:1:2::1")).allowed).toBe(true);
+    // Same /64, different interface id: same bucket.
+    expect(limiter.check(makeRequest("2001:0db8:0001:0002:ffff:1:2:3")).allowed).toBe(false);
+    // Another /64 gets its own.
+    expect(limiter.check(makeRequest("2001:db8:1:3::1")).allowed).toBe(true);
+  });
+
+  it("treats IPv4-mapped IPv6 peers as IPv4", () => {
+    expect(getClientIp(new Request("http://localhost/"), peer("::ffff:192.0.2.9"))).toBe(
+      "192.0.2.9",
+    );
+    expect(getClientIp(new Request("http://localhost/"), peer("::1"))).toBe("0:0:0:0::/64");
   });
 
   it("forgets clients once their window has passed", async () => {
