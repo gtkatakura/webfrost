@@ -23,7 +23,6 @@ Every breaking change is called out in the [changelog](CHANGELOG.md).
 - **Observability, on your terms.** OpenTelemetry traces (every request, and every archive down to
   each format), metrics (queue, durations, failures) and trace ids in the logs, exported only when the
   standard `OTEL_*` variables point at your collector. No telemetry otherwise.
-- **A finished web UI.** The WebFrost look, clear error states, accessible dialogs, a usable phone layout.
 
 ## Next
 
@@ -51,7 +50,8 @@ Eight formats from one visit (WARC, raw HTML, readable text, PDF, full-page scre
 self-contained HTML, video); full-text search; tags; imports from bookmarks, OPML, RSS/Atom and URL
 lists; cron and feed schedules run by the server; a job queue with crash recovery and per-site pacing;
 filesystem or S3-compatible storage; API keys, revocable sessions and rate limits; read-only public mode;
-an SSRF guard for fetches and the headless browser; CLI, HTTP API, TypeScript SDK and web UI.
+an SSRF guard for fetches and the headless browser; CLI, HTTP API, TypeScript SDK and a web UI with the
+WebFrost look in light and dark, clear error states, accessible dialogs and a phone layout.
 
 ## Contributing
 
