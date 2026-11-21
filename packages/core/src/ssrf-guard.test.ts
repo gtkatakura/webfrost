@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { assertPublicUrl, isPrivateIPv4, isPrivateIPv6, safeFetch } from "./ssrf-guard";
+import {
+  assertPublicUrl,
+  fetchGuarded,
+  isPrivateIPv4,
+  isPrivateIPv6,
+  safeFetch,
+} from "./ssrf-guard";
 
 // ---------------------------------------------------------------------------
 // IP classification helpers
@@ -214,6 +220,63 @@ describe("safeFetch timeout", () => {
     } finally {
       Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
       Reflect.deleteProperty(process.env, "WEBFROST_FETCH_TIMEOUT_MS");
+      server.stop(true);
+    }
+  });
+});
+
+describe("safeFetch cancellation", () => {
+  test("aborting the signal cancels a request in flight with the abort reason", async () => {
+    const server = Bun.serve({
+      port: 0,
+      async fetch() {
+        await Bun.sleep(3000);
+        return new Response("late");
+      },
+    });
+    process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
+    try {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new Error("extractor gave up")), 100);
+      const start = Date.now();
+      await expect(
+        safeFetch(`http://127.0.0.1:${server.port}/`, { signal: controller.signal }),
+      ).rejects.toThrow("extractor gave up");
+      expect(Date.now() - start).toBeLessThan(2000);
+    } finally {
+      Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
+      server.stop(true);
+    }
+  });
+
+  test("fetchGuarded reports the redirect chain and the final URL", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        const { pathname } = new URL(req.url);
+        if (pathname === "/a") {
+          return new Response("moved", { status: 301, headers: { location: "/b" } });
+        }
+        if (pathname === "/b") {
+          return new Response(null, { status: 302, headers: { location: "/c" } });
+        }
+        return new Response("final");
+      },
+    });
+    process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
+    try {
+      const base = `http://127.0.0.1:${server.port}`;
+      const res = await fetchGuarded(`${base}/a`);
+      expect(res.requestedUrl).toBe(`${base}/a`);
+      expect(res.url).toBe(`${base}/c`);
+      expect(res.redirects.map((r) => [r.status, r.url])).toEqual([
+        [301, `${base}/a`],
+        [302, `${base}/b`],
+      ]);
+      expect(new TextDecoder().decode(res.redirects[0]?.body)).toBe("moved");
+      expect(new TextDecoder().decode(res.body)).toBe("final");
+    } finally {
+      Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
       server.stop(true);
     }
   });

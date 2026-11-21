@@ -12,6 +12,8 @@
 
 const MAX_RESPONSE_BYTES = 50 * 1024 * 1024; // 50 MB
 const MAX_REDIRECTS = 5;
+/** Redirect bodies are kept for the WARC; anything bigger than this is dropped. */
+const MAX_REDIRECT_BODY_BYTES = 1024 * 1024;
 const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
 
 /** Parse a positive integer env var, falling back to `fallback`. */
@@ -125,34 +127,128 @@ export async function assertPublicUrl(url: string): Promise<void> {
   await assertPublicHost(parsed.hostname);
 }
 
+/** One HTTP response received while following a request: a redirect hop or the final answer. */
+export interface FetchedResponse {
+  /** The URL this response answered. */
+  url: string;
+  status: number;
+  statusText: string;
+  headers: Headers;
+  /**
+   * The body as received. With `decompress: false` this is the payload still in its
+   * `Content-Encoding` (gzip, br, ...), i.e. the exact bytes the server sent minus any
+   * chunked transfer framing; otherwise it is the decoded body.
+   */
+  body: Uint8Array<ArrayBuffer>;
+}
+
+export interface GuardedFetchResult extends FetchedResponse {
+  /** The URL that was asked for (before redirects). */
+  requestedUrl: string;
+  /** Redirect responses that were followed, in order, before the final one. */
+  redirects: FetchedResponse[];
+}
+
+export interface SafeFetchOptions {
+  /** Cancels the request (including redirects and the body download). */
+  signal?: AbortSignal;
+  /**
+   * Leave the body in its Content-Encoding instead of letting the runtime decode it
+   * (default true = decode). The WARC writer uses false to keep the bytes as sent.
+   */
+  decompress?: boolean;
+}
+
+/** Read a body stream into one buffer, failing once it exceeds `maxBytes`. */
+async function readCapped(response: Response, maxBytes: number): Promise<Uint8Array<ArrayBuffer>> {
+  const reader = response.body?.getReader();
+  if (!reader) return new Uint8Array(0);
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        totalBytes += value.byteLength;
+        if (totalBytes > maxBytes) {
+          await reader.cancel();
+          throw new Error(`Response too large: exceeded ${maxBytes} bytes`);
+        }
+        chunks.push(value);
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
 /**
- * Fetch `url` with SSRF protection:
+ * Fetch `url` with SSRF protection and return every response along the way:
  * - only http(s), resolves hostname and rejects private/loopback IPs
  * - follows redirects manually, re-validating each hop
  * - caps the response body at 50 MB to prevent OOM
  * - aborts after WEBFROST_FETCH_TIMEOUT_MS (default 30 s, whole request incl. redirects)
- *
- * Returns a synthetic `Response` whose body has already been fully buffered.
+ *   or when `options.signal` aborts
  */
-export async function safeFetch(url: string): Promise<Response> {
+export async function fetchGuarded(
+  url: string,
+  options: SafeFetchOptions = {},
+): Promise<GuardedFetchResult> {
   let currentUrl = url;
   const timeoutMs = envInt("WEBFROST_FETCH_TIMEOUT_MS", DEFAULT_FETCH_TIMEOUT_MS);
-  const signal = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
+  const timeoutSignal = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
+  const signals = [timeoutSignal, options.signal].filter((s): s is AbortSignal => !!s);
+  const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
+  const redirects: FetchedResponse[] = [];
+
+  const failure = (err: unknown): unknown => {
+    if (options.signal?.aborted) return options.signal.reason ?? err;
+    if (timeoutSignal?.aborted)
+      return new Error(`Fetch timed out after ${timeoutMs}ms: ${currentUrl}`);
+    return err;
+  };
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    options.signal?.throwIfAborted();
     await assertPublicUrl(currentUrl);
 
     let response: Response;
     try {
-      response = await fetch(currentUrl, { redirect: "manual", ...(signal ? { signal } : {}) });
+      response = await fetch(currentUrl, {
+        redirect: "manual",
+        ...(signal ? { signal } : {}),
+        ...(options.decompress === false ? { decompress: false } : {}),
+      } as RequestInit);
     } catch (err) {
-      if (signal?.aborted) throw new Error(`Fetch timed out after ${timeoutMs}ms: ${currentUrl}`);
-      throw err;
+      throw failure(err);
     }
 
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       if (!location) throw new Error("Redirect missing Location header");
+      let body: Uint8Array<ArrayBuffer>;
+      try {
+        body = await readCapped(response, MAX_REDIRECT_BODY_BYTES);
+      } catch (err) {
+        // A redirect's body is informational only; an oversized one is not kept.
+        if (signal?.aborted) throw failure(err);
+        body = new Uint8Array(0);
+      }
+      redirects.push({
+        url: currentUrl,
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+        body,
+      });
       currentUrl = new URL(location, currentUrl).href;
       continue;
     }
@@ -165,51 +261,39 @@ export async function safeFetch(url: string): Promise<Response> {
       );
     }
 
-    // Stream with hard size cap
-    const reader = response.body?.getReader();
-    if (!reader) {
-      return new Response(null, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
-      });
-    }
-
-    const chunks: Uint8Array[] = [];
-    let totalBytes = 0;
+    let body: Uint8Array<ArrayBuffer>;
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) {
-          totalBytes += value.byteLength;
-          if (totalBytes > MAX_RESPONSE_BYTES) {
-            await reader.cancel();
-            throw new Error(`Response too large: exceeded ${MAX_RESPONSE_BYTES} bytes`);
-          }
-          chunks.push(value);
-        }
-      }
+      body = await readCapped(response, MAX_RESPONSE_BYTES);
     } catch (err) {
-      if (signal?.aborted) throw new Error(`Fetch timed out after ${timeoutMs}ms: ${currentUrl}`);
-      throw err;
-    } finally {
-      reader.releaseLock();
+      throw failure(err);
     }
 
-    const body = new Uint8Array(totalBytes);
-    let offset = 0;
-    for (const chunk of chunks) {
-      body.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-
-    return new Response(body, {
+    return {
+      url: currentUrl,
+      requestedUrl: url,
       status: response.status,
       statusText: response.statusText,
       headers: response.headers,
-    });
+      body,
+      redirects,
+    };
   }
 
   throw new Error(`Too many redirects (max ${MAX_REDIRECTS})`);
+}
+
+/**
+ * Fetch `url` with SSRF protection (see `fetchGuarded`).
+ *
+ * Returns a synthetic `Response` whose body has already been fully buffered.
+ */
+export async function safeFetch(url: string, options: SafeFetchOptions = {}): Promise<Response> {
+  const result = await fetchGuarded(url, options);
+  // A Response with a null-body status (204, 205, 304) must not be given a body.
+  const nullBody = [204, 205, 304].includes(result.status);
+  return new Response(nullBody ? null : result.body, {
+    status: result.status,
+    statusText: result.statusText,
+    headers: result.headers,
+  });
 }

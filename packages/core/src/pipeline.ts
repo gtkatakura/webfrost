@@ -217,7 +217,7 @@ async function archive(
 
   logger?.debug(`fetch ok snapshot=${snapshotId} status=${cached.status}`);
 
-  const { html, headers, status, statusText } = cached;
+  const { html } = cached;
 
   // Launch Playwright once for all Playwright-dependent extractors.
   // A single page.goto() is shared — no duplicate browser navigations per snapshot.
@@ -279,12 +279,17 @@ async function archive(
     );
   }
 
+  // HTML and Readability need text; a PDF or an image fetched directly only goes to the WARC.
+  const textExtractors = cached.isText
+    ? [
+        runTimed("html", () => htmlExtractor(db, snapshotId, html)),
+        // The final URL (after redirects) is the base for the page's relative links.
+        runTimed("readability", () => readabilityExtractor(db, snapshotId, cached.url, html)),
+      ]
+    : [];
   const textTasks = Promise.all([
-    runTimed("html", () => htmlExtractor(db, snapshotId, html)),
-    runTimed("warc", () =>
-      warcExtractor(db, snapshotId, url, headers, status, statusText, html, effectiveStorage),
-    ),
-    runTimed("readability", () => readabilityExtractor(db, snapshotId, url, html)),
+    ...textExtractors,
+    runTimed("warc", (signal) => warcExtractor(db, snapshotId, cached, effectiveStorage, signal)),
     runTimed(
       "media",
       (signal) =>

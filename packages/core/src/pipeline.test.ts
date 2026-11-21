@@ -1,6 +1,6 @@
 import type Database from "bun:sqlite";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb } from "./db";
@@ -14,6 +14,8 @@ const ARTICLE = `<!doctype html><html><head><title>Frost Report</title></head><b
 <p>${"Archivists keep a long memory of the web. ".repeat(30)}</p>
 </article></body></html>`;
 
+const PDF_BYTES = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0xff, 0xfe, 0x00, 0x80]);
+
 let server: ReturnType<typeof Bun.serve>;
 let baseUrl: string;
 let testDir: string;
@@ -25,6 +27,9 @@ beforeAll(() => {
     port: 0,
     fetch(req) {
       const { pathname } = new URL(req.url);
+      if (pathname === "/report.pdf") {
+        return new Response(PDF_BYTES, { headers: { "content-type": "application/pdf" } });
+      }
       if (pathname === "/article") {
         return new Response(ARTICLE, { headers: { "content-type": "text/html" } });
       }
@@ -135,6 +140,22 @@ describe("runPipeline", () => {
       process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
     }
   });
+});
+
+describe("runPipeline: content and cancellation", () => {
+  test("a binary URL goes to the WARC byte for byte; html and readability do not run", async () => {
+    const url = `${baseUrl}/report.pdf`;
+    const id = createSnapshot(db, url);
+    await runPipeline(db, id, url, testDir);
+
+    const rows = results(id);
+    expect(rows.some((r) => r.extractor === "html" || r.extractor === "readability")).toBe(false);
+    const warc = rows.find((r) => r.extractor === "warc");
+    expect(warc?.error).toBeNull();
+    const bytes = new Uint8Array(readFileSync(warc?.content ?? ""));
+    expect(Buffer.from(bytes).includes(Buffer.from(PDF_BYTES))).toBe(true);
+    expect(statusOf(id)).toBe("done");
+  }, 60_000);
 });
 
 describe("JobRunner", () => {

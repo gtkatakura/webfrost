@@ -29,7 +29,14 @@ export type { ImportFormat } from "./import";
 export { listImports, recordImport } from "./import-history";
 export type { ImportRecord } from "./import-history";
 export { fetchRssFeedUrls, isUrlArchived } from "./rss";
-export { assertPublicUrl, isPrivateIPv4, isPrivateIPv6, safeFetch } from "./ssrf-guard";
+export {
+  assertPublicUrl,
+  fetchGuarded,
+  isPrivateIPv4,
+  isPrivateIPv6,
+  safeFetch,
+} from "./ssrf-guard";
+export type { FetchedResponse, GuardedFetchResult, SafeFetchOptions } from "./ssrf-guard";
 export { guardBrowserContext } from "./browser-guard";
 export type { BrowserGuard, HostCheck } from "./browser-guard";
 export { HostThrottle, domainThrottle } from "./throttle";

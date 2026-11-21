@@ -13,10 +13,19 @@ db.query("INSERT INTO snapshots (url, status) VALUES ('https://example.com', 'pe
 
 const storage = new FilesystemBackend(join(testDir, "snapshots"));
 const mockHeaders = new Headers({ "content-type": "text/html; charset=utf-8" });
-const html = `<html><body>${"x".repeat(10_000)}</body></html>`;
+const body = new TextEncoder().encode(`<html><body>${"x".repeat(10_000)}</body></html>`);
+const source = {
+  url: "https://example.com",
+  requestedUrl: "https://example.com",
+  status: 200,
+  statusText: "OK",
+  headers: mockHeaders,
+  body,
+  redirects: [],
+};
 
 bench("warcExtractor: build + write 10KB page", async () => {
-  await warcExtractor(db, 1, "https://example.com", mockHeaders, 200, "OK", html, storage);
+  await warcExtractor(db, 1, source, storage);
 });
 
 await run();
