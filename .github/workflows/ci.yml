@@ -135,24 +135,28 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: bunx playwright install --with-deps chromium
 
+      # MinIO no longer publishes images to Docker Hub (minio/minio and minio/mc
+      # are gone); Chainguard maintains a public build. It has no shell or client,
+      # so the bucket is created with curl's built-in SigV4 signing.
       - name: Start MinIO for integration tests
         run: |
           docker run -d --name minio \
             -p 9000:9000 \
             -e MINIO_ROOT_USER=minioadmin \
             -e MINIO_ROOT_PASSWORD=minioadmin \
-            minio/minio:latest server /data
+            cgr.dev/chainguard/minio:latest server /data
           # Wait up to 30 s for MinIO to become ready
-          for i in $(seq 1 6); do
+          for i in $(seq 1 15); do
             if curl -sf http://localhost:9000/minio/health/live; then
               echo "MinIO is ready"; break
             fi
-            echo "Waiting for MinIO ($i/6)..."; sleep 5
+            echo "Waiting for MinIO ($i/15)..."; sleep 2
           done
+          curl -sf http://localhost:9000/minio/health/live
           # Create integration test bucket
-          docker run --rm --network host \
-            -e MC_HOST_local=http://minioadmin:minioadmin@localhost:9000 \
-            minio/mc:latest mb --ignore-existing local/webfrost-integration
+          curl -sf -X PUT --aws-sigv4 "aws:amz:us-east-1:s3" \
+            --user minioadmin:minioadmin \
+            http://localhost:9000/webfrost-integration
 
       - name: Test
         run: bun run test
