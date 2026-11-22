@@ -5,7 +5,7 @@
  *
  * For every <outdir>/<target>/webfrost[.exe] it writes webfrost-<target>.tar.gz (zip for
  * Windows) containing the binary and the LICENSE, then checksums.txt with one
- * "<sha256>  <file>" line per archive. install.sh, install.ps1 and the Homebrew formula
+ * "<sha256>  <file>" line per archive. install.sh and the Homebrew formula
  * all rely on these names.
  */
 import {

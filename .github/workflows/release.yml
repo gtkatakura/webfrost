@@ -459,7 +459,6 @@ jobs:
         include:
           - { name: linux-x64, os: ubuntu-24.04, archive: webfrost-linux-x64.tar.gz }
           - { name: darwin-arm64, os: macos-15, archive: webfrost-darwin-arm64.tar.gz }
-          - { name: windows-x64, os: windows-2025, archive: webfrost-windows-x64.zip }
     defaults:
       run:
         shell: bash

@@ -12,9 +12,9 @@ Everything up to the first published version. The details are in the changesets 
 
 ### Install and run
 
-- A single `webfrost` binary for macOS, Linux and Windows (x64 and arm64), with the CLI, the server and
+- A single `webfrost` binary for macOS and Linux (x64 and arm64), with the CLI, the server and
   the web UI inside. Installed with `curl -fsSL https://webfrost.dev/install.sh | sh`,
-  `irm https://webfrost.dev/install.ps1 | iex` or `brew install gtkatakura/tap/webfrost`; the scripts
+  `brew install gtkatakura/tap/webfrost`; the scripts
   verify the release checksum.
 - `webfrost serve` runs the server, web UI and scheduler in one process and generates a session secret
   in the data directory when none is set; `webfrost setup` installs a headless Chromium only if none is

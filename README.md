@@ -46,11 +46,10 @@ docker compose up -d
 Open http://localhost:3000 and create the admin user. For a real deployment (reverse proxy, TLS,
 backups) see [Deploy](https://webfrost.dev/docs/guides/deploy).
 
-**The `webfrost` binary**, for macOS, Linux and Windows. One file with the CLI and the server:
+**The `webfrost` binary**, for macOS and Linux (on Windows, use Docker). One file with the CLI and the server:
 
 ```bash
 # or: brew install gtkatakura/tap/webfrost
-# Windows: irm https://webfrost.dev/install.ps1 | iex
 curl -fsSL https://webfrost.dev/install.sh | sh
 
 # a headless Chromium, if you have none; doctor says what else is missing

@@ -34,7 +34,7 @@ export const TARGETS = [
   "darwin-x64",
   "linux-x64",
   "linux-arm64",
-  "windows-x64",
+  // windows-x64 is not built: the binary does not start on Windows yet. Windows users run Docker.
 ] as const;
 export type Target = (typeof TARGETS)[number];
 

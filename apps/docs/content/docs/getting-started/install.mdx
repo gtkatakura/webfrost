@@ -1,6 +1,6 @@
 ---
 title: Install
-description: Install the webfrost binary on macOS, Linux or Windows, set up Chromium, and run the server.
+description: Install the webfrost binary on macOS or Linux, set up Chromium, and run the server.
 icon: Download
 ---
 
@@ -8,7 +8,11 @@ WebFrost is one file, `webfrost`: the CLI, the server, the web UI and the schedu
 
 ## Install
 
-<Tabs items={["Script", "Homebrew", "Windows", "Manual"]}>
+<Callout title="Windows">
+There is no Windows binary yet. Run WebFrost with Docker Desktop and the [Docker quickstart](/docs/getting-started/quickstart).
+</Callout>
+
+<Tabs items={["Script", "Homebrew", "Manual"]}>
 <Tab value="Script">
 
 macOS and Linux, x64 and arm64:
@@ -43,17 +47,6 @@ brew install gtkatakura/tap/webfrost
 Upgrade with `brew upgrade webfrost`.
 
 </Tab>
-<Tab value="Windows">
-
-PowerShell 5.1 or newer, no administrator rights needed:
-
-```powershell
-irm https://webfrost.dev/install.ps1 | iex
-```
-
-It installs `webfrost.exe` into `%LOCALAPPDATA%\Programs\webfrost\bin`, verifies the checksum the same way, and prints the command that adds the directory to your `PATH`. It reads the same `WEBFROST_VERSION`, `WEBFROST_INSTALL_DIR` and `WEBFROST_DOWNLOAD_BASE` variables.
-
-</Tab>
 <Tab value="Manual">
 
 Download the archive for your platform from the [releases page](https://github.com/gtkatakura/webfrost/releases), check it against `checksums.txt`, and put the `webfrost` binary on your `PATH`:
@@ -64,7 +57,6 @@ Download the archive for your platform from the [releases page](https://github.c
 | macOS, Intel | `webfrost-darwin-x64.tar.gz` |
 | Linux, x64 | `webfrost-linux-x64.tar.gz` |
 | Linux, arm64 | `webfrost-linux-arm64.tar.gz` |
-| Windows, x64 | `webfrost-windows-x64.zip` |
 
 ```bash
 sha256sum --check --ignore-missing checksums.txt   # shasum -a 256 -c on macOS
@@ -119,8 +111,6 @@ sudo apt install yt-dlp ffmpeg
 # Fedora (ffmpeg is in RPM Fusion)
 sudo dnf install yt-dlp ffmpeg
 
-# Windows
-winget install yt-dlp.yt-dlp Gyan.FFmpeg
 ```
 
 Both have to be on `PATH`. Without yt-dlp, media extraction is skipped and no failure is recorded.

@@ -17,7 +17,7 @@ const securityHeaders = {
 // The install scripts (`curl | sh`, `irm | iex`) and the Compose file (`curl -fsSLO …/compose.yml`):
 // served as plain text, so a browser shows them instead of downloading them, and kept for a minute
 // only, so a fix reaches users quickly.
-const installScripts = new Set(["/install.sh", "/install.ps1", "/compose.yml"]);
+const installScripts = new Set(["/install.sh", "/compose.yml"]);
 
 function cacheControl(path: string): string {
   if (installScripts.has(path)) return "public, max-age=60";
