@@ -1,4 +1,6 @@
 import { spawnSync } from "node:child_process";
+import { type Server, createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { expect, test } from "@playwright/test";
 
 /**
@@ -25,7 +27,6 @@ const API = "http://localhost:3000";
 const YOUTUBE_VIDEO_URL = "https://www.youtube.com/watch?v=jNQXAC9IVRw";
 
 // Regular HTML page — no media extractor should fire for this.
-const HTML_ONLY_URL = "https://example.com";
 
 // MP4 magic bytes: ftyp box at offset 4 (bytes 4–7 = 0x66 0x74 0x79 0x70)
 // or starts with ISO BMFF (0x00 0x00 0x00 ... 0x66 0x74 0x79 0x70)
@@ -225,25 +226,33 @@ test("@media youtube: media-metadata download returns valid JSON with title, dur
 test("@media non-media-url: snapshot completes without media extractor entry", async ({
   request,
 }) => {
-  const postResp = await request.post(`${API}/api/v1/snapshots`, {
-    data: { url: HTML_ONLY_URL },
+  // A plain page served by the test itself (the :3000 test server allows private URLs): no
+  // dependence on the internet, and no queue behind other archives of the same public host.
+  const page: Server = createServer((_req, res) => {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end("<!doctype html><title>Plain page</title><p>No video here, just text.</p>");
   });
-  expect(postResp.status()).toBe(202);
-  const { id } = await postResp.json();
+  await new Promise<void>((resolve) => page.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${(page.address() as AddressInfo).port}/`;
+  try {
+    const postResp = await request.post(`${API}/api/v1/snapshots`, { data: { url } });
+    expect(postResp.status()).toBe(202);
+    const { id } = await postResp.json();
+    const snapshot = await waitForDone(request, id, 30_000);
 
-  // example.com is fast — 30s is more than enough.
-  const snapshot = await waitForDone(request, id, 30_000);
+    expect(snapshot.status).toBe("done");
 
-  expect(snapshot.status).toBe("done");
+    const extractors = snapshot.archiveResults.map((r) => r.extractor);
 
-  const extractors = snapshot.archiveResults.map((r) => r.extractor);
+    // No media extractor should fire for a plain HTML page.
+    expect(extractors).not.toContain("media");
+    expect(extractors).not.toContain("media-metadata");
 
-  // No media extractor should fire for a plain HTML page.
-  expect(extractors).not.toContain("media");
-  expect(extractors).not.toContain("media-metadata");
-
-  // Other extractors should still have run (at minimum html).
-  expect(extractors.length).toBeGreaterThan(0);
+    // Other extractors should still have run (at minimum html).
+    expect(extractors.length).toBeGreaterThan(0);
+  } finally {
+    await new Promise<void>((resolve) => page.close(() => resolve()));
+  }
 });
 
 // ---------------------------------------------------------------------------
