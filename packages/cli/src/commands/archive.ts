@@ -91,7 +91,7 @@ export const listCommand: Command = {
     status: {
       type: "string",
       value: "status",
-      description: "Only snapshots with this status (pending, running, done, failed)",
+      description: "Only snapshots with this status (pending, done, failed)",
     },
     limit: { type: "string", value: "n", description: "How many to show (default 50)" },
     page: { type: "string", value: "n", description: "Page of results, starting at 1" },
