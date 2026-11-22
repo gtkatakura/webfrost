@@ -1,10 +1,12 @@
 name: Release
 
-# - Version tags (v*.*.*) publish the Docker image to GHCR, build the `webfrost` binaries for macOS,
-#   Linux and Windows, attach them (with checksums.txt) to a GitHub Release, and update the Homebrew
-#   formula in gtkatakura/homebrew-tap when the HOMEBREW_TAP_TOKEN secret is set.
-# - A green CI run on main opens or updates the "Version Packages" pull request, and publishes to npm
-#   once that pull request is merged.
+# - A green CI run on main opens or updates the "Version Packages" pull request. Once that pull
+#   request is merged (no changesets left), it publishes to npm, tags v<version> and releases it in
+#   this same run: a tag pushed with GITHUB_TOKEN does not start another workflow run.
+# - A manually pushed version tag (v*.*.*: hotfixes, pre-releases) releases that tag.
+# - A release publishes the Docker image to GHCR, builds the `webfrost` binaries for macOS, Linux and
+#   Windows, attaches them (with checksums.txt) to a GitHub Release, and updates the Homebrew formula
+#   in gtkatakura/homebrew-tap when the HOMEBREW_TAP_TOKEN secret is set.
 # - Manual dispatch publishes the image from the chosen ref.
 # See apps/docs/content/docs/contributing/releasing.mdx.
 on:
@@ -107,20 +109,154 @@ jobs:
         env:
           NPM_CONFIG_PROVENANCE: "true"
 
+  # ── Release tag: tag v<version> once the Version Packages pull request is merged ───
+  # Runs after Changesets on every green CI run on main, and tags only when no changeset is
+  # pending (the version bump has landed), the version is not 0.0.0 and the tag does not exist yet.
+  # A later CI run on main finds the tag and does nothing. A re-run of this workflow run (attempt 2
+  # and later) picks up the tag it pushed before, so the release jobs can be retried.
+  release-tag:
+    name: Release tag
+    needs: changesets
+    runs-on: ubuntu-24.04
+    # One at a time, so two quick merges cannot both try to push the same tag.
+    concurrency:
+      group: release-tag
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Tag the version when it is ready
+        id: tag
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          pending=$(find .changeset -maxdepth 1 -name '*.md' ! -name README.md | wc -l)
+          if [ "$pending" -gt 0 ]; then
+            echo "$pending changeset(s) pending: the Version Packages pull request is not merged yet. Nothing to release."
+            exit 0
+          fi
+          if [ -f .changeset/pre.json ]; then
+            echo "::notice title=No automatic release::Changesets is in pre-release mode. Push the pre-release tag by hand."
+            exit 0
+          fi
+
+          version=$(jq -r .version packages/core/package.json)
+          for pkg in cli server sdk ui; do
+            other=$(jq -r .version "packages/$pkg/package.json")
+            if [ "$other" != "$version" ]; then
+              echo "::error::packages/$pkg is at $other but packages/core is at $version; the fixed group is out of sync."
+              exit 1
+            fi
+          done
+          if [ "$version" = 0.0.0 ]; then
+            echo "Version is 0.0.0: nothing has been versioned yet. Nothing to release."
+            exit 0
+          fi
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::$version is not a semantic version."
+            exit 1
+          fi
+          tag="v$version"
+
+          # The commit the tag points at, empty when there is no such tag (^{} peels an annotated tag).
+          tagged_sha() {
+            git ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}" |
+              sort -k2 | tail -n 1 | cut -f1
+          }
+          existing=$(tagged_sha)
+          if [ -z "$existing" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$tag" -m "WebFrost $tag" "$SHA"
+            if git push origin "refs/tags/$tag"; then
+              echo "Tagged $SHA as $tag."
+              echo "tag=$tag" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            # Lost a race with another push of the same tag: treat it as already there.
+            existing=$(tagged_sha)
+            if [ -z "$existing" ]; then
+              echo "::error::Could not push $tag."
+              exit 1
+            fi
+          fi
+          if [ "$existing" = "$SHA" ] && [ "$ATTEMPT" -gt 1 ]; then
+            echo "$tag already points at $SHA and this is a re-run: releasing it again."
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          else
+            echo "$tag already exists (at $existing). Nothing to release."
+          fi
+
+  # ── Release version: the tag and commit the jobs below build ──────────────────────
+  # A pushed tag, the tag from the Release tag job, or, for a manual dispatch, the chosen ref.
+  release:
+    name: Release version
+    needs: [ci-gate, release-tag]
+    runs-on: ubuntu-24.04
+    if: |
+      !cancelled() && (
+        (github.event_name == 'push' && needs.ci-gate.result == 'success') ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'docker-ghcr' && needs.ci-gate.result == 'success') ||
+        (github.event_name == 'workflow_run' && needs.release-tag.result == 'success' && needs.release-tag.outputs.tag != '')
+      )
+    permissions: {}
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+      sha: ${{ steps.resolve.outputs.sha }}
+      short_sha: ${{ steps.resolve.outputs.short_sha }}
+      full: ${{ steps.resolve.outputs.full }}
+    steps:
+      - name: Resolve the tag and commit
+        id: resolve
+        env:
+          EVENT: ${{ github.event_name }}
+          AUTO_TAG: ${{ needs.release-tag.outputs.tag }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          case "$EVENT" in
+            push) tag="$GITHUB_REF_NAME"; sha="$GITHUB_SHA"; full=true ;;
+            workflow_run) tag="$AUTO_TAG"; sha="$HEAD_SHA"; full=true ;;
+            *)
+              # Manual dispatch: the Docker image only, with version tags when the ref is a tag.
+              sha="$GITHUB_SHA"; full=false; tag=""
+              case "$GITHUB_REF" in refs/tags/v*) tag="$GITHUB_REF_NAME" ;; esac
+              ;;
+          esac
+          if [ -n "$tag" ] && ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::$tag is not a version tag (v1.2.3 or v1.2.3-rc.1)."
+            exit 1
+          fi
+          {
+            echo "tag=$tag"
+            echo "version=${tag#v}"
+            echo "sha=$sha"
+            echo "short_sha=${sha::7}"
+            echo "full=$full"
+          } >> "$GITHUB_OUTPUT"
+          echo "Releasing ${tag:-(no version tag)} from $sha (full release: $full)."
+
   # ── Docker: build and push the multi-arch server image to GHCR ────────────────────
   docker:
     name: Docker → GHCR
-    needs: ci-gate
+    needs: release
     runs-on: ubuntu-24.04
-    if: |
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'docker-ghcr')
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
     permissions:
       contents: read
       packages: write
 
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.sha }}
 
       - name: Set up QEMU (arm64 emulation)
         uses: docker/setup-qemu-action@v4.4.0
@@ -135,17 +271,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # `latest` follows the newest stable version tag (not release candidates).
+      # `latest` follows the newest stable version tag (not release candidates). The version is
+      # passed explicitly because on a workflow_run event the ref is main, not the tag. semver
+      # skips <major>.<minor> for a pre-release, which then gets only <version>.
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/server
+          flavor: |
+            latest=false
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix=sha-
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
+            type=semver,pattern={{version}},value=${{ needs.release.outputs.tag }},enable=${{ needs.release.outputs.tag != '' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release.outputs.tag }},enable=${{ needs.release.outputs.tag != '' }}
+            type=raw,value=sha-${{ needs.release.outputs.short_sha }}
+            type=raw,value=latest,enable=${{ needs.release.outputs.tag != '' && !contains(needs.release.outputs.tag, '-') }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v7.4.0
@@ -162,14 +302,17 @@ jobs:
   # ── Visual verification: smoke-test the pushed Docker image ──────────────
   verify-docker:
     name: Visual Verify → Docker
-    needs: docker
+    needs: [release, docker]
     runs-on: ubuntu-24.04
+    if: ${{ !cancelled() && needs.docker.result == 'success' }}
     permissions:
       contents: read
       packages: read
 
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.sha }}
 
       # Tools (Bun) at the versions pinned in mise.toml.
       - uses: jdx/mise-action@v5.2.8
@@ -205,13 +348,15 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Start WebFrost container
+        env:
+          SHORT_SHA: ${{ needs.release.outputs.short_sha }}
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/server:sha-${GITHUB_SHA::7}"
+          IMAGE="${REGISTRY}/${IMAGE_NAME}/server:sha-${SHORT_SHA}"
           docker run -d --name webfrost-verify \
             -p 3000:3000 \
             -e AUTH_DISABLED=true \
             -e HOST=0.0.0.0 \
-            -e SESSION_SECRET=$(openssl rand -hex 32) \
+            -e SESSION_SECRET="$(openssl rand -hex 32)" \
             "$IMAGE"
           echo "Container started from $IMAGE"
           # Wait up to 60 s for health endpoint
@@ -235,7 +380,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: deploy-screenshot-${{ github.sha }}
+          name: deploy-screenshot-${{ needs.release.outputs.sha }}
           path: packages/ui/test-results/deploy-screenshot.png
           retention-days: 90
 
@@ -248,14 +393,16 @@ jobs:
   # the three OS families below before anything is published.
   binaries:
     name: Binaries
-    needs: ci-gate
+    needs: release
     runs-on: ubuntu-24.04
-    if: github.event_name == 'push'
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.release.outputs.full == 'true' }}
     permissions:
       contents: read
 
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.sha }}
 
       # Tools (Bun) at the versions pinned in mise.toml.
       - uses: jdx/mise-action@v5.2.8
@@ -279,7 +426,9 @@ jobs:
           bun run --filter @webfrost/ui build
 
       - name: Compile the binaries
-        run: bun packages/cli/scripts/build-binary.ts --target all --outdir dist-binary --version "${GITHUB_REF_NAME#v}"
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+        run: bun packages/cli/scripts/build-binary.ts --target all --outdir dist-binary --version "$VERSION"
 
       - name: Package archives and checksums
         run: bun packages/cli/scripts/package-release.ts --outdir dist-binary --release-dir release
@@ -299,8 +448,9 @@ jobs:
   # ── Run the binaries on the platforms they were built for ─────────────────────────
   verify-binaries:
     name: Verify binary (${{ matrix.name }})
-    needs: binaries
+    needs: [release, binaries]
     runs-on: ${{ matrix.os }}
+    if: ${{ !cancelled() && needs.binaries.result == 'success' }}
     permissions:
       contents: read
     strategy:
@@ -334,7 +484,7 @@ jobs:
       - name: Run it
         env:
           WEBFROST_DIR: ${{ runner.temp }}/webfrost-data
-          EXPECTED: ${{ github.ref_name }}
+          EXPECTED: ${{ needs.release.outputs.tag }}
         run: |
           bin/webfrost --version | tee version.txt
           grep -F "${EXPECTED#v}" version.txt
@@ -349,13 +499,18 @@ jobs:
   # ── GitHub Release: archives, checksums and notes ─────────────────────────────────
   github-release:
     name: GitHub Release
-    needs: [binaries, verify-binaries]
+    needs: [release, binaries, verify-binaries]
     runs-on: ubuntu-24.04
+    if: ${{ !cancelled() && needs.verify-binaries.result == 'success' }}
     permissions:
       contents: write
+    env:
+      TAG: ${{ needs.release.outputs.tag }}
 
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.sha }}
 
       - uses: jdx/mise-action@v5.2.8
         with:
@@ -371,7 +526,7 @@ jobs:
       - name: Release notes
         id: notes
         run: |
-          if bun scripts/release-notes.ts "${GITHUB_REF_NAME#v}" > notes.md; then
+          if bun scripts/release-notes.ts "${TAG#v}" > notes.md; then
             echo "source=changelog" >> "$GITHUB_OUTPUT"
           else
             echo "source=generated" >> "$GITHUB_OUTPUT"
@@ -382,14 +537,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           NOTES_SOURCE: ${{ steps.notes.outputs.source }}
         run: |
-          flags=(--title "$GITHUB_REF_NAME" --verify-tag)
+          flags=(--title "$TAG" --verify-tag)
           # 1.2.3-rc.1 and friends are pre-releases and never become "latest".
-          case "$GITHUB_REF_NAME" in *-*) flags+=(--prerelease) ;; *) flags+=(--latest) ;; esac
+          case "$TAG" in *-*) flags+=(--prerelease) ;; *) flags+=(--latest) ;; esac
           if [ "$NOTES_SOURCE" = changelog ]; then flags+=(--notes-file notes.md); else flags+=(--generate-notes); fi
-          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" release/* --clobber
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" release/* --clobber
           else
-            gh release create "$GITHUB_REF_NAME" release/* "${flags[@]}"
+            gh release create "$TAG" release/* "${flags[@]}"
           fi
 
   # ── Homebrew: update the formula in the tap ───────────────────────────────────────
@@ -398,13 +553,14 @@ jobs:
   # pre-releases never touch the formula.
   homebrew:
     name: Homebrew tap
-    needs: github-release
+    needs: [release, github-release]
     runs-on: ubuntu-24.04
-    if: ${{ !contains(github.ref_name, '-') }}
+    if: ${{ !cancelled() && needs.github-release.result == 'success' && !contains(needs.release.outputs.tag, '-') }}
     permissions:
       contents: read
     env:
       HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      VERSION: ${{ needs.release.outputs.version }}
 
     steps:
       - name: Check for the tap token
@@ -418,6 +574,8 @@ jobs:
 
       - uses: actions/checkout@v7.0.1
         if: steps.token.outputs.present == 'true'
+        with:
+          ref: ${{ needs.release.outputs.sha }}
 
       - uses: jdx/mise-action@v5.2.8
         if: steps.token.outputs.present == 'true'
@@ -441,7 +599,7 @@ jobs:
         if: steps.token.outputs.present == 'true'
         run: |
           mkdir -p tap/Formula
-          bun scripts/homebrew-formula.ts --version "${GITHUB_REF_NAME#v}" --checksums release/checksums.txt > tap/Formula/webfrost.rb
+          bun scripts/homebrew-formula.ts --version "$VERSION" --checksums release/checksums.txt > tap/Formula/webfrost.rb
           ruby -c tap/Formula/webfrost.rb
           cat tap/Formula/webfrost.rb
 
@@ -453,7 +611,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add Formula/webfrost.rb
-            git commit -m "webfrost ${GITHUB_REF_NAME#v}"
+            git commit -m "webfrost $VERSION"
             git push
           else
             echo "The formula is already up to date."
