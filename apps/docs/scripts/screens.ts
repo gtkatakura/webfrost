@@ -1,5 +1,6 @@
 /**
- * The web UI screenshots in app/assets/screens, light and dark, at 1440×900 (2× pixels).
+ * The web UI screenshots in app/assets/screens, light and dark, at 1440×900 (2× pixels), and the README's
+ * (.github/assets/screenshot-*.webp, the snapshot list).
  *
  *   mise run docs:screens -- <base-url> <viewer-snapshot-id> [search-query]
  *
@@ -17,6 +18,7 @@ if (!base || !viewerId) {
 }
 
 const out = resolve(import.meta.dir, "../app/assets/screens");
+const readme = resolve(import.meta.dir, "../../../.github/assets");
 const shots = [
   { name: "dashboard", path: "/#/" },
   { name: "snapshots", path: "/#/snapshots" },
@@ -48,6 +50,12 @@ for (const theme of ["light", "dark"] as const) {
     const png = await page.screenshot();
     await sharp(png).webp({ quality: 82 }).toFile(`${out}/${shot.name}-${theme}.webp`);
     console.log(`${shot.name}-${theme}.webp`);
+    if (shot.name === "snapshots") {
+      await sharp(png)
+        .resize(2560)
+        .webp({ quality: 80 })
+        .toFile(`${readme}/screenshot-${theme}.webp`);
+    }
   }
   await context.close();
 }

@@ -44,10 +44,15 @@ Chromium is available, so run them at least once with one installed if you touch
 - **A test that fails without your change.** Bugs here have mostly been of the "returns 202 but
   nothing happens afterwards" kind, so assert on the final state (snapshot status, stored files),
   not just on the response.
-- **Docs in the same pull request.** The pages in `apps/docs/content/docs` must match what the code
-  does: new CLI commands, API routes, environment variables and extractors all go in the reference.
-  Touch `README.md` only when the quickstart or the big picture changes, and move a shipped item in
-  `ROADMAP.md` to "Already there".
+- **Docs in the same pull request.** Everything that describes the change moves with it:
+  - the reference pages in `apps/docs/content/docs` (CLI, REST API, SDK, configuration, extractors,
+    web UI), and any guide that still tells the old story. A new API route or environment variable
+    without its row fails `packages/server/src/docs-coverage.test.ts`;
+  - for a visible UI change, the screenshots: run `mise run docs:screens -- <base-url> <snapshot-id>`
+    against a WebFrost with a few real pages archived (it writes the README's screenshot too);
+  - `README.md` when the quickstart, the install options or the big picture change;
+  - `ROADMAP.md`: a shipped item moves to "Already there";
+  - the agent skills in `skills/` when the usage they teach changes.
 - **A changeset** for anything users will notice: `bun changeset`.
 - **Small and focused.** One concern per pull request; refactors separate from behaviour changes.
 

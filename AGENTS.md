@@ -35,7 +35,14 @@ If Chromium is already installed, set `WEBFROST_CHROMIUM_PATH=/usr/bin/chromium`
 ## Rules
 
 - **Tests:** a change comes with a test that fails without it. Assert on the final state (snapshot status, files on disk), not only on the HTTP response.
-- **Docs:** user-facing changes update the pages in `apps/docs/content/docs` in the same change (CLI commands, API routes, environment variables, extractors). `README.md` only for the quickstart or the big picture; a shipped `ROADMAP.md` item moves to "Already there".
+- **Docs:** a user-facing change updates, in the same change, everything that describes it. Go down this list:
+  - `apps/docs/content/docs`: the reference page (CLI, REST API, SDK, configuration, extractors, web UI) and any guide or architecture page that tells the old story (`grep` for the old behaviour).
+  - New API route or environment variable: its row in `reference/rest-api.mdx` or `reference/configuration.mdx`. `packages/server/src/docs-coverage.test.ts` fails without it.
+  - Visible UI change: retake the screenshots (`mise run docs:screens -- <base-url> <snapshot-id>` against an archive of real pages, never test pages or copyrighted media) (it writes the README's `.github/assets/screenshot-*.webp` too).
+  - `README.md`: when the quickstart, the install options or the big picture change.
+  - `ROADMAP.md`: a shipped item moves to "Already there"; a new idea goes to "Next".
+  - `skills/`: when the CLI, API or SDK usage it teaches changes.
+  - A changeset (below), and `CHANGELOG.md` only at release time.
 - **Changesets:** anything users will notice gets one (`bun changeset`).
 - **Hooks:** Lefthook runs lint and typecheck before each commit. Fix what they report; never `--no-verify`.
 - **Security:** every outbound request goes through the SSRF guard (`safeFetch`, `guardBrowserContext` in `packages/core`). Read `apps/docs/content/docs/architecture/security.mdx` before touching auth, fetching or the browser.
