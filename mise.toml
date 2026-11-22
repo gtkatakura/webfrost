@@ -119,6 +119,10 @@ run = "bun run docs:build"
 description = "Serve the built docs site on http://localhost:5175"
 run = "bun run docs:preview"
 
+[tasks."bench:fidelity"]
+description = "Does a change to archiving make any real site look less like itself? Archives bench/fidelity/sites.txt with main and with this tree, scores both against the live pages, fails on any regression (-- --base <ref>)"
+run = "bun bench/fidelity/run.ts"
+
 [tasks."docs:screens"]
 description = "Retake the web UI screenshots of the docs from a running WebFrost: -- <base-url> <viewer-snapshot-id> [search-query]"
 run = "bun apps/docs/scripts/screens.ts"

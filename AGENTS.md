@@ -43,6 +43,7 @@ If Chromium is already installed, set `WEBFROST_CHROMIUM_PATH=/usr/bin/chromium`
   - `ROADMAP.md`: a shipped item moves to "Already there"; a new idea goes to "Next".
   - `skills/`: when the CLI, API or SDK usage it teaches changes.
   - A changeset (below), and `CHANGELOG.md` only at release time.
+- **Archiving fidelity:** a change to how pages are archived (`packages/core/src/pipeline.ts`, the extractors, SingleFile inlining, the browser setup) must be generic, never a rule for one site, and must not make any other site worse. Add a test page for the case, then run `mise run bench:fidelity` (real sites, `main` against this tree, scored against the live pages): it must report no site "WORSE". When a site exposes a new kind of problem, add it to `bench/fidelity/sites.txt`.
 - **Changesets:** anything users will notice gets one (`bun changeset`).
 - **Hooks:** Lefthook runs lint and typecheck before each commit. Fix what they report; never `--no-verify`.
 - **Security:** every outbound request goes through the SSRF guard (`safeFetch`, `guardBrowserContext` in `packages/core`). Read `apps/docs/content/docs/architecture/security.mdx` before touching auth, fetching or the browser.

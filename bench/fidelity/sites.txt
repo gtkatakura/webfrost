@@ -1,0 +1,17 @@
+# The fidelity corpus: real sites of different kinds, so a fix for one cannot quietly break the others.
+# One URL per line. Keep it varied (static HTML, SPA, docs, long articles, heavy landing pages, media) and
+# free of pages behind logins or with content that changes every load (feeds, ads).
+https://example.com/
+https://news.ycombinator.com/
+https://en.wikipedia.org/wiki/Web_archiving
+https://developer.mozilla.org/en-US/docs/Web/CSS/color-scheme
+https://bun.sh/
+https://github.com/gtkatakura/webfrost
+https://webfrost.dev/
+https://webfrost.dev/docs/getting-started/quickstart
+https://react.dev/
+https://tailwindcss.com/
+https://stripe.com/
+http://norvig.com/21-days.html
+https://blog.acolyer.org/2019/01/25/programming-paradigms-for-dummies-what-every-programmer-should-know/
+https://www.destroyallsoftware.com/talks/wat
