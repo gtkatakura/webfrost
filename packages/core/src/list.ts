@@ -1,5 +1,6 @@
 import { type RawBuilder, sql } from "kysely";
 import type { Db } from "./db";
+import { IMPORTING_STATUS } from "./snapshot";
 import type { Tag } from "./tags";
 
 function parseReadability(content: string | null): {
@@ -133,12 +134,14 @@ function toSnapshot(r: SnapshotRow, tags: Map<number, Tag[]>): SnapshotWithExtra
 }
 
 export async function listSnapshots(db: Db): Promise<Snapshot[]> {
-  return db.all<Snapshot>(sql`SELECT id, url, status, created_at FROM snapshots ORDER BY id`);
+  return db.all<Snapshot>(
+    sql`SELECT id, url, status, created_at FROM snapshots WHERE status <> ${IMPORTING_STATUS} ORDER BY id`,
+  );
 }
 
 export async function listSnapshotsWithExtractors(db: Db): Promise<SnapshotWithExtractors[]> {
   const rows = await db.all(
-    sql<SnapshotRow>`${snapshotSelect(db)} ${SNAPSHOT_GROUP_BY} ORDER BY s.id`,
+    sql<SnapshotRow>`${snapshotSelect(db)} WHERE s.status <> ${IMPORTING_STATUS} ${SNAPSHOT_GROUP_BY} ORDER BY s.id`,
   );
   // Load all snapshot-tag associations in a single query to avoid N+1
   const tags = await loadTags(db);
@@ -156,7 +159,7 @@ export async function getSnapshotsByIds(
   const result = new Map<number, SnapshotWithExtractors>();
   if (ids.length === 0) return result;
   const rows = await db.all(
-    sql<SnapshotRow>`${snapshotSelect(db)} WHERE s.id IN (${sql.join(ids)}) ${SNAPSHOT_GROUP_BY}`,
+    sql<SnapshotRow>`${snapshotSelect(db)} WHERE s.id IN (${sql.join(ids)}) AND s.status <> ${IMPORTING_STATUS} ${SNAPSHOT_GROUP_BY}`,
   );
   const tags = await loadTags(db, ids);
   for (const r of rows) result.set(r.id, toSnapshot(r, tags));
@@ -174,7 +177,10 @@ export async function listSnapshotsWithExtractorsPaginated(
   status?: string,
 ): Promise<PaginatedResult<SnapshotWithExtractors>> {
   const offset = (page - 1) * limit;
-  const where = status ? sql`WHERE s.status = ${status}` : sql``;
+  // Snapshots still being imported are not shown until their files are in place.
+  const where = status
+    ? sql`WHERE s.status = ${status} AND s.status <> ${IMPORTING_STATUS}`
+    : sql`WHERE s.status <> ${IMPORTING_STATUS}`;
 
   const countRow = await db.get<{ total: number }>(
     sql`SELECT COUNT(*) AS total FROM snapshots s ${where}`,

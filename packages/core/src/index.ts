@@ -87,7 +87,7 @@ export {
   withTimeout,
 } from "./pipeline";
 export type { Logger, PipelineOptions } from "./pipeline";
-export { deleteSnapshot, getSnapshot } from "./snapshot";
+export { IMPORTING_STATUS, SnapshotBusyError, deleteSnapshot, getSnapshot } from "./snapshot";
 export {
   BUNDLE_EXTRACTORS,
   BUNDLE_FORMAT,
@@ -101,6 +101,8 @@ export {
   planSnapshotBundle,
   snapshotBundleStream,
   spoolToTempFile,
+  sweepStaleBundleUploads,
+  sweepStaleImports,
 } from "./bundle";
 export type {
   BundleLimits,

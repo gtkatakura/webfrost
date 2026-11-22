@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { zipSync } from "fflate";
 import { sql } from "kysely";
 import {
@@ -12,10 +20,16 @@ import {
   importSnapshotBundle,
   parseManifest,
   spoolToTempFile,
+  sweepStaleBundleUploads,
+  sweepStaleImports,
 } from "./bundle";
 import { type Db, openDb } from "./db";
+import { JobRunner } from "./jobs";
+import { listSnapshotsWithExtractorsPaginated } from "./list";
 import { recordResult } from "./results";
 import { searchSnapshots } from "./search";
+import { IMPORTING_STATUS, SnapshotBusyError, deleteSnapshot, getSnapshot } from "./snapshot";
+import { getStats } from "./stats";
 import { FilesystemBackend } from "./storage";
 import { addTagToSnapshot, createTag, listSnapshotTags } from "./tags";
 
@@ -556,6 +570,103 @@ describe("spoolToTempFile", () => {
     expect(await Bun.file(spooled.path).text()).toBe("hello");
     await spooled.remove();
     expect(existsSync(spooled.path)).toBe(false);
+  });
+});
+
+describe("the importing status", () => {
+  /** A filesystem backend that runs `hook` while the import is copying its first file. */
+  function hookedStorage(hook: (snapshotId: number) => Promise<void>) {
+    return new (class extends FilesystemBackend {
+      override async finalize(snapshotId: number, filename: string): Promise<string> {
+        await hook(snapshotId);
+        return super.finalize(snapshotId, filename);
+      }
+    })(join(targetDir, "snapshots"));
+  }
+
+  async function screenshotBundle(): Promise<string> {
+    const sourceId = await seedSnapshot();
+    const path = join(root, "bundle.zip");
+    await exportSnapshotBundle(source, sourceStorage, sourceId, path);
+    return path;
+  }
+
+  test("while files are copied the snapshot is hidden, busy for retry and delete, and not recovered", async () => {
+    const path = await screenshotBundle();
+    const seen: Record<string, unknown> = {};
+    const storage = hookedStorage(async (id) => {
+      if ("status" in seen) return;
+      seen.status = (
+        await target.get<{ status: string }>(sql`SELECT status FROM snapshots WHERE id = ${id}`)
+      )?.status;
+      seen.detail = await getSnapshot(target, id);
+      seen.listed = (await listSnapshotsWithExtractorsPaginated(target, 1, 20)).total;
+      seen.count = (await getStats(target, targetStorage)).snapshotCount;
+      const runner = new JobRunner({ dir: targetDir });
+      seen.retry = await runner.retry(target, id);
+      seen.recovered = await runner.recoverPending();
+      seen.delete = await deleteSnapshot(target, id, targetStorage).catch((e: unknown) => e);
+    });
+    const imported = await importSnapshotBundle(target, storage, path);
+
+    expect(seen.status).toBe(IMPORTING_STATUS);
+    expect(seen.detail).toBeNull();
+    expect(seen.listed).toBe(0);
+    expect(seen.count).toBe(0);
+    expect(seen.retry).toBe("busy");
+    expect(seen.recovered).toBe(0);
+    expect(seen.delete).toBeInstanceOf(SnapshotBusyError);
+
+    const row = await target.get<{ status: string }>(
+      sql`SELECT status FROM snapshots WHERE id = ${imported.id}`,
+    );
+    expect(row?.status).toBe("done");
+    expect(
+      await target.all(sql`SELECT id FROM job_queue WHERE snapshot_id = ${imported.id}`),
+    ).toEqual([]);
+  });
+
+  test("if the row stops being importing, the import fails and removes what it wrote", async () => {
+    const path = await screenshotBundle();
+    const storage = hookedStorage(async (id) => {
+      await target.run(sql`UPDATE snapshots SET status = 'failed' WHERE id = ${id}`);
+    });
+    await expect(importSnapshotBundle(target, storage, path)).rejects.toThrow(/changed while/);
+    expect(await countRows(target)).toEqual({ snapshots: 0, results: 0 });
+    expect(storedSnapshotDirs()).toEqual([]);
+  });
+
+  test("sweepStaleImports removes imports interrupted over an hour ago, with their files", async () => {
+    const insertImporting = async (startedSecondsAgo: number) => {
+      const id = await target.insert(
+        sql`INSERT INTO snapshots (url, status) VALUES ('https://x.example', 'importing')`,
+      );
+      await target.run(
+        sql`INSERT INTO job_queue (snapshot_id, status, created_at) VALUES (${id}, 'importing', ${target.ago(startedSecondsAgo)})`,
+      );
+      await targetStorage.putText(id, "screenshot.png", "partial");
+      return id;
+    };
+    const stale = await insertImporting(2 * 3600);
+    const fresh = await insertImporting(60);
+    expect(await sweepStaleImports(target, targetStorage)).toBe(1);
+    const left = await target.all<{ id: number }>(sql`SELECT id FROM snapshots ORDER BY id`);
+    expect(left.map((r) => Number(r.id))).toEqual([fresh]);
+    expect(storedSnapshotDirs()).toEqual([String(fresh)]);
+    expect(stale).not.toBe(fresh);
+  });
+
+  test("sweepStaleBundleUploads removes only old bundle-<uuid> spool folders", async () => {
+    const tmp = join(root, "tmp");
+    const old = join(tmp, `bundle-${crypto.randomUUID()}`);
+    const recent = join(tmp, `bundle-${crypto.randomUUID()}`);
+    const other = join(tmp, "something-else");
+    for (const d of [old, recent, other]) mkdirSync(d, { recursive: true });
+    const twoHoursAgo = new Date(Date.now() - 2 * 3600 * 1000);
+    utimesSync(old, twoHoursAgo, twoHoursAgo);
+    utimesSync(other, twoHoursAgo, twoHoursAgo);
+    expect(await sweepStaleBundleUploads(root)).toBe(1);
+    expect(readdirSync(tmp).sort()).toEqual([basename(recent), "something-else"].sort());
   });
 });
 

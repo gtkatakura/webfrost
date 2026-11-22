@@ -43,7 +43,9 @@ async function backfillSizes(db: Db, storage: StorageBackend): Promise<void> {
 
 export async function getStats(db: Db, storage: StorageBackend): Promise<Stats> {
   // Total snapshot count
-  const snapshotRow = await db.get<{ count: number }>(sql`SELECT COUNT(*) AS count FROM snapshots`);
+  const snapshotRow = await db.get<{ count: number }>(
+    sql`SELECT COUNT(*) AS count FROM snapshots WHERE status <> 'importing'`,
+  );
   const snapshotCount = Number(snapshotRow?.count ?? 0);
 
   // Storage: sizes are recorded when results are written; only legacy rows need measuring.
@@ -62,7 +64,7 @@ export async function getStats(db: Db, storage: StorageBackend): Promise<Stats> 
   const successRow = await db.get<{ done: number | null; total: number | null }>(
     sql`SELECT
           SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done,
-          SUM(CASE WHEN status != 'pending' THEN 1 ELSE 0 END) AS total
+          SUM(CASE WHEN status NOT IN ('pending', 'importing') THEN 1 ELSE 0 END) AS total
         FROM snapshots
         WHERE created_at >= ${db.ago(30 * 24 * 60 * 60)}`,
   );

@@ -22,9 +22,25 @@ export interface SnapshotDetail {
   archiveResults: ArchiveResult[];
 }
 
+/**
+ * Status of a snapshot whose bundle import is still copying files. Such a snapshot has no
+ * results yet: it is left out of lists, details and stats, cannot be retried or deleted, and
+ * the job recovery sweep ignores it. See bundle.ts.
+ */
+export const IMPORTING_STATUS = "importing";
+
+/** The snapshot cannot be changed right now (a bundle import is still writing it). */
+export class SnapshotBusyError extends Error {
+  constructor(id: number) {
+    super(`snapshot ${id} is being imported`);
+    this.name = "SnapshotBusyError";
+  }
+}
+
+/** A snapshot, or null when it does not exist or is still being imported. */
 export async function getSnapshot(db: Db, id: number): Promise<SnapshotDetail | null> {
   const snapshot = await db.get<{ id: number; url: string; status: string; created_at: string }>(
-    sql`SELECT id, url, status, created_at FROM snapshots WHERE id = ${id}`,
+    sql`SELECT id, url, status, created_at FROM snapshots WHERE id = ${id} AND status <> ${IMPORTING_STATUS}`,
   );
 
   if (!snapshot) return null;
@@ -47,9 +63,29 @@ export async function deleteSnapshot(
   id: number,
   storage: StorageBackend,
 ): Promise<boolean> {
+  return removeSnapshot(db, id, storage, false);
+}
+
+/**
+ * deleteSnapshot, with the import's own cleanup as the one caller allowed to remove a
+ * snapshot that is still `importing` (`force`). Throws SnapshotBusyError otherwise.
+ */
+export async function removeSnapshot(
+  db: Db,
+  id: number,
+  storage: StorageBackend,
+  force: boolean,
+): Promise<boolean> {
   const deleted = await db.transaction(async (tx) => {
-    const exists = await tx.get<{ id: number }>(sql`SELECT id FROM snapshots WHERE id = ${id}`);
+    // Lock order: job_queue first, then snapshots, as in JobRunner.retry and fenced writes.
+    await tx.run(
+      sql`SELECT snapshot_id FROM job_queue WHERE snapshot_id = ${id} ${tx.forUpdate()}`,
+    );
+    const exists = await tx.get<{ id: number; status: string }>(
+      sql`SELECT id, status FROM snapshots WHERE id = ${id} ${tx.forUpdate()}`,
+    );
     if (!exists) return false;
+    if (exists.status === IMPORTING_STATUS && !force) throw new SnapshotBusyError(id);
 
     // archive_results and job_queue lack ON DELETE CASCADE — delete manually
     await tx.run(sql`DELETE FROM archive_results WHERE snapshot_id = ${id}`);

@@ -13,14 +13,14 @@
  * StorageBackend under names it derives itself, and the server keeps serving them with
  * content types derived from the extractor, archived HTML only through the sandboxed preview.
  */
-import { mkdir, rm } from "node:fs/promises";
+import { lstat, mkdir, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { Zip, ZipDeflate, ZipPassThrough } from "fflate";
 import { sql } from "kysely";
 import { FILE_BACKED_EXTRACTORS } from "./database/migrations";
 import type { Db } from "./db";
 import { extractIndexFields, indexSnapshot } from "./search";
-import { deleteSnapshot } from "./snapshot";
+import { IMPORTING_STATUS, removeSnapshot } from "./snapshot";
 import type { StorageBackend } from "./storage";
 import { slugify } from "./tags";
 import {
@@ -643,8 +643,11 @@ async function tagIdFor(tx: Db, name: string): Promise<number> {
  * is removed again. Finally the results, tags and search index entry are written in one
  * transaction. Nothing is fetched from the network.
  *
- * While the files are copied the snapshot row exists with status `failed` and no results,
- * so no worker mistakes it for a pending job.
+ * While the files are copied the snapshot row exists with status `importing` (and a
+ * job_queue row whose created_at says when the import started): it is hidden from lists and
+ * details, cannot be retried or deleted, and the recovery sweep leaves it alone. The final
+ * transaction flips it to the bundle's status only if it is still `importing`. A crash
+ * leaves the row behind; sweepStaleImports() removes it later.
  */
 export async function importSnapshotBundle(
   db: Db,
@@ -662,10 +665,18 @@ export async function importSnapshotBundle(
   const { manifest, entries } = checked;
   const snap = manifest.snapshot;
 
-  const snapshotId = await db.insert(
-    sql`INSERT INTO snapshots (url, status, created_at, color_scheme)
-        VALUES (${snap.url}, 'failed', ${fromIso(snap.createdAt)}, ${snap.colorScheme})`,
-  );
+  const snapshotId = await db.transaction(async (tx) => {
+    const id = await tx.insert(
+      sql`INSERT INTO snapshots (url, status, created_at, color_scheme)
+          VALUES (${snap.url}, ${IMPORTING_STATUS}, ${fromIso(snap.createdAt)}, ${snap.colorScheme})`,
+    );
+    // Records when the import started (the snapshot's created_at is the archive's own time).
+    await tx.run(
+      sql`INSERT INTO job_queue (snapshot_id, status, heartbeat_at, created_at)
+          VALUES (${id}, ${IMPORTING_STATUS}, ${tx.now()}, ${tx.now()})`,
+    );
+    return id;
+  });
 
   try {
     const stored = new Map<string, { ref: string; size: number }>();
@@ -698,7 +709,11 @@ export async function importSnapshotBundle(
           sql`INSERT INTO snapshot_tags (snapshot_id, tag_id) VALUES (${snapshotId}, ${tagId})`,
         );
       }
-      await tx.run(sql`UPDATE snapshots SET status = ${snap.status} WHERE id = ${snapshotId}`);
+      const finished = await tx.run(
+        sql`UPDATE snapshots SET status = ${snap.status} WHERE id = ${snapshotId} AND status = ${IMPORTING_STATUS}`,
+      );
+      if (finished === 0) throw new Error(`snapshot ${snapshotId} changed while it was imported`);
+      await tx.run(sql`DELETE FROM job_queue WHERE snapshot_id = ${snapshotId}`);
       // Like the pipeline: only finished, successful snapshots are searchable.
       if (snap.status === "done") {
         const readability = manifest.results.find(
@@ -713,12 +728,76 @@ export async function importSnapshotBundle(
       }
     });
   } catch (err) {
-    await deleteSnapshot(db, snapshotId, storage).catch(() => {});
+    await removeSnapshot(db, snapshotId, storage, true).catch(() => {});
     if (err instanceof ZipFormatError) throw new BundleError(`invalid bundle: ${err.message}`);
     throw err;
   }
 
   return { id: snapshotId, url: snap.url, status: snap.status };
+}
+
+/** An import that has been `importing` this long was interrupted (a crash or a restart). */
+export const STALE_IMPORT_SECONDS = 60 * 60;
+
+/**
+ * Remove snapshots left `importing` by an import that never finished (the process died while
+ * copying files), together with their files: they have no results, so there is nothing to
+ * keep. Only imports that started more than `olderThanSeconds` ago are touched, so one that
+ * another process is running right now is left alone. Resolves to the number removed.
+ */
+export async function sweepStaleImports(
+  db: Db,
+  storage: StorageBackend,
+  olderThanSeconds = STALE_IMPORT_SECONDS,
+): Promise<number> {
+  const stale = await db.all<{ id: number }>(
+    sql`SELECT s.id FROM snapshots s
+        WHERE s.status = ${IMPORTING_STATUS}
+          AND NOT EXISTS (
+            SELECT 1 FROM job_queue j
+            WHERE j.snapshot_id = s.id AND j.created_at >= ${db.ago(olderThanSeconds)}
+          )`,
+  );
+  let removed = 0;
+  for (const { id } of stale) {
+    if (await removeSnapshot(db, Number(id), storage, true)) removed++;
+  }
+  return removed;
+}
+
+/** Name of a spool folder made by spoolToTempFile, under WEBFROST_DIR/tmp. */
+const SPOOL_FOLDER = /^bundle-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * Remove upload spool folders (`WEBFROST_DIR/tmp/bundle-<uuid>`) older than `olderThanMs`,
+ * left by a process that died mid-upload. Nothing else in tmp/ is touched. Resolves to the
+ * number removed.
+ */
+export async function sweepStaleBundleUploads(
+  dir: string,
+  olderThanMs = STALE_IMPORT_SECONDS * 1000,
+): Promise<number> {
+  const tmpRoot = join(dir, "tmp");
+  let names: string[];
+  try {
+    names = await readdir(tmpRoot);
+  } catch {
+    return 0;
+  }
+  let removed = 0;
+  for (const name of names) {
+    if (!SPOOL_FOLDER.test(name)) continue;
+    const folder = join(tmpRoot, name);
+    try {
+      const info = await lstat(folder);
+      if (!info.isDirectory() || Date.now() - info.mtimeMs < olderThanMs) continue;
+      await rm(folder, { recursive: true, force: true });
+      removed++;
+    } catch {
+      // Gone already, or not ours to remove.
+    }
+  }
+  return removed;
 }
 
 /**

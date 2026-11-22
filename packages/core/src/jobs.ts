@@ -112,7 +112,8 @@ export class JobRunner {
         sql`SELECT url, status FROM snapshots WHERE id = ${snapshotId} ${tx.forUpdate()}`,
       );
       if (!row) return { result: "missing" as const };
-      if (row.status === "pending" || this.inFlight.has(snapshotId))
+      // A bundle import still writing the snapshot is as busy as a pending run.
+      if (row.status === "pending" || row.status === "importing" || this.inFlight.has(snapshotId))
         return { result: "busy" as const };
       const updated = await tx.run(
         sql`UPDATE job_queue
