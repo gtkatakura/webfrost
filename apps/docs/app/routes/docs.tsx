@@ -1,4 +1,5 @@
 import { useMDXComponents } from "@/components/mdx";
+import { AuthorCredit } from "@/components/site-footer";
 import { baseOptions } from "@/lib/layout.shared";
 import { shareMeta } from "@/lib/site";
 import { docs, source } from "@/lib/source";
@@ -51,7 +52,11 @@ export default function Page({ loaderData }: Route.ComponentProps) {
   const { pageTree, path, url } = useFumadocsLoader(loaderData);
 
   return (
-    <DocsLayout {...baseOptions({ inDocs: true })} tree={pageTree}>
+    <DocsLayout
+      {...baseOptions({ inDocs: true })}
+      tree={pageTree}
+      sidebar={{ footer: <AuthorCredit className="px-2 pt-2" /> }}
+    >
       <Content path={path} url={url} />
     </DocsLayout>
   );

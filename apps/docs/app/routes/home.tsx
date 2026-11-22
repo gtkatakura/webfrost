@@ -2,8 +2,9 @@ import mascot from "@/assets/brand/mascot.webp?preset=hero";
 import { FeatureGrid, type Tile } from "@/components/features";
 import { type CodeTab, CodeWindow, GitHubMark, SplitDeveloperHero } from "@/components/hero";
 import { Picture } from "@/components/picture";
+import { SiteFooter } from "@/components/site-footer";
 import { baseOptions } from "@/lib/layout.shared";
-import { repoUrl } from "@/lib/shared";
+import { demoUrl, repoUrl } from "@/lib/shared";
 import { shareMeta } from "@/lib/site";
 import { sdkPublished } from "@/lib/unpublished";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
@@ -155,7 +156,7 @@ export default function Home() {
           primaryAction={{ label: "Get started", href: "/docs/getting-started/quickstart" }}
           secondaryAction={{
             label: "Try the live demo",
-            href: "https://demo.webfrost.dev/#/snapshots",
+            href: demoUrl,
             external: true,
             icon: <Eye className="size-4" aria-hidden="true" />,
           }}
@@ -229,6 +230,7 @@ export default function Home() {
           </div>
         </section>
       </main>
+      <SiteFooter />
     </HomeLayout>
   );
 }
