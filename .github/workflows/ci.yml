@@ -44,6 +44,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          # the build step builds the docs, whose promo video and posters live in Git LFS
+          lfs: true
 
       # Tools (Bun) at the versions pinned in mise.toml.
       - uses: jdx/mise-action@v5.2.8
