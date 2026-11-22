@@ -23,7 +23,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
-    "@changesets/cli": "2.30.0",
+    "@changesets/cli": "3.0.3",
     "bun-types": "1.4.4",
     "lefthook": "2.1.4",
     "mitata": "1.0.34",
