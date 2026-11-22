@@ -73,7 +73,7 @@ The MinIO console is at `http://localhost:9001` (user and password `minioadmin`)
 
 ## Downloads with S3
 
-For PDF, screenshot, WARC, DOM snapshot, SingleFile and media, `GET /api/snapshots/:id/archives/:extractor/download` answers `302` with a presigned bucket URL valid for one hour, instead of streaming the file through the server. `media-metadata` is the exception: the UI reads it with `fetch()`, so the server always streams it itself.
+For PDF, screenshot, WARC, DOM snapshot, SingleFile and media, `GET /api/v1/snapshots/:id/archives/:extractor/download` answers `302` with a presigned bucket URL valid for one hour, instead of streaming the file through the server. `media-metadata` is the exception: the UI reads it with `fetch()`, so the server always streams it itself.
 
 Because the browser then loads screenshots and media from the bucket's origin, the server adds that one origin to the `img-src` and `media-src` directives of its Content-Security-Policy, and to nothing else.
 

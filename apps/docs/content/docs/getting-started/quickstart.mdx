@@ -111,7 +111,7 @@ Data lives in the named volume `webfrost_data`, mounted at `/data`.
 Open `http://localhost:3000`. On the first visit a setup wizard asks for a username and a password of at least 8 characters, then signs you in. The same step is available over HTTP and returns your first API key, shown once:
 
 ```bash
-curl -X POST http://localhost:3000/api/setup \
+curl -X POST http://localhost:3000/api/v1/setup \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"change-me-please"}'
 # { "apiKey": "..." }
@@ -125,7 +125,7 @@ curl -X POST http://localhost:3000/api/setup \
 Paste a URL into **Quick Archive** on the dashboard, or use the API:
 
 ```bash
-curl -X POST http://localhost:3000/api/snapshots \
+curl -X POST http://localhost:3000/api/v1/snapshots \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"url":"https://example.com"}'
@@ -138,7 +138,7 @@ The snapshot is `pending` while the pipeline runs and becomes `done` or `failed`
 </Steps>
 
 <Callout type="info" title="The CLI is not in the image">
-The Docker image does not contain the `webfrost` CLI, so `webfrost admin create` cannot be run in the container. Create the admin user in the browser or with `POST /api/setup`. To use the CLI on the same archive, [install the binary](/docs/getting-started/install) and point `WEBFROST_DIR` at the volume's directory.
+The Docker image does not contain the `webfrost` CLI, so `webfrost admin create` cannot be run in the container. Create the admin user in the browser or with `POST /api/v1/setup`. To use the CLI on the same archive, [install the binary](/docs/getting-started/install) and point `WEBFROST_DIR` at the volume's directory.
 </Callout>
 
 <Callout type="warn" title="Image tags">

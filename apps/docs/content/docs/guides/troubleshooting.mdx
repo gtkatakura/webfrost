@@ -10,7 +10,7 @@ Run with `WEBFROST_LOG_LEVEL=debug` (or `--verbose` on the CLI) first. Debug out
 
 **Cause:** Chromium is missing or not found, navigation failed, or a request hit the SSRF policy. Those four extractors are recorded as failed, and the snapshot still ends `done` with WARC, Readability and HTML.
 
-`GET /api/snapshots/:id` shows each failure as `status: "failed"` with an `error` in `extractorMeta`. Read the message.
+`GET /api/v1/snapshots/:id` shows each failure as `status: "failed"` with an `error` in `extractorMeta`. Read the message.
 
 **Fix:**
 

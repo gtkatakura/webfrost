@@ -19,7 +19,7 @@ A snapshot moves through the job runner into the pipeline, which fetches the pag
   participant DB as SQLite
   participant FS as Storage
 
-  User->>Entry: webfrost add url, or POST /api/snapshots
+  User->>Entry: webfrost add url, or POST /api/v1/snapshots
   Entry->>DB: INSERT snapshot (pending) and job_queue row (lease starts)
   Entry->>Runner: enqueue
   Note over Runner: wait for the host slot, then a concurrency slot
@@ -119,7 +119,7 @@ How the server serves an archived file.
   participant DB as SQLite
   participant Store as Storage backend
 
-  Client->>Server: GET /api/snapshots/:id/archives/:extractor/download
+  Client->>Server: GET /api/v1/snapshots/:id/archives/:extractor/download
   Server->>Auth: API key, session cookie or public read
   Auth-->>Server: allowed, or 401
   Server->>DB: result for snapshot and extractor, without error
@@ -145,7 +145,7 @@ The extractor name is checked against an allowlist, and the stored reference mus
   participant DB as SQLite
   participant Runner as JobRunner
 
-  User->>Entry: import urls.txt, or POST /api/import
+  User->>Entry: import urls.txt, or POST /api/v1/import
   Entry->>Imp: parse content with the format
   Imp-->>Entry: URL list
   loop each URL

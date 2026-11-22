@@ -15,8 +15,8 @@ For the structured analysis (assets, trust boundaries, risks by component) see t
 
 ## Authentication
 
-Every `/api/*` route requires authentication except `POST /api/auth/login`, `POST /api/auth/logout`,
-`GET /api/setup/status` and `POST /api/setup` (which only works while no admin user exists, and
+Every `/api/v1/*` route requires authentication except `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`,
+`GET /api/v1/setup/status` and `POST /api/v1/setup` (which only works while no admin user exists, and
 only with `WEBFROST_SETUP_TOKEN` when that is set). While no admin exists and no setup token is
 configured, the server logs a warning at startup: anyone who reaches it can claim it.
 
@@ -45,7 +45,7 @@ server binds to `127.0.0.1` unless `HOST` is set explicitly.
 
 `SameSite=Strict` keeps the cookie off requests started by other *sites*, but not by other
 origins on the same site (a sibling subdomain). So every state-changing request (`POST`, `PUT`,
-`PATCH`, `DELETE` under `/api`) that does not carry a bearer token is checked before its body is
+`PATCH`, `DELETE` under `/api/v1`) that does not carry a bearer token is checked before its body is
 parsed:
 
 - `Sec-Fetch-Site` must be `same-origin` or `none`; `same-site` and `cross-site` get `403`.
@@ -54,7 +54,7 @@ parsed:
   passes (scripts, the SDK in Node or Bun).
 
 On top of that, every body must be `application/json` (multipart only for
-`POST /api/import/file`), otherwise `415`: an HTML form cannot send JSON. Bearer-token requests
+`POST /api/v1/import/file`), otherwise `415`: an HTML form cannot send JSON. Bearer-token requests
 skip the origin check, since a form cannot set an `Authorization` header.
 
 ### Public read and private write
@@ -65,7 +65,7 @@ and the schedules, imports, settings and API-key routes, still require a session
 The allowlist is explicit and matched on method and exact path, so a new route is private unless
 it is added to it.
 
-Anonymous responses do not include storage paths (local file paths or S3 keys), and failed
+No API response includes storage paths (local file paths or S3 keys), and for anonymous requests failed
 extractors show `extraction failed` instead of the raw error, which can name internal hosts and
 paths. List pages are capped at 200 items for everyone. See [Public read](/docs/guides/public-read) for the exact route list. Remember that
 everything you have archived becomes visible to anyone who can reach the server — including
@@ -85,9 +85,9 @@ In-memory, sliding one-minute window, per client IP:
 
 | Scope | Limit |
 |---|---|
-| `POST /api/auth/login`, `/api/auth/change-password`, `/api/setup` | 10 / min |
-| `POST /api/snapshots`, `/api/import`, `/api/import/file` | 60 / min |
-| `GET` / `HEAD` on `/api/*` | 300 / min |
+| `POST /api/v1/auth/login`, `/api/v1/auth/change-password`, `/api/v1/setup` | 10 / min |
+| `POST /api/v1/snapshots`, `/api/v1/import`, `/api/v1/import/file` | 60 / min |
+| `GET` / `HEAD` on `/api/v1/*` | 300 / min |
 
 A limited request gets `429` with a `Retry-After` header.
 
@@ -177,7 +177,7 @@ type and `Content-Disposition: attachment` into the response, so an archived HTM
 instead of rendering, with its scripts, on the bucket's origin.
 
 These headers are set on every response, including errors, `404`s and requests refused before
-they reach a route. Errors are always JSON `{ error, code }`; an unknown `/api/*` path is a JSON
+they reach a route. Errors are always JSON `{ error, code }`; an unknown `/api/v1/*` path is a JSON
 `404`, never the single-page app.
 
 Archived content is **untrusted**:
@@ -185,7 +185,7 @@ Archived content is **untrusted**:
 - Archived files (HTML, DOM snapshot, SingleFile, PDF, WARC, media) are downloaded with
   `Content-Disposition: attachment`.
 - The in-app preview of a DOM snapshot or SingleFile archive is served by a separate endpoint
-  (`GET /api/snapshots/:id/archives/:extractor/preview`) with its own policy:
+  (`GET /api/v1/snapshots/:id/archives/:extractor/preview`) with its own policy:
 
   ```
   Content-Security-Policy: sandbox; default-src 'none'; style-src 'unsafe-inline';
@@ -208,7 +208,7 @@ inline from a route that carries the app's own policy.
 ## Input validation
 
 - URLs: `http:`/`https:` only, on the server and in the CLI.
-- `GET /api/snapshots/:id/archives/:extractor/download`: `extractor` is checked against an
+- `GET /api/v1/snapshots/:id/archives/:extractor/download`: `extractor` is checked against an
   allowlist, and the stored file reference is validated against the storage backend before any
   read (local path must be inside `snapshots/`; S3 keys must be under the configured prefix).
 - All SQL uses bound parameters. Full-text queries are passed to FTS5 as a bound parameter; a

@@ -20,14 +20,15 @@ Available from `0.1.0`.
 import { WebFrostClient } from "@webfrost/sdk";
 
 const client = new WebFrostClient({
-  baseUrl: "http://localhost:3000/api",
+  // The server's origin; the client talks to its /api/v1 itself.
+  baseUrl: "http://localhost:3000",
   apiKey: process.env.WEBFROST_API_KEY,
 });
 ```
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `baseUrl` | `string` | required | API base URL **including the `/api` prefix**. The client appends paths such as `/snapshots`, so a server on port 3000 is `http://localhost:3000/api`. A trailing slash is removed. |
+| `baseUrl` | `string` | `""` | The server's origin, such as `http://localhost:3000`, optionally with the path a reverse proxy serves WebFrost under (`https://example.com/webfrost`). The client appends `/api/v1` and the route itself. The default, an empty string, is the page's own origin, for a browser page served by WebFrost. A trailing slash is removed. |
 | `apiKey` | `string` | none | Sent as `Authorization: Bearer <key>` on every request. Create one in the UI, with `webfrost admin key create`, or through `completeSetup`. |
 | `timeoutMs` | `number` | `30000` | Per-attempt timeout, covering the response headers and body. `0` disables it. |
 | `retries` | `number` | `0` | How many times to retry a failed GET or HEAD. See [Timeouts, retries and abort](#timeouts-retries-and-abort). |
@@ -35,6 +36,10 @@ const client = new WebFrostClient({
 | `maxRetryDelayMs` | `number` | `30000` | Longest wait between attempts. A longer `Retry-After` is not waited out. |
 | `credentials` | `RequestCredentials` | `"same-origin"` | The `fetch` credentials mode. Use `"include"` for a browser page on another origin that relies on the session cookie. |
 | `fetch` | `typeof fetch` | global `fetch` | A custom `fetch` for SSR, tests or proxies. The global is looked up on every request. |
+
+The client speaks version 1 of the [REST API](/docs/reference/rest-api#versioning) (`/api/v1`). `baseUrl` is where the server is, not where its API is. A legacy value ending in `/api` or `/api/v1` still works: the client drops the suffix and logs a one-time `console.warn`.
+
+Timestamps (`createdAt`, `lastRunAt`, `nextRunAt`, `expiresAt`, ...) are ISO 8601 strings in UTC, such as `"2026-11-21T21:42:38Z"`: pass them to `new Date()` as they are.
 
 ## Authentication
 
@@ -57,7 +62,7 @@ try {
   await client.createSnapshot("not-a-url");
 } catch (err) {
   if (err instanceof WebFrostError) {
-    console.error(err.status, err.code, err.message); // 400 "BAD_REQUEST" "invalid url"
+    console.error(err.status, err.code, err.message); // 400 "VALIDATION" "invalid url"
     // err.retryAfter: seconds from the Retry-After header, when sent (typically on 429)
   }
 }
@@ -66,12 +71,12 @@ try {
 | Field | Meaning |
 |---|---|
 | `status` | HTTP status, or `0` when there was no response |
-| `code` | Machine-readable: the server's `code` (`UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `VALIDATION`, `RATE_LIMITED`, ...), or from the client `NETWORK_ERROR`, `TIMEOUT`, `ABORTED`, `INVALID_RESPONSE`. Branch on this, not on `message`. |
+| `code` | Machine-readable: the server's `code` (`VALIDATION`, `UNAUTHORIZED`, `INVALID_CREDENTIALS`, `FETCH_FAILED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMITED`, ...; the full list is in the [REST API errors](/docs/reference/rest-api#errors)), or from the client `NETWORK_ERROR`, `TIMEOUT`, `ABORTED`, `INVALID_RESPONSE`. Branch on this, not on `message`. |
 | `message` | The server's `error` text, or the status text |
 | `retryAfter` | Seconds to wait, from `Retry-After` |
 | `cause` | The underlying error for network failures and timeouts |
 
-**Not found.** A single lookup that finds nothing resolves `null` (`getSnapshot`); a delete of something missing resolves `false` (`deleteSnapshot`, `deleteTag`, `deleteSchedule`, `revokeApiKey`, `removeTagFromSnapshot`); listing the tags of a missing snapshot resolves `[]`. Every other 404 throws with code `NOT_FOUND`.
+**Not found.** A single lookup that finds nothing resolves `null` (`getSnapshot`); a delete of something missing resolves `false` (`deleteSnapshot`, `deleteTag`, `deleteSchedule`, `revokeApiKey`, `removeTagFromSnapshot`); listing the tags of a missing snapshot resolves an empty page. Every other 404 throws with code `NOT_FOUND`.
 
 ## Timeouts, retries and abort
 
@@ -84,6 +89,20 @@ controller.abort(); // rejects with WebFrostError, code "ABORTED"
 ```
 
 With `retries` set, **GET and HEAD** requests are retried on network errors, timeouts, `429` and `502`/`503`/`504`, with exponential backoff and jitter. A `Retry-After` header is honoured; if it is longer than `maxRetryDelayMs` the error is thrown instead of waiting. Writes are never retried: a POST or PATCH that reached the server could run twice, and a retried DELETE would report "not found" for something it had just deleted.
+
+## Pagination
+
+Every list method (`listSnapshots`, `searchSnapshotsPage`, `listTags`, `listSnapshotTags`, `listSchedules`, `listApiKeys`, `listImports`) takes `(options?: { page, limit }, request?: { signal })` and returns a `Page<T>`: `{ items, total, page, limit }`. `limit` defaults to 20 and the server caps it at 200.
+
+```ts
+const { items, total, page, limit } = await client.listTags({ page: 1, limit: 50 });
+```
+
+The lazy iterators `iterateSnapshots`, `iterateTags`, `iterateSchedules`, `iterateApiKeys` and `iterateImports` fetch one page at a time (100 per request unless `limit` says otherwise). Breaking out of the loop stops fetching.
+
+```ts
+for await (const tag of client.iterateTags()) console.log(tag.name);
+```
 
 ## Snapshots
 
@@ -100,7 +119,7 @@ The server archives in the background. Poll `getSnapshot` until `status` is no l
 
 ### `listSnapshots(options?): Promise<SnapshotPage>`
 
-`options` is `{ page?, limit?, status? }`. Results are newest first.
+`options` is `{ page?, limit?, status? }`. Results are newest first. The second argument is `{ signal }`.
 
 ```ts
 const { items, total, page, limit } = await client.listSnapshots({ page: 1, limit: 20 });
@@ -138,11 +157,14 @@ const { items, total } = await client.searchSnapshotsPage("climate change", { pa
 
 ### `getSnapshot(id: number): Promise<SnapshotDetail | null>`
 
-Resolves to `null` when the snapshot does not exist. Otherwise the list fields plus `archiveResults` and `extractorMeta`.
+Resolves to `null` when the snapshot does not exist. Otherwise the list fields plus `archiveResults` and `extractorMeta`. Each archive result has `downloadUrl` and `previewUrl` (`null` unless the extractor has a preview), which the SDK resolves to absolute URLs against `baseUrl`, as it does `screenshotUrl`. `content` holds the data only for inline results (`readability`, `html`) and is `null` for file-backed ones; storage paths never reach the client.
 
 ```ts
 const detail = await client.getSnapshot(1);
 detail?.extractorMeta["pdf"]; // { status: "success", durationMs, fileSizeBytes }
+for (const result of detail?.archiveResults ?? []) {
+  console.log(result.extractor, result.downloadUrl, result.previewUrl);
+}
 ```
 
 ### `deleteSnapshot(id: number): Promise<boolean>`
@@ -154,7 +176,7 @@ detail?.extractorMeta["pdf"]; // { status: "success", durationMs, fileSizeBytes 
 A URL for `<a href>`, `<img src>` or `<iframe src>`. `kind` is `"download"` (default) for the stored file, or `"preview"` for the sandboxed HTML preview that some extractors have. The URL carries no credentials: the browser sends the session cookie. An API key cannot go in a URL, so use `downloadArchive` with one.
 
 ```ts
-client.archiveUrl(1, "screenshot"); // http://localhost:3000/api/snapshots/1/archives/screenshot/download
+client.archiveUrl(1, "screenshot"); // http://localhost:3000/api/v1/snapshots/1/archives/screenshot/download
 client.archiveUrl(1, "singlefile", "preview");
 ```
 
@@ -171,10 +193,10 @@ const blob = await res.blob();
 
 | Method | Returns | Notes |
 |---|---|---|
-| `listTags()` | `Tag[]` | |
+| `listTags(options?, request?)` | `Page<Tag>` | |
 | `createTag(name, color?)` | `Tag` | `color` is a hex string such as `"#4f46e5"`. Throws on a duplicate name (`409`). |
 | `deleteTag(id)` | `boolean` | `false` when it did not exist |
-| `listSnapshotTags(snapshotId)` | `Tag[]` | `[]` when the snapshot does not exist |
+| `listSnapshotTags(snapshotId, options?, request?)` | `Page<Tag>` | An empty page when the snapshot does not exist |
 | `addTagToSnapshot(snapshotId, tagId)` | `Tag` | |
 | `removeTagFromSnapshot(snapshotId, tagId)` | `boolean` | `false` when it did not exist |
 
@@ -187,7 +209,7 @@ await client.addTagToSnapshot(1, tag.id);
 
 | Method | Returns | Notes |
 |---|---|---|
-| `listSchedules()` | `Schedule[]` | |
+| `listSchedules(options?, request?)` | `Page<Schedule>` | |
 | `createSchedule(url, cron)` | `Schedule` | URL schedules only |
 | `updateSchedule(id, { paused })` | `Schedule` | Pause or resume |
 | `deleteSchedule(id)` | `boolean` | |
@@ -209,7 +231,7 @@ const result = await client.importUrls({
 // { queued: 12, skipped: 3, total: 15, format: "rss" }
 ```
 
-`options` is `{ url?, content?, format? }`: pass a `url` to fetch or raw `content` to parse. `format` is detected when omitted. `listImports()` returns the history.
+`options` is `{ url?, content?, format? }`: pass a `url` to fetch or raw `content` to parse. `format` is detected when omitted. `listImports(options?, request?)` returns the history as a `Page<ImportRecord>`, newest first.
 
 ### `importFile(file, format?, options?): Promise<ImportResult>`
 
@@ -232,8 +254,8 @@ await client.importFile(fileInput.files[0]); // a File keeps its own name
 | `changePassword(currentPassword, newPassword)` | `void`. Throws `WebFrostError` with status `403` when the current password is wrong, `400` for a short new password. |
 | `getStats()` | `DashboardStats` |
 | `getServerInfo()` | `{ version, storagePath, snapshotCount }` |
-| `listApiKeys()` | `ApiKey[]` |
-| `createApiKey(name)` | `ApiKeyCreated`, which includes `rawKey`, shown once |
+| `listApiKeys(options?, request?)` | `Page<ApiKey>` |
+| `createApiKey(name, { expiresAt?, signal? })` | `ApiKeyCreated`, which includes `rawKey`, shown once. `expiresAt` is an ISO 8601 string or a `Date` in the future; omit it for a key that never expires. |
 | `revokeApiKey(id)` | `boolean` |
 
 ## Types
@@ -256,18 +278,28 @@ interface Snapshot {
   tags: Tag[];
   title: string | null;
   excerpt: string | null;
-  screenshotUrl: string | null;
+  screenshotUrl: string | null; // absolute URL, or null
+}
+
+interface ArchiveResult {
+  id: number;
+  extractor: string;
+  content: string | null; // data for inline results only; null for file-backed ones
+  downloadUrl: string; // absolute, resolved against baseUrl
+  previewUrl: string | null; // set for dom-snapshot and singlefile
+  createdAt: string;
 }
 
 interface SnapshotDetail extends Snapshot {
-  archiveResults: { id: number; extractor: string; content: string | null; createdAt: string }[];
+  archiveResults: ArchiveResult[];
   extractorMeta: Record<
     string,
     { status: "success" | "failed"; durationMs: number | null; fileSizeBytes: number | null; error?: string }
   >;
 }
 
-interface SnapshotPage { items: Snapshot[]; total: number; page: number; limit: number }
+interface Page<T> { items: T[]; total: number; page: number; limit: number }
+type SnapshotPage = Page<Snapshot>
 
 interface Tag { id: number; name: string; slug: string; color: string | null; createdAt: string }
 
@@ -276,7 +308,7 @@ interface SearchResult {
   status: SnapshotStatus | null; // null when the server did not report one
   createdAt: string; title: string | null; extractors: string[]; tags: Tag[];
 }
-interface SearchPage { items: SearchResult[]; total: number; page: number; limit: number }
+type SearchPage = Page<SearchResult>
 
 interface Schedule {
   id: number; url: string; cron: string; createdAt: string;
@@ -287,7 +319,7 @@ interface Schedule {
 interface ImportResult { queued: number; skipped: number; total: number; format: ImportFormat }
 ```
 
-`DashboardStats`, `ServerInfo`, `ApiKey`, `ApiKeyCreated` and `ImportRecord` match the response shapes in the [REST API reference](/docs/reference/rest-api#stats-and-settings).
+`DashboardStats`, `ServerInfo`, `ApiKey`, `ApiKeyCreated` and `ImportRecord` match the response shapes in the [REST API reference](/docs/reference/rest-api#stats-and-settings); timestamps are ISO 8601 strings.
 
 <Cards>
   <Card title="REST API" href="/docs/reference/rest-api">

@@ -245,7 +245,7 @@ async function archiveWebFrost(
   timeoutMs = 60_000,
 ): Promise<{ success: boolean }> {
   // POST to create snapshot
-  const res = await fetch(`${baseUrl}/api/snapshots`, {
+  const res = await fetch(`${baseUrl}/api/v1/snapshots`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url }),
@@ -260,7 +260,7 @@ async function archiveWebFrost(
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const poll = await fetch(`${baseUrl}/api/snapshots/${id}`, {
+      const poll = await fetch(`${baseUrl}/api/v1/snapshots/${id}`, {
         signal: AbortSignal.timeout(5_000),
       });
       if (!poll.ok) return { success: false };

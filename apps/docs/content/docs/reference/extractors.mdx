@@ -37,7 +37,7 @@ The PDF, screenshot, DOM snapshot and SingleFile files come from the browser; th
 | The media download fails or exceeds the size cap | `media-metadata` may exist without `media`. |
 | Readability finds no article | The `readability` result exists with `null` fields. |
 
-Failures show up as `status: "failed"` with an `error` in `extractorMeta` of `GET /api/snapshots/:id`, and in the snapshot detail view. Fixes are in [Troubleshooting](/docs/guides/troubleshooting).
+Failures show up as `status: "failed"` with an `error` in `extractorMeta` of `GET /api/v1/snapshots/:id`, and in the snapshot detail view. Fixes are in [Troubleshooting](/docs/guides/troubleshooting).
 
 ## The WARC file
 
@@ -75,14 +75,14 @@ Every yt-dlp call gets `--ignore-config` (no config file on the host can add opt
 ## Reading the results
 
 - **Files on disk:** `ls $WEBFROST_DIR/snapshots/<snapshot-id>/`.
-- **Download over the API:** `GET /api/snapshots/:id/archives/:extractor/download`, where `:extractor` is one of the names above. See [Archive files](/docs/reference/rest-api#archive-files).
+- **Download over the API:** `GET /api/v1/snapshots/:id/archives/:extractor/download`, where `:extractor` is one of the names above. See [Archive files](/docs/reference/rest-api#archive-files).
 - **Database:** `archive_results` has one row per extractor run.
 
 **WARC files** open in [ReplayWeb.page](https://replayweb.page/) and can be processed with [warcio](https://github.com/webrecorder/warcio).
 
 ## Supported sources
 
-- **Single URL:** any `http` or `https` URL, from `webfrost add`, the UI, `POST /api/snapshots` or the SDK. Other schemes are rejected.
+- **Single URL:** any `http` or `https` URL, from `webfrost add`, the UI, `POST /api/v1/snapshots` or the SDK. Other schemes are rejected.
 - **Bulk sources:** text lists, Netscape bookmarks, OPML and RSS or Atom feeds. See [Bulk import](/docs/guides/bulk-import).
 - **Recurring:** a URL or an RSS feed on a cron schedule. See [Scheduled archiving](/docs/guides/scheduled-archiving).
 - **Not supported:** pages behind a login. See [Authenticated pages](/docs/guides/authenticated-pages).

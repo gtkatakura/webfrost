@@ -68,7 +68,7 @@ The CLI drives the same core library directly against the data directory, withou
 
 | Threat | Control | Status |
 |---|---|---|
-| Unauthenticated API access | All `/api/*` routes require a session or API key | Mitigated |
+| Unauthenticated API access | All `/api/v1/*` routes require a session or API key | Mitigated |
 | Anonymous visitor changing the archive when public read is on | `WEBFROST_PUBLIC_READ` admits only `GET`s on an explicit allowlist of read routes; storage paths and raw extractor errors (which can name internal hosts and paths) are withheld from anonymous responses; list pages capped at 200 | Mitigated |
 | Operator enables public read on an archive holding private captures | None — the whole archive becomes readable | Operator responsibility |
 | Password brute force | 10 attempts/min per client; bcrypt; uniform timing for unknown users | Mitigated |

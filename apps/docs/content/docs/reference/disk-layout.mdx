@@ -60,7 +60,7 @@ For a backup while the server runs, use SQLite's online backup for the database 
 
 ## Deleting a snapshot
 
-`webfrost delete <id>` and `DELETE /api/snapshots/:id` remove the database rows, the search entry and the snapshot's files (the directory, or the S3 objects) on a best-effort basis. There is no trash: deletion is permanent.
+`webfrost delete <id>` and `DELETE /api/v1/snapshots/:id` remove the database rows, the search entry and the snapshot's files (the directory, or the S3 objects) on a best-effort basis. There is no trash: deletion is permanent.
 
 <Cards>
   <Card title="Database" href="/docs/reference/database">

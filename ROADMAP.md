@@ -12,8 +12,6 @@ Every breaking change is called out in the [changelog](CHANGELOG.md).
 - **Easy to install anywhere.** A Docker image for amd64 and arm64 (Apple Silicon, Raspberry Pi, ARM
   NAS), and a single `webfrost` binary for macOS, Linux and Windows with `webfrost serve`, `setup` and
   `doctor`, installable with a script or Homebrew.
-- **A stable contract.** A versioned HTTP API (`/api/v1`) with one error format and one pagination
-  format, and `@webfrost/sdk` on npm.
 - **Hardening.** CSRF protection for browser sessions, safer media downloads (yt-dlp), valid WARC files
   for compressed and binary responses, a non-root container, request size limits, graceful shutdown.
 - **Your choice of database.** SQLite stays the default for one person on one machine, with a guide
@@ -50,7 +48,8 @@ Eight formats from one visit (WARC, raw HTML, readable text, PDF, full-page scre
 self-contained HTML, video); full-text search; tags; imports from bookmarks, OPML, RSS/Atom and URL
 lists; cron and feed schedules run by the server; a job queue with crash recovery and per-site pacing;
 filesystem or S3-compatible storage; API keys, revocable sessions and rate limits; read-only public mode;
-an SSRF guard for fetches and the headless browser; CLI, HTTP API, TypeScript SDK and a web UI with the
+an SSRF guard for fetches and the headless browser; CLI, a versioned HTTP API (`/api/v1`, one error format,
+one pagination format) with a TypeScript SDK, and a web UI with the
 WebFrost look in light and dark, clear error states, accessible dialogs and a phone layout.
 
 ## Contributing

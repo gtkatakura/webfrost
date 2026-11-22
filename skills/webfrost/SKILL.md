@@ -48,11 +48,11 @@ folder per snapshot with the files (see https://webfrost.dev/docs/reference/disk
 
 ## HTTP API
 
-Base path `/api`, JSON in and out, `Authorization: Bearer <api-key>`. Errors are
+Base path `/api/v1` (the unversioned `/api` is a deprecated alias), JSON in and out, `Authorization: Bearer <api-key>`. Errors are
 `{ "error": "...", "code": "..." }`.
 
 ```bash
-API=http://localhost:3000/api
+API=http://localhost:3000/api/v1
 # Archive: returns 202 with { id, url, status: "pending" }. The work happens in the background.
 curl -X POST "$API/snapshots" -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" -d '{"url":"https://example.com"}'
@@ -71,9 +71,9 @@ curl -OJ "$API/snapshots/1/archives/pdf/download" -H "Authorization: Bearer $KEY
 - Search results carry a `snippet` whose only markup is `<mark>`; show it as text with highlights.
 - `GET` requests allow 300 per minute; creating snapshots and imports 60 per minute. On `429`, wait
   for `Retry-After` seconds.
-- Bulk work: `POST /api/import` with `{ "content": "...", "format": "text" | "netscape" | "opml" |
+- Bulk work: `POST /api/v1/import` with `{ "content": "...", "format": "text" | "netscape" | "opml" |
   "rss" }` or `{ "url": "<feed or list URL>" }` queues many URLs at once; don't loop over
-  `POST /api/snapshots` for hundreds of URLs.
+  `POST /api/v1/snapshots` for hundreds of URLs.
 - Reference: https://webfrost.dev/docs/reference/rest-api
 
 ## SDK
@@ -82,7 +82,7 @@ curl -OJ "$API/snapshots/1/archives/pdf/download" -H "Authorization: Bearer $KEY
 import { WebFrostClient } from "@webfrost/sdk";
 
 const client = new WebFrostClient({
-  baseUrl: "http://localhost:3000/api",
+  baseUrl: "http://localhost:3000",
   apiKey: process.env.WEBFROST_API_KEY,
   retries: 2, // GET/HEAD only, with backoff; honours Retry-After
 });

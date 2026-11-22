@@ -61,7 +61,7 @@ Open **Import**, choose a format card (RSS feed, OPML, Netscape bookmarks, plain
 From a URL (feed or file):
 
 ```bash
-curl -X POST http://localhost:3000/api/import \
+curl -X POST http://localhost:3000/api/v1/import \
   -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
   -d '{"url": "https://example.com/feed.xml", "format": "rss"}'
@@ -73,14 +73,14 @@ From inline content: send `{"content": "https://a.example\nhttps://b.example", "
 From an uploaded file:
 
 ```bash
-curl -X POST http://localhost:3000/api/import/file \
+curl -X POST http://localhost:3000/api/v1/import/file \
   -H "Authorization: Bearer $KEY" \
   -F "file=@bookmarks.html" \
   -F "format=netscape"
 # HTTP 202 { "queued": 45, "skipped": 2, "total": 47, "format": "netscape" }
 ```
 
-`GET /api/imports` returns the import history. Details are in the [REST API reference](/docs/reference/rest-api#import).
+`GET /api/v1/imports` returns the import history. Details are in the [REST API reference](/docs/reference/rest-api#import).
 
 </Tab>
 <Tab value="SDK">
@@ -92,7 +92,7 @@ const result = await client.importUrls({
 });
 // { queued: 12, skipped: 3, total: 15, format: "rss" }
 
-const history = await client.listImports();
+const history = await client.listImports(); // { items, total, page, limit }
 ```
 
 </Tab>

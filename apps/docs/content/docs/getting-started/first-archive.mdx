@@ -30,14 +30,14 @@ Open the dashboard, paste `https://example.com` into **Quick Archive** and submi
 <Tab value="API">
 
 ```bash
-curl -X POST http://localhost:3000/api/snapshots \
+curl -X POST http://localhost:3000/api/v1/snapshots \
   -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
   -d '{"url":"https://example.com"}'
 # HTTP 202 { "id": 1, "url": "https://example.com", "status": "pending" }
 ```
 
-The server queues the job and answers immediately. Poll `GET /api/snapshots/1` until `status` is no longer `pending`.
+The server queues the job and answers immediately. Poll `GET /api/v1/snapshots/1` until `status` is no longer `pending`.
 
 </Tab>
 </Tabs>
@@ -108,7 +108,7 @@ Press `Ctrl+K` (or `Cmd+K`) to open the search palette, or use the **Search** pa
 <Tab value="API">
 
 ```bash
-curl "http://localhost:3000/api/snapshots?q=illustrative" \
+curl "http://localhost:3000/api/v1/snapshots?q=illustrative" \
   -H "Authorization: Bearer $KEY"
 ```
 

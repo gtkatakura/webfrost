@@ -79,7 +79,7 @@ webfrost schedule add https://example.com --cron "0 * * * *"
 import { WebFrostClient } from "@webfrost/sdk";
 
 const client = new WebFrostClient({
-  baseUrl: "http://localhost:3000/api",
+  baseUrl: "http://localhost:3000",
   apiKey: process.env.WEBFROST_API_KEY,
 });
 const { id } = await client.createSnapshot("https://example.com");

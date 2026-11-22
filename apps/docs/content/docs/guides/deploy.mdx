@@ -26,7 +26,7 @@ The runtime image:
 - exposes port 3000 and runs `bun run dist/index.js`;
 - has a built-in `HEALTHCHECK` against `/health`;
 - runs as the unprivileged user `webfrost` (UID and GID 1000), with Chromium started without its own sandbox. The container is the sandbox: add no capabilities and mount nothing from the host except the data volume;
-- does **not** contain the `webfrost` CLI. Create the admin user in the browser or with `POST /api/setup`.
+- does **not** contain the `webfrost` CLI. Create the admin user in the browser or with `POST /api/v1/setup`.
 
 <Callout type="info" title="Which tags exist">
 The release workflow builds the image when a `v*.*.*` tag is pushed or when it is dispatched manually, not on every merge to `main`. Tag pushes publish the semver tags (`<version>` and `<major>.<minor>`, without a leading `v`) and `sha-<short-sha>`. `latest` is published for each stable version tag (not for release candidates). Pin a version with `IMAGE_TAG` once releases exist, or build the image yourself (see below).
@@ -192,7 +192,7 @@ The session cookie is `HttpOnly`, `SameSite=Strict` and `Secure`. Browsers drop 
 
 ## First-run setup
 
-Until an admin exists, `POST /api/setup` (the setup page) lets whoever reaches the server first become its admin, and the server logs a warning at every start while that is the case. Either finish setup before exposing the port, or set `WEBFROST_SETUP_TOKEN`:
+Until an admin exists, `POST /api/v1/setup` (the setup page) lets whoever reaches the server first become its admin, and the server logs a warning at every start while that is the case. Either finish setup before exposing the port, or set `WEBFROST_SETUP_TOKEN`:
 
 ```bash
 docker run -d -p 3000:3000 \
@@ -264,7 +264,7 @@ docker run --rm -v webfrost_data:/data -v "$PWD":/backup alpine \
 
 docker compose start
 curl http://localhost:3000/health
-curl -H "Authorization: Bearer $KEY" http://localhost:3000/api/snapshots
+curl -H "Authorization: Bearer $KEY" http://localhost:3000/api/v1/snapshots
 ```
 
 Confirm `/health` answers `ok` and the snapshot list shows your history.

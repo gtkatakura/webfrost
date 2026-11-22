@@ -32,17 +32,17 @@ Open **Schedules**, enter a URL and a cron expression or preset. Rows show a hea
 
 ```bash
 # Create (201)
-curl -X POST http://localhost:3000/api/schedules \
+curl -X POST http://localhost:3000/api/v1/schedules \
   -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
   -d '{"url": "https://example.com/news", "cron": "0 0 * * *"}'
 
 # Pause or resume
-curl -X PATCH http://localhost:3000/api/schedules/1 \
+curl -X PATCH http://localhost:3000/api/v1/schedules/1 \
   -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
   -d '{"paused": true}'
 
 # Delete (204)
-curl -X DELETE http://localhost:3000/api/schedules/1 \
+curl -X DELETE http://localhost:3000/api/v1/schedules/1 \
   -H "Authorization: Bearer $KEY"
 ```
 

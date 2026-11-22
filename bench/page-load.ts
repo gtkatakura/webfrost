@@ -2,8 +2,8 @@
  * Page load time benchmark — time-to-interactive for the snapshot list page.
  *
  * Spins up a minimal Bun HTTP server that:
- *   - Serves an inline HTML page that calls GET /api/snapshots on load
- *   - Returns fake snapshot data from /api/snapshots
+ *   - Serves an inline HTML page that calls GET /api/v1/snapshots on load
+ *   - Returns fake snapshot data from /api/v1/snapshots
  *
  * Playwright navigates to the page and reads window.performance.timing to
  * report navigationStart → loadEventEnd (page load) and the time until the
@@ -33,7 +33,7 @@ const snapshots = JSON.stringify(
 
 // Minimal HTML that mimics the app's snapshot-list load pattern:
 //   1. Page loads
-//   2. JS calls GET /api/snapshots
+//   2. JS calls GET /api/v1/snapshots
 //   3. Renders a list item per snapshot
 //   4. Sets window.__loaded = true when done
 const PAGE_HTML = /* html */ `<!DOCTYPE html>
@@ -42,7 +42,7 @@ const PAGE_HTML = /* html */ `<!DOCTYPE html>
 <body>
 <ul id="list"></ul>
 <script>
-  fetch("/api/snapshots")
+  fetch("/api/v1/snapshots")
     .then(r => r.json())
     .then(data => {
       const ul = document.getElementById("list");
@@ -64,7 +64,7 @@ const server = Bun.serve({
   port: 0,
   fetch(req) {
     const { pathname } = new URL(req.url);
-    if (pathname === "/api/snapshots") {
+    if (pathname === "/api/v1/snapshots") {
       return new Response(snapshots, {
         headers: { "Content-Type": "application/json" },
       });
