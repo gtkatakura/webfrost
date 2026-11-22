@@ -70,12 +70,20 @@ describe("nextCronDate", () => {
   });
 
   test("advances to next day if daily job already ran today", () => {
-    const from = new Date("2026-04-01T10:00:00.000Z");
-    const next = nextCronDate("0 9 * * *", from);
-    // 9am has passed — next is 9am tomorrow
-    const fromDate = from.getDate();
-    expect(next.getDate()).not.toBe(fromDate);
-    expect(next.getHours()).toBe(9);
-    expect(next.getMinutes()).toBe(0);
+    // Cron reads the process time zone. bun test runs in UTC, but a test that sets TZ and deletes it
+    // afterwards leaves the machine's zone behind (10:00 UTC is 07:00 in São Paulo, before 9 am): pin it.
+    const original = process.env.TZ;
+    process.env.TZ = "UTC";
+    try {
+      const from = new Date("2026-04-01T10:00:00.000Z");
+      const next = nextCronDate("0 9 * * *", from);
+      // 9am has passed — next is 9am tomorrow
+      expect(next.getDate()).not.toBe(from.getDate());
+      expect(next.getHours()).toBe(9);
+      expect(next.getMinutes()).toBe(0);
+    } finally {
+      if (original === undefined) Reflect.deleteProperty(process.env, "TZ");
+      else process.env.TZ = original;
+    }
   });
 });
