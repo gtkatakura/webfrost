@@ -44,6 +44,21 @@ beforeAll(async () => {
   // The rate-limit tests isolate themselves with X-Forwarded-For, which the server
   // only honours when told it sits behind a proxy.
   process.env.WEBFROST_TRUST_PROXY = "true";
+  // Every other request comes from a client of its own, so the suite's 100-odd requests do not share one
+  // client's 60-per-minute budget for creating snapshots: how many land in one minute depends on how fast the
+  // machine is, which made the suite fail at random with 429.
+  const realFetch = globalThis.fetch;
+  let client = 0;
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const headers = new Headers(
+      init?.headers ?? (input instanceof Request ? input.headers : undefined),
+    );
+    if (!headers.has("x-forwarded-for")) {
+      client++;
+      headers.set("x-forwarded-for", `198.18.${(client >> 8) & 255}.${client & 255}`);
+    }
+    return realFetch(input, { ...init, headers });
+  }) as typeof fetch;
 
   const mod = await import("../src/index.ts");
   serverApp = mod.app;
