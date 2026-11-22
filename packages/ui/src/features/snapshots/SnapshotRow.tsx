@@ -49,7 +49,12 @@ export function SnapshotRow({ snapshot, selected, onToggle, density, to }: Snaps
       )}
 
       {comfortable && (
-        <div className="mr-3 hidden h-10 w-14 shrink-0 overflow-hidden rounded border border-border bg-overlay sm:block">
+        <Link
+          to={to}
+          tabIndex={-1}
+          aria-hidden="true"
+          className="mr-3 hidden h-10 w-14 shrink-0 overflow-hidden rounded border border-border bg-overlay transition-colors hover:border-accent sm:block"
+        >
           {snapshot.screenshotUrl ? (
             <img
               src={snapshot.screenshotUrl}
@@ -62,7 +67,7 @@ export function SnapshotRow({ snapshot, selected, onToggle, density, to }: Snaps
               <Camera size={14} aria-hidden="true" />
             </div>
           )}
-        </div>
+        </Link>
       )}
 
       {/* Main content: a real link so it works with middle-click, keyboard and screen readers. */}

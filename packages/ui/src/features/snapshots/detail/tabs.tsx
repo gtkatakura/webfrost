@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ArchiveResult } from "@webfrost/sdk";
-import { Clock, Download, RefreshCcw, ZoomIn, ZoomOut } from "lucide-react";
-import { useState } from "react";
+import { Clock, Download, Expand, ExternalLink, RefreshCcw, ZoomIn, ZoomOut } from "lucide-react";
+import { useRef, useState } from "react";
 import { useClient } from "../../../context";
 import { snapshotKeys } from "../../../hooks/useSnapshots";
 import { shortDateTime } from "../../../lib/format";
@@ -120,32 +120,60 @@ export function ScreenshotTab({ result }: { result: ArchiveResult | undefined })
   );
 }
 
-// ─── DOM / SingleFile ─────────────────────────────────────────
+// ─── Page (SingleFile / DOM) ──────────────────────────────────
 
-export function DomTab({ results }: { results: ArchiveResult[] }) {
+export function PageTab({ results }: { results: ArchiveResult[] }) {
+  const frame = useRef<HTMLIFrameElement>(null);
   // SingleFile has its CSS and images inlined, so it survives the preview's
   // "nothing from the network" policy; the raw DOM snapshot renders unstyled.
-  const shown = findResult(results, "singlefile") ?? findResult(results, "dom-snapshot");
+  const singlefile = findResult(results, "singlefile");
+  const shown = singlefile ?? findResult(results, "dom-snapshot");
 
   if (!shown) {
-    return <TabEmpty message="DOM snapshot / SingleFile extractor did not run or failed." />;
+    return (
+      <TabEmpty message="No archived page: the SingleFile and DOM extractors did not run or failed." />
+    );
   }
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className={`${toolbar} justify-end`}>
-        <a href={shown.downloadUrl} target="_blank" rel="noreferrer" className={downloadLink}>
-          <Download size={12} aria-hidden="true" /> Download
-        </a>
+      <div className={toolbar}>
+        <span className="truncate text-ui-xs text-mid">
+          {singlefile ? "Self-contained copy, scripts off" : "DOM snapshot, without styles"}
+        </span>
+        <div className="ml-auto flex shrink-0 items-center gap-3">
+          {shown.previewUrl && (
+            <a
+              href={shown.previewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={downloadLink}
+            >
+              <ExternalLink size={12} aria-hidden="true" /> Open in new tab
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={() => frame.current?.requestFullscreen?.()}
+            className={`${downloadLink} border-0 bg-transparent p-0`}
+          >
+            <Expand size={12} aria-hidden="true" /> Full screen
+          </button>
+          <a href={shown.downloadUrl} target="_blank" rel="noreferrer" className={downloadLink}>
+            <Download size={12} aria-hidden="true" /> Download
+          </a>
+        </div>
       </div>
-      {/* Untrusted archived HTML: served by the sandboxed preview endpoint and framed
-          with sandbox="". Never add allow-scripts / allow-same-origin here — together
+      {/* Untrusted archived HTML: served by the sandboxed preview endpoint (CSP sandbox) and
+          framed with sandbox="". Never add allow-scripts / allow-same-origin here: together
           they would let an archived page act as the signed-in user. The white background
           is the page's own canvas, not theme. */}
       <iframe
+        ref={frame}
         src={shown.previewUrl ?? undefined}
         title="Archived page preview"
         sandbox=""
+        allowFullScreen
         className="min-h-[60dvh] w-full flex-1 border-0 bg-white md:min-h-0"
       />
     </div>

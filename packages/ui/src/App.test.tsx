@@ -276,9 +276,54 @@ describe("DetailPage — renders results", () => {
     const client = mockClient({ getSnapshot: () => Promise.resolve(detail) });
     renderApp(client, "/snapshots/12");
 
-    fireEvent.click(await screen.findByRole("tab", { name: /Raw/ }));
+    fireEvent.click(await screen.findByRole("tab", { name: /Files/ }));
     const link = await screen.findByRole("link", { name: /PDF/ });
     expect(link.getAttribute("href")).toBe(pdfUrl);
+  });
+
+  test("opens on the archived page, which can be opened full view and in its own tab", async () => {
+    const previewUrl = "/api/v1/snapshots/13/archives/singlefile/preview";
+    const detail = makeDetail({
+      id: 13,
+      url: "https://page.example",
+      archiveResults: [
+        {
+          id: 40,
+          extractor: "singlefile",
+          content: null,
+          downloadUrl: "/api/v1/snapshots/13/archives/singlefile/download",
+          previewUrl,
+          createdAt: "2024-01-15T10:02:00Z",
+        },
+        {
+          id: 41,
+          extractor: "readability",
+          content: JSON.stringify({ title: "T", textContent: "x" }),
+          downloadUrl: "/api/v1/snapshots/13/archives/readability/download",
+          previewUrl: null,
+          createdAt: "2024-01-15T10:02:00Z",
+        },
+      ],
+    });
+    localStorage.removeItem("webfrost-viewer-full");
+    const client = mockClient({ getSnapshot: () => Promise.resolve(detail) });
+    renderApp(client, "/snapshots/13");
+
+    const page = await screen.findByRole("tab", { name: /Page/ });
+    expect(page.getAttribute("aria-selected")).toBe("true");
+    const frame = screen.getByTitle("Archived page preview");
+    expect(frame.getAttribute("src")).toBe(previewUrl);
+    expect(frame.getAttribute("sandbox")).toBe("");
+    const open = screen.getByRole("link", { name: /Open in new tab/ });
+    expect(open.getAttribute("href")).toBe(previewUrl);
+    expect(open.getAttribute("rel")).toContain("noopener");
+
+    fireEvent.click(screen.getByRole("button", { name: "Full view" }));
+    expect(screen.getByRole("dialog").className).toContain("w-screen");
+    expect(screen.getByRole("button", { name: "Show details" })).toBeTruthy();
+    expect(localStorage.getItem("webfrost-viewer-full")).toBe("1");
+    fireEvent.click(screen.getByRole("button", { name: "Exit full view" }));
+    expect(localStorage.getItem("webfrost-viewer-full")).toBe("0");
   });
 
   test("shows fallback when archiveResults is empty", async () => {

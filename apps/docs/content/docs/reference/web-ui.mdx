@@ -71,15 +71,15 @@ All snapshots, newest first, 20 per page. Each row shows the URL (with the title
 
 <Screenshot light={panelLight} dark={panelDark} alt="The detail panel of an archived Wikipedia article, on the Reader tab" />
 
-Clicking a snapshot opens a panel over the list, at `/#/snapshots/:id`. Close it with the **×** button, `Escape` or a click beside it.
+Clicking a snapshot (its title or its thumbnail) opens a panel over the list, at `/#/snapshots/:id`. Close it with the **×** button, `Escape` or a click beside it. The buttons next to **×** switch to **full view**, where the panel fills the window (remembered per browser), and hide or show the details column.
 
 | Tab | Shows |
 |---|---|
-| **Reader** | The article extracted by Readability: title, byline and text, as plain text. Opens first when there is one; otherwise Screenshot, then Raw. |
+| **Page** | The archived page itself: the SingleFile copy, or the DOM snapshot, in a sandboxed frame that runs no scripts and loads nothing from the network. **Full screen** shows it alone on the screen; **Open in new tab** opens it in its own tab, under the same sandbox. Opens first when there is one; otherwise Reader, then Screenshot, then Files. |
+| **Reader** | The article extracted by Readability: title, byline and text, as plain text. |
 | **Screenshot** | The full-page screenshot, with zoom from 25 % to 300 % and a download link. |
-| **DOM** | The SingleFile copy, or the DOM snapshot, in a sandboxed frame that runs no scripts and loads nothing from the network. |
 | **Media** | The video or audio saved by yt-dlp, with its metadata. |
-| **Raw** | Downloads of the HTML, WARC, PDF, SingleFile and DOM snapshot files that exist. |
+| **Files** | Downloads of the HTML, WARC, PDF, SingleFile and DOM snapshot files that exist. |
 | **History** | Every extractor result with its capture time, newest first. |
 
 Move between tabs with the arrow keys, `Home` and `End`. The side column shows the URL (with a copy button), status, capture time, tags (add with **+**, remove with **×**), the extractors that produced output, and **Delete**. While the snapshot is pending, the panel refreshes every 5 seconds.
@@ -152,6 +152,7 @@ These live in `localStorage`, per browser, and never reach the server:
 | `webfrost-theme` | `light` or `dark` |
 | `webfrost-sidebar-collapsed` | Whether the sidebar is collapsed |
 | `webfrost-snapshot-density` | Comfortable or compact rows |
+| `webfrost-viewer-full` | Whether the snapshot panel opens in full view |
 | `webfrost-saved-searches` | Saved searches |
 
 <Cards>

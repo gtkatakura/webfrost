@@ -89,10 +89,10 @@ test("previews: screenshot tab loads the image", async ({ page }) => {
     .toBe(true);
 });
 
-test("previews: DOM tab frames the archived page in a sandboxed iframe", async ({ page }) => {
+test("previews: Page tab frames the archived page in a sandboxed iframe", async ({ page }) => {
   await page.goto(`/#/snapshots/${snapshotId}`);
 
-  await page.getByRole("tab", { name: "DOM", exact: true }).click();
+  await page.getByRole("tab", { name: "Page", exact: true }).click();
   const iframe = page.locator('iframe[title="Archived page preview"]');
   await expect(iframe).toBeVisible();
   // Untrusted HTML must be framed with every sandbox permission off.

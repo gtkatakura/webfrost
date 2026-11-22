@@ -1,6 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import type { SnapshotDetail } from "@webfrost/sdk";
-import { BookOpen, Camera, Download, Film, History, Monitor, X } from "lucide-react";
+import {
+  BookOpen,
+  Camera,
+  Download,
+  Film,
+  Globe,
+  History,
+  Maximize2,
+  Minimize2,
+  PanelRightClose,
+  PanelRightOpen,
+  X,
+} from "lucide-react";
 import { type ElementType, useEffect, useRef, useState } from "react";
 import { Modal } from "../../../components/ui/Modal";
 import { ErrorState, Skeleton } from "../../../components/ui/StateViews";
@@ -8,26 +20,57 @@ import { useClient } from "../../../context";
 import { useAuth } from "../../../context/auth";
 import { PENDING_POLL_MS, snapshotKeys, useDeleteSnapshot } from "../../../hooks/useSnapshots";
 import { MetadataSidebar } from "./MetadataSidebar";
-import { DomTab, HistoryTab, MediaTab, RawTab, ReaderTab, ScreenshotTab, findResult } from "./tabs";
+import {
+  HistoryTab,
+  MediaTab,
+  PageTab,
+  RawTab,
+  ReaderTab,
+  ScreenshotTab,
+  findResult,
+} from "./tabs";
 
-type TabId = "reader" | "screenshot" | "dom" | "media" | "raw" | "history";
+type TabId = "page" | "reader" | "screenshot" | "media" | "raw" | "history";
 
 const TABS: { id: TabId; label: string; Icon: ElementType }[] = [
+  { id: "page", label: "Page", Icon: Globe },
   { id: "reader", label: "Reader", Icon: BookOpen },
   { id: "screenshot", label: "Screenshot", Icon: Camera },
-  { id: "dom", label: "DOM", Icon: Monitor },
   { id: "media", label: "Media", Icon: Film },
-  { id: "raw", label: "Raw", Icon: Download },
+  { id: "raw", label: "Files", Icon: Download },
   { id: "history", label: "History", Icon: History },
 ];
 
 function defaultTab(detail: SnapshotDetail): TabId | null {
   const extractors = new Set(detail.archiveResults.map((r) => r.extractor));
+  if (extractors.has("singlefile") || extractors.has("dom-snapshot")) return "page";
   if (extractors.has("readability")) return "reader";
   if (extractors.has("screenshot")) return "screenshot";
   if (extractors.size > 0) return "raw";
   return null;
 }
+
+const EXPANDED_KEY = "webfrost-viewer-full";
+
+/** The full-view choice is remembered per browser: whoever reads archives wants it every time. */
+function readExpanded() {
+  try {
+    return localStorage.getItem(EXPANDED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeExpanded(value: boolean) {
+  try {
+    localStorage.setItem(EXPANDED_KEY, value ? "1" : "0");
+  } catch {
+    // Storage can be blocked; the toggle still works for this visit.
+  }
+}
+
+const headerBtn =
+  "hidden rounded border-0 bg-transparent p-1.5 text-mid transition-colors hover:bg-subtle hover:text-high sm:inline-flex";
 
 interface SnapshotDetailPanelProps {
   snapshotId: number;
@@ -40,7 +83,10 @@ interface SnapshotDetailPanelProps {
 export function SnapshotDetailPanel({ snapshotId, onClose, onDeleted }: SnapshotDetailPanelProps) {
   const client = useClient();
   const { canWrite } = useAuth();
-  const [activeTab, setActiveTab] = useState<TabId>("reader");
+  const [activeTab, setActiveTab] = useState<TabId>("page");
+  const [expanded, setExpanded] = useState(readExpanded);
+  // The details column takes room from the page: open beside the side panel, closed in full view.
+  const [infoOpen, setInfoOpen] = useState(() => !readExpanded());
   const tabRefs = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({});
   // The default tab is picked once per snapshot, not on every background refetch: otherwise
   // polling a pending snapshot would yank the user back from the tab they chose.
@@ -63,6 +109,13 @@ export function SnapshotDetailPanel({ snapshotId, onClose, onDeleted }: Snapshot
     const tab = defaultTab(detail);
     if (tab) setActiveTab(tab);
   }, [detail]);
+
+  function toggleExpanded() {
+    const next = !expanded;
+    setExpanded(next);
+    setInfoOpen(!next);
+    writeExpanded(next);
+  }
 
   function handleDelete() {
     if (!canWrite || deleteSnapshot.isPending) return;
@@ -90,7 +143,7 @@ export function SnapshotDetailPanel({ snapshotId, onClose, onDeleted }: Snapshot
   const results = detail?.archiveResults ?? [];
 
   return (
-    <Modal onClose={onClose} labelledBy={titleId} variant="side">
+    <Modal onClose={onClose} labelledBy={titleId} variant={expanded ? "full" : "side"}>
       <div className="flex h-full flex-col">
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-2.5">
           <div className="flex min-w-0 items-baseline gap-2">
@@ -99,14 +152,44 @@ export function SnapshotDetailPanel({ snapshotId, onClose, onDeleted }: Snapshot
             </h2>
             {detail && <span className="shrink-0 font-mono text-ui-xs text-mid">#{detail.id}</span>}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded border-0 bg-transparent p-1.5 text-mid transition-colors hover:bg-subtle hover:text-high"
-            aria-label="Close panel"
-          >
-            <X size={16} aria-hidden="true" />
-          </button>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setInfoOpen((v) => !v)}
+              className={headerBtn}
+              aria-pressed={infoOpen}
+              aria-label={infoOpen ? "Hide details" : "Show details"}
+              title={infoOpen ? "Hide details" : "Show details"}
+            >
+              {infoOpen ? (
+                <PanelRightClose size={16} aria-hidden="true" />
+              ) : (
+                <PanelRightOpen size={16} aria-hidden="true" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={toggleExpanded}
+              className={headerBtn}
+              aria-pressed={expanded}
+              aria-label={expanded ? "Exit full view" : "Full view"}
+              title={expanded ? "Exit full view" : "Full view"}
+            >
+              {expanded ? (
+                <Minimize2 size={16} aria-hidden="true" />
+              ) : (
+                <Maximize2 size={16} aria-hidden="true" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded border-0 bg-transparent p-1.5 text-mid transition-colors hover:bg-subtle hover:text-high"
+              aria-label="Close panel"
+            >
+              <X size={16} aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
         <div
@@ -185,13 +268,13 @@ export function SnapshotDetailPanel({ snapshotId, onClose, onDeleted }: Snapshot
 
             {detail && (
               <>
+                {activeTab === "page" && <PageTab results={results} />}
                 {activeTab === "reader" && (
                   <ReaderTab result={findResult(results, "readability")} />
                 )}
                 {activeTab === "screenshot" && (
                   <ScreenshotTab result={findResult(results, "screenshot")} />
                 )}
-                {activeTab === "dom" && <DomTab results={results} />}
                 {activeTab === "media" && <MediaTab snapshotId={detail.id} results={results} />}
                 {activeTab === "raw" && <RawTab results={results} />}
                 {activeTab === "history" && <HistoryTab results={results} />}
@@ -199,8 +282,13 @@ export function SnapshotDetailPanel({ snapshotId, onClose, onDeleted }: Snapshot
             )}
           </div>
 
+          {/* Hidden only from md up: on a phone the details stack under the content. */}
           {detail && (
-            <MetadataSidebar detail={detail} onDelete={canWrite ? handleDelete : undefined} />
+            <MetadataSidebar
+              hidden={!infoOpen}
+              detail={detail}
+              onDelete={canWrite ? handleDelete : undefined}
+            />
           )}
         </div>
       </div>

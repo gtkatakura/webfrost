@@ -1,13 +1,14 @@
 import { type ReactNode, useEffect, useId, useRef } from "react";
 import { Toaster } from "sonner";
 
-type Variant = "center" | "top" | "side";
+type Variant = "center" | "top" | "side" | "full";
 
 const variantCls: Record<Variant, string> = {
   center:
     "m-auto w-[calc(100%-2rem)] max-w-sm rounded-xl border border-border bg-surface shadow-2xl animate-pop-in",
   top: "mx-auto mt-[12dvh] mb-auto w-[calc(100%-2rem)] max-w-xl rounded-xl border border-border-strong bg-surface shadow-2xl animate-pop-in",
-  side: "ml-auto mr-0 my-0 h-dvh max-h-dvh w-full sm:w-[40rem] sm:max-w-[90vw] border-l border-border bg-surface shadow-2xl animate-slide-in-right",
+  side: "ml-auto mr-0 my-0 h-dvh max-h-dvh w-full sm:w-[56rem] sm:max-w-[92vw] border-l border-border bg-surface shadow-2xl animate-slide-in-right",
+  full: "m-0 h-dvh max-h-dvh w-screen max-w-none bg-surface",
 };
 
 interface ModalProps {
