@@ -147,7 +147,7 @@ jobs:
         include:
           - name: PostgreSQL
             # postgres:17, pinned by digest.
-            image: postgres:17@sha256:223efeb196329b55b3b9a13db144956411dbc18e727e59f681c3e0aede6475cf
+            image: mirror.gcr.io/library/postgres:17@sha256:223efeb196329b55b3b9a13db144956411dbc18e727e59f681c3e0aede6475cf
             run: >-
               -e POSTGRES_USER=webfrost -e POSTGRES_PASSWORD=webfrost -e POSTGRES_DB=webfrost
               -p 5432:5432
@@ -156,7 +156,7 @@ jobs:
             url: postgres://webfrost:webfrost@127.0.0.1:5432/webfrost
           - name: MySQL
             # mysql:8.4 (LTS), pinned by digest.
-            image: mysql:8.4@sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902
+            image: mirror.gcr.io/library/mysql:8.4@sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902
             run: >-
               -e MYSQL_ROOT_PASSWORD=webfrost -e MYSQL_DATABASE=webfrost
               -p 3306:3306
@@ -197,6 +197,9 @@ jobs:
 
       - name: Start ${{ matrix.name }}
         run: |
+          # Google's mirror of Docker Hub's official images (same digests): anonymous pulls from
+          # Docker Hub are rate-limited on shared runners. Retried, since a pull can still flake.
+          for i in 1 2 3 4 5; do docker pull -q "${{ matrix.image }}" && break; echo "pull failed ($i/5)"; sleep $((i * 5)); done
           docker run -d --name db ${{ matrix.run }} ${{ matrix.image }} ${{ matrix.args }}
           for i in $(seq 1 60); do
             if docker exec db ${{ matrix.ready }} >/dev/null 2>&1; then echo "${{ matrix.name }} is ready"; break; fi
