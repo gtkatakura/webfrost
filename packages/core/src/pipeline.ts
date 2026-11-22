@@ -52,6 +52,8 @@ export interface PipelineOptions {
 const BROWSER_EXTRACTORS = ["pdf", "screenshot", "dom-snapshot", "singlefile"] as const;
 
 const NAVIGATION_TIMEOUT_MS = 30_000;
+/** Longest wait for the network to go quiet after "load"; pages that never go quiet stop here. */
+const DEFAULT_SETTLE_MS = 5_000;
 /** Per-extractor cap (WEBFROST_EXTRACTOR_TIMEOUT_MS). Media has its own, longer cap. */
 const DEFAULT_EXTRACTOR_TIMEOUT_MS = 60_000;
 const DEFAULT_MEDIA_TIMEOUT_MS = 10 * 60_000;
@@ -106,12 +108,30 @@ function errorMessage(err: unknown): string {
  * Insert a snapshot row and its job, in one transaction. Returns the snapshot id
  * and the lease token the job was issued with.
  */
+/** The `prefers-color-scheme` the browser archives a page with. */
+export type ColorScheme = "light" | "dark";
+
+export function parseColorScheme(value: unknown): ColorScheme | undefined {
+  return value === "light" || value === "dark" ? value : undefined;
+}
+
+/** The scheme for snapshots that did not ask for one: WEBFROST_COLOR_SCHEME, else light. */
+export function defaultColorScheme(): ColorScheme {
+  return parseColorScheme(process.env.WEBFROST_COLOR_SCHEME) ?? "light";
+}
+
+export interface SnapshotOptions {
+  /** Archive the page as a browser in this theme sees it; omitted: the server default. */
+  colorScheme?: ColorScheme | undefined;
+}
+
 export async function createSnapshotJob(
   db: Db,
   url: string,
+  options?: SnapshotOptions,
 ): Promise<{ snapshotId: number; lease: string }> {
   return withSpan("job_queue.enqueue", { kind: "producer" }, async (span) => {
-    const created = await insertSnapshotJob(db, url);
+    const created = await insertSnapshotJob(db, url, options?.colorScheme ?? null);
     span.setAttributes({ "webfrost.snapshot.id": created.snapshotId });
     return created;
   });
@@ -120,11 +140,12 @@ export async function createSnapshotJob(
 async function insertSnapshotJob(
   db: Db,
   url: string,
+  colorScheme: ColorScheme | null,
 ): Promise<{ snapshotId: number; lease: string }> {
   const lease = newLeaseToken();
   const snapshotId = await db.transaction(async (tx) => {
     const id = await tx.insert(
-      sql`INSERT INTO snapshots (url, status, created_at) VALUES (${url}, 'pending', ${tx.now()})`,
+      sql`INSERT INTO snapshots (url, status, created_at, color_scheme) VALUES (${url}, 'pending', ${tx.now()}, ${colorScheme})`,
     );
     // The heartbeat starts the job's lease: whoever created it gets JOB_LEASE_SECONDS
     // to start running it before another process may treat it as orphaned.
@@ -138,8 +159,12 @@ async function insertSnapshotJob(
 }
 
 /** Insert a snapshot row and enqueue a job. Returns the new snapshot id. */
-export async function createSnapshot(db: Db, url: string): Promise<number> {
-  return (await createSnapshotJob(db, url)).snapshotId;
+export async function createSnapshot(
+  db: Db,
+  url: string,
+  options?: SnapshotOptions,
+): Promise<number> {
+  return (await createSnapshotJob(db, url, options)).snapshotId;
 }
 
 export { touchJob } from "./results";
@@ -307,11 +332,24 @@ async function archive(
       try {
         const pw = await import("playwright");
         browser = await pw.chromium.launch(chromiumLaunchOptions());
+        const stored = await db.get<{ color_scheme: string | null }>(
+          sql`SELECT color_scheme FROM snapshots WHERE id = ${snapshotId}`,
+        );
         // Service workers could issue requests that bypass route(); the archive does not need them.
-        const context = await browser.newContext({ serviceWorkers: "block" });
+        const context = await browser.newContext({
+          serviceWorkers: "block",
+          colorScheme: parseColorScheme(stored?.color_scheme) ?? defaultColorScheme(),
+        });
         const guard = await guardBrowserContext(context);
         const page = await context.newPage();
         await page.goto(url, { timeout: NAVIGATION_TIMEOUT_MS, waitUntil: "load" });
+        // Single-page apps keep loading after "load" (route modules, data): give the network a
+        // moment to go quiet before sealing, or the capture is of a half-built page or an
+        // error screen. Every request in this window still passes the guard's route() check.
+        const settleMs = envInt("WEBFROST_SETTLE_MS", DEFAULT_SETTLE_MS);
+        if (settleMs > 0) {
+          await page.waitForLoadState("networkidle", { timeout: settleMs }).catch(() => {});
+        }
         // The capture is of the page as loaded. Refusing further requests here also means
         // a script cannot wait for the check below and then pull an internal URL into a frame.
         const violation = await guard.seal();
@@ -555,8 +593,9 @@ export async function addUrl(
   dir: string,
   logger?: Logger,
   storage?: StorageBackend,
+  options?: SnapshotOptions,
 ): Promise<number> {
-  const { snapshotId, lease } = await createSnapshotJob(db, url);
+  const { snapshotId, lease } = await createSnapshotJob(db, url, options);
   await runPipeline(db, snapshotId, url, dir, undefined, logger, storage, { lease });
   return snapshotId;
 }

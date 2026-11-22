@@ -8,6 +8,8 @@ import { withSpan } from "../telemetry";
 
 /** Hard cap for a single yt-dlp invocation; the process is killed when it is exceeded. */
 const DEFAULT_MEDIA_TIMEOUT_MS = 10 * 60_000;
+/** Tallest video downloaded by default; 0 means no limit. */
+const DEFAULT_MEDIA_MAX_HEIGHT = 1080;
 
 type SpawnResult = { exitCode: number | null; stdout: string; stderr: string };
 
@@ -118,7 +120,10 @@ export async function mediaExtractor(
     lease,
   );
 
-  // Step 2: Attempt video download (bestvideo+bestaudio merged to mp4)
+  // Step 2: the video, merged to mp4. "Best" on YouTube is 4K AV1 (hundreds of MB for a few
+  // minutes, and AV1 does not play everywhere): prefer up to WEBFROST_MEDIA_MAX_HEIGHT
+  // (1080 by default), H.264 and AAC, which every browser plays, and take what exists.
+  const maxHeight = envInt("WEBFROST_MEDIA_MAX_HEIGHT", DEFAULT_MEDIA_MAX_HEIGHT);
   const videoLocalPath = await storage.localPath(snapshotId, "media/media.mp4");
   let videoResult: SpawnResult;
   try {
@@ -127,6 +132,8 @@ export async function mediaExtractor(
         [
           "-f",
           "bestvideo+bestaudio/best",
+          "-S",
+          `${maxHeight > 0 ? `res:${maxHeight},` : ""}vcodec:h264,acodec:aac`,
           "--merge-output-format",
           "mp4",
           "--max-filesize",

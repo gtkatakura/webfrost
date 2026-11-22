@@ -52,6 +52,22 @@ describe("WebFrostClient.createSnapshot", () => {
     expect((caught as WebFrostError).message).toBe("invalid url");
   });
 
+  test("sends colorScheme in the body when given, and only { url } otherwise", async () => {
+    fetchSpy.mockImplementation(async () =>
+      jsonResponse({ id: 3, url: "https://example.com", status: "pending" }, 202),
+    );
+    const client = new WebFrostClient({ baseUrl: BASE });
+
+    await client.createSnapshot("https://example.com", { colorScheme: "dark" });
+    await client.createSnapshot("https://example.com");
+
+    const bodies = (fetchSpy.mock.calls as unknown as Array<[string, RequestInit]>).map(
+      (c) => c[1].body,
+    );
+    expect(bodies[0]).toBe(JSON.stringify({ url: "https://example.com", colorScheme: "dark" }));
+    expect(bodies[1]).toBe(JSON.stringify({ url: "https://example.com" }));
+  });
+
   test("strips trailing slash from baseUrl", async () => {
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ id: 2, url: "https://foo.com", status: "pending" }, 202),

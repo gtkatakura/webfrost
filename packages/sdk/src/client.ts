@@ -417,8 +417,12 @@ export class WebFrostClient {
    * Resolves with the created snapshot stub (status "pending").
    * Throws {@link WebFrostError} on HTTP errors.
    */
-  createSnapshot(url: string, request?: RequestOptions): Promise<SnapshotCreated> {
-    return this.json("POST", "/snapshots", { body: { url }, signal: request?.signal });
+  createSnapshot(
+    url: string,
+    request?: RequestOptions & { colorScheme?: "light" | "dark" },
+  ): Promise<SnapshotCreated> {
+    const body = request?.colorScheme ? { url, colorScheme: request.colorScheme } : { url };
+    return this.json("POST", "/snapshots", { body, signal: request?.signal });
   }
 
   /**

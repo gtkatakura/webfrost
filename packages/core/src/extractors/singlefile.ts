@@ -137,19 +137,24 @@ async function inlineCssLinks(input: string, baseUrl: string, ctx: InlineContext
   // Match <link ... rel="stylesheet" ... href="..."> or <link ... href="..." ... rel="stylesheet" ...>
   const linkRe = /<link\b[^>]*\brel=["']stylesheet["'][^>]*>/gi;
   const hrefRe = /\bhref=["']([^"']+)["']/i;
+  const mediaRe = /\bmedia=["']([^"']*)["']/i;
 
   const edits = await Promise.all(
     [...input.matchAll(linkRe)].map(async (m): Promise<Edit | null> => {
       const tag = m[0];
       const hrefMatch = hrefRe.exec(tag);
       if (!hrefMatch?.[1]) return null;
-      const url = resolveUrl(hrefMatch[1], baseUrl);
+      // Attribute values are HTML: `?a=1&amp;b=2` is the URL `?a=1&b=2`.
+      const url = resolveUrl(decodeAttr(hrefMatch[1]), baseUrl);
       if (!url) return null;
       const asset = await fetchAsset(ctx, url);
       if (!asset) return null;
       const css = new TextDecoder().decode(asset.bytes);
       const rebased = await rebaseCssUrls(css, url, ctx);
-      return { start: m.index, end: m.index + tag.length, text: `<style>${rebased}</style>` };
+      // Keep the link's media query, or print-only CSS would apply on screen.
+      const media = mediaRe.exec(tag)?.[1]?.trim();
+      const open = media && media !== "all" ? `<style media="${media}">` : "<style>";
+      return { start: m.index, end: m.index + tag.length, text: `${open}${rebased}</style>` };
     }),
   );
   return spliceAll(input, edits);
@@ -158,30 +163,39 @@ async function inlineCssLinks(input: string, baseUrl: string, ctx: InlineContext
 async function inlineImages(input: string, baseUrl: string, ctx: InlineContext): Promise<string> {
   // Match <img ... src="..."> (skip data URIs and relative paths that can't be fetched).
   // The `d` flag gives the position of the src value, so exactly that is replaced.
-  const imgRe = /<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/dgi;
+  const imgRe = /<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi;
+  const srcRe = /\bsrc=(["'])[^"']+\1/i;
+  // srcset and sizes win over src in the browser, and their remote URLs are blocked in the
+  // archived copy: once src holds the image, they go.
+  const srcsetRe = /\s(?:srcset|sizes)=(["'])[^"']*\1/gi;
 
   const edits = await Promise.all(
     [...input.matchAll(imgRe)].map(async (m): Promise<Edit | null> => {
+      const tag = m[0];
       const src = m[1];
-      const span = m.indices?.[1];
-      if (!src || !span || src.startsWith("data:")) return null;
-      const url = resolveUrl(src, baseUrl);
+      if (!src || src.startsWith("data:")) return null;
+      const url = resolveUrl(decodeAttr(src), baseUrl);
       if (!url || (!url.startsWith("http://") && !url.startsWith("https://"))) return null;
       const asset = await fetchAsset(ctx, url);
       if (!asset) return null;
       const contentType = asset.contentType ?? "image/png";
       const b64 = Buffer.from(asset.bytes).toString("base64");
-      return { start: span[0], end: span[1], text: `data:${contentType};base64,${b64}` };
+      const dataUri = `data:${contentType};base64,${b64}`;
+      const text = tag.replace(srcsetRe, "").replace(srcRe, () => `src="${dataUri}"`);
+      return { start: m.index, end: m.index + tag.length, text };
     }),
   );
-  return spliceAll(input, edits);
+  // A <picture>'s <source srcset> wins over its <img> and points at the network, which the
+  // archived copy never reaches: drop them so the inlined <img> is what shows.
+  return spliceAll(input, edits).replace(/<source\b[^>]*\bsrcset=[^>]*>/gi, "");
 }
 
 /**
  * Rebase all url() references in a CSS string to absolute URLs resolved
- * against the URL of the CSS file itself. Font files (.woff, .woff2, .ttf,
- * .otf, .eot) are additionally fetched and inlined as base64 data URIs so
- * they survive when the HTML file is opened locally (file:// context).
+ * against the URL of the CSS file itself, and inline what they point to (fonts,
+ * background images, icons) as base64 data URIs while the byte budget lasts:
+ * the archived copy loads nothing from the network, so a remote url() would
+ * stay blank. What does not fit or fails stays as an absolute URL.
  */
 async function rebaseCssUrls(css: string, cssFileUrl: string, ctx: InlineContext): Promise<string> {
   // Matches: url('...'), url("..."), url(...)
@@ -200,15 +214,16 @@ async function rebaseCssUrls(css: string, cssFileUrl: string, ctx: InlineContext
         text: `url(${quote}${target}${quote})`,
       });
 
-      // Inline font files as base64 data URIs so they work in file:// context.
-      if (isFontUrl(absoluteUrl)) {
+      if (absoluteUrl.startsWith("http://") || absoluteUrl.startsWith("https://")) {
         const asset = await fetchAsset(ctx, absoluteUrl);
         if (asset) {
-          const contentType = asset.contentType ?? guessFontMime(absoluteUrl);
+          const contentType =
+            asset.contentType ??
+            (isFontUrl(absoluteUrl) ? guessFontMime(absoluteUrl) : "image/png");
           return edit(`data:${contentType};base64,${Buffer.from(asset.bytes).toString("base64")}`);
         }
-        // Fall through: rebase to absolute URL at minimum.
       }
+      // Rebase to an absolute URL at minimum.
       return edit(absoluteUrl);
     }),
   );
@@ -226,6 +241,28 @@ function guessFontMime(url: string): string {
   if (/\.otf(\?|$)/i.test(url)) return "font/otf";
   if (/\.eot(\?|$)/i.test(url)) return "application/vnd.ms-fontobject";
   return "font/woff2";
+}
+
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+};
+
+/** Decode the character references an HTML attribute value may hold (`&amp;`, `&#38;`, `&#x26;`). */
+export function decodeAttr(value: string): string {
+  return value.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, ref: string) => {
+    if (ref[0] === "#") {
+      const code =
+        ref[1] === "x" || ref[1] === "X" ? Number.parseInt(ref.slice(2), 16) : Number(ref.slice(1));
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff
+        ? String.fromCodePoint(code)
+        : whole;
+    }
+    return NAMED_ENTITIES[ref.toLowerCase()] ?? whole;
+  });
 }
 
 function resolveUrl(href: string, base: string): string | null {

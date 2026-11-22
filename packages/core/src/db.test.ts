@@ -133,6 +133,21 @@ describe("openDb (every dialect)", () => {
     }
   });
 
+  test("snapshots.color_scheme exists and round-trips on every database", async () => {
+    const db = await openDb(testDir);
+    try {
+      const id = await db.insert(
+        sql`INSERT INTO snapshots (url, color_scheme) VALUES ('https://example.com', 'dark')`,
+      );
+      const row = await db.get<{ color_scheme: string | null }>(
+        sql`SELECT color_scheme FROM snapshots WHERE id = ${id}`,
+      );
+      expect(row?.color_scheme).toBe("dark");
+    } finally {
+      await db.close();
+    }
+  });
+
   test("a failed transaction leaves nothing behind", async () => {
     const db = await openDb(testDir);
     try {
@@ -332,6 +347,31 @@ describe.skipIf(!isSqliteRun)("openDb (SQLite archive file)", () => {
         sql`SELECT kind, paused FROM schedules`,
       );
       expect(schedule).toEqual({ kind: "rss_feed", paused: 1 });
+    } finally {
+      await db.close();
+    }
+  });
+
+  test("upgrades a schema-version-3 archive: color_scheme is added, rows keep NULL", async () => {
+    await (await openDb(testDir)).close();
+    // Put the file back to what the previous release left: no column, version 3.
+    withRaw((raw) => {
+      raw.exec("INSERT INTO snapshots (url) VALUES ('https://example.com/old')");
+      raw.exec("ALTER TABLE snapshots DROP COLUMN color_scheme");
+      raw.exec("PRAGMA user_version = 3");
+    });
+    expect(withRaw((raw) => columns(raw, "snapshots"))).not.toContain("color_scheme");
+
+    const db = await openDb(testDir);
+    try {
+      expect((await db.get<{ user_version: number }>(sql`PRAGMA user_version`))?.user_version).toBe(
+        4,
+      );
+      expect(SCHEMA_VERSION).toBe(4);
+      expect(
+        (await db.get<{ color_scheme: string | null }>(sql`SELECT color_scheme FROM snapshots`))
+          ?.color_scheme,
+      ).toBeNull();
     } finally {
       await db.close();
     }

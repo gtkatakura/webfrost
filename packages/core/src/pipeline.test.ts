@@ -30,6 +30,28 @@ beforeAll(async () => {
       if (pathname === "/report.pdf") {
         return new Response(PDF_BYTES, { headers: { "content-type": "application/pdf" } });
       }
+      if (pathname === "/late") {
+        // Like a single-page app: the content arrives with a request made after "load".
+        return new Response(
+          `<!doctype html><html><head><title>Late</title></head><body><main id="m">loading</main>
+<script>addEventListener("load", () => setTimeout(async () => {
+  const r = await fetch("/late.json");
+  document.getElementById("m").textContent = (await r.json()).text;
+}, 200));</script></body></html>`,
+          { headers: { "content-type": "text/html" } },
+        );
+      }
+      if (pathname === "/scheme") {
+        return new Response(
+          `<!doctype html><html><head><title>Scheme</title></head><body><main id="m"></main>
+<script>document.getElementById("m").textContent = "scheme:" +
+  (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");</script></body></html>`,
+          { headers: { "content-type": "text/html" } },
+        );
+      }
+      if (pathname === "/late.json") {
+        return Response.json({ text: "arrived after load" });
+      }
       if (pathname === "/article") {
         return new Response(ARTICLE, { headers: { "content-type": "text/html" } });
       }
@@ -110,6 +132,47 @@ describe("runPipeline", () => {
       expect(rows).toHaveLength(1);
       const row = rows[0];
       expect(row?.error === null ? row.content : row?.error).toBeTruthy();
+    }
+  }, 60_000);
+
+  test("captures what a page loads after the load event, not a half-built page", async () => {
+    const url = `${baseUrl}/late`;
+    const id = await createSnapshot(db, url);
+    await runPipeline(db, id, url, testDir);
+
+    const dom = (await results(id)).find((r) => r.extractor === "dom-snapshot");
+    if (dom?.error) return; // No Chromium on this machine: covered where there is one (CI).
+    const html = readFileSync(dom?.content ?? "", "utf8");
+    expect(html).toContain("arrived after load");
+    expect(html).not.toContain(">loading<");
+  }, 60_000);
+
+  test.each(["dark", "light"] as const)(
+    "the browser archives the page with the snapshot's color scheme (%s)",
+    async (scheme) => {
+      const url = `${baseUrl}/scheme`;
+      const id = await createSnapshot(db, url, { colorScheme: scheme });
+      await runPipeline(db, id, url, testDir);
+
+      const dom = (await results(id)).find((r) => r.extractor === "dom-snapshot");
+      if (dom?.error) return; // No Chromium on this machine.
+      const html = readFileSync(dom?.content ?? "", "utf8");
+      expect(html).toContain(`scheme:${scheme}`);
+    },
+    60_000,
+  );
+
+  test("a snapshot without a scheme uses WEBFROST_COLOR_SCHEME", async () => {
+    process.env.WEBFROST_COLOR_SCHEME = "dark";
+    try {
+      const url = `${baseUrl}/scheme`;
+      const id = await createSnapshot(db, url);
+      await runPipeline(db, id, url, testDir);
+      const dom = (await results(id)).find((r) => r.extractor === "dom-snapshot");
+      if (dom?.error) return;
+      expect(readFileSync(dom?.content ?? "", "utf8")).toContain("scheme:dark");
+    } finally {
+      Reflect.deleteProperty(process.env, "WEBFROST_COLOR_SCHEME");
     }
   }, 60_000);
 

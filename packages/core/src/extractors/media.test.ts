@@ -241,3 +241,42 @@ describe("mediaExtractor", () => {
     expect(await archiveRows()).toHaveLength(0);
   });
 });
+
+describe("mediaExtractor: format selection", () => {
+  let saved: string | undefined;
+  beforeEach(() => {
+    saved = process.env.WEBFROST_MEDIA_MAX_HEIGHT;
+  });
+  afterEach(() => {
+    if (saved === undefined) Reflect.deleteProperty(process.env, "WEBFROST_MEDIA_MAX_HEIGHT");
+    else process.env.WEBFROST_MEDIA_MAX_HEIGHT = saved;
+  });
+
+  async function sortArg(): Promise<string | undefined> {
+    const calls: string[][] = [];
+    const spawner: YtDlpSpawner = async (args) => {
+      calls.push(args);
+      return calls.length === 1 ? META_OK : OK;
+    };
+    await mediaExtractor(db, 1, makeStorage(), "https://youtube.com/watch?v=test", {
+      _spawner: spawner,
+    });
+    const video = calls[1] ?? [];
+    return video[video.indexOf("-S") + 1];
+  }
+
+  test("prefers up to 1080p, H.264 and AAC by default", async () => {
+    Reflect.deleteProperty(process.env, "WEBFROST_MEDIA_MAX_HEIGHT");
+    expect(await sortArg()).toBe("res:1080,vcodec:h264,acodec:aac");
+  });
+
+  test("honours WEBFROST_MEDIA_MAX_HEIGHT", async () => {
+    process.env.WEBFROST_MEDIA_MAX_HEIGHT = "720";
+    expect(await sortArg()).toBe("res:720,vcodec:h264,acodec:aac");
+  });
+
+  test("WEBFROST_MEDIA_MAX_HEIGHT=0 removes the height limit", async () => {
+    process.env.WEBFROST_MEDIA_MAX_HEIGHT = "0";
+    expect(await sortArg()).toBe("vcodec:h264,acodec:aac");
+  });
+});

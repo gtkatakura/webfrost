@@ -113,7 +113,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
   .post(
     "/",
     async ({ body, set }) => {
-      const { url } = body;
+      const { url, colorScheme } = body;
 
       // Validate HTTP/HTTPS URL
       let parsed: URL;
@@ -131,7 +131,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       const db = await getDb();
       let snapshotId: number;
       try {
-        snapshotId = await getRunner().add(db, url);
+        snapshotId = await getRunner().add(db, url, { colorScheme });
       } finally {
         await db.close();
       }
@@ -140,7 +140,11 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       return { id: snapshotId, url, status: "pending" };
     },
     {
-      body: t.Object({ url: t.String({ maxLength: MAX_URL_LENGTH }) }),
+      body: t.Object({
+        url: t.String({ maxLength: MAX_URL_LENGTH }),
+        // The theme the archiving browser uses; the web UI sends its own.
+        colorScheme: t.Optional(t.Union([t.Literal("light"), t.Literal("dark")])),
+      }),
       response: {
         202: t.Object({ id: t.Number(), url: t.String(), status: t.String() }),
         400: t.Object({ error: t.String(), code: t.String() }),

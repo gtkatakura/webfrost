@@ -62,4 +62,23 @@ describe("pdfExtractor", () => {
     const pdfRow = rows.find((r) => r.extractor === "pdf");
     expect(pdfRow).toBeUndefined();
   });
+
+  test("prints backgrounds, so a dark page is not light text on white paper", async () => {
+    const calls: Array<{ path?: string; printBackground?: boolean }> = [];
+    const page = {
+      pdf: async (opts: { path?: string; printBackground?: boolean }) => {
+        calls.push(opts);
+        await Bun.write(opts.path ?? "", "%PDF-1.4");
+      },
+    } as unknown as Page;
+
+    await pdfExtractor(db, 1, makeStorage(), page);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.printBackground).toBe(true);
+    const row = await db.get<{ error: string | null }>(
+      sql`SELECT error FROM archive_results WHERE snapshot_id = 1 AND extractor = 'pdf'`,
+    );
+    expect(row?.error).toBeNull();
+  });
 });

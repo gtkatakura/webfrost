@@ -310,3 +310,86 @@ describe("inlineAssets", () => {
     expect(await inlineAssets(html, `${base}/`, controller.signal)).toBe(html);
   });
 });
+
+describe("inlineAssets — real-world markup", () => {
+  let server: ReturnType<typeof Bun.serve>;
+  let base: string;
+  const seen: string[] = [];
+
+  beforeEach(() => {
+    seen.length = 0;
+    server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        const url = new URL(req.url);
+        seen.push(url.pathname + url.search);
+        if (url.pathname === "/load.php") {
+          // Like MediaWiki's ResourceLoader: the modules come from the query string.
+          const modules = url.searchParams.get("modules");
+          return new Response(modules ? ".skin{color:red}" : "/* no modules were requested */", {
+            headers: { "content-type": "text/css" },
+          });
+        }
+        if (url.pathname === "/print.css") {
+          return new Response("body{display:none}", { headers: { "content-type": "text/css" } });
+        }
+        if (url.pathname === "/bg.css") {
+          return new Response(".hero{background:url(img/bg.png)}", {
+            headers: { "content-type": "text/css" },
+          });
+        }
+        if (url.pathname.endsWith(".png")) {
+          return new Response(new Uint8Array([137, 80, 78, 71]), {
+            headers: { "content-type": "image/png" },
+          });
+        }
+        return new Response("Not found", { status: 404 });
+      },
+    });
+    base = `http://127.0.0.1:${server.port}`;
+  });
+
+  afterEach(() => {
+    server.stop(true);
+  });
+
+  test("decodes &amp; in a stylesheet href before fetching it", async () => {
+    const html = `<link rel="stylesheet" href="/load.php?lang=en&amp;modules=skin&amp;only=styles">`;
+    const out = await inlineAssets(html, `${base}/wiki/Page`);
+    expect(seen).toContain("/load.php?lang=en&modules=skin&only=styles");
+    expect(out).toBe("<style>.skin{color:red}</style>");
+  });
+
+  test("keeps the media query of an inlined stylesheet", async () => {
+    const out = await inlineAssets(
+      `<link rel="stylesheet" href="/print.css" media="print">`,
+      `${base}/`,
+    );
+    expect(out).toBe(`<style media="print">body{display:none}</style>`);
+  });
+
+  test("drops srcset and sizes once src holds the image, and decodes the src", async () => {
+    const out = await inlineAssets(
+      `<img alt="a" src="/a.png?w=1&amp;h=2" srcset="/a.png 1x, /a@2x.png 2x" sizes="100vw">`,
+      `${base}/`,
+    );
+    expect(seen).toContain("/a.png?w=1&h=2");
+    expect(out).toBe(`<img alt="a" src="data:image/png;base64,iVBORw==">`);
+  });
+
+  test("inlines images a stylesheet points to, resolved against the stylesheet", async () => {
+    const out = await inlineAssets(`<link rel="stylesheet" href="/bg.css">`, `${base}/`);
+    expect(seen).toContain("/img/bg.png");
+    expect(out).toBe("<style>.hero{background:url(data:image/png;base64,iVBORw==)}</style>");
+  });
+
+  test("a <picture> keeps only its inlined <img>: the <source> tags that point at the network go", async () => {
+    const out = await inlineAssets(
+      `<picture><source srcset="/a.webp 1x, /a@2x.webp 2x" type="image/webp"><img src="/a.png"></picture>`,
+      `${base}/`,
+    );
+    expect(out).not.toContain("<source");
+    expect(out).not.toContain("srcset");
+    expect(out).toBe(`<picture><img src="data:image/png;base64,iVBORw=="></picture>`);
+  });
+});

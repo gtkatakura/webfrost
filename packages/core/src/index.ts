@@ -78,7 +78,11 @@ export {
   addUrl,
   chromiumLaunchOptions,
   createSnapshot,
+  type ColorScheme,
+  type SnapshotOptions,
   createSnapshotJob,
+  defaultColorScheme,
+  parseColorScheme,
   runPipeline,
   withTimeout,
 } from "./pipeline";

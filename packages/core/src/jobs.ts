@@ -5,6 +5,7 @@ import {
   JOB_HEARTBEAT_MS,
   JOB_LEASE_SECONDS,
   type Logger,
+  type SnapshotOptions,
   createSnapshotJob,
   runPipeline,
 } from "./pipeline";
@@ -88,8 +89,8 @@ export class JobRunner {
    * Insert a snapshot row for `url` and queue its pipeline. Resolves with the
    * snapshot id once the row exists; the pipeline runs in the background.
    */
-  async add(db: Db, url: string): Promise<number> {
-    const { snapshotId, lease } = await createSnapshotJob(db, url);
+  async add(db: Db, url: string, options?: SnapshotOptions): Promise<number> {
+    const { snapshotId, lease } = await createSnapshotJob(db, url, options);
     void this.enqueue(snapshotId, url, lease);
     return snapshotId;
   }

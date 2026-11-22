@@ -19,7 +19,9 @@ export async function pdfExtractor(
   lease?: string,
 ): Promise<void> {
   const localPath = await storage.localPath(snapshotId, "page.pdf");
-  await page.pdf({ path: localPath });
+  // Backgrounds are printed: without them a page archived in dark mode comes out as light
+  // text on white paper, and text painted with a background (gradients) disappears.
+  await page.pdf({ path: localPath, printBackground: true });
   // The pipeline gave up on this extractor (timeout): do not record a late result.
   signal?.throwIfAborted();
 

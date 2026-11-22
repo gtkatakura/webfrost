@@ -12,6 +12,7 @@ export interface Schema {
     url: string;
     status: Generated<string>;
     created_at: Generated<string>;
+    color_scheme: Generated<string | null>;
   };
   archive_results: {
     id: Generated<number>;

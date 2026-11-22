@@ -97,6 +97,71 @@ describe("POST /snapshots", () => {
   });
 });
 
+describe("POST /snapshots: colorScheme", () => {
+  const post = (app: Awaited<ReturnType<typeof getApp>>, body: unknown) =>
+    app.handle(
+      new Request("http://localhost/snapshots", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    );
+
+  test("stores the requested scheme on the snapshot row", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: () =>
+        new Response("<html><body>ok</body></html>", { headers: { "content-type": "text/html" } }),
+    });
+    const url = `http://localhost:${server.port}/page`;
+    try {
+      const { openDb } = await import("@webfrost/core");
+      await (await openDb(testDir)).close();
+      const app = await getApp();
+
+      const dark = await post(app, { url, colorScheme: "dark" });
+      expect(dark.status).toBe(202);
+      const plain = await post(app, { url });
+      expect(plain.status).toBe(202);
+      const darkId = ((await dark.json()) as { id: number }).id;
+      const plainId = ((await plain.json()) as { id: number }).id;
+
+      const db = await openDb(testDir);
+      try {
+        const scheme = async (id: number) =>
+          (
+            await db.get<{ color_scheme: string | null }>(
+              sql`SELECT color_scheme FROM snapshots WHERE id = ${id}`,
+            )
+          )?.color_scheme;
+        expect(await scheme(darkId)).toBe("dark");
+        expect(await scheme(plainId)).toBeNull();
+      } finally {
+        await db.close();
+      }
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("rejects an unknown scheme and creates nothing", async () => {
+    const { openDb } = await import("@webfrost/core");
+    await (await openDb(testDir)).close();
+    const app = await getApp();
+
+    const res = await post(app, { url: "https://example.com", colorScheme: "blue" });
+    expect(res.status).toBe(400);
+
+    const db = await openDb(testDir);
+    try {
+      const n = await db.get<{ n: number }>(sql`SELECT COUNT(*) AS n FROM snapshots`);
+      expect(Number(n?.n)).toBe(0);
+    } finally {
+      await db.close();
+    }
+  });
+});
+
 // ---------------------------------------------------------------------------
 // GET /snapshots
 // ---------------------------------------------------------------------------

@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { JSDOM } from "jsdom";
 import { sql } from "kysely";
 import { type Db, openDb } from "../db";
-import { capHtml, readabilityExtractor } from "./readability";
+import { blockText, capHtml, readabilityExtractor } from "./readability";
 
 let testDir: string;
 let db: Db;
@@ -113,5 +114,54 @@ describe("readability input cap", () => {
     const parsed = JSON.parse(row?.content ?? "{}") as { textContent: string | null };
     expect(parsed.textContent).toContain("first paragraph");
     expect((parsed.textContent ?? "").split("FILLER-AFTER-CAP").length).toBeLessThan(20);
+  });
+});
+
+describe("blockText", () => {
+  const text = (html: string) => blockText(JSDOM.fragment(html));
+
+  test("keeps a blank line between headings, paragraphs and list items", () => {
+    expect(text("<h1>Open Source</h1><p>Keep the web</p><ul><li>one</li><li>two</li></ul>")).toBe(
+      "Open Source\n\nKeep the web\n\none\n\ntwo",
+    );
+  });
+
+  test("turns <br> into a newline and collapses inline whitespace", () => {
+    expect(text("<p>line  one<br>line\n   two</p>")).toBe("line one\nline two");
+  });
+
+  test("keeps the whitespace of <pre>", () => {
+    expect(text("<pre>a\n  b</pre>")).toBe("a\n  b");
+  });
+
+  test("drops script and style content", () => {
+    expect(text("<p>hi</p><script>var x=1</script><style>p{}</style>")).toBe("hi");
+  });
+});
+
+describe("readabilityExtractor: text and title", () => {
+  async function stored() {
+    const row = await db.get<{ content: string }>(
+      sql`SELECT content FROM archive_results WHERE snapshot_id = 1 AND extractor = 'readability'`,
+    );
+    return JSON.parse(row?.content ?? "{}") as { title: string | null; textContent: string | null };
+  }
+
+  test("stored textContent does not run blocks together", async () => {
+    const html = `<html><head><title>T</title></head><body><article>
+      <h1>Open Source</h1><p>Keep the web</p>
+      <p>${"Archivists keep a long memory of the web. ".repeat(20)}</p>
+      <p>${"Glaciers keep a long memory of the weather. ".repeat(20)}</p>
+    </article></body></html>`;
+    await readabilityExtractor(db, 1, "https://example.com/a", html);
+    const { textContent } = await stored();
+    expect(textContent).toContain("Open Source\n\nKeep the web");
+    expect(textContent).not.toContain("Open SourceKeep");
+  });
+
+  test("a page that is not an article gets its <title> as title", async () => {
+    const html = `<html><head><title>  A Video Page </title></head><body><iframe src="https://example.com/embed"></iframe></body></html>`;
+    await readabilityExtractor(db, 1, "https://example.com/v", html);
+    expect((await stored()).title).toBe("A Video Page");
   });
 });

@@ -12,12 +12,14 @@ import type Database from "bun:sqlite";
  * - 3: `archive_results.size_bytes` (stored file size, so stats no longer ask
  *   storage about every artifact) and `job_queue.lease_token` (lease fencing).
  *   PostgreSQL and MySQL start here, with the full schema in one step.
+ * - 4: `snapshots.color_scheme`, the light or dark preference the browser
+ *   archived the page with (NULL: the server default, WEBFROST_COLOR_SCHEME).
  *
  * Add a step by appending to each dialect's list with the next number. Steps
  * run in order, each once, under a lock (BEGIN IMMEDIATE on SQLite, an advisory
  * lock on PostgreSQL, GET_LOCK on MySQL), so concurrent processes are safe.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /** Extractors whose `content` holds a storage reference rather than the data itself. */
 export const FILE_BACKED_EXTRACTORS = [
@@ -169,6 +171,7 @@ function sqliteV3(db: Database): void {
 export const SQLITE_MIGRATIONS: ReadonlyArray<{ version: number; up: (db: Database) => void }> = [
   { version: 2, up: sqliteV2 },
   { version: 3, up: sqliteV3 },
+  { version: 4, up: (db) => addColumn(db, "ALTER TABLE snapshots ADD COLUMN color_scheme TEXT") },
 ];
 
 // ---------------------------------------------------------------------------
@@ -283,6 +286,10 @@ const PG_V3 = [
 
 export const POSTGRES_MIGRATIONS: ReadonlyArray<{ version: number; statements: string[] }> = [
   { version: 3, statements: PG_V3 },
+  {
+    version: 4,
+    statements: ["ALTER TABLE snapshots ADD COLUMN IF NOT EXISTS color_scheme VARCHAR(8)"],
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -406,4 +413,5 @@ const MY_V3 = [
 
 export const MYSQL_MIGRATIONS: ReadonlyArray<{ version: number; statements: string[] }> = [
   { version: 3, statements: MY_V3 },
+  { version: 4, statements: ["ALTER TABLE snapshots ADD COLUMN color_scheme VARCHAR(8)"] },
 ];
