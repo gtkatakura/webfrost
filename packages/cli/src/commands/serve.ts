@@ -64,6 +64,8 @@ Environment (see the configuration reference for the full list):
   AUTH_DISABLED=true    no login; the server then binds to 127.0.0.1 only
   WEBFROST_SETUP_TOKEN  required to complete first-run setup in the web UI
   WEBFROST_SCHEDULER=false   do not run schedules in this process
+  OTEL_EXPORTER_OTLP_ENDPOINT  send traces and metrics to your OpenTelemetry collector
+                        (off unless set; works for every webfrost command)
 
 Ctrl+C (or SIGTERM) stops gracefully: running archives get up to
 WEBFROST_SHUTDOWN_TIMEOUT_MS (default 20000) to finish.`,

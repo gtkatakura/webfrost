@@ -5,6 +5,7 @@ import type { JobRunner } from "./jobs";
 import { type Logger, createSnapshotJob } from "./pipeline";
 import { fetchRssFeedUrls, isUrlArchived } from "./rss";
 import { type Schedule, dbTimestamp, getDueSchedules, updateScheduleStatus } from "./schedules";
+import { withSpan } from "./telemetry";
 
 /** How often the scheduler looks for due schedules. */
 export const SCHEDULER_INTERVAL_MS = 30_000;
@@ -171,7 +172,11 @@ export function startScheduler(options: SchedulerOptions): Scheduler {
   const { logger } = options;
 
   const tick = (): Promise<number> =>
-    runDueSchedules(options).catch((err: unknown) => {
+    withSpan("scheduler.tick", {}, async (span) => {
+      const claimed = await runDueSchedules(options);
+      span.setAttributes({ "webfrost.schedules.claimed": claimed });
+      return claimed;
+    }).catch((err: unknown) => {
       logger?.error(`Scheduler tick failed: ${err instanceof Error ? err.message : String(err)}`);
       return 0;
     });

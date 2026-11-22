@@ -1,3 +1,5 @@
+import { emitTelemetryLog } from "@webfrost/core";
+
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
 export interface Logger {
@@ -18,6 +20,8 @@ export function createLogger(
 
   function write(lvl: LogLevel, msg: string): void {
     if (LEVELS[lvl] < minLevel) return;
+    // A no-op unless OTEL_LOGS_EXPORTER=otlp turned on log export.
+    emitTelemetryLog(lvl, msg);
     const ts = new Date().toISOString().slice(11, 19); // HH:MM:SS
     const label = lvl.toUpperCase().padEnd(5);
     const line = `[${ts}] ${label} ${msg}\n`;

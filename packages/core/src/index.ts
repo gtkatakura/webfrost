@@ -114,5 +114,28 @@ export { indexSnapshot, rebuildIndex, removeFromIndex, searchSnapshots } from ".
 export { recordResult, setJobStatus } from "./results";
 export type { ResultRecord } from "./results";
 export type { SearchResult } from "./search";
+export {
+  captureContext,
+  emitTelemetryLog,
+  failureCategory,
+  initTelemetry,
+  recordMetric,
+  setTelemetryBackend,
+  shutdownTelemetry,
+  telemetryConfigured,
+  telemetryEnabled,
+  telemetryExportsLogs,
+  traceLogFields,
+  withSpan,
+  withTraceContext,
+} from "./telemetry";
+export type {
+  Attributes as TelemetryAttributes,
+  InitTelemetryOptions,
+  SpanHandle,
+  SpanOptions,
+  TelemetryBackend,
+  TraceContext,
+} from "./telemetry";
 export { getStats } from "./stats";
 export type { Stats } from "./stats";

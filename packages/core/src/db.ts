@@ -19,6 +19,7 @@ import {
 } from "./database/config";
 import { MYSQL_MIGRATIONS, POSTGRES_MIGRATIONS, SQLITE_MIGRATIONS } from "./database/migrations";
 import type { Schema } from "./database/schema";
+import { recordMetric, traceDialect } from "./telemetry";
 
 export type { DatabaseConfig, DialectName } from "./database/config";
 export { parseDatabaseUrl, resolveDatabaseConfig } from "./database/config";
@@ -114,6 +115,9 @@ class KyselyDb implements Db {
           );
       } catch (err) {
         if (!isTransientError(err) || attempt >= TRANSACTION_RETRIES) throw err;
+        recordMetric("db.transaction.retries", 1, {
+          "db.system.name": this.dialect === "postgres" ? "postgresql" : this.dialect,
+        });
         await Bun.sleep(10 + Math.random() * 40 * (attempt + 1));
       }
     }
@@ -281,7 +285,8 @@ async function acquireSqlite(
   if (!entry) {
     const created: SqliteEntry = {
       ready: openSqlite(path).then(
-        (database) => new Kysely<Schema>({ dialect: new BunSqliteDialect(database) }),
+        (database) =>
+          new Kysely<Schema>({ dialect: traceDialect(new BunSqliteDialect(database), "sqlite") }),
       ),
       refs: 0,
     };
@@ -357,7 +362,7 @@ async function createPostgres(url: string): Promise<Kysely<Schema>> {
   });
   // A dropped idle connection must not crash the process; the next query reconnects.
   pool.on("error", () => {});
-  return new Kysely<Schema>({ dialect: new PostgresDialect({ pool }) });
+  return new Kysely<Schema>({ dialect: traceDialect(new PostgresDialect({ pool }), "postgres") });
 }
 
 async function createMysql(url: string): Promise<Kysely<Schema>> {
@@ -386,16 +391,19 @@ async function createMysql(url: string): Promise<Kysely<Schema>> {
     conn.on("error", () => {});
   });
   return new Kysely<Schema>({
-    dialect: new MysqlDialect({
-      pool,
-      onCreateConnection: async (connection) => {
-        // Index every word: MySQL's default full-text stop-word list would make
-        // searches for words like "about" or "world" find nothing (FTS5 has no such list).
-        await connection.executeQuery(
-          CompiledQuery.raw("SET SESSION innodb_ft_enable_stopword = OFF"),
-        );
-      },
-    }),
+    dialect: traceDialect(
+      new MysqlDialect({
+        pool,
+        onCreateConnection: async (connection) => {
+          // Index every word: MySQL's default full-text stop-word list would make
+          // searches for words like "about" or "world" find nothing (FTS5 has no such list).
+          await connection.executeQuery(
+            CompiledQuery.raw("SET SESSION innodb_ft_enable_stopword = OFF"),
+          );
+        },
+      }),
+      "mysql",
+    ),
   });
 }
 

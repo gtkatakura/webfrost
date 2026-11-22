@@ -16,6 +16,14 @@ import { extractIndexFields, indexSnapshot } from "./search";
 import { envInt } from "./ssrf-guard";
 import { createStorageBackend } from "./storage";
 import type { StorageBackend } from "./storage";
+import {
+  type SpanHandle,
+  failureCategory,
+  recordMetric,
+  telemetryEnabled,
+  urlAttributes,
+  withSpan,
+} from "./telemetry";
 import { domainThrottle } from "./throttle";
 
 export interface Logger {
@@ -102,6 +110,17 @@ export async function createSnapshotJob(
   db: Db,
   url: string,
 ): Promise<{ snapshotId: number; lease: string }> {
+  return withSpan("job_queue.enqueue", { kind: "producer" }, async (span) => {
+    const created = await insertSnapshotJob(db, url);
+    span.setAttributes({ "webfrost.snapshot.id": created.snapshotId });
+    return created;
+  });
+}
+
+async function insertSnapshotJob(
+  db: Db,
+  url: string,
+): Promise<{ snapshotId: number; lease: string }> {
   const lease = newLeaseToken();
   const snapshotId = await db.transaction(async (tx) => {
     const id = await tx.insert(
@@ -144,16 +163,22 @@ export async function runPipeline(
   storage?: StorageBackend,
   options?: PipelineOptions,
 ): Promise<void> {
-  // Keep the job's lease alive for as long as this run takes.
-  const heartbeat = setInterval(
-    () => void touchJob(db, snapshotId, options?.lease),
-    JOB_HEARTBEAT_MS,
+  await withSpan(
+    "snapshot.archive",
+    { attributes: { "webfrost.snapshot.id": snapshotId, ...urlAttributes(url) } },
+    async (span) => {
+      // Keep the job's lease alive for as long as this run takes.
+      const heartbeat = setInterval(
+        () => void touchJob(db, snapshotId, options?.lease),
+        JOB_HEARTBEAT_MS,
+      );
+      try {
+        await archive(db, snapshotId, url, dir, span, cache, logger, storage, options);
+      } finally {
+        clearInterval(heartbeat);
+      }
+    },
   );
-  try {
-    await archive(db, snapshotId, url, dir, cache, logger, storage, options);
-  } finally {
-    clearInterval(heartbeat);
-  }
 }
 
 async function archive(
@@ -161,6 +186,7 @@ async function archive(
   snapshotId: number,
   url: string,
   dir: string,
+  span: SpanHandle,
   cache?: FetchCache,
   logger?: Logger,
   storage?: StorageBackend,
@@ -177,13 +203,22 @@ async function archive(
   const lease = options?.lease;
 
   /** Returns false when the job's lease has passed to another worker. */
-  async function setStatus(status: "running" | "done" | "failed"): Promise<boolean> {
+  /** `reason`: why the run failed, as a `failureCategory`. */
+  async function setStatus(
+    status: "running" | "done" | "failed",
+    reason?: string,
+  ): Promise<boolean> {
     try {
       const owned = await setJobStatus(db, snapshotId, status, lease);
       if (!owned) {
         logger?.warn(
           `lease lost snapshot=${snapshotId}: another worker adopted the job; dropping status=${status}`,
         );
+        span.setAttributes({ "webfrost.lease.lost": true });
+      } else if (status !== "running") {
+        span.setAttributes({ "webfrost.snapshot.status": status });
+        if (status === "failed") span.fail(undefined, reason ?? "no_output");
+        recordMetric("snapshots.finished", 1, { "webfrost.snapshot.status": status });
       }
       return owned;
     } catch (err) {
@@ -217,16 +252,37 @@ async function archive(
 
   let cached: Awaited<ReturnType<FetchCache["get"]>>;
   try {
-    cached = await fetchCache.get(url);
+    cached = await withSpan(
+      "page.fetch",
+      { kind: "client", attributes: { "http.request.method": "GET", ...urlAttributes(url) } },
+      async (fetchSpan) => {
+        try {
+          const response = await fetchCache.get(url);
+          fetchSpan.setAttributes({
+            "http.response.status_code": response.status,
+            "http.response.body.size": response.body.byteLength,
+            "webfrost.fetch.redirects": response.redirects.length,
+            "webfrost.fetch.text": response.isText,
+          });
+          if (!response.status || response.status >= 400) {
+            fetchSpan.fail(undefined, String(response.status || "no_status"));
+          }
+          return response;
+        } catch (err) {
+          fetchSpan.fail(err, failureCategory(errorMessage(err)));
+          throw err;
+        }
+      },
+    );
   } catch (err) {
     logger?.error(`fetch failed snapshot=${snapshotId}: ${errorMessage(err)}`);
-    await setStatus("failed");
+    await setStatus("failed", `fetch_${failureCategory(errorMessage(err))}`);
     return;
   }
 
   if (!cached.status || cached.status >= 400) {
     logger?.warn(`fetch error snapshot=${snapshotId} status=${cached.status ?? "none"} url=${url}`);
-    await setStatus("failed");
+    await setStatus("failed", "fetch_http_status");
     return;
   }
 
@@ -236,36 +292,49 @@ async function archive(
 
   // Launch Playwright once for all Playwright-dependent extractors.
   // A single page.goto() is shared — no duplicate browser navigations per snapshot.
-  let page: import("playwright").Page | undefined;
-  let browser: import("playwright").Browser | undefined;
-  let browserError: string | null = null;
   const browserStart = Date.now();
-  try {
-    const pw = await import("playwright");
-    browser = await pw.chromium.launch(chromiumLaunchOptions());
-    // Service workers could issue requests that bypass route(); the archive does not need them.
-    const context = await browser.newContext({ serviceWorkers: "block" });
-    const guard = await guardBrowserContext(context);
-    page = await context.newPage();
-    await page.goto(url, { timeout: NAVIGATION_TIMEOUT_MS, waitUntil: "load" });
-    // The capture is of the page as loaded. Refusing further requests here also means
-    // a script cannot wait for the check below and then pull an internal URL into a frame.
-    const violation = await guard.seal();
-    if (violation) {
-      throw new Error(
-        `blocked: page redirected to a non-public address (${new URL(violation).hostname})`,
-      );
-    }
-    logger?.debug(`playwright navigation ok snapshot=${snapshotId}`);
-  } catch (err) {
-    // Browser missing, navigation failed or SSRF policy violated: the browser
-    // extractors are recorded as failed and the rest of the pipeline carries on.
-    browserError = errorMessage(err);
-    logger?.warn(`browser unavailable snapshot=${snapshotId}: ${browserError}`);
-    await closeBrowser(browser);
-    browser = undefined;
-    page = undefined;
-  }
+  const navigation = await withSpan(
+    "browser.navigate",
+    { attributes: urlAttributes(url) },
+    async (
+      navSpan,
+    ): Promise<{
+      browser?: import("playwright").Browser;
+      page?: import("playwright").Page;
+      error: string | null;
+    }> => {
+      let browser: import("playwright").Browser | undefined;
+      try {
+        const pw = await import("playwright");
+        browser = await pw.chromium.launch(chromiumLaunchOptions());
+        // Service workers could issue requests that bypass route(); the archive does not need them.
+        const context = await browser.newContext({ serviceWorkers: "block" });
+        const guard = await guardBrowserContext(context);
+        const page = await context.newPage();
+        await page.goto(url, { timeout: NAVIGATION_TIMEOUT_MS, waitUntil: "load" });
+        // The capture is of the page as loaded. Refusing further requests here also means
+        // a script cannot wait for the check below and then pull an internal URL into a frame.
+        const violation = await guard.seal();
+        if (violation) {
+          throw new Error(
+            `blocked: page redirected to a non-public address (${new URL(violation).hostname})`,
+          );
+        }
+        logger?.debug(`playwright navigation ok snapshot=${snapshotId}`);
+        return { browser, page, error: null };
+      } catch (err) {
+        // Browser missing, navigation failed or SSRF policy violated: the browser
+        // extractors are recorded as failed and the rest of the pipeline carries on.
+        const error = errorMessage(err);
+        navSpan.fail(err, failureCategory(error));
+        logger?.warn(`browser unavailable snapshot=${snapshotId}: ${error}`);
+        await closeBrowser(browser);
+        return { error };
+      }
+    },
+  );
+  const { page, browser } = navigation;
+  const browserError = navigation.error;
   const browserSetupMs = Date.now() - browserStart;
 
   const extractorTimeout = envInt("WEBFROST_EXTRACTOR_TIMEOUT_MS", DEFAULT_EXTRACTOR_TIMEOUT_MS);
@@ -284,19 +353,72 @@ async function archive(
     fn: (signal: AbortSignal) => unknown,
     timeoutMs = extractorTimeout,
   ): Promise<ExtractorOutcome> {
-    const t0 = Date.now();
-    const controller = new AbortController();
-    const run = Promise.resolve().then(() => fn(controller.signal));
-    return withTimeout(run, timeoutMs, `extractor ${name}`).then(
-      () => ({ name, durationMs: Date.now() - t0, error: null }),
-      async (reason: unknown) => {
-        const durationMs = Date.now() - t0;
-        controller.abort(reason);
-        await withTimeout(run, ABORT_GRACE_MS, `extractor ${name} cancel`).catch(() => {});
-        return { name, durationMs, error: errorMessage(reason) };
+    return withSpan(
+      `extractor.${name}`,
+      { attributes: { "webfrost.extractor.format": name } },
+      async (extractorSpan) => {
+        const t0 = Date.now();
+        const controller = new AbortController();
+        const run = Promise.resolve().then(() => fn(controller.signal));
+        const outcome: ExtractorOutcome = await withTimeout(
+          run,
+          timeoutMs,
+          `extractor ${name}`,
+        ).then(
+          () => ({ name, durationMs: Date.now() - t0, error: null }),
+          async (reason: unknown) => {
+            const durationMs = Date.now() - t0;
+            controller.abort(reason);
+            await withTimeout(run, ABORT_GRACE_MS, `extractor ${name} cancel`).catch(() => {});
+            return { name, durationMs, error: errorMessage(reason) };
+          },
+        );
+        if (telemetryEnabled()) await recordExtractorTelemetry(extractorSpan, outcome);
+        return outcome;
       },
     );
   }
+
+  /** Outcome, bytes stored and failure category of one extractor, on its span and metrics. */
+  async function recordExtractorTelemetry(
+    extractorSpan: SpanHandle,
+    { name, durationMs, error }: ExtractorOutcome,
+  ): Promise<void> {
+    const category = error === null ? undefined : failureCategory(error);
+    const outcome = error === null ? "ok" : category === "timeout" ? "timeout" : "failed";
+    let bytes: number | undefined;
+    if (error === null) {
+      try {
+        const row = await db.get<{ bytes: number | null }>(
+          sql`SELECT SUM(size_bytes) AS bytes FROM archive_results WHERE snapshot_id = ${snapshotId} AND extractor = ${name} AND error IS NULL`,
+        );
+        bytes = row?.bytes == null ? undefined : Number(row.bytes);
+      } catch {
+        // Sizes are informational only.
+      }
+    }
+    extractorSpan.setAttributes({
+      "webfrost.extractor.outcome": outcome,
+      "webfrost.extractor.bytes": bytes,
+      "webfrost.extractor.failure": category,
+    });
+    if (category) extractorSpan.fail(undefined, category);
+    recordMetric("extractor.duration", durationMs / 1000, {
+      "webfrost.extractor.format": name,
+      "webfrost.extractor.outcome": outcome,
+    });
+    if (bytes) recordMetric("archived.bytes", bytes, { "webfrost.extractor.format": name });
+  }
+
+  span.setAttributes({
+    "webfrost.extractors": [
+      ...(cached.isText ? ["html", "readability"] : []),
+      "warc",
+      "media",
+      ...(page ? BROWSER_EXTRACTORS : []),
+    ],
+    ...(browserError === null ? {} : { "webfrost.browser.failure": failureCategory(browserError) }),
+  });
 
   // HTML and Readability need text; a PDF or an image fetched directly only goes to the WARC.
   const textExtractors = cached.isText
@@ -352,6 +474,10 @@ async function archive(
         `browser unavailable: ${browserError ?? "unknown error"}`,
         browserSetupMs,
       );
+      recordMetric("extractor.duration", browserSetupMs / 1000, {
+        "webfrost.extractor.format": name,
+        "webfrost.extractor.outcome": "skipped",
+      });
     }
     browserTasks = Promise.resolve([]);
   }

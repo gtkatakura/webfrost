@@ -1,5 +1,5 @@
 // @webfrost/cli entry point: the `webfrost` command.
-import { webfrostDataDir } from "@webfrost/core";
+import { initTelemetry, shutdownTelemetry, webfrostDataDir } from "@webfrost/core";
 import {
   type Command,
   type CommandNode,
@@ -153,11 +153,15 @@ async function run(argv: string[]): Promise<number> {
       handler = h;
     },
   });
+  // OpenTelemetry export, only when an OTEL_EXPORTER_OTLP_*ENDPOINT is set (the SDK is
+  // not even loaded otherwise). Flushed when the command ends.
+  await initTelemetry({ serviceVersion: VERSION, warn: (message) => logger.warn(message) });
   try {
     return (await node.run(ctx)) ?? 0;
   } finally {
     process.off("SIGINT", onSignal);
     process.off("SIGTERM", onSignal);
+    await shutdownTelemetry();
   }
 }
 

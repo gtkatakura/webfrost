@@ -10,6 +10,15 @@ import {
 } from "./pipeline";
 import { newLeaseToken } from "./results";
 import type { StorageBackend } from "./storage";
+import {
+  type TraceContext,
+  captureContext,
+  observeJobs,
+  recordMetric,
+  withSpan,
+  withTraceContext,
+  withoutTraceContext,
+} from "./telemetry";
 import { domainThrottle } from "./throttle";
 
 /** A job that keeps getting orphaned (it crashes the process, say) is given up on after this many runs. */
@@ -30,6 +39,8 @@ interface InFlightJob {
   promise: Promise<void>;
   /** The job's lease token, once known (see results.ts). */
   lease: string | undefined;
+  /** Holds a concurrency slot (false while it waits for its host or for a slot). */
+  running: boolean;
 }
 
 /**
@@ -56,6 +67,12 @@ export class JobRunner {
     this.limiter = options.concurrency
       ? new ConcurrencyLimiter(options.concurrency)
       : createConcurrencyLimiter();
+    // A no-op unless OpenTelemetry export is on.
+    observeJobs(() => {
+      let running = 0;
+      for (const job of this.inFlight.values()) if (job.running) running++;
+      return { pending: this.inFlight.size - running, running };
+    });
   }
 
   get concurrency(): number {
@@ -88,12 +105,22 @@ export class JobRunner {
     const existing = this.inFlight.get(snapshotId);
     if (existing) return existing.promise;
 
-    const entry: InFlightJob = { promise: Promise.resolve(), lease };
+    const entry: InFlightJob = { promise: Promise.resolve(), lease, running: false };
+    // The run is traced as part of whatever queued it (an API request, a schedule
+    // tick, a recovery sweep), although it starts later, from another context.
+    const parent: TraceContext | undefined = captureContext();
     // Wait for the per-host slot before taking a concurrency slot: otherwise a
     // batch of URLs for one host would park every worker in a sleep and stall
     // unrelated hosts behind it.
-    entry.promise = this.waitForHost(url)
-      .then(() => this.limiter.run(() => this.runOne(snapshotId, url, entry)))
+    entry.promise = withTraceContext(parent, () => this.waitForHost(url))
+      .then(() =>
+        this.limiter.run(() =>
+          withTraceContext(parent, () => {
+            entry.running = true;
+            return this.runOne(snapshotId, url, entry);
+          }),
+        ),
+      )
       .catch(async (err: unknown) => {
         const logger = this.options.logger?.(snapshotId);
         logger?.error(
@@ -127,12 +154,34 @@ export class JobRunner {
    * ends up with duplicate archive results. A job orphaned `MAX_ATTEMPTS` times is
    * marked failed instead of being run again. Resolves with the number re-queued.
    */
-  async recoverPending(): Promise<number> {
+  recoverPending(): Promise<number> {
+    return withSpan("job_queue.recover", {}, async (span) => {
+      const { adopted, abandoned } = await this.adoptOrphans();
+      const recovered = adopted.filter((job) => job.hadLease).length;
+      span.setAttributes({
+        "webfrost.jobs.adopted": adopted.length,
+        "webfrost.jobs.leases_recovered": recovered,
+        "webfrost.jobs.abandoned": abandoned,
+      });
+      if (recovered > 0) recordMetric("jobs.recovered", recovered);
+      if (adopted.length > 0) recordMetric("jobs.retries", adopted.length);
+      if (abandoned > 0) recordMetric("jobs.abandoned", abandoned);
+      for (const { id, url, lease } of adopted) void this.enqueue(id, url, lease);
+      return adopted.length;
+    });
+  }
+
+  private async adoptOrphans(): Promise<{
+    adopted: { id: number; url: string; lease: string; hadLease: boolean }[];
+    abandoned: number;
+  }> {
     const db = await openDb(this.options.dir);
-    let adopted: { id: number; url: string; lease: string }[] = [];
+    let adopted: { id: number; url: string; lease: string; hadLease: boolean }[] = [];
+    let abandoned = 0;
     try {
       adopted = await db.transaction(async (tx) => {
-        const picked: { id: number; url: string; lease: string }[] = [];
+        abandoned = 0;
+        const picked: { id: number; url: string; lease: string; hadLease: boolean }[] = [];
         const stale = tx.ago(JOB_LEASE_SECONDS);
         // Lock order: job_queue first, then snapshots — the same as fenced writes.
         const orphans = await tx.all<{ id: number; url: string; attempts: number | null }>(
@@ -165,6 +214,7 @@ export class JobRunner {
             this.options
               .logger?.(id)
               ?.error(`giving up on snapshot=${id}: interrupted ${attempts} times`);
+            abandoned++;
             continue;
           }
 
@@ -181,15 +231,14 @@ export class JobRunner {
             );
           }
           await tx.run(sql`DELETE FROM archive_results WHERE snapshot_id = ${id}`);
-          picked.push({ id, url, lease });
+          picked.push({ id, url, lease, hadLease: updated > 0 });
         }
         return picked;
       });
     } finally {
       await db.close();
     }
-    for (const { id, url, lease } of adopted) void this.enqueue(id, url, lease);
-    return adopted.length;
+    return { adopted, abandoned };
   }
 
   /** Resolves when every queued and running job has finished. */
@@ -266,7 +315,10 @@ export class JobRunner {
 
   private startHeartbeat(): void {
     if (this.heartbeat) return;
-    this.heartbeat = setInterval(() => void this.touchInFlight(), JOB_HEARTBEAT_MS);
+    // Outside the trace of whichever request happened to queue the first job.
+    this.heartbeat = withoutTraceContext(() =>
+      setInterval(() => void this.touchInFlight(), JOB_HEARTBEAT_MS),
+    );
     // Never keep the process alive just to send heartbeats.
     this.heartbeat.unref?.();
   }

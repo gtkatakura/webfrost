@@ -1,4 +1,5 @@
 import { envInt } from "./ssrf-guard";
+import { recordMetric, withSpan } from "./telemetry";
 
 const DEFAULT_DOMAIN_DELAY_MS = 1000;
 const MAX_TRACKED_HOSTS = 2000;
@@ -31,7 +32,15 @@ export class HostThrottle {
       }
     }
 
-    if (slot > now) await Bun.sleep(slot - now);
+    const waitMs = slot - now;
+    recordMetric("throttle.wait", waitMs / 1000);
+    if (waitMs > 0) {
+      await withSpan(
+        "throttle.wait",
+        { attributes: { "server.address": key, "webfrost.throttle.wait_ms": waitMs } },
+        () => Bun.sleep(waitMs),
+      );
+    }
   }
 }
 

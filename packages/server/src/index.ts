@@ -1,5 +1,11 @@
 import { mkdirSync } from "node:fs";
-import { closeDatabases, hasAdminUser, startScheduler } from "@webfrost/core";
+import {
+  closeDatabases,
+  hasAdminUser,
+  initTelemetry,
+  shutdownTelemetry,
+  startScheduler,
+} from "@webfrost/core";
 import { Elysia } from "elysia";
 import { getDb, getRunner, getWebfrostDir } from "./context";
 import { appContentSecurityPolicy } from "./csp";
@@ -17,6 +23,7 @@ import { snapshotsRouter } from "./routes/snapshots";
 import { statsRouter } from "./routes/stats";
 import { snapshotTagsRouter, tagsRouter } from "./routes/tags";
 import { gracefulShutdown, installShutdownHandlers, shutdownTimeoutMs } from "./shutdown";
+import { telemetryPlugin } from "./telemetry";
 import { type UiAssets, defaultUiAssets, mimeTypeFor } from "./ui-assets";
 import { API_PREFIX, LEGACY_API_PREFIX, successorPath } from "./version";
 
@@ -25,6 +32,8 @@ export { directoryAssets, embeddedAssets } from "./ui-assets";
 
 /** How often the server looks for snapshots orphaned by an interrupted run. */
 const RECOVERY_INTERVAL_MS = 60_000;
+/** Sending the last spans and metrics must never hold up the exit for longer than this. */
+const TELEMETRY_FLUSH_TIMEOUT_MS = 5_000;
 
 // The UI's static files. Resolved on first use (a directory of a monorepo checkout or ./public)
 // unless startServer() was given something else, such as the files embedded in a binary.
@@ -95,6 +104,8 @@ const apiRoutes = () =>
     .use(statsRouter);
 
 export const app = new Elysia()
+  // A server span per request when OpenTelemetry export is on; nothing otherwise.
+  .use(telemetryPlugin)
   .onRequest(({ request, store, set }) => {
     (store as Record<string, number>).requestStart = Date.now();
     logger.debug({ method: request.method, path: new URL(request.url).pathname }, "request");
@@ -303,6 +314,7 @@ export function startServer(options: StartServerOptions = {}): RunningServer {
     stopBackgroundWork: background.stop,
     runner: getRunner(),
     closeDatabases,
+    flushTelemetry: () => shutdownTelemetry(TELEMETRY_FLUSH_TIMEOUT_MS),
     timeoutMs: shutdownTimeoutMs(),
     logger,
   };
@@ -317,6 +329,9 @@ export function startServer(options: StartServerOptions = {}): RunningServer {
 }
 
 if (import.meta.main) {
+  // Before anything else, so the first database handles and requests are traced.
+  // Loads nothing unless an OTEL_EXPORTER_OTLP_*ENDPOINT is set.
+  await initTelemetry({ warn: (message) => logger.warn(message) });
   try {
     startServer();
   } catch (err) {

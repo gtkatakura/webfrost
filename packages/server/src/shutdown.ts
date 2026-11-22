@@ -21,6 +21,11 @@ export interface ShutdownDeps {
   runner: { readonly size: number; onIdle(): Promise<void> };
   /** End the database pools; the last step, so nothing is cut off mid-query. */
   closeDatabases?: () => Promise<void>;
+  /**
+   * Send the spans, metrics and logs still buffered (OpenTelemetry export), after the
+   * jobs that produce them are done. Must bound its own duration and never throw.
+   */
+  flushTelemetry?: () => Promise<void>;
   timeoutMs: number;
   logger: Pick<Logger, "info" | "warn">;
 }
@@ -75,6 +80,13 @@ export async function gracefulShutdown(deps: ShutdownDeps): Promise<boolean> {
         logger.warn({ err }, "closing the database pools failed");
       } finally {
         clearTimeout(closeTimer);
+      }
+    }
+    if (deps.flushTelemetry) {
+      try {
+        await deps.flushTelemetry();
+      } catch (err) {
+        logger.warn({ err }, "flushing OpenTelemetry data failed");
       }
     }
   }

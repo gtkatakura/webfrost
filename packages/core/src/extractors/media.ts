@@ -4,6 +4,7 @@ import { recordResult } from "../results";
 import { envInt } from "../ssrf-guard";
 import type { StorageBackend } from "../storage";
 import { runProcess } from "../subprocess";
+import { withSpan } from "../telemetry";
 
 /** Hard cap for a single yt-dlp invocation; the process is killed when it is exceeded. */
 const DEFAULT_MEDIA_TIMEOUT_MS = 10 * 60_000;
@@ -34,12 +35,21 @@ export const YT_DLP_BASE_ARGS = [
 ] as const;
 
 function defaultSpawner(args: string[], signal?: AbortSignal): Promise<SpawnResult> {
-  return runProcess(["yt-dlp", ...args], {
-    timeoutMs: envInt("WEBFROST_MEDIA_TIMEOUT_MS", DEFAULT_MEDIA_TIMEOUT_MS),
-    // yt-dlp starts ffmpeg to merge streams; kill them together.
-    processGroup: true,
-    ...(signal ? { signal } : {}),
-  });
+  const step = args.includes("--dump-json") ? "metadata" : "download";
+  return withSpan(
+    "media.yt-dlp",
+    { attributes: { "process.executable.name": "yt-dlp", "webfrost.media.step": step } },
+    async (span) => {
+      const result = await runProcess(["yt-dlp", ...args], {
+        timeoutMs: envInt("WEBFROST_MEDIA_TIMEOUT_MS", DEFAULT_MEDIA_TIMEOUT_MS),
+        // yt-dlp starts ffmpeg to merge streams; kill them together.
+        processGroup: true,
+        ...(signal ? { signal } : {}),
+      });
+      span.setAttributes({ "process.exit.code": result.exitCode ?? -1 });
+      return result;
+    },
+  );
 }
 
 function ytDlpArgs(options: string[], url: string): string[] {
