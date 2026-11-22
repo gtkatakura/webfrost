@@ -1,4 +1,11 @@
 import mascot from "@/assets/brand/mascot.webp?preset=hero";
+import mobilePoster from "@/assets/videos/webfrost-promo-mobile-poster.webp?url";
+import mobileMp4 from "@/assets/videos/webfrost-promo-mobile.mp4?url";
+import mobileWebm from "@/assets/videos/webfrost-promo-mobile.webm?url";
+import widePoster from "@/assets/videos/webfrost-promo-poster.webp?url";
+import captions from "@/assets/videos/webfrost-promo.en.vtt?url&no-inline";
+import wideMp4 from "@/assets/videos/webfrost-promo.mp4?url";
+import wideWebm from "@/assets/videos/webfrost-promo.webm?url";
 import { FeatureGrid, type Tile } from "@/components/features";
 import { type CodeTab, CodeWindow, GitHubMark, SplitDeveloperHero } from "@/components/hero";
 import { Picture } from "@/components/picture";
@@ -192,13 +199,13 @@ export default function Home() {
           {/* Two cuts of the same film: vertical on phones, 16:9 from the sm breakpoint up. Only the one
               the reader plays is downloaded (preload="none"). */}
           <PromoVideo
-            name="webfrost-promo-mobile"
+            cut={{ poster: mobilePoster, webm: mobileWebm, mp4: mobileMp4 }}
             width={720}
             height={1280}
             className="mx-auto mt-6 aspect-[9/16] w-full max-w-sm sm:hidden"
           />
           <PromoVideo
-            name="webfrost-promo"
+            cut={{ poster: widePoster, webm: wideWebm, mp4: wideMp4 }}
             width={1920}
             height={1080}
             className="mt-6 hidden aspect-video w-full sm:block"
@@ -261,29 +268,36 @@ export default function Home() {
 }
 
 /**
- * The narrated promo film, from apps/docs/public/videos (Git LFS). Narrated, so it never plays on its
- * own; both cuts share the English captions, since they have the same voice track.
+ * The narrated promo film. The files live in app/assets/videos (Git LFS) and go through the build, so
+ * their names carry a hash of their content and /assets serves them as immutable for a year: a new cut
+ * gets a new name. Narrated, so it never plays on its own; both cuts share the English captions, since
+ * they have the same voice track.
  */
 function PromoVideo({
-  name,
+  cut,
   width,
   height,
   className,
-}: { name: string; width: number; height: number; className: string }) {
+}: {
+  cut: { poster: string; webm: string; mp4: string };
+  width: number;
+  height: number;
+  className: string;
+}) {
   return (
     <video
       className={`rounded-2xl border border-border bg-[#05091a] shadow-2xl shadow-blue-900/20 ${className}`}
       controls
       playsInline
       preload="none"
-      poster={`/videos/${name}-poster.webp`}
+      poster={cut.poster}
       width={width}
       height={height}
     >
-      <source src={`/videos/${name}.webm`} type="video/webm" />
-      <source src={`/videos/${name}.mp4`} type="video/mp4" />
-      <track kind="captions" src="/videos/webfrost-promo.en.vtt" srcLang="en" label="English" />
-      <a href={`/videos/${name}.mp4`}>Download the video (MP4)</a>
+      <source src={cut.webm} type="video/webm" />
+      <source src={cut.mp4} type="video/mp4" />
+      <track kind="captions" src={captions} srcLang="en" label="English" />
+      <a href={cut.mp4}>Download the video (MP4)</a>
     </video>
   );
 }

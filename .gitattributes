@@ -1,5 +1,5 @@
 # The promo videos and their poster go to Git LFS, so each new cut does not stay in every clone's history.
 # The captions (.vtt) are text and stay in Git.
-apps/docs/public/videos/*.mp4 filter=lfs diff=lfs merge=lfs -text
-apps/docs/public/videos/*.webm filter=lfs diff=lfs merge=lfs -text
-apps/docs/public/videos/*.webp filter=lfs diff=lfs merge=lfs -text
+apps/docs/app/assets/videos/*.mp4 filter=lfs diff=lfs merge=lfs -text
+apps/docs/app/assets/videos/*.webm filter=lfs diff=lfs merge=lfs -text
+apps/docs/app/assets/videos/*.webp filter=lfs diff=lfs merge=lfs -text

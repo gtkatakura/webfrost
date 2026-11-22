@@ -5,7 +5,7 @@
 bun = "1.4.4"
 # .deb and .rpm packages of the binary (packages/cli/scripts/package-release.ts)
 nfpm = "2.48.0"
-# Large binaries in the repo (the promo video under apps/docs/public/videos): .gitattributes routes them to LFS.
+# Large binaries in the repo (the promo video under apps/docs/app/assets/videos): .gitattributes routes them to LFS.
 # After cloning: git lfs install --local && git lfs pull
 git-lfs = "3.8.1"
 
