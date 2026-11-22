@@ -1,6 +1,5 @@
 import { WebFrostError, parseError } from "./errors.js";
 import {
-  type RawSearchResult,
   type RawSnapshot,
   type RawSnapshotDetail,
   type RawTag,
@@ -13,15 +12,19 @@ import type {
   ApiKey,
   ApiKeyCreated,
   ArchiveUrlKind,
+  CreateApiKeyOptions,
   DashboardStats,
   ImportFormat,
   ImportOptions,
   ImportRecord,
   ImportResult,
+  IterateOptions,
   IterateSnapshotsOptions,
   ListSnapshotsOptions,
   LoginResult,
   MeResult,
+  Page,
+  PageOptions,
   RequestOptions,
   Schedule,
   SearchPage,
@@ -83,8 +86,47 @@ function isRetryable(err: WebFrostError): boolean {
   );
 }
 
+/** Where version 1 of the HTTP API lives, below the server's base URL. */
+const API_PATH = "/api/v1";
+
+let warnedLegacyBaseUrl = false;
+
+/**
+ * The server's base URL without a trailing slash. A legacy base URL that already names the API
+ * (`.../api`, or `.../api/v1`) loses that suffix, with a one-time warning: the client adds the
+ * versioned path itself.
+ */
+function normaliseBaseUrl(baseUrl: string): string {
+  const trimmed = baseUrl.replace(/\/+$/, "");
+  const match = /\/api(?:\/v1)?$/.exec(trimmed);
+  if (!match) return trimmed;
+  if (!warnedLegacyBaseUrl) {
+    warnedLegacyBaseUrl = true;
+    console.warn(
+      `[@webfrost/sdk] baseUrl should be the server's origin (e.g. "http://localhost:3000"), not the API path: dropping "${match[0]}" from "${baseUrl}". The client adds ${API_PATH} itself.`,
+    );
+  }
+  return trimmed.slice(0, match.index);
+}
+
+/** Page and limit as query parameters (only the ones given). */
+function pageQuery(options: { page?: number; limit?: number } | undefined): URLSearchParams {
+  const params = new URLSearchParams();
+  if (options?.page !== undefined) params.set("page", String(options.page));
+  if (options?.limit !== undefined) params.set("limit", String(options.limit));
+  return params;
+}
+
+function withQuery(path: string, params: URLSearchParams): string {
+  const qs = params.toString();
+  return qs ? `${path}?${qs}` : path;
+}
+
 export class WebFrostClient {
+  /** The server's base URL, normalised (no trailing slash, no `/api` suffix). */
   private readonly baseUrl: string;
+  /** `baseUrl` plus the versioned API path: every request goes below it. */
+  private readonly apiUrl: string;
   private readonly apiKey: string | undefined;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch | undefined;
@@ -93,8 +135,9 @@ export class WebFrostClient {
   private readonly maxRetryDelayMs: number;
   private readonly credentials: RequestCredentials;
 
-  constructor(options: WebFrostClientOptions) {
-    this.baseUrl = options.baseUrl.replace(/\/$/, "");
+  constructor(options: WebFrostClientOptions = {}) {
+    this.baseUrl = normaliseBaseUrl(options.baseUrl ?? "");
+    this.apiUrl = `${this.baseUrl}${API_PATH}`;
     this.apiKey = options.apiKey;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.fetchImpl = options.fetch;
@@ -204,7 +247,7 @@ export class WebFrostClient {
     try {
       // Looked up per call so a replaced global fetch (tests, polyfills) is honoured.
       const doFetch = this.fetchImpl ?? globalThis.fetch;
-      const res = await doFetch(`${this.baseUrl}${path}`, {
+      const res = await doFetch(`${this.apiUrl}${path}`, {
         method,
         headers,
         credentials: this.credentials,
@@ -314,9 +357,60 @@ export class WebFrostClient {
   //
   // Not-found semantics: looking up one thing that is missing (`getSnapshot`) resolves `null`;
   // deleting something that is missing (`delete*`, `remove*`) resolves `false`; listing the
-  // children of a missing parent (`listSnapshotTags`) resolves `[]`. Everything else treats a
+  // children of a missing parent (`listSnapshotTags`) resolves an empty page. Everything else treats a
   // 404 as an error and throws a WebFrostError with code NOT_FOUND.
   // ---------------------------------------------------------------------------
+
+  /** Turn a server-relative path ("/api/v1/...") into a URL under {@link baseUrl}. */
+  private readonly resolve = (path: string): string =>
+    path.startsWith("/") ? `${this.baseUrl}${path}` : path;
+
+  /** GET one page of a list endpoint and map its items. */
+  private async page<Raw, T>(
+    path: string,
+    params: URLSearchParams,
+    map: (raw: Raw) => T,
+    request?: RequestOptions,
+    allow?: readonly number[],
+  ): Promise<Page<T> | null> {
+    return this.send(
+      "GET",
+      withQuery(path, params),
+      { signal: request?.signal, ...(allow ? { allow } : {}) },
+      async (res) => {
+        if (res.status === 404 && allow?.includes(404)) return null;
+        const raw = (await res.json()) as Page<Raw>;
+        return { items: raw.items.map(map), total: raw.total, page: raw.page, limit: raw.limit };
+      },
+    );
+  }
+
+  /** Same as {@link page} for endpoints that never answer 404. */
+  private async pageOf<Raw, T>(
+    path: string,
+    options: PageOptions | undefined,
+    map: (raw: Raw) => T,
+    request?: RequestOptions,
+  ): Promise<Page<T>> {
+    return (await this.page(path, pageQuery(options), map, request)) as Page<T>;
+  }
+
+  /** Walk a list page by page, lazily, until it is exhausted or the consumer stops. */
+  private async *pages<T>(
+    fetchPage: (page: number, limit: number, request: RequestOptions) => Promise<Page<T>>,
+    options: IterateOptions,
+    defaultLimit = 100,
+  ): AsyncGenerator<T> {
+    const { signal, page: startPage = 1, limit = defaultLimit } = options;
+    let page = startPage;
+    for (;;) {
+      const result = await fetchPage(page, limit, { signal });
+      yield* result.items;
+      // Trust the limit the server applied: it may have capped the one requested.
+      if (result.items.length === 0 || result.page * result.limit >= result.total) return;
+      page = result.page + 1;
+    }
+  }
 
   /**
    * Create a new snapshot (fire-and-forget pipeline).
@@ -328,31 +422,20 @@ export class WebFrostClient {
   }
 
   /**
-   * List snapshots with optional pagination.
-   * Returns a paginated result with items, total count, and pagination metadata.
+   * List snapshots, newest first, one page at a time (20 per page unless `limit` says otherwise).
    */
   async listSnapshots(
     options?: ListSnapshotsOptions,
     request?: RequestOptions,
   ): Promise<SnapshotPage> {
-    const params = new URLSearchParams();
-    if (options?.page !== undefined) params.set("page", String(options.page));
-    if (options?.limit !== undefined) params.set("limit", String(options.limit));
+    const params = pageQuery(options);
     if (options?.status !== undefined) params.set("status", options.status);
-    const qs = params.toString();
-
-    const raw = await this.json<{
-      items: RawSnapshot[];
-      total: number;
-      page: number;
-      limit: number;
-    }>("GET", `/snapshots${qs ? `?${qs}` : ""}`, { signal: request?.signal });
-    return {
-      items: raw.items.map(toSnapshot),
-      total: raw.total,
-      page: raw.page,
-      limit: raw.limit,
-    };
+    return (await this.page(
+      "/snapshots",
+      params,
+      (raw: RawSnapshot) => toSnapshot(raw, this.resolve),
+      request,
+    )) as SnapshotPage;
   }
 
   /**
@@ -364,16 +447,16 @@ export class WebFrostClient {
    * for await (const snapshot of client.iterateSnapshots({ status: "done" })) { ... }
    * ```
    */
-  async *iterateSnapshots(options: IterateSnapshotsOptions = {}): AsyncGenerator<Snapshot> {
-    const { signal, page: startPage = 1, limit = 100, ...filters } = options;
-    let page = startPage;
-    for (;;) {
-      const result = await this.listSnapshots({ ...filters, page, limit }, { signal });
-      yield* result.items;
-      // Trust the limit the server applied: it may have capped the one requested.
-      if (result.items.length === 0 || result.page * result.limit >= result.total) return;
-      page = result.page + 1;
-    }
+  iterateSnapshots(options: IterateSnapshotsOptions = {}): AsyncGenerator<Snapshot> {
+    const { signal, page, limit, ...filters } = options;
+    return this.pages(
+      (p, l, request) => this.listSnapshots({ ...filters, page: p, limit: l }, request),
+      {
+        signal,
+        ...(page !== undefined ? { page } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+      },
+    );
   }
 
   /**
@@ -387,13 +470,15 @@ export class WebFrostClient {
       `/snapshots/${id}`,
       { signal: request?.signal, allow: [404] },
       async (res) =>
-        res.status === 404 ? null : toSnapshotDetail((await res.json()) as RawSnapshotDetail),
+        res.status === 404
+          ? null
+          : toSnapshotDetail((await res.json()) as RawSnapshotDetail, this.resolve),
     );
   }
 
   /**
-   * Full-text search across snapshots.
-   * Returns ranked results with HTML snippets (matching terms wrapped in <mark>).
+   * Full-text search across snapshots: the first page of ranked results (20 unless the server
+   * says otherwise), each with an HTML snippet (matching terms wrapped in <mark>).
    */
   async searchSnapshots(query: string, request?: RequestOptions): Promise<SearchResult[]> {
     return (await this.searchSnapshotsPage(query, undefined, request)).items;
@@ -405,24 +490,12 @@ export class WebFrostClient {
    */
   async searchSnapshotsPage(
     query: string,
-    options?: { page?: number; limit?: number },
+    options?: PageOptions,
     request?: RequestOptions,
   ): Promise<SearchPage> {
-    const params = new URLSearchParams({ q: query });
-    if (options?.page !== undefined) params.set("page", String(options.page));
-    if (options?.limit !== undefined) params.set("limit", String(options.limit));
-    const raw = await this.json<{
-      items: RawSearchResult[];
-      total?: number;
-      page?: number;
-      limit?: number;
-    }>("GET", `/snapshots?${params.toString()}`, { signal: request?.signal });
-    return {
-      items: raw.items.map(toSearchResult),
-      total: raw.total ?? raw.items.length,
-      page: raw.page ?? options?.page ?? 1,
-      limit: raw.limit ?? options?.limit ?? raw.items.length,
-    };
+    const params = pageQuery(options);
+    params.set("q", query);
+    return (await this.page("/snapshots", params, toSearchResult, request)) as SearchPage;
   }
 
   /** Delete a snapshot by id. Returns true if deleted, false if not found. */
@@ -435,10 +508,14 @@ export class WebFrostClient {
    * "download" serves the stored file (or the extractor's JSON); "preview" serves sandboxed
    * HTML for the extractors that have one. The URL carries no credentials: the browser sends the
    * session cookie, and an API key cannot be put in a URL, so use {@link downloadArchive} to
-   * fetch with a key.
+   * fetch with a key. Same as an archive result's `downloadUrl` / `previewUrl`.
    */
   archiveUrl(id: number, extractor: string, kind: ArchiveUrlKind = "download"): string {
-    return `${this.baseUrl}/snapshots/${id}/archives/${encodeURIComponent(extractor)}/${kind}`;
+    return `${this.apiUrl}${this.archivePath(id, extractor, kind)}`;
+  }
+
+  private archivePath(id: number, extractor: string, kind: ArchiveUrlKind): string {
+    return `/snapshots/${id}/archives/${encodeURIComponent(extractor)}/${kind}`;
   }
 
   /**
@@ -451,7 +528,7 @@ export class WebFrostClient {
     extractor: string,
     options?: RequestOptions & { kind?: ArchiveUrlKind },
   ): Promise<Response> {
-    const path = this.archiveUrl(id, extractor, options?.kind).slice(this.baseUrl.length);
+    const path = this.archivePath(id, extractor, options?.kind ?? "download");
     return this.send("GET", path, { signal: options?.signal, streaming: true }, async (res) => res);
   }
 
@@ -459,13 +536,17 @@ export class WebFrostClient {
   // Tags
   // ---------------------------------------------------------------------------
 
-  /** List all tags. */
-  async listTags(request?: RequestOptions): Promise<Tag[]> {
-    const raw = await this.json<RawTag[]>("GET", "/tags", { signal: request?.signal });
-    return raw.map(toTag);
+  /** List tags, by name, one page at a time. */
+  listTags(options?: PageOptions, request?: RequestOptions): Promise<Page<Tag>> {
+    return this.pageOf("/tags", options, toTag, request);
   }
 
-  /** Create a new tag. Throws WebFrostError(409) if name already exists. */
+  /** Iterate over every tag, fetching pages lazily. */
+  iterateTags(options: IterateOptions = {}): AsyncGenerator<Tag> {
+    return this.pages((page, limit, request) => this.listTags({ page, limit }, request), options);
+  }
+
+  /** Create a new tag. Throws WebFrostError (code CONFLICT) if the name already exists. */
   async createTag(name: string, color?: string, request?: RequestOptions): Promise<Tag> {
     const raw = await this.json<RawTag>("POST", "/tags", {
       body: { name, ...(color !== undefined ? { color } : {}) },
@@ -479,15 +560,20 @@ export class WebFrostClient {
     return this.remove(`/tags/${id}`, request);
   }
 
-  /** List tags on a snapshot. Resolves `[]` when the snapshot does not exist. */
-  async listSnapshotTags(snapshotId: number, request?: RequestOptions): Promise<Tag[]> {
-    const raw = await this.send(
-      "GET",
+  /** List the tags on a snapshot. Resolves an empty page when the snapshot does not exist. */
+  async listSnapshotTags(
+    snapshotId: number,
+    options?: PageOptions,
+    request?: RequestOptions,
+  ): Promise<Page<Tag>> {
+    const found = await this.page(
       `/snapshots/${snapshotId}/tags`,
-      { signal: request?.signal, allow: [404] },
-      async (res) => (res.status === 404 ? [] : ((await res.json()) as RawTag[])),
+      pageQuery(options),
+      toTag,
+      request,
+      [404],
     );
-    return raw.map(toTag);
+    return found ?? { items: [], total: 0, page: options?.page ?? 1, limit: options?.limit ?? 20 };
   }
 
   /** Add a tag to a snapshot. */
@@ -516,12 +602,20 @@ export class WebFrostClient {
   // Schedules
   // ---------------------------------------------------------------------------
 
-  /** List all scheduled archive jobs. */
-  listSchedules(request?: RequestOptions): Promise<Schedule[]> {
-    return this.json("GET", "/schedules", { signal: request?.signal });
+  /** List scheduled archive jobs, oldest first, one page at a time. */
+  listSchedules(options?: PageOptions, request?: RequestOptions): Promise<Page<Schedule>> {
+    return this.pageOf("/schedules", options, (s: Schedule) => s, request);
   }
 
-  /** Create a new scheduled archive job. Throws WebFrostError on invalid url or cron. */
+  /** Iterate over every schedule, fetching pages lazily. */
+  iterateSchedules(options: IterateOptions = {}): AsyncGenerator<Schedule> {
+    return this.pages(
+      (page, limit, request) => this.listSchedules({ page, limit }, request),
+      options,
+    );
+  }
+
+  /** Create a new scheduled archive job. Throws WebFrostError (code VALIDATION) on a bad url or cron. */
   createSchedule(url: string, cron: string, request?: RequestOptions): Promise<Schedule> {
     return this.json("POST", "/schedules", { body: { url, cron }, signal: request?.signal });
   }
@@ -554,14 +648,30 @@ export class WebFrostClient {
     return this.json("GET", "/settings/info", { signal: request?.signal });
   }
 
-  /** List all active (non-revoked) API keys. */
-  listApiKeys(request?: RequestOptions): Promise<ApiKey[]> {
-    return this.json("GET", "/settings/keys", { signal: request?.signal });
+  /** List active (non-revoked) API keys, oldest first, one page at a time. */
+  listApiKeys(options?: PageOptions, request?: RequestOptions): Promise<Page<ApiKey>> {
+    return this.pageOf("/settings/keys", options, (k: ApiKey) => k, request);
   }
 
-  /** Create a new API key. The raw key is returned once and never stored. */
-  createApiKey(name: string, request?: RequestOptions): Promise<ApiKeyCreated> {
-    return this.json("POST", "/settings/keys", { body: { name }, signal: request?.signal });
+  /** Iterate over every active API key, fetching pages lazily. */
+  iterateApiKeys(options: IterateOptions = {}): AsyncGenerator<ApiKey> {
+    return this.pages(
+      (page, limit, request) => this.listApiKeys({ page, limit }, request),
+      options,
+    );
+  }
+
+  /**
+   * Create a new API key, optionally expiring at `expiresAt`. The raw key is returned once and
+   * never stored.
+   */
+  createApiKey(name: string, options?: CreateApiKeyOptions): Promise<ApiKeyCreated> {
+    const expiresAt =
+      options?.expiresAt instanceof Date ? options.expiresAt.toISOString() : options?.expiresAt;
+    return this.json("POST", "/settings/keys", {
+      body: expiresAt !== undefined ? { name, expiresAt } : { name },
+      signal: options?.signal,
+    });
   }
 
   /** Revoke an API key by id. Returns true if revoked, false if not found. */
@@ -598,8 +708,16 @@ export class WebFrostClient {
     return this.json("POST", "/import/file", { body: form, signal: request?.signal });
   }
 
-  /** List past import records from GET /imports. */
-  listImports(request?: RequestOptions): Promise<ImportRecord[]> {
-    return this.json("GET", "/imports", { signal: request?.signal });
+  /** List past imports, newest first, one page at a time. */
+  listImports(options?: PageOptions, request?: RequestOptions): Promise<Page<ImportRecord>> {
+    return this.pageOf("/imports", options, (r: ImportRecord) => r, request);
+  }
+
+  /** Iterate over the whole import history, fetching pages lazily. */
+  iterateImports(options: IterateOptions = {}): AsyncGenerator<ImportRecord> {
+    return this.pages(
+      (page, limit, request) => this.listImports({ page, limit }, request),
+      options,
+    );
   }
 }

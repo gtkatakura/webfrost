@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { useClient } from "../../../context";
 import { useAuth } from "../../../context/auth";
 import { tagKeys } from "../../../hooks/useTags";
+import { collect } from "../../../lib/collect";
 import { errorMessage } from "../../../lib/errors";
 
 const snapshotTagKey = (snapshotId: number) => ["snapshot-tags", snapshotId] as const;
@@ -19,12 +20,12 @@ export function InlineTags({ snapshotId }: { snapshotId: number }) {
 
   const { data: tags = [] } = useQuery<Tag[]>({
     queryKey: snapshotTagKey(snapshotId),
-    queryFn: () => client.listSnapshotTags(snapshotId),
+    queryFn: async () => (await client.listSnapshotTags(snapshotId, { limit: 200 })).items,
   });
 
   const { data: allTags = [] } = useQuery<Tag[]>({
     queryKey: tagKeys.list(),
-    queryFn: () => client.listTags(),
+    queryFn: () => collect(client.iterateTags()),
     // Only needed for the add-tag picker.
     enabled: canWrite,
   });

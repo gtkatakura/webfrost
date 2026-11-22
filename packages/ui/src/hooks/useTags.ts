@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Tag } from "@webfrost/sdk";
 import { toast } from "sonner";
 import { useClient } from "../context";
+import { collect } from "../lib/collect";
 import { errorMessage } from "../lib/errors";
 
 export const tagKeys = {
@@ -14,7 +15,7 @@ export function useTags() {
   const queryClient = useQueryClient();
   const query = useQuery<Tag[]>({
     queryKey: tagKeys.list(),
-    queryFn: () => client.listTags(),
+    queryFn: () => collect(client.iterateTags()),
   });
 
   const createTag = useMutation({

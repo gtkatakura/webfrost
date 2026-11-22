@@ -1,7 +1,8 @@
 import { WebFrostClient } from "@webfrost/sdk";
 import { createContext, useContext } from "react";
 
-export const defaultClient = new WebFrostClient({ baseUrl: "/api" });
+// The UI is served by the server it talks to: same origin, so no base URL.
+export const defaultClient = new WebFrostClient();
 
 export const ClientContext = createContext<WebFrostClient>(defaultClient);
 

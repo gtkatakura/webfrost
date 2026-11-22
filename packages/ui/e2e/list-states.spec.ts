@@ -22,7 +22,7 @@ function fakeItem(id: number) {
 
 /** A list of 21 snapshots: 20 on page 1, one on page 2. */
 async function mockTwoPages(page: Page) {
-  await page.route("**/api/snapshots?**", (route) => {
+  await page.route("**/api/v1/snapshots?**", (route) => {
     const url = new URL(route.request().url());
     const p = Number(url.searchParams.get("page") ?? "1");
     const items = p === 1 ? Array.from({ length: 20 }, (_, i) => fakeItem(i + 1)) : [fakeItem(21)];
@@ -37,7 +37,7 @@ test("states: a failing snapshot list shows an error with Retry, not 'No snapsho
   page,
 }) => {
   let failing = true;
-  await page.route("**/api/snapshots?**", (route) =>
+  await page.route("**/api/v1/snapshots?**", (route) =>
     failing
       ? route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"boom"}' })
       : route.continue(),
@@ -57,19 +57,19 @@ test("states: a failing snapshot list shows an error with Retry, not 'No snapsho
 test("states: when the server cannot be reached the app says so instead of showing a login form", async ({
   page,
 }) => {
-  await page.route("**/api/setup/status", (route) => route.abort());
+  await page.route("**/api/v1/setup/status", (route) => route.abort());
   await page.goto("/#/");
   await expect(page.getByText("Can't reach the WebFrost server")).toBeVisible();
   await expect(page.getByLabel("Username")).toHaveCount(0);
 
-  await page.unroute("**/api/setup/status");
+  await page.unroute("**/api/v1/setup/status");
   await page.getByRole("button", { name: "Retry" }).click();
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 });
 
 test("url input: a bare domain is accepted and sent with https:// prepended", async ({ page }) => {
   let sent: { url?: string } = {};
-  await page.route("**/api/snapshots", (route) => {
+  await page.route("**/api/v1/snapshots", (route) => {
     if (route.request().method() !== "POST") return route.continue();
     sent = route.request().postDataJSON();
     return route.fulfill({
@@ -129,7 +129,7 @@ test("selection: the confirmation names exactly how many snapshots will be delet
 test("list: the page number lives in the URL and a page past the end steps back", async ({
   page,
 }) => {
-  await page.route("**/api/snapshots?**", (route) => {
+  await page.route("**/api/v1/snapshots?**", (route) => {
     const url = new URL(route.request().url());
     const p = Number(url.searchParams.get("page") ?? "1");
     const items = p === 1 ? [fakeItem(1), fakeItem(2)] : [];

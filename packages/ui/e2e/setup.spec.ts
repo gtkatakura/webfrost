@@ -65,7 +65,7 @@ test("setup: wizard creates the admin, shows the API key once and signs in", asy
 
 test("setup: wizard is not reachable once an admin exists", async ({ page, request }) => {
   // The API refuses a second setup.
-  const resp = await request.post("/api/setup", {
+  const resp = await request.post("/api/v1/setup", {
     data: { username: "second-admin", password: "another-password" },
   });
   expect(resp.status()).toBe(409);

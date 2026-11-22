@@ -51,8 +51,10 @@ function mockClient(overrides: {
     createSnapshot: (url: string) => Promise.resolve({ id: 1, url, status: "pending" }),
     getSnapshot: () => Promise.resolve(null),
     getStats: () => Promise.resolve(defaultStats),
-    listTags: () => Promise.resolve([]),
-    listSnapshotTags: () => Promise.resolve([]),
+    iterateTags: async function* () {
+      yield* [];
+    },
+    listSnapshotTags: () => Promise.resolve({ items: [], total: 0, page: 1, limit: 200 }),
     addTagToSnapshot: () => Promise.resolve(),
     removeTagFromSnapshot: () => Promise.resolve(),
     ...overrides,
@@ -231,10 +233,19 @@ describe("DetailPage — renders results", () => {
         {
           id: 10,
           extractor: "warc",
-          content: "/path/to/file.warc",
+          downloadUrl: "/api/v1/snapshots/1/archives/warc/download",
+          previewUrl: null,
+          content: null,
           createdAt: "2024-01-15T10:01:00.000Z",
         },
-        { id: 11, extractor: "pdf", content: null, createdAt: "2024-01-15T10:02:00.000Z" },
+        {
+          id: 11,
+          extractor: "pdf",
+          content: null,
+          downloadUrl: "/api/v1/snapshots/7/archives/pdf/download",
+          previewUrl: null,
+          createdAt: "2024-01-15T10:02:00Z",
+        },
       ],
     });
     const client = mockClient({ getSnapshot: () => Promise.resolve(detail) });
@@ -243,6 +254,31 @@ describe("DetailPage — renders results", () => {
     await screen.findByRole("link", { name: /archive-test\.com/ });
     expect(screen.getAllByText("warc").length).toBeGreaterThan(0);
     expect(screen.getAllByText("pdf").length).toBeGreaterThan(0);
+  });
+
+  test("links each archive file to the downloadUrl the API gives it", async () => {
+    // A server behind a reverse-proxy path: the URL must come from the result, not be rebuilt.
+    const pdfUrl = "https://wf.example/base/api/v1/snapshots/12/archives/pdf/download";
+    const detail = makeDetail({
+      id: 12,
+      url: "https://links.example",
+      archiveResults: [
+        {
+          id: 30,
+          extractor: "pdf",
+          content: null,
+          downloadUrl: pdfUrl,
+          previewUrl: null,
+          createdAt: "2024-01-15T10:02:00Z",
+        },
+      ],
+    });
+    const client = mockClient({ getSnapshot: () => Promise.resolve(detail) });
+    renderApp(client, "/snapshots/12");
+
+    fireEvent.click(await screen.findByRole("tab", { name: /Raw/ }));
+    const link = await screen.findByRole("link", { name: /PDF/ });
+    expect(link.getAttribute("href")).toBe(pdfUrl);
   });
 
   test("shows fallback when archiveResults is empty", async () => {
@@ -268,6 +304,8 @@ describe("DetailPage — renders results", () => {
         {
           id: 20,
           extractor: "readability",
+          downloadUrl: "/api/v1/snapshots/1/archives/readability/download",
+          previewUrl: null,
           content: readabilityContent,
           createdAt: "2024-01-15T10:03:00.000Z",
         },
@@ -303,6 +341,8 @@ describe("Reader tab", () => {
         {
           id: 40,
           extractor: "readability",
+          downloadUrl: "/api/v1/snapshots/1/archives/readability/download",
+          previewUrl: null,
           content: JSON.stringify({
             title: "Reader Title",
             byline: "By Someone",

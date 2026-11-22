@@ -7,6 +7,7 @@ import { useClient } from "../context";
 import { AddScheduleForm } from "../features/schedules/AddScheduleForm";
 import { ScheduleRow } from "../features/schedules/ScheduleRow";
 import { SCHEDULE_KEYS } from "../features/schedules/cron";
+import { collect } from "../lib/collect";
 import { errorMessage } from "../lib/errors";
 
 const COLUMNS = ["URL", "Schedule", "Health", "Last run", "Next run"];
@@ -23,7 +24,7 @@ export function SchedulesPage() {
     refetch,
   } = useQuery<Schedule[]>({
     queryKey: SCHEDULE_KEYS.list(),
-    queryFn: () => client.listSchedules(),
+    queryFn: () => collect(client.iterateSchedules()),
   });
 
   const deleteSchedule = useMutation({

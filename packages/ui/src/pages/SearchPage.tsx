@@ -18,6 +18,7 @@ import {
 import { SavedSearches } from "../features/search/SavedSearches";
 import { useSearchPage } from "../hooks/useSearch";
 import { tagKeys } from "../hooks/useTags";
+import { collect } from "../lib/collect";
 import { parsePositiveInt } from "../lib/url";
 
 const PAGE_SIZE = 20;
@@ -124,7 +125,7 @@ export function SearchPage() {
 
   const { data: allTags = [] } = useQuery<Tag[]>({
     queryKey: tagKeys.list(),
-    queryFn: () => client.listTags(),
+    queryFn: () => collect(client.iterateTags()),
   });
 
   const results = useMemo(() => {

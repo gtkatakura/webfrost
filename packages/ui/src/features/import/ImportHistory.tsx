@@ -18,7 +18,8 @@ export function ImportHistory() {
     refetch,
   } = useQuery<ImportRecord[]>({
     queryKey: ["imports", "list"],
-    queryFn: () => client.listImports(),
+    // The most recent imports; older ones are rarely useful here.
+    queryFn: async () => (await client.listImports({ limit: 50 })).items,
   });
 
   if (loading) return <LoadingRows rows={3} rowClass="h-11" />;

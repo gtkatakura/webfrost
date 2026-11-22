@@ -61,6 +61,12 @@ function mockClient({ publicRead, signedIn, listSnapshots }: Opts) {
       calls.push(name);
       return value();
     };
+  const trackIterator = (name: string) =>
+    async function* () {
+      calls.push(name);
+      yield* [];
+    };
+  const page = <T,>(items: T[]) => ({ items, total: items.length, page: 1, limit: 20 });
   const client = {
     getSetupStatus: () => Promise.resolve({ needsSetup: false, publicRead }),
     getMe: () =>
@@ -80,12 +86,15 @@ function mockClient({ publicRead, signedIn, listSnapshots }: Opts) {
         })),
     getSnapshot: (id: number) => Promise.resolve(detail(id, "https://detail.example")),
     getStats: () => Promise.resolve(stats),
-    listTags: () => Promise.resolve([alpha, beta]),
-    listSnapshotTags: () => Promise.resolve([alpha]),
+    iterateTags: async function* () {
+      yield alpha;
+      yield beta;
+    },
+    listSnapshotTags: () => Promise.resolve(page([alpha])),
     // Everything below needs credentials; record any call a guest should never make.
-    listImports: track("listImports", () => Promise.resolve([])),
-    listSchedules: track("listSchedules", () => Promise.resolve([])),
-    listApiKeys: track("listApiKeys", () => Promise.resolve([])),
+    listImports: track("listImports", () => Promise.resolve(page([]))),
+    iterateSchedules: trackIterator("iterateSchedules"),
+    iterateApiKeys: trackIterator("iterateApiKeys"),
     createSnapshot: track("createSnapshot", () => Promise.resolve({ id: 9 })),
     deleteSnapshot: track("deleteSnapshot", () => Promise.resolve(true)),
     addTagToSnapshot: track("addTagToSnapshot", () => Promise.resolve()),
@@ -144,8 +153,8 @@ describe("guest mode (publicRead + no session)", () => {
       renderApp(client, path);
 
       await screen.findByText("Sign in to continue");
-      expect(calls).not.toContain("listSchedules");
-      expect(calls).not.toContain("listApiKeys");
+      expect(calls).not.toContain("iterateSchedules");
+      expect(calls).not.toContain("iterateApiKeys");
     },
   );
 

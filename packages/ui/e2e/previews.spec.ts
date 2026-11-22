@@ -40,14 +40,15 @@ test.beforeAll(async ({ request }) => {
   await new Promise<void>((resolve) => fixture.listen(0, "127.0.0.1", resolve));
   fixtureUrl = `http://127.0.0.1:${(fixture.address() as AddressInfo).port}/`;
 
-  const resp = await request.post(`${API}/api/snapshots`, { data: { url: fixtureUrl } });
+  const resp = await request.post(`${API}/api/v1/snapshots`, { data: { url: fixtureUrl } });
   expect(resp.status()).toBe(202);
   snapshotId = (await resp.json()).id;
 
   // Wait for the pipeline to finish so every extractor result is stored.
   await expect
     .poll(
-      async () => (await (await request.get(`${API}/api/snapshots/${snapshotId}`)).json()).status,
+      async () =>
+        (await (await request.get(`${API}/api/v1/snapshots/${snapshotId}`)).json()).status,
       {
         timeout: 90_000,
         intervals: [1_000],
@@ -61,7 +62,7 @@ test.afterAll(async () => {
 });
 
 test("previews: archived page produces the extractor results", async ({ request }) => {
-  const detail = await (await request.get(`${API}/api/snapshots/${snapshotId}`)).json();
+  const detail = await (await request.get(`${API}/api/v1/snapshots/${snapshotId}`)).json();
   expect(detail.status).toBe("done");
   const extractors = detail.archiveResults.map((r: { extractor: string }) => r.extractor);
   expect(extractors).toContain("readability");

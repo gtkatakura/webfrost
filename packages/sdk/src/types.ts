@@ -26,7 +26,26 @@ export interface Tag {
   createdAt: string;
 }
 
-/** Single snapshot from GET /snapshots list */
+/**
+ * One page of a list endpoint. Every list in the API uses this envelope: `page` is 1-based,
+ * `limit` is the page size the server applied (at most 200), `total` counts every match.
+ */
+export interface Page<T> {
+  items: T[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+/** `page` and `limit` for any list method. */
+export interface PageOptions {
+  /** Page number (1-indexed). Defaults to 1. */
+  page?: number;
+  /** Items per page (1-200; the server caps larger values). Defaults to 20. */
+  limit?: number;
+}
+
+/** Single snapshot from GET /snapshots list. Timestamps are ISO 8601 UTC ("2026-11-21T21:42:38Z"). */
 export interface Snapshot {
   id: number;
   url: string;
@@ -40,7 +59,7 @@ export interface Snapshot {
   title: string | null;
   /** Short excerpt from readability content (null if unavailable) */
   excerpt: string | null;
-  /** URL to the screenshot archive if available, null otherwise */
+  /** URL of the screenshot (resolved against `baseUrl`), or null when there is none */
   screenshotUrl: string | null;
 }
 
@@ -48,7 +67,16 @@ export interface Snapshot {
 export interface ArchiveResult {
   id: number;
   extractor: string;
+  /**
+   * The data itself for inline extractors (readability JSON, html); null for file-backed ones
+   * (warc, pdf, screenshot, dom-snapshot, singlefile, media, media-metadata): fetch those from
+   * `downloadUrl`.
+   */
   content: string | null;
+  /** URL that serves the result as a file (resolved against `baseUrl`). */
+  downloadUrl: string;
+  /** URL of the sandboxed HTML preview (dom-snapshot, singlefile), or null when there is none. */
+  previewUrl: string | null;
   createdAt: string;
 }
 
@@ -68,8 +96,14 @@ export interface SnapshotDetail extends Snapshot {
 }
 
 export interface WebFrostClientOptions {
-  /** API base URL including the `/api` prefix, e.g. "http://localhost:3000/api" */
-  baseUrl: string;
+  /**
+   * Where the server is: its origin, e.g. "http://localhost:3000", plus the path it is mounted
+   * under when a reverse proxy serves it below one ("https://example.com/webfrost"). The client
+   * adds `/api/v1` itself. Defaults to "" — the page's own origin, for code running in the
+   * browser on the server's pages. A legacy value ending in `/api` (or `/api/v1`) still works:
+   * the suffix is dropped, with a one-time console warning.
+   */
+  baseUrl?: string;
   /** API key for Bearer authentication. All requests will include Authorization: Bearer <apiKey>. */
   apiKey?: string;
   /**
@@ -108,11 +142,7 @@ export interface RequestOptions {
   signal?: AbortSignal | undefined;
 }
 
-export interface ListSnapshotsOptions {
-  /** Page number (1-indexed). Defaults to 1. */
-  page?: number;
-  /** Items per page (1-100). Defaults to 20. */
-  limit?: number;
+export interface ListSnapshotsOptions extends PageOptions {
   /** Filter by snapshot status. */
   status?: SnapshotStatus;
 }
@@ -120,12 +150,16 @@ export interface ListSnapshotsOptions {
 /** Options for {@link WebFrostClient.iterateSnapshots}: the list filters plus a signal. */
 export interface IterateSnapshotsOptions extends ListSnapshotsOptions, RequestOptions {}
 
-export interface SnapshotPage {
-  items: Snapshot[];
-  total: number;
-  page: number;
-  limit: number;
+/** Options for the `iterate*` methods: where to start, the page size, and a signal. */
+export interface IterateOptions extends PageOptions, RequestOptions {}
+
+/** Options for {@link WebFrostClient.createApiKey}. */
+export interface CreateApiKeyOptions extends RequestOptions {
+  /** When the key stops working: an ISO 8601 timestamp or a Date, in the future. Never by default. */
+  expiresAt?: string | Date;
 }
+
+export type SnapshotPage = Page<Snapshot>;
 
 /** Response from POST /import and POST /import/file (202 Accepted) */
 export interface ImportResult {
@@ -240,9 +274,4 @@ export interface SearchResult {
 }
 
 /** Paginated search results from GET /snapshots?q=term&page=&limit= */
-export interface SearchPage {
-  items: SearchResult[];
-  total: number;
-  page: number;
-  limit: number;
-}
+export type SearchPage = Page<SearchResult>;

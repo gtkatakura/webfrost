@@ -9,13 +9,13 @@ const API = "http://localhost:3000";
 let seeded: { id: number; url: string };
 
 test.beforeAll(async ({ request }) => {
-  const list = await (await request.get(`${API}/api/snapshots?page=1&limit=1`)).json();
+  const list = await (await request.get(`${API}/api/v1/snapshots?page=1&limit=1`)).json();
   if (list.items[0]) {
     seeded = { id: list.items[0].id, url: list.items[0].url };
     return;
   }
   const url = `https://panel-${Date.now()}.example.com/`;
-  const resp = await request.post(`${API}/api/snapshots`, { data: { url } });
+  const resp = await request.post(`${API}/api/v1/snapshots`, { data: { url } });
   expect(resp.status()).toBe(202);
   seeded = { id: (await resp.json()).id as number, url };
 });

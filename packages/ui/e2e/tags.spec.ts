@@ -21,11 +21,11 @@ test("tags: create and delete a tag on the tags page", async ({ page }) => {
 test("tags: add and remove a tag on the snapshot detail panel", async ({ page, request }) => {
   const tagName = `e2e-assign-${Date.now()}`;
 
-  const tagResp = await request.post(`${API}/api/tags`, { data: { name: tagName } });
+  const tagResp = await request.post(`${API}/api/v1/tags`, { data: { name: tagName } });
   expect(tagResp.ok()).toBe(true);
   const tag = await tagResp.json();
 
-  const snapResp = await request.post(`${API}/api/snapshots`, {
+  const snapResp = await request.post(`${API}/api/v1/snapshots`, {
     data: { url: `https://tags-e2e-${Date.now()}.example.com` },
   });
   expect(snapResp.status()).toBe(202);
@@ -41,8 +41,8 @@ test("tags: add and remove a tag on the snapshot detail panel", async ({ page, r
   await expect(page.getByRole("button", { name: `Remove tag ${tagName}` })).toBeVisible();
 
   // The assignment is persisted on the server.
-  const assigned = await (await request.get(`${API}/api/snapshots/${id}/tags`)).json();
-  expect(assigned.map((t: { id: number }) => t.id)).toContain(tag.id);
+  const assigned = await (await request.get(`${API}/api/v1/snapshots/${id}/tags`)).json();
+  expect(assigned.items.map((t: { id: number }) => t.id)).toContain(tag.id);
 
   // Remove it again.
   await page.getByRole("button", { name: `Remove tag ${tagName}` }).click();

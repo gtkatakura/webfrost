@@ -50,7 +50,7 @@ type SnapshotDetail = {
   archiveResults: Array<{ extractor: string; content: string }>;
 };
 
-/** Poll GET /api/snapshots/:id until status is 'done' or timeout. */
+/** Poll GET /api/v1/snapshots/:id until status is 'done' or timeout. */
 async function waitForDone(
   request: import("@playwright/test").APIRequestContext,
   id: number,
@@ -58,7 +58,7 @@ async function waitForDone(
 ): Promise<SnapshotDetail> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const r = await request.get(`${API}/api/snapshots/${id}`);
+    const r = await request.get(`${API}/api/v1/snapshots/${id}`);
     expect(r.status()).toBe(200);
     const body = await r.json();
     if (body.status === "done" || body.status === "failed") {
@@ -105,7 +105,7 @@ test("@media youtube: snapshot completes and media file is archived", async ({ r
     return;
   }
 
-  const postResp = await request.post(`${API}/api/snapshots`, {
+  const postResp = await request.post(`${API}/api/v1/snapshots`, {
     data: { url: YOUTUBE_VIDEO_URL },
   });
   expect(postResp.status()).toBe(202);
@@ -144,7 +144,7 @@ test("@media youtube: media download has correct content-type and non-zero size"
   }
 
   // Create and wait for a fresh snapshot.
-  const postResp = await request.post(`${API}/api/snapshots`, {
+  const postResp = await request.post(`${API}/api/v1/snapshots`, {
     data: { url: YOUTUBE_VIDEO_URL },
   });
   expect(postResp.status()).toBe(202);
@@ -155,7 +155,7 @@ test("@media youtube: media download has correct content-type and non-zero size"
   const mediaResult = snapshot.archiveResults.find((r) => r.extractor === "media");
   expect(mediaResult).toBeDefined();
 
-  const dlResp = await request.get(`${API}/api/snapshots/${id}/archives/media/download`);
+  const dlResp = await request.get(`${API}/api/v1/snapshots/${id}/archives/media/download`);
   expect(dlResp.status()).toBe(200);
 
   const contentType = dlResp.headers()["content-type"] ?? "";
@@ -192,7 +192,7 @@ test("@media youtube: media-metadata download returns valid JSON with title, dur
     return;
   }
 
-  const postResp = await request.post(`${API}/api/snapshots`, {
+  const postResp = await request.post(`${API}/api/v1/snapshots`, {
     data: { url: YOUTUBE_VIDEO_URL },
   });
   expect(postResp.status()).toBe(202);
@@ -203,7 +203,9 @@ test("@media youtube: media-metadata download returns valid JSON with title, dur
   const metaResult = snapshot.archiveResults.find((r) => r.extractor === "media-metadata");
   expect(metaResult).toBeDefined();
 
-  const dlResp = await request.get(`${API}/api/snapshots/${id}/archives/media-metadata/download`);
+  const dlResp = await request.get(
+    `${API}/api/v1/snapshots/${id}/archives/media-metadata/download`,
+  );
   expect(dlResp.status()).toBe(200);
   expect(dlResp.headers()["content-type"]).toContain("application/json");
 
@@ -223,7 +225,7 @@ test("@media youtube: media-metadata download returns valid JSON with title, dur
 test("@media non-media-url: snapshot completes without media extractor entry", async ({
   request,
 }) => {
-  const postResp = await request.post(`${API}/api/snapshots`, {
+  const postResp = await request.post(`${API}/api/v1/snapshots`, {
     data: { url: HTML_ONLY_URL },
   });
   expect(postResp.status()).toBe(202);

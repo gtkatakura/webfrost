@@ -18,7 +18,7 @@ test("@smoke: dashboard loads and snapshot appears after POST", async ({ page, r
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 
   // POST a snapshot via the API directly to avoid waiting for the pipeline.
-  const resp = await request.post("http://localhost:3000/api/snapshots", {
+  const resp = await request.post("http://localhost:3000/api/v1/snapshots", {
     data: { url: "https://example.com" },
   });
   expect(resp.status()).toBe(202);

@@ -20,26 +20,30 @@ const snapshots = Array.from({ length: SNAPSHOT_COUNT }, (_, i) => ({
   id: i + 1,
   url: `https://example.com/page-${i + 1}`,
   status: "done",
-  createdAt: "2026-04-01T00:00:00.000Z",
+  createdAt: "2026-04-01T00:00:00Z",
 }));
 
 const detail = {
   id: 1,
   url: "https://example.com/page-1",
   status: "done",
-  createdAt: "2026-04-01T00:00:00.000Z",
+  createdAt: "2026-04-01T00:00:00Z",
   archiveResults: [
     {
       id: 1,
       extractor: "warc",
-      content: "<html><body>archived</body></html>",
-      created_at: "2026-04-01T00:00:00.000Z",
+      content: null,
+      downloadUrl: "/api/v1/snapshots/1/archives/warc/download",
+      previewUrl: null,
+      createdAt: "2026-04-01T00:00:00Z",
     },
     {
       id: 2,
       extractor: "readability",
       content: "archived text",
-      created_at: "2026-04-01T00:00:00.000Z",
+      downloadUrl: "/api/v1/snapshots/1/archives/readability/download",
+      previewUrl: null,
+      createdAt: "2026-04-01T00:00:00Z",
     },
   ],
 };
@@ -59,12 +63,12 @@ const server = Bun.serve({
   port: 0, // random available port
   fetch(req) {
     const { pathname } = new URL(req.url);
-    if (pathname === "/snapshots") {
+    if (pathname === "/api/v1/snapshots") {
       return new Response(snapshotsBody, {
         headers: { "Content-Type": "application/json" },
       });
     }
-    if (/^\/snapshots\/\d+$/.test(pathname)) {
+    if (/^\/api\/v1\/snapshots\/\d+$/.test(pathname)) {
       return new Response(detailBody, {
         headers: { "Content-Type": "application/json" },
       });

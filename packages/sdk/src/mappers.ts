@@ -47,8 +47,9 @@ export interface RawArchiveResult {
   id: number;
   extractor: string;
   content: string | null;
-  created_at?: string;
-  createdAt?: string;
+  downloadUrl: string;
+  previewUrl?: string | null;
+  createdAt: string;
 }
 
 export interface RawSnapshotDetail {
@@ -65,20 +66,28 @@ export interface RawSnapshotDetail {
   extractorMeta?: Record<string, ExtractorMeta>;
 }
 
+/**
+ * Turns a server-relative path ("/api/v1/...") into a URL under the client's base URL, so it
+ * keeps working when the server sits below a reverse-proxy path or on another origin.
+ */
+export type ResolveUrl = (path: string) => string;
+
 export function toTag(r: RawTag): Tag {
   return { id: r.id, name: r.name, slug: r.slug, color: r.color, createdAt: r.createdAt };
 }
 
-function toArchiveResult(r: RawArchiveResult): ArchiveResult {
+function toArchiveResult(r: RawArchiveResult, resolve: ResolveUrl): ArchiveResult {
   return {
     id: r.id,
     extractor: r.extractor,
     content: r.content,
-    createdAt: r.created_at ?? r.createdAt ?? "",
+    downloadUrl: resolve(r.downloadUrl),
+    previewUrl: r.previewUrl ? resolve(r.previewUrl) : null,
+    createdAt: r.createdAt,
   };
 }
 
-export function toSnapshot(raw: RawSnapshot): Snapshot {
+export function toSnapshot(raw: RawSnapshot, resolve: ResolveUrl): Snapshot {
   return {
     id: raw.id,
     url: raw.url,
@@ -88,7 +97,7 @@ export function toSnapshot(raw: RawSnapshot): Snapshot {
     tags: (raw.tags ?? []).map(toTag),
     title: raw.title ?? null,
     excerpt: raw.excerpt ?? null,
-    screenshotUrl: raw.screenshotUrl ?? null,
+    screenshotUrl: raw.screenshotUrl ? resolve(raw.screenshotUrl) : null,
   };
 }
 
@@ -106,7 +115,7 @@ export function toSearchResult(raw: RawSearchResult): SearchResult {
   };
 }
 
-export function toSnapshotDetail(raw: RawSnapshotDetail): SnapshotDetail {
+export function toSnapshotDetail(raw: RawSnapshotDetail, resolve: ResolveUrl): SnapshotDetail {
   return {
     id: raw.id,
     url: raw.url,
@@ -114,10 +123,10 @@ export function toSnapshotDetail(raw: RawSnapshotDetail): SnapshotDetail {
     createdAt: raw.createdAt,
     extractors: raw.extractors ?? [],
     tags: (raw.tags ?? []).map(toTag),
-    archiveResults: raw.archiveResults.map(toArchiveResult),
+    archiveResults: raw.archiveResults.map((r) => toArchiveResult(r, resolve)),
     title: raw.title ?? null,
     excerpt: raw.excerpt ?? null,
-    screenshotUrl: raw.screenshotUrl ?? null,
+    screenshotUrl: raw.screenshotUrl ? resolve(raw.screenshotUrl) : null,
     extractorMeta: raw.extractorMeta ?? {},
   };
 }

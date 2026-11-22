@@ -189,14 +189,11 @@ export function SnapshotDetailPanel({ snapshotId, onClose, onDeleted }: Snapshot
                   <ReaderTab result={findResult(results, "readability")} />
                 )}
                 {activeTab === "screenshot" && (
-                  <ScreenshotTab
-                    snapshotId={detail.id}
-                    result={findResult(results, "screenshot")}
-                  />
+                  <ScreenshotTab result={findResult(results, "screenshot")} />
                 )}
-                {activeTab === "dom" && <DomTab snapshotId={detail.id} results={results} />}
+                {activeTab === "dom" && <DomTab results={results} />}
                 {activeTab === "media" && <MediaTab snapshotId={detail.id} results={results} />}
-                {activeTab === "raw" && <RawTab snapshotId={detail.id} results={results} />}
+                {activeTab === "raw" && <RawTab results={results} />}
                 {activeTab === "history" && <HistoryTab results={results} />}
               </>
             )}

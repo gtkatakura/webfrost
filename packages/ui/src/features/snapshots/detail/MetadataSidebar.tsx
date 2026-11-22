@@ -86,10 +86,11 @@ export function MetadataSidebar({
           ) : (
             detail.archiveResults.map((r) => (
               <li key={r.id} className="flex items-center gap-1.5">
+                {/* The API lists captured results only; failures are in extractorMeta. */}
                 <span
-                  className={`size-1.5 shrink-0 rounded-full ${r.content !== null ? "bg-success" : "bg-danger"}`}
+                  className="size-1.5 shrink-0 rounded-full bg-success"
                   role="img"
-                  aria-label={r.content !== null ? "Captured" : "Failed"}
+                  aria-label="Captured"
                 />
                 <span className="truncate font-mono text-ui-xs text-mid">{r.extractor}</span>
               </li>

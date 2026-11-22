@@ -10,7 +10,7 @@ let base: string;
 
 beforeAll(() => {
   server = Bun.serve({ port: 0, fetch: (req) => handler(req) });
-  base = `http://localhost:${server.port}/api`;
+  base = `http://localhost:${server.port}`;
 });
 afterAll(() => server.stop(true));
 afterEach(() => {
@@ -84,7 +84,7 @@ describe("error parsing", () => {
 describe("network errors and timeouts", () => {
   test("a refused connection is a WebFrostError, not a TypeError", async () => {
     const dead = Bun.serve({ port: 0, fetch: () => new Response("x") });
-    const url = `http://localhost:${dead.port}/api`;
+    const url = `http://localhost:${dead.port}`;
     dead.stop(true);
     const err = await caught(new WebFrostClient({ baseUrl: url }).getStats());
     expect(err.status).toBe(0);
@@ -345,13 +345,17 @@ describe("client options", () => {
       return json({ username: null });
     }) as unknown as typeof fetch;
     const client = new WebFrostClient({
-      baseUrl: "http://example.test/api/",
+      baseUrl: "http://example.test/",
       apiKey: "k_123",
       fetch: custom,
     });
     await client.getMe();
     expect(seen).toEqual([
-      { url: "http://example.test/api/auth/me", auth: "Bearer k_123", credentials: "same-origin" },
+      {
+        url: "http://example.test/api/v1/auth/me",
+        auth: "Bearer k_123",
+        credentials: "same-origin",
+      },
     ]);
   });
 
@@ -387,7 +391,7 @@ describe("client options", () => {
 });
 
 describe("not-found semantics", () => {
-  test("getSnapshot resolves null, deletes resolve false, tag listing resolves []", async () => {
+  test("getSnapshot resolves null, deletes resolve false, tag listing resolves an empty page", async () => {
     handler = () => json({ error: "not found", code: "NOT_FOUND" }, 404);
     const client = new WebFrostClient({ baseUrl: base });
     expect(await client.getSnapshot(9)).toBeNull();
@@ -396,7 +400,7 @@ describe("not-found semantics", () => {
     expect(await client.deleteSchedule(9)).toBe(false);
     expect(await client.revokeApiKey("x")).toBe(false);
     expect(await client.removeTagFromSnapshot(9, 1)).toBe(false);
-    expect(await client.listSnapshotTags(9)).toEqual([]);
+    expect(await client.listSnapshotTags(9)).toEqual({ items: [], total: 0, page: 1, limit: 20 });
   });
 
   test("anything else throws NOT_FOUND", async () => {
@@ -548,12 +552,12 @@ describe("importFile", () => {
 
 describe("archives", () => {
   test("archiveUrl builds download and preview URLs", () => {
-    const client = new WebFrostClient({ baseUrl: "https://wf.example/api/" });
+    const client = new WebFrostClient({ baseUrl: "https://wf.example/" });
     expect(client.archiveUrl(3, "singlefile")).toBe(
-      "https://wf.example/api/snapshots/3/archives/singlefile/download",
+      "https://wf.example/api/v1/snapshots/3/archives/singlefile/download",
     );
     expect(client.archiveUrl(3, "dom snapshot", "preview")).toBe(
-      "https://wf.example/api/snapshots/3/archives/dom%20snapshot/preview",
+      "https://wf.example/api/v1/snapshots/3/archives/dom%20snapshot/preview",
     );
   });
 
@@ -579,7 +583,7 @@ describe("archives", () => {
     await new WebFrostClient({ baseUrl: base }).downloadArchive(1, "singlefile", {
       kind: "preview",
     });
-    expect(path).toBe("/api/snapshots/1/archives/singlefile/preview");
+    expect(path).toBe("/api/v1/snapshots/1/archives/singlefile/preview");
   });
 
   test("downloadArchive throws NOT_FOUND for a missing result", async () => {

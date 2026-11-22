@@ -6,14 +6,14 @@ test("pagination: server API returns correct pages", async ({ request }) => {
   // Seed 25 unique snapshots so we can verify multi-page behaviour.
   await Promise.all(
     Array.from({ length: 25 }, (_, i) =>
-      request.post("http://localhost:3000/api/snapshots", {
+      request.post("http://localhost:3000/api/v1/snapshots", {
         data: { url: `https://pagination-api-${i}.example.com` },
       }),
     ),
   );
 
   // Page 1 with limit 20 should return 20 items.
-  const r1 = await request.get("http://localhost:3000/api/snapshots?page=1&limit=20");
+  const r1 = await request.get("http://localhost:3000/api/v1/snapshots?page=1&limit=20");
   expect(r1.status()).toBe(200);
   const body1 = await r1.json();
   expect(body1.items).toHaveLength(20);
@@ -22,7 +22,7 @@ test("pagination: server API returns correct pages", async ({ request }) => {
   expect(body1.limit).toBe(20);
 
   // Page 2 should return the remaining items (>= 5).
-  const r2 = await request.get("http://localhost:3000/api/snapshots?page=2&limit=20");
+  const r2 = await request.get("http://localhost:3000/api/v1/snapshots?page=2&limit=20");
   expect(r2.status()).toBe(200);
   const body2 = await r2.json();
   expect(body2.items.length).toBeGreaterThanOrEqual(5);
@@ -41,7 +41,7 @@ test("pagination: UI controls appear and navigate between pages", async ({ page,
   // of how many items other tests left in the shared DB.
   await Promise.all(
     Array.from({ length: 21 }, (_, i) =>
-      request.post("http://localhost:3000/api/snapshots", {
+      request.post("http://localhost:3000/api/v1/snapshots", {
         data: { url: `https://pagination-ui-${Date.now()}-${i}.example.com` },
       }),
     ),

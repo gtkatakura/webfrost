@@ -2,13 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import type { ArchiveResult } from "@webfrost/sdk";
 import { Clock, Download, RefreshCcw, ZoomIn, ZoomOut } from "lucide-react";
 import { useState } from "react";
+import { useClient } from "../../../context";
 import { snapshotKeys } from "../../../hooks/useSnapshots";
 import { shortDateTime } from "../../../lib/format";
 import { parseReadability, splitParagraphs } from "../../../lib/readability";
-
-export function archiveUrl(snapshotId: number, extractor: string) {
-  return `/api/snapshots/${snapshotId}/archives/${extractor}/download`;
-}
 
 export function findResult(results: ArchiveResult[], extractor: string) {
   return results.find((r) => r.extractor === extractor);
@@ -76,13 +73,7 @@ export function ReaderTab({ result }: { result: ArchiveResult | undefined }) {
 
 // ─── Screenshot ───────────────────────────────────────────────
 
-export function ScreenshotTab({
-  snapshotId,
-  result,
-}: {
-  snapshotId: number;
-  result: ArchiveResult | undefined;
-}) {
+export function ScreenshotTab({ result }: { result: ArchiveResult | undefined }) {
   const [zoom, setZoom] = useState(1);
   if (!result) return <TabEmpty message="Screenshot extractor did not run or failed." />;
 
@@ -109,7 +100,7 @@ export function ScreenshotTab({
           <ZoomIn size={14} aria-hidden="true" />
         </button>
         <a
-          href={archiveUrl(snapshotId, "screenshot")}
+          href={result.downloadUrl}
           target="_blank"
           rel="noreferrer"
           className={`ml-auto ${downloadLink}`}
@@ -119,7 +110,7 @@ export function ScreenshotTab({
       </div>
       <div className="flex-1 overflow-auto bg-overlay p-4">
         <img
-          src={archiveUrl(snapshotId, "screenshot")}
+          src={result.downloadUrl}
           alt="Page screenshot"
           className="block max-w-none origin-top-left"
           style={{ transform: `scale(${zoom})` }}
@@ -131,26 +122,19 @@ export function ScreenshotTab({
 
 // ─── DOM / SingleFile ─────────────────────────────────────────
 
-export function DomTab({ snapshotId, results }: { snapshotId: number; results: ArchiveResult[] }) {
-  const dom = findResult(results, "dom-snapshot");
-  const singlefile = findResult(results, "singlefile");
+export function DomTab({ results }: { results: ArchiveResult[] }) {
   // SingleFile has its CSS and images inlined, so it survives the preview's
   // "nothing from the network" policy; the raw DOM snapshot renders unstyled.
-  const extractor = singlefile ? "singlefile" : "dom-snapshot";
+  const shown = findResult(results, "singlefile") ?? findResult(results, "dom-snapshot");
 
-  if (!dom && !singlefile) {
+  if (!shown) {
     return <TabEmpty message="DOM snapshot / SingleFile extractor did not run or failed." />;
   }
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className={`${toolbar} justify-end`}>
-        <a
-          href={archiveUrl(snapshotId, extractor)}
-          target="_blank"
-          rel="noreferrer"
-          className={downloadLink}
-        >
+        <a href={shown.downloadUrl} target="_blank" rel="noreferrer" className={downloadLink}>
           <Download size={12} aria-hidden="true" /> Download
         </a>
       </div>
@@ -159,7 +143,7 @@ export function DomTab({ snapshotId, results }: { snapshotId: number; results: A
           they would let an archived page act as the signed-in user. The white background
           is the page's own canvas, not theme. */}
       <iframe
-        src={archiveUrl(snapshotId, extractor).replace(/\/download$/, "/preview")}
+        src={shown.previewUrl ?? undefined}
         title="Archived page preview"
         sandbox=""
         className="min-h-[60dvh] w-full flex-1 border-0 bg-white md:min-h-0"
@@ -176,18 +160,17 @@ export function MediaTab({
   snapshotId,
   results,
 }: { snapshotId: number; results: ArchiveResult[] }) {
+  const client = useClient();
   const media = findResult(results, "media");
   const meta = findResult(results, "media-metadata");
 
-  // The archive result only carries a reference to the metadata file, so the JSON
-  // itself is fetched from the download endpoint.
+  // The metadata is a file-backed result, so the JSON itself comes from its download.
   const { data: metadata } = useQuery({
     queryKey: [...snapshotKeys.all, "media-metadata", snapshotId],
     enabled: Boolean(media && meta),
     staleTime: Number.POSITIVE_INFINITY,
     queryFn: async () => {
-      const res = await fetch(archiveUrl(snapshotId, "media-metadata"));
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const res = await client.downloadArchive(snapshotId, "media-metadata");
       return (await res.json()) as Record<string, unknown>;
     },
   });
@@ -197,7 +180,7 @@ export function MediaTab({
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-5">
       {/* biome-ignore lint/a11y/useMediaCaption: archived media has no caption track to offer */}
-      <video controls src={archiveUrl(snapshotId, "media")} className="w-full rounded bg-black">
+      <video controls src={media.downloadUrl} className="w-full rounded bg-black">
         Your browser does not support video playback.
       </video>
       {metadata && (
@@ -214,11 +197,7 @@ export function MediaTab({
           })}
         </dl>
       )}
-      <a
-        href={archiveUrl(snapshotId, "media")}
-        download
-        className="inline-flex items-center gap-1.5 text-ui-xs"
-      >
+      <a href={media.downloadUrl} download className="inline-flex items-center gap-1.5 text-ui-xs">
         <Download size={12} aria-hidden="true" /> Download media file
       </a>
     </div>
@@ -235,17 +214,20 @@ const DOWNLOADABLE = [
   { extractor: "dom-snapshot", label: "DOM Snapshot" },
 ];
 
-export function RawTab({ snapshotId, results }: { snapshotId: number; results: ArchiveResult[] }) {
-  const available = DOWNLOADABLE.filter((d) => results.some((r) => r.extractor === d.extractor));
+export function RawTab({ results }: { results: ArchiveResult[] }) {
+  const available = DOWNLOADABLE.flatMap(({ extractor, label }) => {
+    const result = findResult(results, extractor);
+    return result ? [{ extractor, label, href: result.downloadUrl }] : [];
+  });
   if (available.length === 0) {
     return <TabEmpty message="No downloadable archive files for this snapshot." />;
   }
   return (
     <div className="flex flex-col gap-2 p-5">
-      {available.map(({ extractor, label }) => (
+      {available.map(({ extractor, label, href }) => (
         <a
           key={extractor}
-          href={archiveUrl(snapshotId, extractor)}
+          href={href}
           download
           className="flex items-center justify-between rounded-lg border border-border bg-overlay px-4 py-3 text-high no-underline transition-colors hover:border-accent hover:no-underline"
         >
@@ -268,10 +250,11 @@ export function HistoryTab({ results }: { results: ArchiveResult[] }) {
     <ul className="m-0 flex h-full list-none flex-col divide-y divide-border overflow-y-auto p-0">
       {sorted.map((r) => (
         <li key={r.id} className="flex items-center gap-3 px-4 py-3">
+          {/* The API lists captured results only; failures are in extractorMeta. */}
           <span
-            className={`size-2 shrink-0 rounded-full ${r.content !== null ? "bg-success" : "bg-danger"}`}
+            className="size-2 shrink-0 rounded-full bg-success"
             role="img"
-            aria-label={r.content !== null ? "Captured" : "Failed"}
+            aria-label="Captured"
           />
           <span className="min-w-0 flex-1 font-mono text-ui-xs text-high">{r.extractor}</span>
           <span className="flex shrink-0 items-center gap-1 text-ui-xs text-low">

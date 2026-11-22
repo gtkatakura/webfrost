@@ -20,8 +20,8 @@ Available from `0.1.0`.
 import { WebFrostClient } from "@webfrost/sdk";
 
 const client = new WebFrostClient({
-  // The API lives under /api: include it in the base URL.
-  baseUrl: "http://localhost:3000/api",
+  // The server's origin. The client talks to its /api/v1 itself.
+  baseUrl: "http://localhost:3000",
   apiKey: process.env.WEBFROST_API_KEY,
 });
 
@@ -54,7 +54,7 @@ Outside a browser nothing keeps a session cookie, so `login()` is not useful the
 
 ```ts
 const client = new WebFrostClient({
-  baseUrl: "http://localhost:3000/api",
+  baseUrl: "http://localhost:3000", // the server origin (plus a reverse-proxy path, if any). Default "": the page's origin.
   apiKey: "...",
   timeoutMs: 30_000, // per attempt; 0 disables. Default 30000.
   retries: 2, // GET/HEAD only. Default 0.
@@ -64,6 +64,14 @@ const client = new WebFrostClient({
   fetch: myFetch, // custom fetch (SSR, tests, proxies). Default: the global fetch.
 });
 ```
+
+The client speaks version 1 of the HTTP API (`/api/v1`). `baseUrl` is where the server is, not where
+its API is: `"https://archive.example.com"`, or `"https://example.com/webfrost"` behind a reverse proxy
+that serves WebFrost below a path. An older value ending in `/api` still works; the client drops the
+suffix and logs a one-time warning.
+
+Timestamps (`createdAt`, `lastRunAt`, `nextRunAt`, `expiresAt`, ...) are ISO 8601 strings in UTC,
+such as `"2026-11-21T21:42:38Z"`: pass them to `new Date()` as they are.
 
 ## Errors
 
@@ -76,7 +84,7 @@ try {
   await client.createSnapshot("not-a-url");
 } catch (err) {
   if (err instanceof WebFrostError) {
-    console.error(err.status, err.code, err.message); // 400 "BAD_REQUEST" "invalid url"
+    console.error(err.status, err.code, err.message); // 400 "VALIDATION" "invalid url"
     // err.retryAfter: seconds from the Retry-After header, when sent (typically on 429)
   }
 }
@@ -85,14 +93,14 @@ try {
 | Field | Meaning |
 | --- | --- |
 | `status` | HTTP status, or `0` when there was no response |
-| `code` | Machine-readable: the server's `code` (`UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `VALIDATION`, `RATE_LIMITED`, ...), or from the client `NETWORK_ERROR`, `TIMEOUT`, `ABORTED`, `INVALID_RESPONSE`. Branch on this, not on `message`. |
+| `code` | Machine-readable: the server's `code` (`VALIDATION`, `UNAUTHORIZED`, `INVALID_CREDENTIALS`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMITED`, ...; the full list is in the [REST reference](https://webfrost.dev/docs/reference/rest-api#error-codes)), or from the client `NETWORK_ERROR`, `TIMEOUT`, `ABORTED`, `INVALID_RESPONSE`. Branch on this, not on `message`. |
 | `message` | The server's `error` text, or the status text |
 | `retryAfter` | Seconds to wait, from `Retry-After` |
 | `cause` | The underlying error for network failures and timeouts |
 
 **Not found.** A single lookup that finds nothing resolves `null` (`getSnapshot`); a delete of something
 missing resolves `false` (`deleteSnapshot`, `deleteTag`, `deleteSchedule`, `revokeApiKey`,
-`removeTagFromSnapshot`); listing the tags of a missing snapshot resolves `[]`. Every other 404 throws
+`removeTagFromSnapshot`); listing the tags of a missing snapshot resolves an empty page. Every other 404 throws
 with code `NOT_FOUND`.
 
 ## Timeouts, retries and abort
@@ -114,6 +122,10 @@ for something it had just deleted.
 
 ## Pagination
 
+Every list method (`listSnapshots`, `searchSnapshotsPage`, `listTags`, `listSnapshotTags`,
+`listSchedules`, `listApiKeys`, `listImports`) takes `{ page, limit }` and returns a `Page<T>`:
+`{ items, total, page, limit }`. `limit` defaults to 20 and the server caps it at 200.
+
 ```ts
 // One page
 const { items, total, page, limit } = await client.listSnapshots({ page: 1, limit: 20 });
@@ -122,15 +134,25 @@ const { items, total, page, limit } = await client.listSnapshots({ page: 1, limi
 for await (const snapshot of client.iterateSnapshots({ status: "done" })) {
   console.log(snapshot.id, snapshot.url);
 }
+for await (const tag of client.iterateTags()) console.log(tag.name);
 ```
 
-`iterateSnapshots` is lazy: breaking out of the loop stops fetching.
+The `iterate*` methods (`iterateSnapshots`, `iterateTags`, `iterateSchedules`, `iterateApiKeys`,
+`iterateImports`) are lazy: breaking out of the loop stops fetching.
 
 ## Archives and imports
 
 ```ts
-// A URL for <a href>, <img src> or <iframe src> (the browser sends the session cookie)
-client.archiveUrl(id, "screenshot"); // .../snapshots/1/archives/screenshot/download
+// Each archive result says where to get it: downloadUrl always, previewUrl for archived HTML.
+// `content` holds the data only for inline results (readability, html); never a storage path.
+const detail = await client.getSnapshot(id);
+for (const result of detail?.archiveResults ?? []) {
+  console.log(result.extractor, result.downloadUrl, result.previewUrl);
+}
+
+// The same URLs, built without a request, for <a href>, <img src> or <iframe src>
+// (the browser sends the session cookie)
+client.archiveUrl(id, "screenshot"); // http://localhost:3000/api/v1/snapshots/1/archives/screenshot/download
 client.archiveUrl(id, "singlefile", "preview"); // sandboxed HTML preview
 
 // Fetch with the client's auth (works with an API key)

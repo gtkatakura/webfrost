@@ -8,7 +8,7 @@ async function seed(request: import("@playwright/test").APIRequestContext, prefi
   const stamp = Date.now();
   const urls = [1, 2].map((n) => `https://${prefix}-${stamp}-${n}.example.com/`);
   for (const url of urls) {
-    const resp = await request.post(`${API}/api/snapshots`, { data: { url } });
+    const resp = await request.post(`${API}/api/v1/snapshots`, { data: { url } });
     expect(resp.status()).toBe(202);
   }
   return urls;
@@ -53,7 +53,7 @@ test("bulk actions: cancelling the confirmation keeps the snapshots", async ({ p
 
 test("bulk actions: tag several snapshots at once", async ({ page, request }) => {
   const tagName = `e2e-bulk-${Date.now()}`;
-  const tag = await (await request.post(`${API}/api/tags`, { data: { name: tagName } })).json();
+  const tag = await (await request.post(`${API}/api/v1/tags`, { data: { name: tagName } })).json();
   const urls = await seed(request, "bulk-tag");
   await page.goto("/#/snapshots");
 
@@ -63,7 +63,7 @@ test("bulk actions: tag several snapshots at once", async ({ page, request }) =>
   // Both snapshots carry the tag once the bulk action finishes.
   await expect
     .poll(async () => {
-      const list = await (await request.get(`${API}/api/snapshots?page=1&limit=100`)).json();
+      const list = await (await request.get(`${API}/api/v1/snapshots?page=1&limit=100`)).json();
       return list.items.filter(
         (s: { url: string; tags: { id: number }[] }) =>
           urls.includes(s.url) && s.tags.some((t) => t.id === tag.id),

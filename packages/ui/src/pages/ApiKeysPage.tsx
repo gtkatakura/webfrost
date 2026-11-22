@@ -6,6 +6,7 @@ import { Button } from "../components/ui/Button";
 import { ErrorState, LoadingRows } from "../components/ui/StateViews";
 import { useClient } from "../context";
 import { useCopy } from "../lib/clipboard";
+import { collect } from "../lib/collect";
 import { errorMessage } from "../lib/errors";
 
 const API_KEY_QUERY = ["api-keys"] as const;
@@ -30,7 +31,7 @@ export function ApiKeysPage() {
     refetch,
   } = useQuery<ApiKey[]>({
     queryKey: API_KEY_QUERY,
-    queryFn: () => client.listApiKeys(),
+    queryFn: () => collect(client.iterateApiKeys()),
   });
 
   const createMutation = useMutation({
