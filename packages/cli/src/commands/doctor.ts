@@ -2,7 +2,12 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { resolveChromium, sql } from "@webfrost/core";
-import { chromiumVersion } from "../chromium-install";
+import {
+  browserPackagesHint,
+  chromiumLaunches,
+  chromiumVersion,
+  missingLibraries,
+} from "../chromium-install";
 import type { Command, Context } from "../cli";
 import { VERSION } from "../version";
 import { printJson, withDb } from "./shared";
@@ -141,13 +146,22 @@ export async function runChecks(ctx: Pick<Context, "dir">): Promise<Check[]> {
     const check = existsSync(chromium.path)
       ? await chromiumVersion(chromium.path)
       : { ok: false as const, reason: "file does not exist" };
+    // A browser that answers --version can still be unable to open a page (missing system libraries).
+    const launch = check.ok ? await chromiumLaunches(chromium.path) : null;
+    const works = check.ok && launch?.ok === true;
     add({
       name: "Chromium",
-      level: check.ok ? "ok" : "fail",
-      detail: check.ok
-        ? `${chromium.path} (${check.version}; ${chromium.source})`
-        : `${chromium.path} does not start: ${check.reason} (${chromium.source})`,
-      hint: check.ok ? undefined : "Run `webfrost setup`, or fix WEBFROST_CHROMIUM_PATH.",
+      level: works ? "ok" : "fail",
+      detail: works
+        ? `${chromium.path} (${check.ok ? check.version : ""}; ${chromium.source})`
+        : !check.ok
+          ? `${chromium.path} does not start: ${check.reason} (${chromium.source})`
+          : `${chromium.path} cannot open a page: ${launch && !launch.ok ? launch.reason : "unknown"} (${chromium.source})`,
+      hint: works
+        ? undefined
+        : check.ok || missingLibraries(check.reason).length > 0
+          ? `Install what it needs: ${browserPackagesHint()}`
+          : "Run `webfrost setup`, or fix WEBFROST_CHROMIUM_PATH.",
       required: true,
     });
   } else {

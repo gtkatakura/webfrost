@@ -339,9 +339,16 @@ jobs:
           "$bin" --version
           "$bin" help > /dev/null
           "$bin" init
+          # The browser the way a user gets it: downloaded by setup, started by the binary. "done" alone is
+          # not enough: a binary that cannot load the browser still archives HTML and WARC and says done.
+          export WEBFROST_CHROMIUM_PATH=
+          "$bin" setup
+          "$bin" doctor
           "$bin" add https://example.com --json | tee add.json
           grep -q '"status": "done"' add.json
-          "$bin" doctor || true
+          for f in screenshot.png page.pdf singlefile.html thumbnail.webp; do
+            test -s "$WEBFROST_DIR/snapshots/1/$f" || { echo "::error::the binary archived no $f"; exit 1; }
+          done
 
   docker-build:
     name: Docker build

@@ -106,7 +106,7 @@ The installer puts the binary in `~/.local/bin`, which is not on every `PATH`. A
 
 ## `webfrost doctor` reports no Chromium
 
-Run `webfrost setup`. It installs a headless Chromium into WebFrost's cache directory, unless it finds one. If setup says the downloaded browser does not start on Linux, a system library is missing: install Chromium from your package manager (`apt install chromium`) or the libraries Playwright lists. A `WEBFROST_CHROMIUM_PATH` that points at a missing file is an error on purpose; unset it or fix it.
+Run `webfrost setup`. It installs a headless Chromium into WebFrost's cache directory, unless it finds one. If setup or doctor says the browser does not start, or cannot open a page, a system library is missing: they print the command that installs what it needs on your distribution; run it and then `webfrost setup` again. Installing Chromium from your package manager (`apt install chromium`) works too. A `WEBFROST_CHROMIUM_PATH` that points at a missing file is an error on purpose; unset it or fix it.
 
 ## `Unknown command: --verbose`
 

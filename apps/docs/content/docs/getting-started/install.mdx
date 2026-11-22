@@ -94,7 +94,7 @@ Every command looks for the browser in this order, and uses the first match:
 4. Playwright's own browser cache (what `bunx playwright install chromium` fills).
 
 <Callout type="info" title="Linux libraries">
-The downloaded browser needs system libraries (nss, atk, gbm and others). A desktop Linux has them. On a minimal server install them with your package manager, or install Chromium itself (`apt install chromium`) and `setup` will find it.
+The downloaded browser needs system libraries (glib, nss, atk, gbm and others). A desktop Linux has them; a minimal server or container may not. `setup` and `doctor` start the browser on a blank page to check, and when a library is missing they print the command that installs them on your system (`apt-get`, with the right package names for Debian and Ubuntu, `dnf` or `pacman`). Run it, then `webfrost setup` again. Installing Chromium itself (`apt install chromium`) works too: `setup` will find it.
 </Callout>
 
 ## yt-dlp and ffmpeg

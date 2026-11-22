@@ -1,6 +1,12 @@
 import { existsSync } from "node:fs";
 import { resolveChromium, webfrostBrowsersDir } from "@webfrost/core";
-import { chromiumVersion, installChromium } from "../chromium-install";
+import {
+  browserPackagesHint,
+  chromiumLaunches,
+  chromiumVersion,
+  installChromium,
+  missingLibraries,
+} from "../chromium-install";
 import type { Command } from "../cli";
 import { CliError } from "../errors";
 
@@ -81,7 +87,17 @@ start, install them with your package manager, or install Chromium itself.`,
     const check = await chromiumVersion(path);
     if (!check.ok) {
       throw new CliError(
-        `Chromium was installed at ${path} but does not start: ${check.reason}\nOn Linux it needs system libraries (nss, atk, gbm...). Install them, or install Chromium from your package manager.`,
+        `Chromium was installed at ${path} but does not start: ${check.reason}\n${
+          missingLibraries(check.reason).length
+            ? `Install what it needs:\n  ${browserPackagesHint()}\nthen run \`webfrost setup\` again.`
+            : "On Linux it needs system libraries (nss, atk, gbm...). Install them, or install Chromium from your package manager."
+        }`,
+      );
+    }
+    const launch = await chromiumLaunches(path);
+    if (!launch.ok) {
+      throw new CliError(
+        `Chromium was installed at ${path} but cannot open a page: ${launch.reason}\nInstall what it needs:\n  ${browserPackagesHint()}\nthen run \`webfrost doctor\`.`,
       );
     }
     ctx.logger.info(`Chromium ready: ${path} (${check.version})`);

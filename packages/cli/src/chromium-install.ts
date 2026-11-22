@@ -22,6 +22,78 @@ const PLATFORMS: Record<string, { cft: string; exe: string }> = {
   "win32-x64": { cft: "win64", exe: "chrome-headless-shell.exe" },
 };
 
+/** What Chromium needs from a Linux system, as packages, for the hint when it cannot start. */
+export const LINUX_BROWSER_PACKAGES = {
+  apt: "libglib2.0-0 libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 libdbus-1-3 fonts-liberation",
+  dnf: "glib2 nss nspr atk at-spi2-atk cups-libs libxkbcommon libXcomposite libXdamage libXfixes libXrandr mesa-libgbm pango cairo alsa-lib dbus-libs liberation-fonts",
+  pacman:
+    "glib2 nss atk at-spi2-core libcups libxkbcommon libxcomposite libxdamage libxfixes libxrandr mesa pango cairo alsa-lib ttf-liberation",
+} as const;
+
+/** The libraries a failed start named ("error while loading shared libraries: libnss3.so: ..."). */
+export function missingLibraries(stderr: string): string[] {
+  return [
+    ...new Set(
+      [...stderr.matchAll(/loading shared libraries: ([^\s:]+)/g)].map((m) => m[1] as string),
+    ),
+  ];
+}
+
+/**
+ * Debian 13 and Ubuntu 24.04 renamed some libraries with a "t64" suffix (the 64-bit time_t move). Debian still
+ * answers to the old names, Ubuntu does not: ask apt which one this system has.
+ */
+function aptPackages(): string[] {
+  return LINUX_BROWSER_PACKAGES.apt.split(" ").map((name) => {
+    const t64 = `${name}t64`;
+    const probe = Bun.spawnSync(["apt-cache", "show", t64], { stdout: "ignore", stderr: "ignore" });
+    return probe.exitCode === 0 ? t64 : name;
+  });
+}
+
+/** The command that installs what Chromium needs on this kind of Linux, as text for a hint. */
+export function browserPackagesHint(): string {
+  const has = (cmd: string) => Bun.which(cmd) !== null;
+  if (has("apt-get")) return `sudo apt-get install ${aptPackages().join(" ")}`;
+  if (has("dnf")) return `sudo dnf install ${LINUX_BROWSER_PACKAGES.dnf}`;
+  if (has("pacman")) return `sudo pacman -S --needed ${LINUX_BROWSER_PACKAGES.pacman}`;
+  return "Install your distribution's Chromium package, which brings the libraries it needs.";
+}
+
+/**
+ * Start the browser for real: headless, one blank page. `--version` succeeds even when the system lacks the
+ * libraries a page needs, which made setup say "ready" for a browser that could not archive anything.
+ */
+export async function chromiumLaunches(
+  path: string,
+  timeoutMs = 20_000,
+): Promise<{ ok: true } | { ok: false; reason: string; missing: string[] }> {
+  try {
+    const proc = Bun.spawn(
+      [path, "--headless", "--no-sandbox", "--disable-gpu", "--dump-dom", "about:blank"],
+      { stdout: "pipe", stderr: "pipe", stdin: "ignore" },
+    );
+    const timer = setTimeout(() => proc.kill(), timeoutMs);
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    clearTimeout(timer);
+    if (code === 0 && stdout.includes("<html")) return { ok: true };
+    const missing = missingLibraries(stderr);
+    const reason = missing.length
+      ? `missing system libraries: ${missing.join(", ")}`
+      : stderr
+          .trim()
+          .split("\n")
+          .find((l) => l.trim()) || `exited with code ${code}`;
+    return { ok: false, reason, missing };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : String(err), missing: [] };
+  }
+}
+
 /** Run `<browser> --version`; the version text when the browser starts, null when it does not. */
 export async function chromiumVersion(
   path: string,

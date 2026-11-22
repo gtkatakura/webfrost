@@ -20,7 +20,7 @@
  * - Playwright's optional electron and chromium-bidi modules are not installed and not
  *   needed for Chromium: they are left external.
  */
-import { readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { chmodSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import type { BunPlugin } from "bun";
@@ -108,6 +108,32 @@ const bundleFixesPlugin: BunPlugin = {
           ),
           loader: "js",
         };
+      },
+    );
+
+    // playwright-core reads its own package.json and browsers.json with require(join(packageRoot, ...)),
+    // packageRoot coming from __dirname. In a compiled binary __dirname is the path on the machine that
+    // built it, so on anyone else's machine launching the browser failed ("Cannot find module
+    // .../playwright-core/package.json") and the binary archived no screenshot, PDF or SingleFile.
+    // Inline both files' contents instead.
+    build.onLoad(
+      { filter: /playwright-core[\\/]lib[\\/](coreBundle|serverRegistry|package)\.js$/ },
+      async (args) => {
+        const source = await Bun.file(args.path).text();
+        const root = dirname(dirname(args.path));
+        const pattern =
+          /require\((import_path\d*)\.default\.join\(packageRoot, "(package|browsers)\.json"\)\)/g;
+        let found = 0;
+        const contents = source.replace(pattern, (_m, _p, name: string) => {
+          found++;
+          return `(${readFileSync(join(root, `${name}.json`), "utf8")})`;
+        });
+        if (found === 0) {
+          throw new Error(
+            `playwright-core changed: ${args.path} no longer requires package.json the expected way`,
+          );
+        }
+        return { contents, loader: "js" };
       },
     );
 
