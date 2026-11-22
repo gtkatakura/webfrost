@@ -14,8 +14,6 @@ Every breaking change is called out in the [changelog](CHANGELOG.md).
 
 ## Next
 
-- **Archive on your machine, keep it on the server.** Video sites often refuse server addresses ("confirm
-  you're not a bot"): archive from your own connection with the CLI and send the snapshot to your server.
 - **A Windows binary.** Until then, Windows runs the Docker image.
 
 - **Browser extension** for Chrome and Firefox: archive the page you are on in one click.
@@ -42,7 +40,8 @@ A Docker image for amd64 and arm64 and a single `webfrost` binary for macOS and 
 Homebrew); SQLite by default with Litestream backups, or PostgreSQL and MySQL; eight formats from one visit
 (WARC, raw HTML, readable text, PDF, full-page screenshot, DOM snapshot, self-contained HTML, video), in a
 light or dark color scheme, complete for single-page apps; full-text search; tags; imports from bookmarks, OPML, RSS/Atom and URL
-lists; cron and feed schedules run by the server; a job queue with crash recovery and per-site pacing;
+lists; `webfrost push` to archive on your own machine and keep the snapshot on the server (also one-file
+snapshot bundles with `webfrost export` and `import`); cron and feed schedules run by the server; a job queue with crash recovery and per-site pacing;
 filesystem or S3-compatible storage; API keys, revocable sessions and rate limits; read-only public mode;
 an SSRF guard for fetches and the headless browser; CLI, a versioned HTTP API (`/api/v1`, one error format,
 one pagination format) with a TypeScript SDK, and a web UI with the
