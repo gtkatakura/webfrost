@@ -96,6 +96,45 @@ export class JobRunner {
   }
 
   /**
+   * Archive an existing snapshot again, in place: its results are cleared, the job gets a new lease (so a
+   * run that somehow still holds the old one can no longer write) and the pipeline is queued. The URL and
+   * the color scheme stay those of the snapshot. Resolves with "queued", "missing" or "busy" (a snapshot
+   * still pending is being archived already).
+   */
+  async retry(db: Db, snapshotId: number): Promise<"queued" | "missing" | "busy"> {
+    const lease = newLeaseToken();
+    const outcome = await db.transaction(async (tx) => {
+      // Lock order: job_queue first, then snapshots, as in fenced writes and adoptOrphans.
+      await tx.run(
+        sql`SELECT snapshot_id FROM job_queue WHERE snapshot_id = ${snapshotId} ${tx.forUpdate()}`,
+      );
+      const row = await tx.get<{ url: string; status: string }>(
+        sql`SELECT url, status FROM snapshots WHERE id = ${snapshotId} ${tx.forUpdate()}`,
+      );
+      if (!row) return { result: "missing" as const };
+      if (row.status === "pending" || this.inFlight.has(snapshotId))
+        return { result: "busy" as const };
+      const updated = await tx.run(
+        sql`UPDATE job_queue
+            SET status = 'pending', heartbeat_at = ${tx.now()}, attempts = 0, lease_token = ${lease}
+            WHERE snapshot_id = ${snapshotId}`,
+      );
+      if (updated === 0) {
+        await tx.run(
+          sql`INSERT INTO job_queue (snapshot_id, status, heartbeat_at, attempts, lease_token, created_at)
+              VALUES (${snapshotId}, 'pending', ${tx.now()}, 0, ${lease}, ${tx.now()})`,
+        );
+      }
+      await tx.run(sql`DELETE FROM archive_results WHERE snapshot_id = ${snapshotId}`);
+      await tx.run(sql`UPDATE snapshots SET status = 'pending' WHERE id = ${snapshotId}`);
+      return { result: "queued" as const, url: row.url };
+    });
+    if (outcome.result !== "queued") return outcome.result;
+    void this.enqueue(snapshotId, outcome.url, lease);
+    return "queued";
+  }
+
+  /**
    * Queue the pipeline for an existing snapshot. The returned promise settles when
    * the pipeline has finished and never rejects — failures land on the snapshot row.
    *

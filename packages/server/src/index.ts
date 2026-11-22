@@ -160,7 +160,7 @@ export const app = new Elysia()
       limit: 60,
       windowMs: 60_000,
       methods: ["POST"],
-      path: /^\/api(?:\/v1)?\/(snapshots|import(\/file)?)\/?$/,
+      path: /^\/api(?:\/v1)?\/(snapshots(\/\d+\/retry)?|import(\/file)?)\/?$/,
     }),
   )
   // 10 req/min for anything that checks a password — slows down brute force.

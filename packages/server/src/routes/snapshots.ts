@@ -303,6 +303,25 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
     },
     { params: t.Object({ id: t.String() }) },
   )
+  .post(
+    "/:id/retry",
+    async ({ params, set }) => {
+      const id = Number(params.id);
+      if (!Number.isInteger(id) || id <= 0) return apiError(set, 404, "NOT_FOUND", "not found");
+      // Archive the snapshot again in place: same id, URL and color scheme, results replaced.
+      const db = await getDb();
+      try {
+        const outcome = await getRunner().retry(db, id);
+        if (outcome === "missing") return apiError(set, 404, "NOT_FOUND", "not found");
+        if (outcome === "busy") return apiError(set, 409, "CONFLICT", "snapshot is being archived");
+      } finally {
+        await db.close();
+      }
+      set.status = 202;
+      return { id, status: "pending" };
+    },
+    { params: t.Object({ id: t.String() }) },
+  )
   .get(
     "/:id/archives/:extractor/preview",
     async ({ params, set }) => {

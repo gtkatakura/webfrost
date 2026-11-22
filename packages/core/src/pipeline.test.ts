@@ -272,6 +272,80 @@ describe("JobRunner", () => {
     expect(runner.size).toBe(0);
   }, 60_000);
 
+  test("retry answers missing for an unknown id and busy for a snapshot still pending", async () => {
+    const runner = new JobRunner({ dir: testDir });
+    expect(await runner.retry(db, 9999)).toBe("missing");
+
+    const id = await createSnapshot(db, `${baseUrl}/article`);
+    expect(await runner.retry(db, id)).toBe("busy");
+    expect(await statusOf(id)).toBe("pending");
+    expect(runner.size).toBe(0);
+  });
+
+  test("retry archives a done snapshot again in place: results replaced, new lease, scheme kept", async () => {
+    const url = `${baseUrl}/article`;
+    const id = await createSnapshot(db, url, { colorScheme: "dark" });
+    await runPipeline(db, id, url, testDir);
+    expect(await statusOf(id)).toBe("done");
+    await db.run(sql`UPDATE archive_results SET content = 'stale' WHERE extractor = 'html'`);
+    await db.run(sql`UPDATE job_queue SET attempts = 2 WHERE snapshot_id = ${id}`);
+    const before = await db.get<{ lease_token: string }>(
+      sql`SELECT lease_token FROM job_queue WHERE snapshot_id = ${id}`,
+    );
+
+    const runner = new JobRunner({ dir: testDir });
+    expect(await runner.retry(db, id)).toBe("queued");
+
+    // Right away: pending, old results gone, new lease, attempts reset.
+    expect(await statusOf(id)).toBe("pending");
+    expect(await results(id)).toHaveLength(0);
+    const job = await db.get<{ status: string; lease_token: string; attempts: number }>(
+      sql`SELECT status, lease_token, attempts FROM job_queue WHERE snapshot_id = ${id}`,
+    );
+    expect(job?.lease_token).toMatch(/^[0-9a-f-]{36}$/);
+    expect(job?.lease_token).not.toBe(before?.lease_token);
+    expect(Number(job?.attempts)).toBe(0);
+    // A second retry while it runs is refused.
+    expect(await runner.retry(db, id)).toBe("busy");
+
+    await runner.onIdle();
+
+    expect(await statusOf(id)).toBe("done");
+    expect(
+      (
+        await db.get<{ status: string }>(
+          sql`SELECT status FROM job_queue WHERE snapshot_id = ${id}`,
+        )
+      )?.status,
+    ).toBe("done");
+    const rows = await results(id);
+    const names = rows.map((r) => r.extractor);
+    expect(new Set(names).size).toBe(names.length); // one row per extractor
+    const html = rows.find((r) => r.extractor === "html");
+    expect(html?.content).toContain("Frost Report");
+    expect(html?.content).not.toBe("stale");
+    expect(
+      (
+        await db.get<{ color_scheme: string | null; url: string }>(
+          sql`SELECT color_scheme, url FROM snapshots WHERE id = ${id}`,
+        )
+      )?.color_scheme,
+    ).toBe("dark");
+  }, 60_000);
+
+  test("retry brings a failed snapshot back", async () => {
+    const url = `${baseUrl}/missing`;
+    const id = await createSnapshot(db, url);
+    await runPipeline(db, id, url, testDir);
+    expect(await statusOf(id)).toBe("failed");
+
+    const runner = new JobRunner({ dir: testDir });
+    expect(await runner.retry(db, id)).toBe("queued");
+    expect(await statusOf(id)).toBe("pending");
+    await runner.onIdle();
+    expect(await statusOf(id)).toBe("failed");
+  }, 60_000);
+
   test("recoverPending re-runs orphaned snapshots without duplicating results", async () => {
     const url = `${baseUrl}/article`;
     const id = await createSnapshot(db, url);

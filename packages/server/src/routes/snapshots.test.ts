@@ -844,6 +844,126 @@ describe("DELETE /snapshots/:id", () => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /snapshots/:id/retry
+// ---------------------------------------------------------------------------
+
+describe("POST /snapshots/:id/retry", () => {
+  const post = (path: string) => new Request(`http://localhost${path}`, { method: "POST" });
+
+  const statusRow = async (id: number) => {
+    const { openDb } = await import("@webfrost/core");
+    const db = await openDb(testDir);
+    try {
+      return {
+        snapshot: (
+          await db.get<{ status: string }>(sql`SELECT status FROM snapshots WHERE id = ${id}`)
+        )?.status,
+        results: Number(
+          (
+            await db.get<{ n: number }>(
+              sql`SELECT COUNT(*) AS n FROM archive_results WHERE snapshot_id = ${id}`,
+            )
+          )?.n,
+        ),
+      };
+    } finally {
+      await db.close();
+    }
+  };
+
+  test("returns 404 for an unknown id and for one that is not a number", async () => {
+    const { openDb } = await import("@webfrost/core");
+    await (await openDb(testDir)).close();
+    const app = await getApp();
+    for (const id of ["99999", "abc", "0", "-3", "1.5"]) {
+      const res = await app.handle(post(`/snapshots/${id}/retry`));
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "not found", code: "NOT_FOUND" });
+    }
+  });
+
+  test("queues a done snapshot again (202, pending, results cleared) and refuses a second retry (409)", async () => {
+    const saved = process.env.WEBFROST_ALLOW_PRIVATE_URLS;
+    process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
+    // A page that answers slowly keeps the pipeline running while we look.
+    const server = Bun.serve({
+      port: 0,
+      async fetch() {
+        await Bun.sleep(1500);
+        return new Response("<html><body>ok</body></html>", {
+          headers: { "content-type": "text/html" },
+        });
+      },
+    });
+    try {
+      const { openDb, createSnapshot, setJobStatus } = await import("@webfrost/core");
+      const db = await openDb(testDir);
+      const id = await createSnapshot(db, `http://localhost:${server.port}/page`);
+      await db.run(
+        sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, 'html', 'old')`,
+      );
+      await setJobStatus(db, id, "done");
+      await db.close();
+      expect(await statusRow(id)).toEqual({ snapshot: "done", results: 1 });
+
+      const app = await getApp();
+      const res = await app.handle(post(`/snapshots/${id}/retry`));
+      expect(res.status).toBe(202);
+      expect(await res.json()).toEqual({ id, status: "pending" });
+      expect(await statusRow(id)).toEqual({ snapshot: "pending", results: 0 });
+
+      const again = await app.handle(post(`/snapshots/${id}/retry`));
+      expect(again.status).toBe(409);
+      expect(await again.json()).toEqual({ error: "snapshot is being archived", code: "CONFLICT" });
+      expect(await statusRow(id)).toEqual({ snapshot: "pending", results: 0 });
+    } finally {
+      server.stop(true);
+      if (saved === undefined) Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
+      else process.env.WEBFROST_ALLOW_PRIVATE_URLS = saved;
+    }
+  });
+
+  test("returns 409 for a snapshot that is still pending, and leaves it alone", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/pending");
+    await db.close();
+
+    const res = await (await getApp()).handle(post(`/snapshots/${id}/retry`));
+    expect(res.status).toBe(409);
+    expect(await statusRow(id)).toEqual({ snapshot: "pending", results: 0 });
+  });
+
+  test("needs credentials: anonymous callers get 401, even with public read on, and nothing changes", async () => {
+    const { openDb, createSnapshot, setJobStatus } = await import("@webfrost/core");
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/guarded");
+    await setJobStatus(db, id, "done");
+    await db.close();
+
+    const savedAuth = process.env.AUTH_DISABLED;
+    Reflect.deleteProperty(process.env, "AUTH_DISABLED");
+    process.env.SESSION_SECRET = "test-secret-32-chars-long-enough!!";
+    try {
+      const { authPlugin } = await import("./auth");
+      const { snapshotsRouter } = await import("./snapshots");
+      const { Elysia } = await import("elysia");
+      const app = new Elysia().use(authPlugin).use(snapshotsRouter);
+      for (const publicRead of [undefined, "true"]) {
+        if (publicRead) process.env.WEBFROST_PUBLIC_READ = publicRead;
+        const res = await app.handle(post(`/snapshots/${id}/retry`));
+        expect(res.status).toBe(401);
+        expect(await statusRow(id)).toEqual({ snapshot: "done", results: 0 });
+      }
+    } finally {
+      if (savedAuth !== undefined) process.env.AUTH_DISABLED = savedAuth;
+      Reflect.deleteProperty(process.env, "SESSION_SECRET");
+      Reflect.deleteProperty(process.env, "WEBFROST_PUBLIC_READ");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET /snapshots/:id
 // ---------------------------------------------------------------------------
 

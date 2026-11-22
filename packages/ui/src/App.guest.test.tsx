@@ -97,6 +97,7 @@ function mockClient({ publicRead, signedIn, listSnapshots }: Opts) {
     iterateApiKeys: trackIterator("iterateApiKeys"),
     createSnapshot: track("createSnapshot", () => Promise.resolve({ id: 9 })),
     deleteSnapshot: track("deleteSnapshot", () => Promise.resolve(true)),
+    retrySnapshot: track("retrySnapshot", () => Promise.resolve({ id: 5, status: "pending" })),
     addTagToSnapshot: track("addTagToSnapshot", () => Promise.resolve()),
     removeTagFromSnapshot: track("removeTagFromSnapshot", () => Promise.resolve()),
     createTag: track("createTag", () => Promise.resolve({})),
@@ -167,6 +168,7 @@ describe("guest mode (publicRead + no session)", () => {
     expect(screen.queryByLabelText(/Remove tag/)).toBeNull();
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Archive again|Archiving/ })).toBeNull();
     expect(calls).toEqual([]);
   });
 

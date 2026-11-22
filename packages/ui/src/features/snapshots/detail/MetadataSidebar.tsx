@@ -1,5 +1,5 @@
 import type { SnapshotDetail } from "@webfrost/sdk";
-import { Clock, Copy, Tag as TagIcon, Trash2 } from "lucide-react";
+import { Clock, Copy, RefreshCcw, Tag as TagIcon, Trash2 } from "lucide-react";
 import { useRef } from "react";
 import { StatusBadge } from "../../../components/StatusBadge";
 import { useCopy } from "../../../lib/clipboard";
@@ -11,10 +11,15 @@ const labelCls = "mb-1 mt-0 text-ui-xs font-medium text-low";
 export function MetadataSidebar({
   detail,
   onDelete,
+  onRetry,
+  retrying = false,
 }: {
   detail: SnapshotDetail;
   /** Omitted for read-only guests: no Delete control is rendered. */
   onDelete?: (() => void) | undefined;
+  /** Archive again in place; omitted for read-only guests. */
+  onRetry?: (() => void) | undefined;
+  retrying?: boolean;
 }) {
   const { state: copyState, copy } = useCopy();
   const urlRef = useRef<HTMLAnchorElement>(null);
@@ -99,16 +104,30 @@ export function MetadataSidebar({
         </ul>
       </div>
 
-      {onDelete && (
-        <div className="mt-auto border-t border-border pt-3">
-          <button
-            type="button"
-            onClick={onDelete}
-            className="inline-flex items-center gap-1.5 rounded border-0 bg-transparent p-0 text-ui-xs text-danger hover:underline"
-          >
-            <Trash2 size={11} aria-hidden="true" />
-            Delete
-          </button>
+      {(onDelete || onRetry) && (
+        <div className="mt-auto flex items-center gap-4 border-t border-border pt-3">
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              disabled={retrying || detail.status === "pending"}
+              title="Archive this page again: same address and theme, every format replaced"
+              className="inline-flex items-center gap-1.5 rounded border-0 bg-transparent p-0 text-ui-xs text-accent-text hover:underline disabled:cursor-default disabled:text-low disabled:no-underline"
+            >
+              <RefreshCcw size={11} aria-hidden="true" />
+              {detail.status === "pending" ? "Archiving…" : "Archive again"}
+            </button>
+          )}
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="inline-flex items-center gap-1.5 rounded border-0 bg-transparent p-0 text-ui-xs text-danger hover:underline"
+            >
+              <Trash2 size={11} aria-hidden="true" />
+              Delete
+            </button>
+          )}
         </div>
       )}
     </div>

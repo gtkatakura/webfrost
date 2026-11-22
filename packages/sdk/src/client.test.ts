@@ -503,3 +503,33 @@ describe("createApiKey", () => {
     });
   });
 });
+
+describe("WebFrostClient.retrySnapshot", () => {
+  test("posts to the retry route and returns the body", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: 1, status: "pending" }, 202));
+
+    const client = new WebFrostClient({ baseUrl: BASE });
+    const result = await client.retrySnapshot(1);
+
+    expect(result).toEqual({ id: 1, status: "pending" });
+    const [calledUrl, calledInit] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(calledUrl).toBe(`${BASE}/api/v1/snapshots/1/retry`);
+    expect(calledInit.method).toBe("POST");
+  });
+
+  test("maps 409 to CONFLICT and 404 to NOT_FOUND", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ error: "snapshot is being archived", code: "CONFLICT" }, 409),
+    );
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ error: "not found", code: "NOT_FOUND" }, 404));
+    const client = new WebFrostClient({ baseUrl: BASE });
+
+    const busy = await client.retrySnapshot(1).catch((e: unknown) => e);
+    expect(busy).toBeInstanceOf(WebFrostError);
+    expect((busy as WebFrostError).status).toBe(409);
+    expect((busy as WebFrostError).code).toBe("CONFLICT");
+
+    const missing = await client.retrySnapshot(2).catch((e: unknown) => e);
+    expect((missing as WebFrostError).code).toBe("NOT_FOUND");
+  });
+});

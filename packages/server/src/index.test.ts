@@ -130,6 +130,27 @@ describe("API errors", () => {
   });
 });
 
+describe("rate limit on retrying snapshots", () => {
+  test("retries count with snapshot creation: the 61st POST in a minute is refused", async () => {
+    process.env.WEBFROST_TRUST_PROXY = "true";
+    try {
+      const retry = () =>
+        app.handle(
+          new Request("http://localhost/api/v1/snapshots/999999/retry", {
+            method: "POST",
+            headers: { ...authHeader, "x-forwarded-for": "203.0.113.77" },
+          }),
+        );
+      for (let i = 0; i < 60; i++) expect((await retry()).status).toBe(404);
+      const blocked = await retry();
+      expect(blocked.status).toBe(429);
+      expect(blocked.headers.get("retry-after")).toBeTruthy();
+    } finally {
+      Reflect.deleteProperty(process.env, "WEBFROST_TRUST_PROXY");
+    }
+  });
+});
+
 describe("cross-origin and content-type protection", () => {
   test("a cross-site form post is refused before it reaches a route", async () => {
     const res = await app.handle(

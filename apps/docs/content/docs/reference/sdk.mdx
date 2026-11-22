@@ -173,6 +173,14 @@ for (const result of detail?.archiveResults ?? []) {
 
 `true` when deleted, `false` when it did not exist.
 
+### `retrySnapshot(id: number): Promise<{ id: number; status: "pending" }>`
+
+Archive a snapshot again, in place: same id, URL and color scheme, every result replaced. Resolves once it is queued; poll `getSnapshot` until the status is no longer `pending`. Throws `NOT_FOUND` for an unknown id and `CONFLICT` while the snapshot is still being archived.
+
+```ts
+await client.retrySnapshot(7);
+```
+
 ### `archiveUrl(id, extractor, kind?): string`
 
 A URL for `<a href>`, `<img src>` or `<iframe src>`. `kind` is `"download"` (default) for the stored file, or `"preview"` for the sandboxed HTML preview that some extractors have. The URL carries no credentials: the browser sends the session cookie. An API key cannot go in a URL, so use `downloadArchive` with one.

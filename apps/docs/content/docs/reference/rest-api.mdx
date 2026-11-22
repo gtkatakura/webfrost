@@ -112,7 +112,7 @@ Limits are per client IP over a sliding one-minute window, held in memory, and s
 | Scope | Limit |
 |---|---|
 | `GET` and `HEAD` on `/api/v1/*` | 300 per minute |
-| `POST /snapshots`, `POST /import`, `POST /import/file` | 60 per minute |
+| `POST /snapshots`, `POST /snapshots/:id/retry`, `POST /import`, `POST /import/file` | 60 per minute |
 | `POST /auth/login`, `POST /auth/change-password`, `POST /setup` | 10 per minute |
 
 A limited request gets `429` with a `Retry-After` header (seconds). The client IP is the TCP peer address. `X-Forwarded-For` is used only when `WEBFROST_TRUST_PROXY=true`, which you should set only behind a reverse proxy. Proxies append the address they saw to the header, so the server takes the entry `WEBFROST_TRUSTED_PROXY_HOPS` (default `1`) places from the right, never the client-chosen left-most one. IPv6 clients share one limit per `/64`.
@@ -156,6 +156,7 @@ curl -X POST $API/setup -H "Content-Type: application/json" \
 | `POST` | `/snapshots` | Queue a URL for archiving. `202`. |
 | `GET` | `/snapshots` | List snapshots, or search with `?q=`. |
 | `GET` | `/snapshots/:id` | One snapshot with archive results and per-extractor metadata. |
+| `POST` | `/snapshots/:id/retry` | Archive a snapshot again, in place. `202`, `404`, or `409` while it is being archived. |
 | `DELETE` | `/snapshots/:id` | Delete a snapshot and its files. `204`, or `404`. |
 
 ### Create
@@ -213,6 +214,10 @@ The snippet is HTML-escaped; its only markup is the literal `<mark>` tag. Render
 - `extractorMeta`: an object keyed by extractor name, `{ status: "success" | "failed", durationMs, fileSizeBytes, error? }`.
 
 Browser extractors that could not run (Chromium missing, navigation failed, SSRF violation) appear in `extractorMeta` with `status: "failed"` and an `error`, and are absent from `extractors` and `archiveResults`. Guests see `error: "extraction failed"` instead of the raw message, which can name internal hosts and paths. `media` is skipped silently, with no entry, when `yt-dlp` is missing or the URL is not a media page. An unknown id answers `404`.
+
+### Retry
+
+`POST /snapshots/:id/retry` archives a snapshot again under the same id: same URL and color scheme, every result replaced by the new run. It answers `202` with `{ "id": 7, "status": "pending" }` and the snapshot is `pending` until the run ends (poll `GET /snapshots/:id`). An unknown or non-numeric id answers `404`; a snapshot that is still `pending` answers `409` with code `CONFLICT`. Use it for a page that changed or a video a site refused the first time. It needs credentials, also when public read is on.
 
 #### Archive results
 

@@ -508,6 +508,15 @@ export class WebFrostClient {
   }
 
   /**
+   * Archive a snapshot again, in place: same id, URL and color scheme, its results replaced. Resolves
+   * once it is queued (status "pending"; poll {@link getSnapshot}). Throws {@link WebFrostError} with
+   * `NOT_FOUND`, or `CONFLICT` while the snapshot is still being archived.
+   */
+  retrySnapshot(id: number, request?: RequestOptions): Promise<{ id: number; status: "pending" }> {
+    return this.json("POST", `/snapshots/${id}/retry`, { signal: request?.signal });
+  }
+
+  /**
    * URL of an archived result, for `<a href>`, `<img src>` or `<iframe src>`.
    * "download" serves the stored file (or the extractor's JSON); "preview" serves sandboxed
    * HTML for the extractors that have one. The URL carries no credentials: the browser sends the

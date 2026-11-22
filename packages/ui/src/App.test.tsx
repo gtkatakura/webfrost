@@ -48,6 +48,7 @@ function mockClient(overrides: {
   ) => Promise<SnapshotCreated>;
   getSnapshot?: (id: number) => Promise<SnapshotDetail | null>;
   getStats?: () => Promise<DashboardStats>;
+  retrySnapshot?: (id: number) => Promise<{ id: number; status: "pending" }>;
 }): WebFrostClient {
   return {
     getSetupStatus: () => Promise.resolve({ needsSetup: false }),
@@ -64,6 +65,7 @@ function mockClient(overrides: {
     listSnapshotTags: () => Promise.resolve({ items: [], total: 0, page: 1, limit: 200 }),
     addTagToSnapshot: () => Promise.resolve(),
     removeTagFromSnapshot: () => Promise.resolve(),
+    retrySnapshot: (id: number) => Promise.resolve({ id, status: "pending" as const }),
     ...overrides,
   } as unknown as WebFrostClient;
 }
@@ -588,5 +590,49 @@ describe("Global 401 handling", () => {
     renderApp(client, "/snapshots");
 
     await screen.findByText("Sign in to continue");
+  });
+});
+
+describe("SnapshotViewer — Archive again", () => {
+  test("Details offers Archive again; clicking retries that snapshot and the page shows it archiving", async () => {
+    let status: SnapshotDetail["status"] = "done";
+    const retried: number[] = [];
+    const client = mockClient({
+      getSnapshot: () => Promise.resolve(makeDetail({ id: 7, status })),
+      retrySnapshot: (id) => {
+        retried.push(id);
+        status = "pending";
+        return Promise.resolve({ id, status: "pending" as const });
+      },
+    });
+    renderApp(client, "/snapshots/7");
+    await openDetails();
+
+    const button = await screen.findByRole("button", { name: "Archive again" });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(button);
+
+    await waitFor(() => expect(retried).toEqual([7]));
+    const archiving = await screen.findByRole("button", { name: "Archiving…" });
+    expect((archiving as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Archive again" })).toBeNull();
+  });
+
+  test("while the snapshot is pending the button is disabled and reads Archiving…", async () => {
+    const retried: number[] = [];
+    const client = mockClient({
+      getSnapshot: () => Promise.resolve(makeDetail({ id: 8, status: "pending" })),
+      retrySnapshot: (id) => {
+        retried.push(id);
+        return Promise.resolve({ id, status: "pending" as const });
+      },
+    });
+    renderApp(client, "/snapshots/8");
+    await openDetails();
+
+    const button = (await screen.findByRole("button", { name: "Archiving…" })) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(retried).toEqual([]);
   });
 });

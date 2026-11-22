@@ -51,6 +51,21 @@ export function useCreateSnapshot(onCreated?: () => void) {
   });
 }
 
+/** Archive a snapshot again in place; the detail query then polls it while it is pending. */
+export function useRetrySnapshot() {
+  const client = useClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => client.retrySnapshot(id),
+    onSuccess: (_r, id) => {
+      queryClient.invalidateQueries({ queryKey: snapshotKeys.detail(id) });
+      queryClient.invalidateQueries({ queryKey: snapshotKeys.all });
+      toast.success("Archiving again");
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+}
+
 /**
  * The one delete mutation. `silent` is for bulk runs that report one summary toast themselves
  * and refresh the lists once at the end.

@@ -28,7 +28,12 @@ import {
   findResult,
   pageResult,
 } from "../features/snapshots/detail/tabs";
-import { PENDING_POLL_MS, snapshotKeys, useDeleteSnapshot } from "../hooks/useSnapshots";
+import {
+  PENDING_POLL_MS,
+  snapshotKeys,
+  useDeleteSnapshot,
+  useRetrySnapshot,
+} from "../hooks/useSnapshots";
 import { parsePositiveInt } from "../lib/url";
 
 type TabId = "page" | "reader" | "screenshot" | "media" | "raw" | "details";
@@ -99,6 +104,7 @@ export function SnapshotViewerPage() {
   const page = pageResult(results);
 
   const deleteSnapshot = useDeleteSnapshot({ onDeleted: () => navigate(back) });
+  const retrySnapshot = useRetrySnapshot();
 
   useEffect(() => {
     if (!detail || defaultedFor.current === detail.id) return;
@@ -306,6 +312,8 @@ export function SnapshotViewerPage() {
                     <MetadataSidebar
                       detail={detail}
                       onDelete={canWrite ? handleDelete : undefined}
+                      onRetry={canWrite ? () => retrySnapshot.mutate(detail.id) : undefined}
+                      retrying={retrySnapshot.isPending}
                     />
                     <section>
                       <h2 className="mb-2 mt-0 text-ui-sm font-semibold text-high">History</h2>

@@ -66,6 +66,8 @@ export interface Db {
   forUpdateSkipLocked(alias?: string): RawBuilder<unknown>;
   /** `FOR SHARE` on PostgreSQL/MySQL; nothing on SQLite. */
   forShare(): RawBuilder<unknown>;
+  /** `FOR UPDATE` on PostgreSQL/MySQL; nothing on SQLite (one writer at a time). */
+  forUpdate(): RawBuilder<unknown>;
   close(): Promise<void>;
 }
 
@@ -165,6 +167,10 @@ class KyselyDb implements Db {
 
   forShare(): RawBuilder<unknown> {
     return this.dialect === "sqlite" ? sql`` : sql`FOR SHARE`;
+  }
+
+  forUpdate(): RawBuilder<unknown> {
+    return this.dialect === "sqlite" ? sql`` : sql`FOR UPDATE`;
   }
 
   close(): Promise<void> {
