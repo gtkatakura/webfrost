@@ -315,13 +315,25 @@ function PromoVideo({
  * requestFullscreen on a video; it goes full screen by itself (no playsInline).
  *
  * Leaving full screen pauses the video: the phone's back button (Android) or closing the player (iPhone)
- * means the reader is done watching, so it should not go on playing, with sound, inside the page.
+ * means the reader is done watching, so it should not go on playing, with sound, inside the page. And
+ * when the film ends, full screen closes by itself, back to the page.
  */
 function enterFullscreen(event: React.SyntheticEvent<HTMLVideoElement>) {
   const video = event.currentTarget;
   if (!matchMedia("(hover: none) and (pointer: coarse)").matches) return;
-  // iPhone: its own player fires webkitendfullscreen when it closes.
+  // iPhone: its own player fires webkitendfullscreen when it closes, and closes with webkitExitFullscreen.
   video.addEventListener("webkitendfullscreen", () => video.pause(), { once: true });
+  video.addEventListener(
+    "ended",
+    () => {
+      if (document.fullscreenElement === video) document.exitFullscreen().catch(() => {});
+      else
+        (
+          video as HTMLVideoElement & { webkitExitFullscreen?: () => void }
+        ).webkitExitFullscreen?.();
+    },
+    { once: true },
+  );
   if (document.fullscreenElement || !video.requestFullscreen) return;
   video
     .requestFullscreen()
