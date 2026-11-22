@@ -189,26 +189,20 @@ export default function Home() {
           >
             One URL in, every format out.
           </h2>
-          {/* Narrated, so it never plays on its own. The files live in Git LFS (.gitattributes). */}
-          <video
-            className="mt-6 aspect-video w-full rounded-2xl border border-border bg-[#05091a] shadow-2xl shadow-blue-900/20"
-            controls
-            playsInline
-            preload="none"
-            poster="/videos/webfrost-promo-poster.webp"
+          {/* Two cuts of the same film: vertical on phones, 16:9 from the sm breakpoint up. Only the one
+              the reader plays is downloaded (preload="none"). */}
+          <PromoVideo
+            name="webfrost-promo-mobile"
+            width={720}
+            height={1280}
+            className="mx-auto mt-6 aspect-[9/16] w-full max-w-sm sm:hidden"
+          />
+          <PromoVideo
+            name="webfrost-promo"
             width={1920}
             height={1080}
-          >
-            <source src="/videos/webfrost-promo.webm" type="video/webm" />
-            <source src="/videos/webfrost-promo.mp4" type="video/mp4" />
-            <track
-              kind="captions"
-              src="/videos/webfrost-promo.en.vtt"
-              srcLang="en"
-              label="English"
-            />
-            <a href="/videos/webfrost-promo.mp4">Download the video (MP4)</a>
-          </video>
+            className="mt-6 hidden aspect-video w-full sm:block"
+          />
         </section>
         <section className="py-12 sm:py-16">
           <div className="mx-auto grid max-w-6xl items-center gap-10 px-6 lg:grid-cols-[2fr_3fr]">
@@ -263,5 +257,33 @@ export default function Home() {
       </main>
       <SiteFooter />
     </HomeLayout>
+  );
+}
+
+/**
+ * The narrated promo film, from apps/docs/public/videos (Git LFS). Narrated, so it never plays on its
+ * own; both cuts share the English captions, since they have the same voice track.
+ */
+function PromoVideo({
+  name,
+  width,
+  height,
+  className,
+}: { name: string; width: number; height: number; className: string }) {
+  return (
+    <video
+      className={`rounded-2xl border border-border bg-[#05091a] shadow-2xl shadow-blue-900/20 ${className}`}
+      controls
+      playsInline
+      preload="none"
+      poster={`/videos/${name}-poster.webp`}
+      width={width}
+      height={height}
+    >
+      <source src={`/videos/${name}.webm`} type="video/webm" />
+      <source src={`/videos/${name}.mp4`} type="video/mp4" />
+      <track kind="captions" src="/videos/webfrost-promo.en.vtt" srcLang="en" label="English" />
+      <a href={`/videos/${name}.mp4`}>Download the video (MP4)</a>
+    </video>
   );
 }
