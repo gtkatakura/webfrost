@@ -269,7 +269,7 @@ The server treats a bundle as untrusted input:
 - Inline results (`html`, `readability`) carry `content` and no file. `readability` content must be the Readability JSON object.
 - A successful file-backed result names its entry in `file`, and each extractor has fixed names: `screenshot.png`, `thumbnail.webp`, `page.pdf`, `archive.warc`, `dom.html`, `singlefile.html`, `media.mp4` or `media.mp3`, `media-metadata.json`, `poster.jpg`. No other name, and so no path, is accepted. A failed result has no file.
 - Every entry must be referenced by the manifest exactly once. Duplicate names, unreferenced entries, encrypted, ZIP64 or overlapping entries are refused.
-- Sizes are checked from the ZIP directory before anything is written, and again while each entry is decompressed (it may not grow past its declared size; the CRC must match), so a zip bomb stops at the limit.
+- Sizes are checked from the ZIP directory before anything is written, and again while each entry is decompressed (fed to the inflater 4 KiB at a time, it is stopped within about 4 MiB of passing its declared size; the CRC must match), so a zip bomb stops at its declared size.
 - The server picks where each file is stored and serves it with the content type of its extractor, never one from the bundle. Archived HTML is still shown only through the sandboxed [preview](#archive-files).
 - `sizeBytes` is recomputed from what was stored.
 

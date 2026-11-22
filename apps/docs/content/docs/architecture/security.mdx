@@ -245,8 +245,12 @@ server accepts. Only authenticated admins can send one, and it is still treated 
   (`screenshot.png`, `media.mp4`...), the server maps them to storage names itself, and every entry
   must be referenced by the manifest. Paths, `..` and unreferenced files are refused.
 - Declared sizes are checked against the limit (per file and in total) before anything is written.
-  While an entry is decompressed its output is counted, so it cannot grow past its declared size,
-  and its CRC-32 is checked. A zip bomb stops at the limit.
+  While an entry is decompressed its output is counted and its CRC-32 is checked. Compressed data is
+  fed to the inflater 4 KiB at a time, and deflate expands at most about 1000-fold, so an entry
+  whose data outgrows its declared size is stopped within about 4 MiB of output, before that output
+  is kept or written. A zip bomb never gets past its declared size plus that margin.
+- The central directory is read only when its size is plausible for the number of entries (at most
+  64), so a forged size cannot make the server read a huge directory into memory.
 - Content types are derived by the server from the extractor, as for every snapshot. Imported HTML
   (`dom-snapshot`, `singlefile`) is rendered only by the sandboxed preview, and downloads are
   attachments.

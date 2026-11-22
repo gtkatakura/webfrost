@@ -13,11 +13,25 @@ import { Inflate } from "fflate";
  */
 
 export class ZipFormatError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    /** Uncompressed bytes an entry had produced when it was given up on (for entry errors). */
+    readonly producedBytes?: number,
+  ) {
     super(message);
     this.name = "ZipFormatError";
   }
 }
+
+/**
+ * Compressed input is fed to the inflater in slices this small. fflate inflates a whole pushed
+ * chunk before it reports any output, and deflate expands up to ~1032x, so a slice of 4 KiB
+ * produces at most ~4 MiB before the size check sees it (a 256 KiB stream chunk: ~260 MiB).
+ */
+export const INFLATE_SLICE_BYTES = 4 * 1024;
+
+/** Longest a central directory entry can be: 46 fixed bytes plus three 16-bit lengths. */
+const MAX_CENTRAL_ENTRY = 46 + 3 * 0xffff;
 
 export interface ZipEntry {
   name: string;
@@ -107,6 +121,9 @@ export async function readZipEntries(
   }
   if (totalEntries > options.maxEntries) {
     throw new ZipFormatError(`too many entries (${totalEntries}, at most ${options.maxEntries})`);
+  }
+  if (cdSize > options.maxEntries * MAX_CENTRAL_ENTRY) {
+    throw new ZipFormatError("central directory too large");
   }
   const eocdOffset = tailStart + eocd;
   if (cdOffset + cdSize > eocdOffset) throw new ZipFormatError("central directory out of bounds");
@@ -204,7 +221,7 @@ export async function* readZipEntry(path: string, entry: ZipEntry): AsyncGenerat
   const accept = (chunk: Uint8Array) => {
     produced += chunk.length;
     if (produced > entry.size) {
-      throw new ZipFormatError(`${entry.name}: data is larger than its declared size`);
+      throw new ZipFormatError(`${entry.name}: data is larger than its declared size`, produced);
     }
     crc = Bun.hash.crc32(chunk, crc);
     pending.push(chunk);
@@ -226,15 +243,17 @@ export async function* readZipEntry(path: string, entry: ZipEntry): AsyncGenerat
       }
     };
     for await (const chunk of chunksOf(source)) {
-      push(chunk, false);
-      yield* pending.splice(0);
+      for (let at = 0; at < chunk.length; at += INFLATE_SLICE_BYTES) {
+        push(chunk.subarray(at, at + INFLATE_SLICE_BYTES), false);
+        yield* pending.splice(0);
+      }
     }
     push(new Uint8Array(0), true);
     yield* pending.splice(0);
   }
 
   if (produced !== entry.size) {
-    throw new ZipFormatError(`${entry.name}: data is shorter than its declared size`);
+    throw new ZipFormatError(`${entry.name}: data is shorter than its declared size`, produced);
   }
   if (crc >>> 0 !== entry.crc32) throw new ZipFormatError(`${entry.name}: CRC mismatch`);
 }
