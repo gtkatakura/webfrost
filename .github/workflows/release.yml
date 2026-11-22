@@ -315,11 +315,11 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ needs.release.outputs.sha }}
-
+      # Tools (Bun) at the versions pinned in mise.toml.
       # Tools at the versions pinned in mise.toml: Bun, and nfpm for the .deb and .rpm.
       - uses: jdx/mise-action@v5.2.8
         with:
-          install_args: bun nfpm
+          install_args: bun
 
       - name: Cache Bun dependencies
         uses: actions/cache@v6.1.0
@@ -406,10 +406,10 @@ jobs:
         with:
           ref: ${{ needs.release.outputs.sha }}
 
-      # Tools (Bun) at the versions pinned in mise.toml.
+      # Tools at the versions pinned in mise.toml: Bun, and nfpm for the .deb and .rpm.
       - uses: jdx/mise-action@v5.2.8
         with:
-          install_args: bun
+          install_args: bun nfpm
 
       - name: Cache Bun dependencies
         uses: actions/cache@v6.1.0
