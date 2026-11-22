@@ -226,6 +226,9 @@ test("@media youtube: media-metadata download returns valid JSON with title, dur
 test("@media non-media-url: snapshot completes without media extractor entry", async ({
   request,
 }) => {
+  // It can queue behind the video downloads of the tests before it (one shared server, limited
+  // concurrency) and waits for the page's network to settle: 30 s was a coin toss on a CI runner.
+  test.setTimeout(90_000);
   // A plain page served by the test itself (the :3000 test server allows private URLs): no
   // dependence on the internet, and no queue behind other archives of the same public host.
   const page: Server = createServer((_req, res) => {
@@ -238,7 +241,7 @@ test("@media non-media-url: snapshot completes without media extractor entry", a
     const postResp = await request.post(`${API}/api/v1/snapshots`, { data: { url } });
     expect(postResp.status()).toBe(202);
     const { id } = await postResp.json();
-    const snapshot = await waitForDone(request, id, 30_000);
+    const snapshot = await waitForDone(request, id, 80_000);
 
     expect(snapshot.status).toBe("done");
 
