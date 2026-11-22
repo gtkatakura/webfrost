@@ -43,62 +43,66 @@ export function missingLibraries(stderr: string): string[] {
  * Debian 13 and Ubuntu 24.04 renamed some libraries with a "t64" suffix (the 64-bit time_t move). Debian still
  * answers to the old names, Ubuntu does not: ask apt which one this system has.
  */
-function aptPackages(): string[] {
-  const names = LINUX_BROWSER_PACKAGES.apt.split(" ");
-  // One apt-cache call for all of them: it prints the packages it knows and skips the rest.
-  const probe = Bun.spawnSync(
-    ["apt-cache", "show", "--no-all-versions", ...names.map((n) => `${n}t64`)],
-    {
+/** The system calls the hint makes, replaceable in tests. */
+export interface HintProbe {
+  has(command: string): boolean;
+  /** `apt-cache show` output for these package names (it skips the ones it does not know). */
+  aptShow(names: string[]): string;
+}
+
+const systemProbe: HintProbe = {
+  has: (command) => Bun.which(command) !== null,
+  aptShow: (names) =>
+    Bun.spawnSync(["apt-cache", "show", "--no-all-versions", ...names], {
       stdout: "pipe",
       stderr: "ignore",
-    },
-  );
-  const known = new Set(
-    [...probe.stdout.toString().matchAll(/^Package: (\S+)$/gm)].map((m) => m[1] as string),
-  );
+    }).stdout.toString(),
+};
+
+function aptPackages(probe: HintProbe): string[] {
+  const names = LINUX_BROWSER_PACKAGES.apt.split(" ");
+  // One apt-cache call for all of them: it prints the packages it knows and skips the rest.
+  const shown = probe.aptShow(names.map((n) => `${n}t64`));
+  const known = new Set([...shown.matchAll(/^Package: (\S+)$/gm)].map((m) => m[1] as string));
   return names.map((name) => (known.has(`${name}t64`) ? `${name}t64` : name));
 }
 
 /** The command that installs what Chromium needs on this kind of Linux, as text for a hint. */
-export function browserPackagesHint(): string {
-  const has = (cmd: string) => Bun.which(cmd) !== null;
-  if (has("apt-get")) return `sudo apt-get install ${aptPackages().join(" ")}`;
+export function browserPackagesHint(probe: HintProbe = systemProbe): string {
+  const has = (cmd: string) => probe.has(cmd);
+  if (has("apt-get")) return `sudo apt-get install ${aptPackages(probe).join(" ")}`;
   if (has("dnf")) return `sudo dnf install ${LINUX_BROWSER_PACKAGES.dnf}`;
   if (has("pacman")) return `sudo pacman -S --needed ${LINUX_BROWSER_PACKAGES.pacman}`;
   return "Install your distribution's Chromium package, which brings the libraries it needs.";
 }
 
 /**
- * Start the browser for real: headless, one blank page. `--version` succeeds even when the system lacks the
- * libraries a page needs, which made setup say "ready" for a browser that could not archive anything.
+ * Start the browser for real, the way archiving does (Playwright: launch, one page, close). `--version`
+ * succeeds even when the system lacks the libraries a page needs, which made setup say "ready" for a browser
+ * that could not archive anything; a plain `--dump-dom` run, on the other hand, misjudges browsers that start
+ * slowly or log noise (a snap Chromium).
  */
 export async function chromiumLaunches(
   path: string,
-  timeoutMs = 20_000,
+  timeoutMs = 30_000,
 ): Promise<{ ok: true } | { ok: false; reason: string; missing: string[] }> {
+  let browser: import("playwright").Browser | undefined;
   try {
-    const proc = Bun.spawn(
-      [path, "--headless", "--no-sandbox", "--disable-gpu", "--dump-dom", "about:blank"],
-      { stdout: "pipe", stderr: "pipe", stdin: "ignore" },
-    );
-    const timer = setTimeout(() => proc.kill(), timeoutMs);
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ]);
-    clearTimeout(timer);
-    if (code === 0 && stdout.includes("<html")) return { ok: true };
-    const missing = missingLibraries(stderr);
+    const { chromium } = await import("playwright");
+    browser = await chromium.launch({ executablePath: path, timeout: timeoutMs });
+    const page = await browser.newPage();
+    await page.setContent("<p>ok</p>", { timeout: timeoutMs });
+    return { ok: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // Playwright puts the browser's own output under "Browser logs", where a missing library shows up.
+    const missing = missingLibraries(message);
     const reason = missing.length
       ? `missing system libraries: ${missing.join(", ")}`
-      : stderr
-          .trim()
-          .split("\n")
-          .find((l) => l.trim()) || `exited with code ${code}`;
+      : message.split("\n")[0]?.trim() || "unknown error";
     return { ok: false, reason, missing };
-  } catch (err) {
-    return { ok: false, reason: err instanceof Error ? err.message : String(err), missing: [] };
+  } finally {
+    await browser?.close().catch(() => {});
   }
 }
 

@@ -51,16 +51,31 @@ start, install them with your package manager, or install Chromium itself.`,
     }
     if (found.path && !ctx.bool("force")) {
       const check = await chromiumVersion(found.path);
-      if (check.ok) {
+      const launch = check.ok ? await chromiumLaunches(found.path) : null;
+      if (check.ok && launch?.ok) {
         ctx.logger.info(
           `Chromium found (${SOURCE_LABEL[found.source]}): ${found.path} (${check.version}). Nothing to install.`,
         );
         return 0;
       }
-      if (found.source === "env") {
-        throw new CliError(`${found.path} does not start: ${check.reason}`);
+      if (check.ok && launch && !launch.ok) {
+        // It answers --version but cannot open a page: a browser of your own is reported, any other one
+        // is replaced by the downloaded headless shell (which then comes first).
+        if (found.source === "env") {
+          throw new CliError(
+            `${found.path} cannot open a page: ${launch.reason}${launch.missing.length ? `\nInstall what it needs:\n  ${browserPackagesHint()}` : ""}`,
+          );
+        }
+        ctx.logger.warn(
+          `${found.path} cannot open a page (${launch.reason}); installing Chromium.`,
+        );
       }
-      ctx.logger.warn(`${found.path} does not start (${check.reason}); installing Chromium.`);
+      if (!check.ok) {
+        if (found.source === "env") {
+          throw new CliError(`${found.path} does not start: ${check.reason}`);
+        }
+        ctx.logger.warn(`${found.path} does not start (${check.reason}); installing Chromium.`);
+      }
     }
 
     ctx.logger.info(`Installing Chromium (headless shell) into ${webfrostBrowsersDir()}`);

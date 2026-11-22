@@ -75,7 +75,7 @@ describe("browser start check", () => {
     chmodSync(fake, 0o755);
     try {
       expect(await chromiumVersion(fake)).toEqual({ ok: true, version: "Fake 1.0" });
-      const launch = await chromiumLaunches(fake);
+      const launch = await chromiumLaunches(fake, 10_000);
       expect(launch.ok).toBe(false);
       if (!launch.ok) {
         expect(launch.missing).toEqual(["libgbm.so.1"]);
@@ -84,21 +84,36 @@ describe("browser start check", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  }, 20_000);
+
+  const realChromium = process.env.WEBFROST_CHROMIUM_PATH;
+  test.skipIf(!realChromium)(
+    "a real browser opens a page",
+    async () => {
+      expect(await chromiumLaunches(realChromium as string)).toEqual({ ok: true });
+    },
+    40_000,
+  );
+
+  test("the install hint uses the t64 names this apt knows, and the old ones otherwise", () => {
+    const hint = browserPackagesHint({
+      has: (cmd) => cmd === "apt-get",
+      aptShow: (names) => {
+        expect(names).toContain("libasound2t64");
+        return "Package: libasound2t64\nVersion: 1\n\nPackage: libcups2t64\nVersion: 1\n";
+      },
+    });
+    expect(hint).toStartWith("sudo apt-get install ");
+    expect(hint).toContain(" libasound2t64 ");
+    expect(hint).toContain(" libcups2t64 ");
+    expect(hint).toContain(" libnss3 ");
+    expect(hint).not.toContain("libnss3t64");
   });
 
-  test("a browser that prints a page counts as started", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "webfrost-fake-chrome-"));
-    const fake = join(dir, "chrome");
-    writeFileSync(fake, "#!/bin/sh\necho '<html><head></head><body></body></html>'\n");
-    chmodSync(fake, 0o755);
-    try {
-      expect(await chromiumLaunches(fake)).toEqual({ ok: true });
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  test("the install hint names a package manager command or says what to do", () => {
-    expect(browserPackagesHint()).toMatch(/apt-get install|dnf install|pacman -S|Chromium package/);
+  test("the install hint falls back to dnf, pacman, or the distribution's Chromium", () => {
+    const only = (name: string) => ({ has: (cmd: string) => cmd === name, aptShow: () => "" });
+    expect(browserPackagesHint(only("dnf"))).toStartWith("sudo dnf install ");
+    expect(browserPackagesHint(only("pacman"))).toStartWith("sudo pacman -S --needed ");
+    expect(browserPackagesHint(only("none"))).toContain("Chromium package");
   });
 });
