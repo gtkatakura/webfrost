@@ -67,7 +67,13 @@ function expectSecurityHeaders(res: Response) {
 
 describe("API errors", () => {
   test("unknown /api routes are a JSON 404, not the SPA", async () => {
-    for (const path of ["/api/nope", "/api/snapshots/1/nope/deeper", "/api"]) {
+    for (const path of [
+      "/api/v1/nope",
+      "/api/v1/snapshots/1/nope/deeper",
+      "/api/v1",
+      "/api/nope",
+      "/api",
+    ]) {
       const res = await app.handle(new Request(`http://localhost${path}`));
       expect(res.status).toBe(404);
       expect(res.headers.get("content-type")).toContain("application/json");
@@ -78,7 +84,7 @@ describe("API errors", () => {
 
   test("unknown routes for other methods are a JSON 404 with security headers", async () => {
     const res = await app.handle(
-      new Request("http://localhost/api/nope", {
+      new Request("http://localhost/api/v1/nope", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: "{}",
@@ -91,7 +97,7 @@ describe("API errors", () => {
 
   test("malformed JSON is a JSON 400 with security headers", async () => {
     const res = await app.handle(
-      new Request("http://localhost/api/tags", {
+      new Request("http://localhost/api/v1/tags", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: "{not json",
@@ -104,7 +110,7 @@ describe("API errors", () => {
 
   test("validation errors keep their message and gain a code", async () => {
     const res = await app.handle(
-      new Request("http://localhost/api/snapshots", {
+      new Request("http://localhost/api/v1/snapshots", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ url: 42 }),
@@ -117,7 +123,7 @@ describe("API errors", () => {
 
   test("route errors gain a code derived from the status", async () => {
     const res = await app.handle(
-      new Request("http://localhost/api/snapshots/999999", { headers: authHeader }),
+      new Request("http://localhost/api/v1/snapshots/999999", { headers: authHeader }),
     );
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "not found", code: "NOT_FOUND" });
@@ -127,7 +133,7 @@ describe("API errors", () => {
 describe("cross-origin and content-type protection", () => {
   test("a cross-site form post is refused before it reaches a route", async () => {
     const res = await app.handle(
-      new Request("http://localhost/api/tags", {
+      new Request("http://localhost/api/v1/tags", {
         method: "POST",
         headers: {
           "content-type": "application/x-www-form-urlencoded",
@@ -144,7 +150,7 @@ describe("cross-origin and content-type protection", () => {
 
   test("a same-origin form-encoded body is refused with 415", async () => {
     const res = await app.handle(
-      new Request("http://localhost/api/tags", {
+      new Request("http://localhost/api/v1/tags", {
         method: "POST",
         headers: {
           "content-type": "application/x-www-form-urlencoded",
@@ -155,9 +161,11 @@ describe("cross-origin and content-type protection", () => {
     );
     expect(res.status).toBe(415);
     const tags = await app.handle(
-      new Request("http://localhost/api/tags", { headers: authHeader }),
+      new Request("http://localhost/api/v1/tags", { headers: authHeader }),
     );
-    expect(((await tags.json()) as { name: string }[]).some((t) => t.name === "pwned")).toBe(false);
+    expect(
+      ((await tags.json()) as { items: { name: string }[] }).items.some((t) => t.name === "pwned"),
+    ).toBe(false);
   });
 });
 

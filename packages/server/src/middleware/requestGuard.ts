@@ -7,7 +7,7 @@ import { importMaxBytes } from "../limits";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /** The one route that takes a multipart upload instead of JSON. */
-const MULTIPART_ROUTE = /^\/api\/import\/file\/?$/;
+const MULTIPART_ROUTE = /^\/api(?:\/v1)?\/import\/file\/?$/;
 
 /** Slack over the import limit for multipart framing and the other form fields. */
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;

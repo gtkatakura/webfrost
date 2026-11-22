@@ -1,8 +1,20 @@
-import { createApiKey, listApiKeys, revokeApiKey, sql } from "@webfrost/core";
+import { type ApiKey, createApiKey, listApiKeys, revokeApiKey, sql } from "@webfrost/core";
 import { Elysia, t } from "elysia";
 import { SERVER_VERSION, getDb, getWebfrostDir } from "../context";
-import { apiErrorHandler } from "../errors";
+import { apiError, apiErrorHandler } from "../errors";
 import { MAX_API_KEY_NAME_LENGTH } from "../limits";
+import { isoTimestamp, isoTimestampRequired, paginate, parseIsoTimestamp } from "../serialize";
+
+/** An API key as the API returns it: never its hash, and only active keys are listed. */
+function serializeApiKey(key: ApiKey) {
+  return {
+    id: key.id,
+    name: key.name,
+    expiresAt: isoTimestamp(key.expiresAt),
+    lastUsedAt: isoTimestamp(key.lastUsedAt),
+    createdAt: isoTimestampRequired(key.createdAt),
+  };
+}
 
 export const settingsRouter = new Elysia({ prefix: "/settings" })
   .onError(apiErrorHandler)
@@ -20,42 +32,57 @@ export const settingsRouter = new Elysia({ prefix: "/settings" })
       await db.close();
     }
   })
-  .get("/keys", async () => {
-    const db = await getDb();
-    try {
-      return await listApiKeys(db);
-    } finally {
-      await db.close();
-    }
-  })
-  .post(
+  .get(
     "/keys",
-    async ({ body, set }) => {
+    async ({ query }) => {
       const db = await getDb();
       try {
-        const { id, rawKey } = await createApiKey(db, body.name);
-        const keys = await listApiKeys(db);
-        const key = keys.find((k) => k.id === id);
-        if (!key) {
-          set.status = 500;
-          return { error: "Failed to create key" };
-        }
-        set.status = 201;
-        return { ...key, rawKey };
+        return paginate((await listApiKeys(db)).map(serializeApiKey), query);
       } finally {
         await db.close();
       }
     },
-    { body: t.Object({ name: t.String({ minLength: 1, maxLength: MAX_API_KEY_NAME_LENGTH }) }) },
+    { query: t.Object({ page: t.Optional(t.String()), limit: t.Optional(t.String()) }) },
+  )
+  .post(
+    "/keys",
+    async ({ body, set }) => {
+      // An optional ISO 8601 expiry ("2027-01-01T00:00:00Z"); without one the key never expires.
+      let expiresAt: string | undefined;
+      if (body.expiresAt !== undefined && body.expiresAt !== null) {
+        const parsed = parseIsoTimestamp(body.expiresAt);
+        if (parsed === null) {
+          return apiError(set, 400, "VALIDATION", "expiresAt must be an ISO 8601 timestamp");
+        }
+        if (Date.parse(`${parsed.replace(" ", "T")}Z`) <= Date.now()) {
+          return apiError(set, 400, "VALIDATION", "expiresAt must be in the future");
+        }
+        expiresAt = parsed;
+      }
+      const db = await getDb();
+      try {
+        const { id, rawKey } = await createApiKey(db, body.name, expiresAt);
+        const keys = await listApiKeys(db);
+        const key = keys.find((k) => k.id === id);
+        if (!key) throw new Error("API key not found after insert");
+        set.status = 201;
+        return { ...serializeApiKey(key), rawKey };
+      } finally {
+        await db.close();
+      }
+    },
+    {
+      body: t.Object({
+        name: t.String({ minLength: 1, maxLength: MAX_API_KEY_NAME_LENGTH }),
+        expiresAt: t.Optional(t.Nullable(t.String({ maxLength: 64 }))),
+      }),
+    },
   )
   .delete("/keys/:id", async ({ params, set }) => {
     const db = await getDb();
     try {
       const revoked = await revokeApiKey(db, params.id);
-      if (!revoked) {
-        set.status = 404;
-        return { error: "Key not found" };
-      }
+      if (!revoked) return apiError(set, 404, "NOT_FOUND", "Key not found");
       set.status = 204;
       return;
     } finally {

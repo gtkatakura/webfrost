@@ -50,7 +50,7 @@ describe("GET /tags", () => {
     const app = await getTagsApp();
     const res = await app.handle(new Request("http://localhost/tags"));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as unknown[];
+    const body = ((await res.json()) as { items: unknown[] }).items;
     expect(Array.isArray(body)).toBe(true);
     expect(body).toHaveLength(0);
   });
@@ -64,7 +64,7 @@ describe("GET /tags", () => {
     const app = await getTagsApp();
     const res = await app.handle(new Request("http://localhost/tags"));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as Array<{ name: string; slug: string }>;
+    const body = ((await res.json()) as { items: { name: string; slug: string }[] }).items;
     expect(body).toHaveLength(1);
     expect(body[0]?.name).toBe("News");
     expect(body[0]?.slug).toBe("news");
@@ -213,7 +213,7 @@ describe("GET /snapshots/:id/tags", () => {
     const app = await getSnapshotTagsApp();
     const res = await app.handle(new Request(`http://localhost/snapshots/${id}/tags`));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as unknown[];
+    const body = ((await res.json()) as { items: unknown[] }).items;
     expect(body).toEqual([]);
   });
 });

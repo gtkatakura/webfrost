@@ -1,4 +1,5 @@
 import {
+  type Tag,
   addTagToSnapshot,
   createTag,
   deleteTag,
@@ -10,26 +11,38 @@ import {
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
 import { getDb } from "../context";
-import { apiErrorHandler } from "../errors";
+import { apiError, apiErrorHandler } from "../errors";
 import { MAX_TAG_COLOR_LENGTH, MAX_TAG_NAME_LENGTH } from "../limits";
+import { isoTimestampRequired, paginate } from "../serialize";
 
-// GET/POST/DELETE /api/tags
+/** A tag as the API returns it. */
+export function serializeTag(tag: Tag) {
+  return {
+    id: tag.id,
+    name: tag.name,
+    slug: tag.slug,
+    color: tag.color,
+    createdAt: isoTimestampRequired(tag.created_at),
+  };
+}
+
+const pageQuery = t.Object({ page: t.Optional(t.String()), limit: t.Optional(t.String()) });
+
+// GET/POST/DELETE /api/v1/tags
 export const tagsRouter = new Elysia({ prefix: "/tags" })
   .onError(apiErrorHandler)
-  .get("/", async () => {
-    const db = await getDb();
-    try {
-      return (await listTags(db)).map((t) => ({
-        id: t.id,
-        name: t.name,
-        slug: t.slug,
-        color: t.color,
-        createdAt: t.created_at,
-      }));
-    } finally {
-      await db.close();
-    }
-  })
+  .get(
+    "/",
+    async ({ query }) => {
+      const db = await getDb();
+      try {
+        return paginate((await listTags(db)).map(serializeTag), query);
+      } finally {
+        await db.close();
+      }
+    },
+    { query: pageQuery },
+  )
   .post(
     "/",
     async ({ body, set }) => {
@@ -38,18 +51,11 @@ export const tagsRouter = new Elysia({ prefix: "/tags" })
       try {
         const tag = await createTag(db, name, color ?? undefined);
         set.status = 201;
-        return {
-          id: tag.id,
-          name: tag.name,
-          slug: tag.slug,
-          color: tag.color,
-          createdAt: tag.created_at,
-        };
+        return serializeTag(tag);
       } catch (err) {
         const msg = err instanceof Error ? err.message : "unknown error";
         if (msg.includes("UNIQUE") || msg.includes("unique")) {
-          set.status = 409;
-          return { error: "tag already exists" };
+          return apiError(set, 409, "CONFLICT", "tag already exists");
         }
         throw err;
       } finally {
@@ -68,15 +74,13 @@ export const tagsRouter = new Elysia({ prefix: "/tags" })
     async ({ params, set }) => {
       const id = Number(params.id);
       if (!Number.isInteger(id) || id <= 0) {
-        set.status = 404;
-        return { error: "not found" };
+        return apiError(set, 404, "NOT_FOUND", "not found");
       }
       const db = await getDb();
       try {
         const removed = await deleteTag(db, id);
         if (!removed) {
-          set.status = 404;
-          return { error: "not found" };
+          return apiError(set, 404, "NOT_FOUND", "not found");
         }
         set.status = 204;
         return null;
@@ -87,66 +91,49 @@ export const tagsRouter = new Elysia({ prefix: "/tags" })
     { params: t.Object({ id: t.String() }) },
   );
 
-// GET/POST/DELETE /api/snapshots/:id/tags
+// GET/POST/DELETE /api/v1/snapshots/:id/tags
 export const snapshotTagsRouter = new Elysia({ prefix: "/snapshots" })
   .onError(apiErrorHandler)
   .get(
     "/:id/tags",
-    async ({ params, set }) => {
+    async ({ params, query, set }) => {
       const snapshotId = Number(params.id);
       if (!Number.isInteger(snapshotId) || snapshotId <= 0) {
-        set.status = 404;
-        return { error: "not found" };
+        return apiError(set, 404, "NOT_FOUND", "not found");
       }
       const db = await getDb();
       try {
         const snapshot = await getSnapshot(db, snapshotId);
         if (!snapshot) {
-          set.status = 404;
-          return { error: "not found" };
+          return apiError(set, 404, "NOT_FOUND", "not found");
         }
-        return (await listSnapshotTags(db, snapshotId)).map((t) => ({
-          id: t.id,
-          name: t.name,
-          slug: t.slug,
-          color: t.color,
-          createdAt: t.created_at,
-        }));
+        return paginate((await listSnapshotTags(db, snapshotId)).map(serializeTag), query);
       } finally {
         await db.close();
       }
     },
-    { params: t.Object({ id: t.String() }) },
+    { params: t.Object({ id: t.String() }), query: pageQuery },
   )
   .post(
     "/:id/tags",
     async ({ params, body, set }) => {
       const snapshotId = Number(params.id);
       if (!Number.isInteger(snapshotId) || snapshotId <= 0) {
-        set.status = 404;
-        return { error: "not found" };
+        return apiError(set, 404, "NOT_FOUND", "not found");
       }
       const db = await getDb();
       try {
         const snapshot = await getSnapshot(db, snapshotId);
         if (!snapshot) {
-          set.status = 404;
-          return { error: "not found" };
+          return apiError(set, 404, "NOT_FOUND", "not found");
         }
         const tag = await getTag(db, body.tagId);
         if (!tag) {
-          set.status = 404;
-          return { error: "tag not found" };
+          return apiError(set, 404, "NOT_FOUND", "tag not found");
         }
         await addTagToSnapshot(db, snapshotId, body.tagId);
         set.status = 201;
-        return {
-          id: tag.id,
-          name: tag.name,
-          slug: tag.slug,
-          color: tag.color,
-          createdAt: tag.created_at,
-        };
+        return serializeTag(tag);
       } finally {
         await db.close();
       }
@@ -162,24 +149,20 @@ export const snapshotTagsRouter = new Elysia({ prefix: "/snapshots" })
       const snapshotId = Number(params.id);
       const tagId = Number(params.tagId);
       if (!Number.isInteger(snapshotId) || snapshotId <= 0) {
-        set.status = 404;
-        return { error: "not found" };
+        return apiError(set, 404, "NOT_FOUND", "not found");
       }
       if (!Number.isInteger(tagId) || tagId <= 0) {
-        set.status = 404;
-        return { error: "not found" };
+        return apiError(set, 404, "NOT_FOUND", "not found");
       }
       const db = await getDb();
       try {
         const snapshot = await getSnapshot(db, snapshotId);
         if (!snapshot) {
-          set.status = 404;
-          return { error: "not found" };
+          return apiError(set, 404, "NOT_FOUND", "not found");
         }
         const removed = await removeTagFromSnapshot(db, snapshotId, tagId);
         if (!removed) {
-          set.status = 404;
-          return { error: "not found" };
+          return apiError(set, 404, "NOT_FOUND", "not found");
         }
         set.status = 204;
         return null;

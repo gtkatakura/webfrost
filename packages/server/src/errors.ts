@@ -10,7 +10,9 @@ export type ApiErrorCode =
   | "BAD_REQUEST"
   | "VALIDATION"
   | "INVALID_JSON"
+  | "FETCH_FAILED"
   | "UNAUTHORIZED"
+  | "INVALID_CREDENTIALS"
   | "FORBIDDEN"
   | "CROSS_ORIGIN_REQUEST"
   | "SETUP_TOKEN_INVALID"
@@ -57,6 +59,23 @@ export function withErrorCode(response: unknown, status: number): unknown {
   return response;
 }
 
+/** The body of every API error. */
+export interface ApiErrorBody {
+  error: string;
+  code: ApiErrorCode;
+}
+
+/** Set the status on a route's context and return the `{ error, code }` body to send. */
+export function apiError(
+  set: { status?: unknown },
+  status: number,
+  code: ApiErrorCode,
+  error: string,
+): ApiErrorBody {
+  set.status = status;
+  return { error, code };
+}
+
 /** JSON error response with a status, for code that has no Elysia context. */
 export function jsonError(status: number, code: ApiErrorCode, error: string): Response {
   return Response.json({ error, code }, { status });
@@ -70,8 +89,9 @@ export const SETUP_VALIDATION_MESSAGE =
  * show these strings (POST /snapshots → "invalid url", setup → its own hint).
  */
 function validationMessage(method: string, pathname: string): string {
-  if (/^(?:\/api)?\/setup\/?$/.test(pathname)) return SETUP_VALIDATION_MESSAGE;
-  if (method === "POST" && /^(?:\/api)?\/snapshots\/?$/.test(pathname)) return "invalid url";
+  if (/^(?:\/api(?:\/v1)?)?\/setup\/?$/.test(pathname)) return SETUP_VALIDATION_MESSAGE;
+  if (method === "POST" && /^(?:\/api(?:\/v1)?)?\/snapshots\/?$/.test(pathname))
+    return "invalid url";
   return "invalid request";
 }
 

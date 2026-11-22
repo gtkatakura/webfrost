@@ -80,7 +80,7 @@ describe("rateLimiterPlugin", () => {
     expect(blocked.status).toBe(429);
     expect(blocked.headers.get("retry-after")).toBeTruthy();
     const body = await blocked.json();
-    expect(body).toEqual({ error: "rate limit exceeded" });
+    expect(body).toEqual({ error: "rate limit exceeded", code: "RATE_LIMITED" });
   });
 
   it("only applies to specified methods", async () => {

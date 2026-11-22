@@ -398,7 +398,8 @@ describe("POST /import/file — multipart upload", () => {
     await postFile(app, "https://example.com\n", "urls.txt", "text");
 
     const res = await app.handle(new Request("http://localhost/imports"));
-    const body = (await res.json()) as Array<{ sourceUrl: string | null; format: string }>;
+    const body = ((await res.json()) as { items: { sourceUrl: string | null; format: string }[] })
+      .items;
     expect(body).toHaveLength(1);
     expect(body[0]?.sourceUrl).toBeNull();
     expect(body[0]?.format).toBe("text");
@@ -432,7 +433,7 @@ describe("GET /imports", () => {
     const res = await app.handle(new Request("http://localhost/imports"));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual([]);
+    expect(body).toEqual({ items: [], total: 0, page: 1, limit: 20 });
   });
 
   test("records import and returns it in history", async () => {
@@ -447,14 +448,18 @@ describe("GET /imports", () => {
 
     const res = await app.handle(new Request("http://localhost/imports"));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as Array<{
-      id: string;
-      sourceUrl: string | null;
-      format: string;
-      queued: number;
-      skipped: number;
-      createdAt: string;
-    }>;
+    const body = (
+      (await res.json()) as {
+        items: {
+          id: string;
+          sourceUrl: string | null;
+          format: string;
+          queued: number;
+          skipped: number;
+          createdAt: string;
+        }[];
+      }
+    ).items;
     expect(body).toHaveLength(1);
     expect(body[0]?.format).toBe("text");
     expect(body[0]?.queued).toBe(2);
@@ -473,7 +478,7 @@ describe("GET /imports", () => {
     await post(app, { content: "https://second.com", format: "text" });
 
     const res = await app.handle(new Request("http://localhost/imports"));
-    const body = (await res.json()) as Array<{ queued: number }>;
+    const body = ((await res.json()) as { items: { queued: number }[] }).items;
     expect(body).toHaveLength(2);
     // Newest first — both queued 1 URL; just verify length and ordering by createdAt
     expect(body[0]).toBeDefined();

@@ -108,7 +108,7 @@ describe("GET /schedules", () => {
     const res = await app.handle(new Request("http://localhost/schedules"));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual([]);
+    expect(body).toEqual({ items: [], total: 0, page: 1, limit: 20 });
   });
 
   test("returns created schedules", async () => {
@@ -123,7 +123,7 @@ describe("GET /schedules", () => {
     );
 
     const res = await app.handle(new Request("http://localhost/schedules"));
-    const body = (await res.json()) as Array<{ url: string }>;
+    const body = ((await res.json()) as { items: { url: string }[] }).items;
     expect(body).toHaveLength(1);
     expect(body[0]?.url).toBe("https://example.com");
   });
@@ -279,6 +279,6 @@ describe("DELETE /schedules/:id", () => {
     // Verify gone
     const listRes = await app.handle(new Request("http://localhost/schedules"));
     const body = await listRes.json();
-    expect(body).toEqual([]);
+    expect(body).toEqual({ items: [], total: 0, page: 1, limit: 20 });
   });
 });

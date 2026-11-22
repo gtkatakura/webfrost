@@ -20,9 +20,15 @@ export async function recordImport(
   );
 }
 
-/** List the most recent import records, newest first. */
-export async function listImports(db: Db, limit = 50): Promise<ImportRecord[]> {
+/** List the most recent import records, newest first, skipping the first `offset`. */
+export async function listImports(db: Db, limit = 50, offset = 0): Promise<ImportRecord[]> {
   return db.all<ImportRecord>(
-    sql`SELECT id, source_url, format, queued, skipped, created_at FROM imports ORDER BY created_at DESC LIMIT ${limit}`,
+    sql`SELECT id, source_url, format, queued, skipped, created_at FROM imports ORDER BY created_at DESC, id DESC LIMIT ${limit} OFFSET ${offset}`,
   );
+}
+
+/** How many import records there are. */
+export async function countImports(db: Db): Promise<number> {
+  const row = await db.get<{ count: number | string }>(sql`SELECT COUNT(*) AS count FROM imports`);
+  return Number(row?.count ?? 0);
 }

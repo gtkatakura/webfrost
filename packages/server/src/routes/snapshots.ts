@@ -9,26 +9,33 @@ import {
 import type { SnapshotWithExtractors, StorageBackend } from "@webfrost/core";
 import { Elysia, t } from "elysia";
 import { getDb, getRunner, getStorage } from "../context";
-import { apiErrorHandler } from "../errors";
-import { MAX_LIST_LIMIT, MAX_URL_LENGTH } from "../limits";
+import { apiError, apiErrorHandler } from "../errors";
+import { MAX_URL_LENGTH } from "../limits";
+import { isoTimestampRequired, pageParams } from "../serialize";
+import { API_PREFIX } from "../version";
 import { isGuestRequest } from "./auth";
+import { serializeTag } from "./tags";
+
+/** Path of the v1 route that serves an archive result as a file. */
+export function archiveDownloadPath(snapshotId: number, extractor: string): string {
+  return `${API_PREFIX}/snapshots/${snapshotId}/archives/${extractor}/download`;
+}
+
+/** Path of the v1 route that renders an archive result as sandboxed HTML. */
+export function archivePreviewPath(snapshotId: number, extractor: string): string {
+  return `${API_PREFIX}/snapshots/${snapshotId}/archives/${extractor}/preview`;
+}
 
 /** List-level fields shared by the list, search and detail responses. */
 function snapshotSummary(s: SnapshotWithExtractors) {
   return {
     status: s.status,
-    createdAt: s.created_at,
+    createdAt: isoTimestampRequired(s.created_at),
     extractors: s.extractors,
     title: s.title,
     excerpt: s.excerpt,
-    screenshotUrl: s.hasScreenshot ? `/api/snapshots/${s.id}/archives/screenshot/download` : null,
-    tags: s.tags.map((tag) => ({
-      id: tag.id,
-      name: tag.name,
-      slug: tag.slug,
-      color: tag.color,
-      createdAt: tag.created_at,
-    })),
+    screenshotUrl: s.hasScreenshot ? archiveDownloadPath(s.id, "screenshot") : null,
+    tags: s.tags.map(serializeTag),
   };
 }
 
@@ -113,12 +120,10 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       try {
         parsed = new URL(url);
       } catch {
-        set.status = 400;
-        return { error: "invalid url" };
+        return apiError(set, 400, "VALIDATION", "invalid url");
       }
       if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        set.status = 400;
-        return { error: "invalid url" };
+        return apiError(set, 400, "VALIDATION", "invalid url");
       }
 
       // The shared runner bounds concurrency (WEBFROST_CONCURRENCY) and gives the
@@ -138,7 +143,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       body: t.Object({ url: t.String({ maxLength: MAX_URL_LENGTH }) }),
       response: {
         202: t.Object({ id: t.Number(), url: t.String(), status: t.String() }),
-        400: t.Object({ error: t.String(), code: t.Optional(t.String()) }),
+        400: t.Object({ error: t.String(), code: t.String() }),
       },
     },
   )
@@ -148,10 +153,8 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       const db = await getDb();
       try {
         const q = query.q?.trim();
-        // Whole numbers only: SQLite rejects a fractional LIMIT/OFFSET.
-        const page = Math.max(1, Math.trunc(Number(query.page)) || 1);
         // Capped for everyone, guests included: one request must not dump the archive.
-        const limit = Math.min(MAX_LIST_LIMIT, Math.max(1, Math.trunc(Number(query.limit)) || 20));
+        const { page, limit } = pageParams(query);
         const status = query.status?.trim() || undefined;
 
         if (q) {
@@ -204,22 +207,14 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
     "/:id",
     async ({ params, set, request }) => {
       const id = Number(params.id);
-      if (!Number.isInteger(id) || id <= 0) {
-        set.status = 404;
-        return { error: "not found" };
-      }
+      if (!Number.isInteger(id) || id <= 0) return apiError(set, 404, "NOT_FOUND", "not found");
 
-      // For file-backed extractors `content` is a storage reference (an absolute
-      // path or an S3 key). Anonymous visitors get the download URL instead.
       const guest = isGuestRequest(request);
       const db = await getDb();
       const storage = getStorage();
       try {
         const snapshot = await getSnapshot(db, id);
-        if (!snapshot) {
-          set.status = 404;
-          return { error: "not found" };
-        }
+        if (!snapshot) return apiError(set, 404, "NOT_FOUND", "not found");
         const extractorMeta: Record<
           string,
           {
@@ -258,18 +253,22 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
           id: snapshot.id,
           url: snapshot.url,
           status: snapshot.status,
-          createdAt: snapshot.created_at,
+          createdAt: isoTimestampRequired(snapshot.created_at),
           ...(summary ? snapshotSummary(summary) : {}),
           archiveResults: snapshot.archiveResults
             .filter((ar) => ar.error === null)
             .map((ar) => ({
               id: ar.id,
               extractor: ar.extractor,
-              content:
-                guest && ar.content !== null && FILE_BACKED_EXTRACTORS.has(ar.extractor)
-                  ? `/api/snapshots/${id}/archives/${ar.extractor}/download`
-                  : ar.content,
-              createdAt: ar.created_at,
+              // Inline results (readability JSON, html) carry their data. For file-backed ones
+              // the column holds a storage path or S3 key, which never leaves the server:
+              // clients fetch the file from downloadUrl.
+              content: FILE_BACKED_EXTRACTORS.has(ar.extractor) ? null : ar.content,
+              downloadUrl: archiveDownloadPath(id, ar.extractor),
+              previewUrl: PREVIEWABLE_EXTRACTORS.has(ar.extractor)
+                ? archivePreviewPath(id, ar.extractor)
+                : null,
+              createdAt: isoTimestampRequired(ar.created_at),
             })),
           extractorMeta,
         };
@@ -285,19 +284,13 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
     "/:id",
     async ({ params, set }) => {
       const id = Number(params.id);
-      if (!Number.isInteger(id) || id <= 0) {
-        set.status = 404;
-        return { error: "not found" };
-      }
+      if (!Number.isInteger(id) || id <= 0) return apiError(set, 404, "NOT_FOUND", "not found");
 
       const db = await getDb();
       const storage = getStorage();
       try {
         const deleted = await deleteSnapshot(db, id, storage);
-        if (!deleted) {
-          set.status = 404;
-          return { error: "not found" };
-        }
+        if (!deleted) return apiError(set, 404, "NOT_FOUND", "not found");
         set.status = 204;
         return null;
       } finally {
@@ -311,10 +304,13 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
     async ({ params, set }) => {
       const id = Number(params.id);
       const { extractor } = params;
-      const fail = (status: number, error: string) => {
-        set.status = status;
-        return { error };
-      };
+      const fail = (status: 400 | 403 | 404, error: string) =>
+        apiError(
+          set,
+          status,
+          status === 404 ? "NOT_FOUND" : status === 403 ? "FORBIDDEN" : "BAD_REQUEST",
+          error,
+        );
 
       if (!Number.isInteger(id) || id <= 0) return fail(404, "not found");
       if (!PREVIEWABLE_EXTRACTORS.has(extractor)) return fail(400, "extractor has no preview");
@@ -352,10 +348,13 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
     async ({ params, set }) => {
       const id = Number(params.id);
       const { extractor } = params;
-      const fail = (status: number, error: string) => {
-        set.status = status;
-        return { error };
-      };
+      const fail = (status: 400 | 403 | 404, error: string) =>
+        apiError(
+          set,
+          status,
+          status === 404 ? "NOT_FOUND" : status === 403 ? "FORBIDDEN" : "BAD_REQUEST",
+          error,
+        );
 
       if (!Number.isInteger(id) || id <= 0) return fail(404, "not found");
       if (!ALLOWED_EXTRACTORS.has(extractor)) return fail(400, "unknown extractor");

@@ -18,6 +18,7 @@ import { statsRouter } from "./routes/stats";
 import { snapshotTagsRouter, tagsRouter } from "./routes/tags";
 import { gracefulShutdown, installShutdownHandlers, shutdownTimeoutMs } from "./shutdown";
 import { type UiAssets, defaultUiAssets, mimeTypeFor } from "./ui-assets";
+import { API_PREFIX, LEGACY_API_PREFIX, successorPath } from "./version";
 
 export type { UiAssets } from "./ui-assets";
 export { directoryAssets, embeddedAssets } from "./ui-assets";
@@ -78,6 +79,21 @@ async function serveStaticFile(pathname: string): Promise<Response | null> {
   });
 }
 
+/** Every route of the HTTP API, mounted under /api/v1 and under the deprecated /api alias. */
+const apiRoutes = () =>
+  new Elysia()
+    .use(authPlugin)
+    .use(setupRouter)
+    .use(authRouter)
+    .use(snapshotsRouter)
+    .use(snapshotTagsRouter)
+    .use(schedulesRouter)
+    .use(tagsRouter)
+    .use(importRouter)
+    .use(importsRouter)
+    .use(settingsRouter)
+    .use(statsRouter);
+
 export const app = new Elysia()
   .onRequest(({ request, store, set }) => {
     (store as Record<string, number>).requestStart = Date.now();
@@ -90,6 +106,13 @@ export const app = new Elysia()
     set.headers["x-content-type-options"] = "nosniff";
     set.headers["x-frame-options"] = "DENY";
     set.headers["referrer-policy"] = "strict-origin-when-cross-origin";
+    // The unversioned /api alias answers like /api/v1 and says where to move (RFC 9745, RFC 8288).
+    const url = new URL(request.url);
+    const successor = successorPath(url.pathname);
+    if (successor) {
+      set.headers.deprecation = "true";
+      set.headers.link = `<${successor}${url.search}>; rel="successor-version"`;
+    }
   })
   // CSRF and content-type checks, before any body is parsed.
   .use(requestGuardPlugin)
@@ -108,49 +131,39 @@ export const app = new Elysia()
     return coded === response ? undefined : coded;
   })
   .get("/health", () => ({ status: "ok" }))
-  .group("/api", (app) =>
-    app
-      .use(authPlugin)
-      // Limits are per client IP and scoped by path, because a rate-limiter hook is
-      // global: without `path` it would also count requests to unrelated routes.
-      // 300 req/min for reads across the API.
-      .use(
-        rateLimiterPlugin({
-          limit: 300,
-          windowMs: 60_000,
-          methods: ["GET", "HEAD"],
-          path: /^\/api\//,
-        }),
-      )
-      // 60 req/min for the endpoints that start archive pipelines.
-      .use(
-        rateLimiterPlugin({
-          limit: 60,
-          windowMs: 60_000,
-          methods: ["POST"],
-          path: /^\/api\/(snapshots|import(\/file)?)\/?$/,
-        }),
-      )
-      // 10 req/min for anything that checks a password — slows down brute force.
-      .use(
-        rateLimiterPlugin({
-          limit: 10,
-          windowMs: 60_000,
-          methods: ["POST"],
-          path: /^\/api\/(auth\/login|auth\/change-password|setup)\/?$/,
-        }),
-      )
-      .use(setupRouter)
-      .use(authRouter)
-      .use(snapshotsRouter)
-      .use(snapshotTagsRouter)
-      .use(schedulesRouter)
-      .use(tagsRouter)
-      .use(importRouter)
-      .use(importsRouter)
-      .use(settingsRouter)
-      .use(statsRouter),
+  // Limits are per client IP and scoped by path, because a rate-limiter hook is
+  // global: without `path` it would also count requests to unrelated routes. The paths
+  // cover /api/v1 and the deprecated /api alias alike, so the alias is no way around them.
+  // 300 req/min for reads across the API.
+  .use(
+    rateLimiterPlugin({
+      limit: 300,
+      windowMs: 60_000,
+      methods: ["GET", "HEAD"],
+      path: /^\/api\//,
+    }),
   )
+  // 60 req/min for the endpoints that start archive pipelines.
+  .use(
+    rateLimiterPlugin({
+      limit: 60,
+      windowMs: 60_000,
+      methods: ["POST"],
+      path: /^\/api(?:\/v1)?\/(snapshots|import(\/file)?)\/?$/,
+    }),
+  )
+  // 10 req/min for anything that checks a password — slows down brute force.
+  .use(
+    rateLimiterPlugin({
+      limit: 10,
+      windowMs: 60_000,
+      methods: ["POST"],
+      path: /^\/api(?:\/v1)?\/(auth\/login|auth\/change-password|setup)\/?$/,
+    }),
+  )
+  .group(API_PREFIX, (app) => app.use(apiRoutes()))
+  // Deprecated: the same routes without the version, until a later 0.x removes them.
+  .group(LEGACY_API_PREFIX, (app) => app.use(apiRoutes()))
   .get("/*", async ({ set, request }) => {
     const url = new URL(request.url);
     // An unknown API route is an API error, not a page of the single-page app.
@@ -236,7 +249,7 @@ export function listenHostname(env: Record<string, string | undefined> = process
   return env.AUTH_DISABLED === "true" ? "127.0.0.1" : "0.0.0.0";
 }
 
-/** Warn when a fresh instance can be claimed by anyone who reaches POST /api/setup. */
+/** Warn when a fresh instance can be claimed by anyone who reaches POST /api/v1/setup. */
 async function warnIfSetupUnprotected(): Promise<void> {
   if (process.env.AUTH_DISABLED === "true" || setupToken() !== null) return;
   const db = await getDb();

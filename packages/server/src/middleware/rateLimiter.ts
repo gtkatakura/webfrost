@@ -1,6 +1,7 @@
 // Sliding-window in-memory rate limiter. No external dependencies — pure Map
 // of per-IP timestamp buckets, swept periodically so idle clients do not accumulate.
 import { Elysia } from "elysia";
+import { apiError } from "../errors";
 
 interface RateLimiterOptions {
   /** Maximum number of requests allowed in the window. */
@@ -180,9 +181,8 @@ export function rateLimiterPlugin(options: RateLimiterOptions) {
 
     const result = limiter.check(request, server);
     if (!result.allowed) {
-      set.status = 429;
       set.headers["retry-after"] = String(result.retryAfterSec);
-      return { error: "rate limit exceeded" };
+      return apiError(set, 429, "RATE_LIMITED", "rate limit exceeded");
     }
     return;
   });

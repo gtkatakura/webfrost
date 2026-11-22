@@ -71,10 +71,10 @@ console.log(`  Base: ${BASE}   iterations: ${ITERS}   warm-up: ${WARMUP}`);
 console.log();
 
 await benchRoute("GET /health", `${BASE}/health`);
-await benchRoute("GET /api/snapshots", `${BASE}/api/snapshots`);
-await benchRoute("GET /api/stats", `${BASE}/api/stats`);
-await benchRoute("GET /api/tags", `${BASE}/api/tags`);
-await benchRoute("GET /api/schedules", `${BASE}/api/schedules`);
+await benchRoute("GET /api/v1/snapshots", `${BASE}/api/v1/snapshots`);
+await benchRoute("GET /api/v1/stats", `${BASE}/api/v1/stats`);
+await benchRoute("GET /api/v1/tags", `${BASE}/api/v1/tags`);
+await benchRoute("GET /api/v1/schedules", `${BASE}/api/v1/schedules`);
 
 console.log();
 

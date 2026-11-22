@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { createAdminUser, createApiKey, createSession, hasAdminUser } from "@webfrost/core";
 import { Elysia, t } from "elysia";
 import { getDb, getSessionSecret, setSessionCookie } from "../context";
-import { apiErrorHandler } from "../errors";
+import { apiError, apiErrorHandler } from "../errors";
 import { MAX_PASSWORD_LENGTH, MAX_USERNAME_LENGTH } from "../limits";
 import { isPublicRead } from "./auth";
 
@@ -51,8 +51,7 @@ export const setupRouter = new Elysia({ prefix: "/setup" })
       if (expectedToken !== null) {
         const given = request.headers.get(SETUP_TOKEN_HEADER) ?? body.setupToken ?? "";
         if (!tokensMatch(given, expectedToken)) {
-          set.status = 403;
-          return { error: "invalid setup token", code: "SETUP_TOKEN_INVALID" };
+          return apiError(set, 403, "SETUP_TOKEN_INVALID", "invalid setup token");
         }
       }
 
@@ -62,23 +61,20 @@ export const setupRouter = new Elysia({ prefix: "/setup" })
       try {
         secret = getSessionSecret();
       } catch {
-        set.status = 500;
-        return { error: "server misconfigured" };
+        return apiError(set, 500, "INTERNAL", "server misconfigured");
       }
 
       const db = await getDb();
       try {
         if (await hasAdminUser(db)) {
-          set.status = 409;
-          return { error: "setup already complete" };
+          return apiError(set, 409, "CONFLICT", "setup already complete");
         }
 
         try {
           await createAdminUser(db, body.username, body.password);
         } catch {
           // Lost a race with another setup request: the admin exists now.
-          set.status = 409;
-          return { error: "setup already complete" };
+          return apiError(set, 409, "CONFLICT", "setup already complete");
         }
         const { rawKey } = await createApiKey(db, "default");
         setSessionCookie(cookie.session, await createSession(db, secret, body.username));

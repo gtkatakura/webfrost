@@ -15,7 +15,7 @@ import {
   parseCookie,
   setSessionCookie,
 } from "../context";
-import { apiErrorHandler } from "../errors";
+import { apiError, apiErrorHandler } from "../errors";
 import { MAX_PASSWORD_LENGTH, MAX_USERNAME_LENGTH } from "../limits";
 import { logger } from "../logger";
 
@@ -28,24 +28,25 @@ export function isPublicRead(): boolean {
  * The only routes an anonymous visitor may call when public read is on: listing,
  * searching and viewing snapshots, their tags and files, and the stats card.
  * Everything else — every write, schedules, imports, settings, API keys — stays
- * private. The optional /api prefix covers routers mounted standalone in tests.
+ * private. The prefix is optional (routers mounted standalone in tests), and both the v1
+ * prefix and the deprecated bare /api alias are covered.
  */
 const PUBLIC_READ_ROUTES = [
-  /^(?:\/api)?\/snapshots\/?$/,
-  /^(?:\/api)?\/snapshots\/\d+\/?$/,
-  /^(?:\/api)?\/snapshots\/\d+\/tags\/?$/,
-  /^(?:\/api)?\/snapshots\/\d+\/archives\/[a-z-]+\/(?:download|preview)$/,
-  /^(?:\/api)?\/tags\/?$/,
-  /^(?:\/api)?\/stats\/?$/,
+  /^(?:\/api(?:\/v1)?)?\/snapshots\/?$/,
+  /^(?:\/api(?:\/v1)?)?\/snapshots\/\d+\/?$/,
+  /^(?:\/api(?:\/v1)?)?\/snapshots\/\d+\/tags\/?$/,
+  /^(?:\/api(?:\/v1)?)?\/snapshots\/\d+\/archives\/[a-z-]+\/(?:download|preview)$/,
+  /^(?:\/api(?:\/v1)?)?\/tags\/?$/,
+  /^(?:\/api(?:\/v1)?)?\/stats\/?$/,
 ];
 
 // Routes that never require credentials (the /api prefix is optional for the same reason).
-const LOGIN_ROUTE = /^(?:\/api)?\/auth\/login\/?$/;
+const LOGIN_ROUTE = /^(?:\/api(?:\/v1)?)?\/auth\/login\/?$/;
 // Logout must work with an expired or revoked session too, or the browser keeps a
 // dead cookie it cannot get rid of.
-const LOGOUT_ROUTE = /^(?:\/api)?\/auth\/logout\/?$/;
-const SETUP_STATUS_ROUTE = /^(?:\/api)?\/setup\/status\/?$/;
-const SETUP_ROUTE = /^(?:\/api)?\/setup\/?$/;
+const LOGOUT_ROUTE = /^(?:\/api(?:\/v1)?)?\/auth\/logout\/?$/;
+const SETUP_STATUS_ROUTE = /^(?:\/api(?:\/v1)?)?\/setup\/status\/?$/;
+const SETUP_ROUTE = /^(?:\/api(?:\/v1)?)?\/setup\/?$/;
 
 // Requests let through as anonymous guests, so routes can hold back details
 // (such as storage paths) that only the admin should see.
@@ -65,11 +66,17 @@ export function isGuestRequest(request: Request): boolean {
  * - WEBFROST_PUBLIC_READ=true additionally admits anonymous GETs on the read-only
  *   routes listed above.
  */
+let warnedAuthDisabled = false;
+
 export function authPlugin(app: Elysia) {
   const authDisabled = process.env.AUTH_DISABLED === "true";
 
   if (authDisabled) {
-    logger.warn("AUTH_DISABLED=true — all auth checks bypassed (dev mode only)");
+    // Once per process: the plugin is mounted on /api/v1 and on the deprecated /api alias.
+    if (!warnedAuthDisabled) {
+      warnedAuthDisabled = true;
+      logger.warn("AUTH_DISABLED=true — all auth checks bypassed (dev mode only)");
+    }
     return app;
   }
 
@@ -113,8 +120,7 @@ export function authPlugin(app: Elysia) {
       return;
     }
 
-    set.status = 401;
-    return { error: "unauthorized" };
+    return apiError(set, 401, "UNAUTHORIZED", "unauthorized");
   });
 }
 
@@ -144,16 +150,14 @@ export const authRouter = new Elysia({ prefix: "/auth" })
       try {
         secret = getSessionSecret();
       } catch {
-        set.status = 500;
-        return { error: "server misconfigured" };
+        return apiError(set, 500, "INTERNAL", "server misconfigured");
       }
 
       const db = await getDb();
       try {
         const validUsername = await validateAdminCredentials(db, username, password);
         if (!validUsername) {
-          set.status = 401;
-          return { error: "invalid credentials" };
+          return apiError(set, 401, "INVALID_CREDENTIALS", "invalid credentials");
         }
         // The session this cookie replaces must not stay valid in a copy of the old one.
         await revokeCookieSession(request);
@@ -202,24 +206,21 @@ export const authRouter = new Elysia({ prefix: "/auth" })
       const { currentPassword, newPassword } = body;
 
       if (newPassword.length < 8) {
-        set.status = 400;
-        return { error: "New password must be at least 8 characters" };
+        return apiError(set, 400, "VALIDATION", "New password must be at least 8 characters");
       }
 
       const db = await getDb();
       try {
         const username = await getAdminUsername(db);
         if (!username) {
-          set.status = 404;
-          return { error: "No admin user found" };
+          return apiError(set, 404, "NOT_FOUND", "No admin user found");
         }
 
         const valid = await validateAdminCredentials(db, username, currentPassword);
         if (!valid) {
           // 403, not 401: the caller is authenticated, it is the supplied password that is wrong.
           // Clients treat 401 as "session expired" and would log the user out.
-          set.status = 403;
-          return { error: "Current password is incorrect" };
+          return apiError(set, 403, "INVALID_CREDENTIALS", "Current password is incorrect");
         }
 
         // Revokes every session for this user, including the caller's…

@@ -1,4 +1,5 @@
 import {
+  countImports,
   detectFormat,
   fetchRssFeedUrls,
   isUrlArchived,
@@ -9,8 +10,9 @@ import {
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
 import { getDb, getRunner } from "../context";
-import { apiErrorHandler } from "../errors";
+import { apiError, apiErrorHandler } from "../errors";
 import { MAX_URL_LENGTH, importMaxBytes, importMaxUrls } from "../limits";
+import { isoTimestampRequired, pageParams } from "../serialize";
 
 /** The 413 body for an import over a limit, or null when it is within them. */
 function overLimit(urls: string[]): { error: string; code: "PAYLOAD_TOO_LARGE" } | null {
@@ -71,7 +73,7 @@ async function queueUrls(
 export const importRouter = new Elysia({ prefix: "/import" })
   .onError(apiErrorHandler)
   /**
-   * POST /api/import
+   * POST /api/v1/import
    *
    * Import URLs from a feed or raw content.
    *
@@ -90,8 +92,7 @@ export const importRouter = new Elysia({ prefix: "/import" })
 
       // Validate that at least one source is provided
       if (!sourceUrl && !content) {
-        set.status = 400;
-        return { error: "either url or content is required" };
+        return apiError(set, 400, "VALIDATION", "either url or content is required");
       }
       if (content && Buffer.byteLength(content, "utf8") > importMaxBytes()) {
         set.status = 413;
@@ -107,8 +108,12 @@ export const importRouter = new Elysia({ prefix: "/import" })
         } catch (err) {
           // If RSS fetch fails and format was explicitly rss, return error
           if (formatHint === "rss") {
-            set.status = 400;
-            return { error: err instanceof Error ? err.message : "failed to fetch RSS feed" };
+            return apiError(
+              set,
+              400,
+              "FETCH_FAILED",
+              err instanceof Error ? err.message : "failed to fetch RSS feed",
+            );
           }
           urls = [];
         }
@@ -144,12 +149,20 @@ export const importRouter = new Elysia({ prefix: "/import" })
         try {
           response = await safeFetch(sourceUrl);
         } catch (err) {
-          set.status = 400;
-          return { error: err instanceof Error ? err.message : "failed to fetch url" };
+          return apiError(
+            set,
+            400,
+            "FETCH_FAILED",
+            err instanceof Error ? err.message : "failed to fetch url",
+          );
         }
         if (!response.ok) {
-          set.status = 400;
-          return { error: `HTTP ${response.status} fetching ${sourceUrl}` };
+          return apiError(
+            set,
+            400,
+            "FETCH_FAILED",
+            `HTTP ${response.status} fetching ${sourceUrl}`,
+          );
         }
         rawContent = await response.text();
         if (Buffer.byteLength(rawContent, "utf8") > importMaxBytes()) {
@@ -201,7 +214,7 @@ export const importRouter = new Elysia({ prefix: "/import" })
     },
   )
   /**
-   * POST /api/import/file
+   * POST /api/v1/import/file
    *
    * Import URLs from an uploaded file (OPML, Netscape bookmarks, RSS, or plain text).
    *
@@ -259,18 +272,33 @@ export const importRouter = new Elysia({ prefix: "/import" })
     },
   );
 
-export const importsRouter = new Elysia({ prefix: "/imports" }).get("/", async () => {
-  const db = await getDb();
-  try {
-    return (await listImports(db)).map((r) => ({
-      id: r.id,
-      sourceUrl: r.source_url,
-      format: r.format,
-      queued: r.queued,
-      skipped: r.skipped,
-      createdAt: r.created_at,
-    }));
-  } finally {
-    await db.close();
-  }
-});
+/** GET /api/v1/imports — the import history, newest first, in the list envelope. */
+export const importsRouter = new Elysia({ prefix: "/imports" }).onError(apiErrorHandler).get(
+  "/",
+  async ({ query }) => {
+    const { page, limit } = pageParams(query);
+    const db = await getDb();
+    try {
+      const [rows, total] = await Promise.all([
+        listImports(db, limit, (page - 1) * limit),
+        countImports(db),
+      ]);
+      return {
+        items: rows.map((r) => ({
+          id: r.id,
+          sourceUrl: r.source_url,
+          format: r.format,
+          queued: r.queued,
+          skipped: r.skipped,
+          createdAt: isoTimestampRequired(r.created_at),
+        })),
+        total,
+        page,
+        limit,
+      };
+    } finally {
+      await db.close();
+    }
+  },
+  { query: t.Object({ page: t.Optional(t.String()), limit: t.Optional(t.String()) }) },
+);

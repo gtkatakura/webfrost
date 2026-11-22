@@ -54,7 +54,7 @@ beforeAll(async () => {
   if (!port) throw new Error("Server failed to bind to a port");
   baseUrl = `http://localhost:${port}`;
 
-  // Seed admin user directly via core (avoids bootstrapping via /api/setup
+  // Seed admin user directly via core (avoids bootstrapping via /api/v1/setup
   // which would conflict with the "setup status" tests below).
   const { openDb, createAdminUser } = await import("@webfrost/core");
   const db = await openDb(testDir);
@@ -62,7 +62,7 @@ beforeAll(async () => {
   await db.close();
 
   // Obtain a session cookie that tests can reuse.
-  const loginRes = await fetch(`${baseUrl}/api/auth/login`, {
+  const loginRes = await fetch(`${baseUrl}/api/v1/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD }),
@@ -134,16 +134,16 @@ describe("security headers", () => {
 });
 
 describe("setup", () => {
-  test("GET /api/setup/status is public and returns needsSetup: false when admin exists", async () => {
+  test("GET /api/v1/setup/status is public and returns needsSetup: false when admin exists", async () => {
     // Public endpoint — no cookie required
-    const res = await fetch(`${baseUrl}/api/setup/status`);
+    const res = await fetch(`${baseUrl}/api/v1/setup/status`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { needsSetup: boolean };
     expect(body.needsSetup).toBe(false);
   });
 
-  test("POST /api/setup returns 409 when admin already exists", async () => {
-    const res = await fetch(`${baseUrl}/api/setup`, {
+  test("POST /api/v1/setup returns 409 when admin already exists", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/setup`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ username: "admin2", password: "password123" }),
@@ -153,8 +153,8 @@ describe("setup", () => {
 });
 
 describe("auth", () => {
-  test("POST /api/auth/login with wrong password returns 401", async () => {
-    const res = await fetch(`${baseUrl}/api/auth/login`, {
+  test("POST /api/v1/auth/login with wrong password returns 401", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/auth/login`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ username: ADMIN_USERNAME, password: "wrongpassword" }),
@@ -164,8 +164,8 @@ describe("auth", () => {
     expect(body.error).toBe("invalid credentials");
   });
 
-  test("POST /api/auth/login with correct credentials sets session cookie", async () => {
-    const res = await fetch(`${baseUrl}/api/auth/login`, {
+  test("POST /api/v1/auth/login with correct credentials sets session cookie", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/auth/login`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD }),
@@ -177,31 +177,31 @@ describe("auth", () => {
     expect(setCookie).toContain("SameSite=Strict");
   });
 
-  test("GET /api/auth/me with valid session returns username", async () => {
-    const res = await authed("/api/auth/me");
+  test("GET /api/v1/auth/me with valid session returns username", async () => {
+    const res = await authed("/api/v1/auth/me");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { username: string };
     expect(body.username).toBe(ADMIN_USERNAME);
   });
 
-  test("GET /api/auth/me without credentials returns 401", async () => {
-    const res = await fetch(`${baseUrl}/api/auth/me`);
+  test("GET /api/v1/auth/me without credentials returns 401", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/auth/me`);
     expect(res.status).toBe(401);
   });
 
-  test("POST /api/auth/change-password rejects wrong current password with 403", async () => {
-    const res = await authed("/api/auth/change-password", {
+  test("POST /api/v1/auth/change-password rejects wrong current password with 403", async () => {
+    const res = await authed("/api/v1/auth/change-password", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ currentPassword: "wrongpassword", newPassword: "NewPassword123!" }),
     });
     // 403, not 401: the session is fine, the supplied password is not.
     expect(res.status).toBe(403);
-    expect((await authed("/api/auth/me")).status).toBe(200);
+    expect((await authed("/api/v1/auth/me")).status).toBe(200);
   });
 
-  test("POST /api/auth/change-password rejects short new password with 400", async () => {
-    const res = await authed("/api/auth/change-password", {
+  test("POST /api/v1/auth/change-password rejects short new password with 400", async () => {
+    const res = await authed("/api/v1/auth/change-password", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ currentPassword: ADMIN_PASSWORD, newPassword: "short" }),
@@ -211,9 +211,9 @@ describe("auth", () => {
     expect(body.error).toContain("8 characters");
   });
 
-  test("POST /api/auth/change-password with valid credentials returns 200", async () => {
+  test("POST /api/v1/auth/change-password with valid credentials returns 200", async () => {
     const tmpPassword = "TmpNewPassword456!";
-    const changeRes = await authed("/api/auth/change-password", {
+    const changeRes = await authed("/api/v1/auth/change-password", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ currentPassword: ADMIN_PASSWORD, newPassword: tmpPassword }),
@@ -224,23 +224,23 @@ describe("auth", () => {
     const staleCookie = sessionCookie;
     adoptRenewedSession(changeRes);
     expect(sessionCookie).not.toBe(staleCookie);
-    const staleRes = await fetch(`${baseUrl}/api/auth/me`, { headers: { cookie: staleCookie } });
+    const staleRes = await fetch(`${baseUrl}/api/v1/auth/me`, { headers: { cookie: staleCookie } });
     expect(staleRes.status).toBe(401);
 
     // Restore original password so subsequent tests still work
-    const restoreRes = await authed("/api/auth/change-password", {
+    const restoreRes = await authed("/api/v1/auth/change-password", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ currentPassword: tmpPassword, newPassword: ADMIN_PASSWORD }),
     });
     expect(restoreRes.status).toBe(200);
     adoptRenewedSession(restoreRes);
-    expect((await authed("/api/auth/me")).status).toBe(200);
+    expect((await authed("/api/v1/auth/me")).status).toBe(200);
   });
 
-  test("POST /api/auth/logout clears session", async () => {
+  test("POST /api/v1/auth/logout clears session", async () => {
     // Log in with a fresh session
-    const loginRes = await fetch(`${baseUrl}/api/auth/login`, {
+    const loginRes = await fetch(`${baseUrl}/api/v1/auth/login`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD }),
@@ -248,7 +248,7 @@ describe("auth", () => {
     const freshCookie = (loginRes.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
 
     // Logout
-    const logoutRes = await fetch(`${baseUrl}/api/auth/logout`, {
+    const logoutRes = await fetch(`${baseUrl}/api/v1/auth/logout`, {
       method: "POST",
       headers: { cookie: freshCookie },
     });
@@ -256,13 +256,13 @@ describe("auth", () => {
     expect(logoutRes.headers.get("set-cookie") ?? "").toMatch(/session=;.*Max-Age=0/i);
 
     // The cookie is dead on the server, not just cleared in the browser.
-    const replay = await fetch(`${baseUrl}/api/auth/me`, { headers: { cookie: freshCookie } });
+    const replay = await fetch(`${baseUrl}/api/v1/auth/me`, { headers: { cookie: freshCookie } });
     expect(replay.status).toBe(401);
     // Other sessions are untouched.
-    expect((await authed("/api/auth/me")).status).toBe(200);
+    expect((await authed("/api/v1/auth/me")).status).toBe(200);
 
     // Logging out again with the now-dead cookie still clears it.
-    const again = await fetch(`${baseUrl}/api/auth/logout`, {
+    const again = await fetch(`${baseUrl}/api/v1/auth/logout`, {
       method: "POST",
       headers: { cookie: freshCookie },
     });
@@ -272,7 +272,7 @@ describe("auth", () => {
 
 describe("CSRF and content-type protection", () => {
   test("a cross-site form post with the session cookie is refused", async () => {
-    const res = await authed("/api/tags", {
+    const res = await authed("/api/v1/tags", {
       method: "POST",
       headers: {
         "content-type": "application/x-www-form-urlencoded",
@@ -282,22 +282,23 @@ describe("CSRF and content-type protection", () => {
     });
     expect(res.status).toBe(403);
     expect(((await res.json()) as { code: string }).code).toBe("CROSS_ORIGIN_REQUEST");
-    const tags = (await (await authed("/api/tags")).json()) as { name: string }[];
+    const tags = ((await (await authed("/api/v1/tags")).json()) as { items: { name: string }[] })
+      .items;
     expect(tags.some((t) => t.name === "csrf-tag")).toBe(false);
   });
 
   test("an Origin from another site is refused when fetch metadata is absent", async () => {
-    const res = await authed("/api/auth/logout", {
+    const res = await authed("/api/v1/auth/logout", {
       method: "POST",
       headers: { origin: "https://evil.example" },
     });
     expect(res.status).toBe(403);
     // The session survived.
-    expect((await authed("/api/auth/me")).status).toBe(200);
+    expect((await authed("/api/v1/auth/me")).status).toBe(200);
   });
 
   test("the UI's same-origin JSON fetch works", async () => {
-    const res = await authed("/api/tags", {
+    const res = await authed("/api/v1/tags", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -310,7 +311,7 @@ describe("CSRF and content-type protection", () => {
   });
 
   test("a non-JSON body on a JSON route is a 415", async () => {
-    const res = await authed("/api/snapshots", {
+    const res = await authed("/api/v1/snapshots", {
       method: "POST",
       headers: { "content-type": "text/plain" },
       body: JSON.stringify({ url: "https://example.com" }),
@@ -319,7 +320,7 @@ describe("CSRF and content-type protection", () => {
   });
 
   test("unknown API routes are a JSON 404", async () => {
-    const res = await authed("/api/does-not-exist");
+    const res = await authed("/api/v1/does-not-exist");
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "not found", code: "NOT_FOUND" });
   });
@@ -327,14 +328,14 @@ describe("CSRF and content-type protection", () => {
 
 describe("protected endpoints — unauthenticated access returns 401", () => {
   const protectedGets = [
-    "/api/snapshots",
-    "/api/tags",
-    "/api/schedules",
-    "/api/stats",
-    "/api/settings/info",
-    "/api/settings/keys",
-    "/api/imports",
-    "/api/auth/me",
+    "/api/v1/snapshots",
+    "/api/v1/tags",
+    "/api/v1/schedules",
+    "/api/v1/stats",
+    "/api/v1/settings/info",
+    "/api/v1/settings/keys",
+    "/api/v1/imports",
+    "/api/v1/auth/me",
   ];
 
   for (const path of protectedGets) {
@@ -344,8 +345,8 @@ describe("protected endpoints — unauthenticated access returns 401", () => {
     });
   }
 
-  test("POST /api/snapshots without auth → 401", async () => {
-    const res = await fetch(`${baseUrl}/api/snapshots`, {
+  test("POST /api/v1/snapshots without auth → 401", async () => {
+    const res = await fetch(`${baseUrl}/api/v1/snapshots`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ url: "https://example.com" }),
@@ -358,8 +359,8 @@ describe("API key authentication", () => {
   let apiKeyId = "";
   let rawApiKey = "";
 
-  test("POST /api/settings/keys creates API key and returns rawKey once", async () => {
-    const res = await authed("/api/settings/keys", {
+  test("POST /api/v1/settings/keys creates API key and returns rawKey once", async () => {
+    const res = await authed("/api/v1/settings/keys", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "e2e-test-key" }),
@@ -374,36 +375,36 @@ describe("API key authentication", () => {
   });
 
   test("protected endpoint accessible with valid API key", async () => {
-    const res = await withKey("/api/snapshots", rawApiKey);
+    const res = await withKey("/api/v1/snapshots", rawApiKey);
     expect(res.status).toBe(200);
   });
 
   test("protected endpoint returns 401 with invalid API key", async () => {
-    const res = await withKey("/api/snapshots", "invalid-key-value");
+    const res = await withKey("/api/v1/snapshots", "invalid-key-value");
     expect(res.status).toBe(401);
   });
 
-  test("GET /api/settings/keys lists the created key", async () => {
-    const res = await authed("/api/settings/keys");
+  test("GET /api/v1/settings/keys lists the created key", async () => {
+    const res = await authed("/api/v1/settings/keys");
     expect(res.status).toBe(200);
-    const keys = (await res.json()) as Array<{ id: string; name: string }>;
+    const keys = ((await res.json()) as { items: Array<{ id: string; name: string }> }).items;
     const found = keys.find((k) => k.id === apiKeyId);
     expect(found).toBeDefined();
     expect(found?.name).toBe("e2e-test-key");
   });
 
-  test("DELETE /api/settings/keys/:id revokes key (204)", async () => {
-    const res = await authed(`/api/settings/keys/${apiKeyId}`, { method: "DELETE" });
+  test("DELETE /api/v1/settings/keys/:id revokes key (204)", async () => {
+    const res = await authed(`/api/v1/settings/keys/${apiKeyId}`, { method: "DELETE" });
     expect(res.status).toBe(204);
   });
 
   test("revoked key no longer authenticates", async () => {
-    const res = await withKey("/api/snapshots", rawApiKey);
+    const res = await withKey("/api/v1/snapshots", rawApiKey);
     expect(res.status).toBe(401);
   });
 
-  test("DELETE /api/settings/keys/:id returns 404 for unknown key", async () => {
-    const res = await authed("/api/settings/keys/nonexistent-id", { method: "DELETE" });
+  test("DELETE /api/v1/settings/keys/:id returns 404 for unknown key", async () => {
+    const res = await authed("/api/v1/settings/keys/nonexistent-id", { method: "DELETE" });
     expect(res.status).toBe(404);
   });
 });
@@ -411,16 +412,16 @@ describe("API key authentication", () => {
 describe("snapshots", () => {
   let snapshotId: number;
 
-  test("GET /api/snapshots returns empty list initially", async () => {
-    const res = await authed("/api/snapshots");
+  test("GET /api/v1/snapshots returns empty list initially", async () => {
+    const res = await authed("/api/v1/snapshots");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { items: unknown[]; total: number };
     expect(Array.isArray(body.items)).toBe(true);
     expect(typeof body.total).toBe("number");
   });
 
-  test("POST /api/snapshots with valid URL returns 202 and snapshot id", async () => {
-    const res = await authed("/api/snapshots", {
+  test("POST /api/v1/snapshots with valid URL returns 202 and snapshot id", async () => {
+    const res = await authed("/api/v1/snapshots", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ url: "https://example.com" }),
@@ -433,8 +434,8 @@ describe("snapshots", () => {
     snapshotId = body.id;
   });
 
-  test("POST /api/snapshots with invalid URL returns 400", async () => {
-    const res = await authed("/api/snapshots", {
+  test("POST /api/v1/snapshots with invalid URL returns 400", async () => {
+    const res = await authed("/api/v1/snapshots", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ url: "not-a-url" }),
@@ -444,8 +445,8 @@ describe("snapshots", () => {
     expect(body.error).toBe("invalid url");
   });
 
-  test("POST /api/snapshots with non-HTTP protocol returns 400", async () => {
-    const res = await authed("/api/snapshots", {
+  test("POST /api/v1/snapshots with non-HTTP protocol returns 400", async () => {
+    const res = await authed("/api/v1/snapshots", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ url: "ftp://example.com" }),
@@ -453,8 +454,8 @@ describe("snapshots", () => {
     expect(res.status).toBe(400);
   });
 
-  test("GET /api/snapshots returns the created snapshot", async () => {
-    const res = await authed("/api/snapshots");
+  test("GET /api/v1/snapshots returns the created snapshot", async () => {
+    const res = await authed("/api/v1/snapshots");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { items: Array<{ id: number; url: string }> };
     const found = body.items.find((s) => s.id === snapshotId);
@@ -462,8 +463,8 @@ describe("snapshots", () => {
     expect(found?.url).toBe("https://example.com");
   });
 
-  test("GET /api/snapshots?page=1&limit=5 respects pagination params", async () => {
-    const res = await authed("/api/snapshots?page=1&limit=5");
+  test("GET /api/v1/snapshots?page=1&limit=5 respects pagination params", async () => {
+    const res = await authed("/api/v1/snapshots?page=1&limit=5");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { items: unknown[]; page: number; limit: number };
     expect(body.page).toBe(1);
@@ -471,10 +472,10 @@ describe("snapshots", () => {
     expect(body.items.length).toBeLessThanOrEqual(5);
   });
 
-  test("GET /api/snapshots?q=example returns valid search response structure", async () => {
+  test("GET /api/v1/snapshots?q=example returns valid search response structure", async () => {
     // FTS index is populated only after pipeline completion, so we just verify
     // the endpoint returns the correct paginated response structure.
-    const res = await authed("/api/snapshots?q=example");
+    const res = await authed("/api/v1/snapshots?q=example");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       items: Array<{ id: number; url: string }>;
@@ -488,8 +489,8 @@ describe("snapshots", () => {
     expect(typeof body.limit).toBe("number");
   });
 
-  test("GET /api/snapshots/:id returns snapshot detail", async () => {
-    const res = await authed(`/api/snapshots/${snapshotId}`);
+  test("GET /api/v1/snapshots/:id returns snapshot detail", async () => {
+    const res = await authed(`/api/v1/snapshots/${snapshotId}`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { id: number; url: string; status: string };
     expect(body.id).toBe(snapshotId);
@@ -497,28 +498,28 @@ describe("snapshots", () => {
     expect(typeof body.status).toBe("string");
   });
 
-  test("GET /api/snapshots/999999 returns 404", async () => {
-    const res = await authed("/api/snapshots/999999");
+  test("GET /api/v1/snapshots/999999 returns 404", async () => {
+    const res = await authed("/api/v1/snapshots/999999");
     expect(res.status).toBe(404);
   });
 
-  test("GET /api/snapshots/abc returns 404 (non-numeric id)", async () => {
-    const res = await authed("/api/snapshots/abc");
+  test("GET /api/v1/snapshots/abc returns 404 (non-numeric id)", async () => {
+    const res = await authed("/api/v1/snapshots/abc");
     expect(res.status).toBe(404);
   });
 
-  test("DELETE /api/snapshots/:id returns 204", async () => {
-    const res = await authed(`/api/snapshots/${snapshotId}`, { method: "DELETE" });
+  test("DELETE /api/v1/snapshots/:id returns 204", async () => {
+    const res = await authed(`/api/v1/snapshots/${snapshotId}`, { method: "DELETE" });
     expect(res.status).toBe(204);
   });
 
-  test("GET /api/snapshots/:id after deletion returns 404", async () => {
-    const res = await authed(`/api/snapshots/${snapshotId}`);
+  test("GET /api/v1/snapshots/:id after deletion returns 404", async () => {
+    const res = await authed(`/api/v1/snapshots/${snapshotId}`);
     expect(res.status).toBe(404);
   });
 
-  test("DELETE /api/snapshots/999999 returns 404", async () => {
-    const res = await authed("/api/snapshots/999999", { method: "DELETE" });
+  test("DELETE /api/v1/snapshots/999999 returns 404", async () => {
+    const res = await authed("/api/v1/snapshots/999999", { method: "DELETE" });
     expect(res.status).toBe(404);
   });
 });
@@ -526,7 +527,7 @@ describe("snapshots", () => {
 describe("download endpoint", () => {
   test("unknown extractor returns 400", async () => {
     // Need a snapshot id that exists — create one for this test
-    const createRes = await authed("/api/snapshots", {
+    const createRes = await authed("/api/v1/snapshots", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ url: "https://download-test.example.com" }),
@@ -534,17 +535,17 @@ describe("download endpoint", () => {
     expect(createRes.status).toBe(202);
     const { id } = (await createRes.json()) as { id: number };
 
-    const res = await authed(`/api/snapshots/${id}/archives/unknownextractor/download`);
+    const res = await authed(`/api/v1/snapshots/${id}/archives/unknownextractor/download`);
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("unknown extractor");
 
     // Cleanup
-    await authed(`/api/snapshots/${id}`, { method: "DELETE" });
+    await authed(`/api/v1/snapshots/${id}`, { method: "DELETE" });
   });
 
   test("known extractor on snapshot with no archive returns 404", async () => {
-    const createRes = await authed("/api/snapshots", {
+    const createRes = await authed("/api/v1/snapshots", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ url: "https://download-missing.example.com" }),
@@ -553,19 +554,19 @@ describe("download endpoint", () => {
     const { id } = (await createRes.json()) as { id: number };
 
     // html extractor — snapshot exists but pipeline hasn't completed, so no archive
-    const res = await authed(`/api/snapshots/${id}/archives/html/download`);
+    const res = await authed(`/api/v1/snapshots/${id}/archives/html/download`);
     expect(res.status).toBe(404);
 
-    await authed(`/api/snapshots/${id}`, { method: "DELETE" });
+    await authed(`/api/v1/snapshots/${id}`, { method: "DELETE" });
   });
 
   test("non-numeric snapshot id returns 404", async () => {
-    const res = await authed("/api/snapshots/abc/archives/html/download");
+    const res = await authed("/api/v1/snapshots/abc/archives/html/download");
     expect(res.status).toBe(404);
   });
 
   test("non-existent snapshot id returns 404", async () => {
-    const res = await authed("/api/snapshots/999999/archives/html/download");
+    const res = await authed("/api/v1/snapshots/999999/archives/html/download");
     expect(res.status).toBe(404);
   });
 });
@@ -574,15 +575,15 @@ describe("tags", () => {
   let tagId: number;
   let snapshotId: number;
 
-  test("GET /api/tags returns list (may be empty)", async () => {
-    const res = await authed("/api/tags");
+  test("GET /api/v1/tags returns list (may be empty)", async () => {
+    const res = await authed("/api/v1/tags");
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(Array.isArray(body)).toBe(true);
+    expect(Array.isArray((body as { items: unknown }).items)).toBe(true);
   });
 
-  test("POST /api/tags creates a new tag (201)", async () => {
-    const res = await authed("/api/tags", {
+  test("POST /api/v1/tags creates a new tag (201)", async () => {
+    const res = await authed("/api/v1/tags", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "e2e-tag", color: "#ff0000" }),
@@ -595,8 +596,8 @@ describe("tags", () => {
     tagId = body.id;
   });
 
-  test("POST /api/tags duplicate returns 409", async () => {
-    const res = await authed("/api/tags", {
+  test("POST /api/v1/tags duplicate returns 409", async () => {
+    const res = await authed("/api/v1/tags", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "e2e-tag" }),
@@ -604,15 +605,15 @@ describe("tags", () => {
     expect(res.status).toBe(409);
   });
 
-  test("GET /api/tags lists the created tag", async () => {
-    const res = await authed("/api/tags");
-    const tags = (await res.json()) as Array<{ id: number; name: string }>;
+  test("GET /api/v1/tags lists the created tag", async () => {
+    const res = await authed("/api/v1/tags");
+    const tags = ((await res.json()) as { items: Array<{ id: number; name: string }> }).items;
     expect(tags.some((t) => t.id === tagId)).toBe(true);
   });
 
   test("snapshot tag flow: add, list, remove", async () => {
     // Create a snapshot to attach the tag to
-    const snapRes = await authed("/api/snapshots", {
+    const snapRes = await authed("/api/v1/snapshots", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ url: "https://tag-test.example.com" }),
@@ -621,7 +622,7 @@ describe("tags", () => {
     ({ id: snapshotId } = (await snapRes.json()) as { id: number });
 
     // Add tag to snapshot
-    const addRes = await authed(`/api/snapshots/${snapshotId}/tags`, {
+    const addRes = await authed(`/api/v1/snapshots/${snapshotId}/tags`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ tagId }),
@@ -629,33 +630,33 @@ describe("tags", () => {
     expect(addRes.status).toBe(201);
 
     // List tags on snapshot
-    const listRes = await authed(`/api/snapshots/${snapshotId}/tags`);
+    const listRes = await authed(`/api/v1/snapshots/${snapshotId}/tags`);
     expect(listRes.status).toBe(200);
-    const snapshotTags = (await listRes.json()) as Array<{ id: number }>;
+    const snapshotTags = ((await listRes.json()) as { items: Array<{ id: number }> }).items;
     expect(snapshotTags.some((t) => t.id === tagId)).toBe(true);
 
     // Remove tag from snapshot
-    const removeTagRes = await authed(`/api/snapshots/${snapshotId}/tags/${tagId}`, {
+    const removeTagRes = await authed(`/api/v1/snapshots/${snapshotId}/tags/${tagId}`, {
       method: "DELETE",
     });
     expect(removeTagRes.status).toBe(204);
 
     // Cleanup snapshot
-    await authed(`/api/snapshots/${snapshotId}`, { method: "DELETE" });
+    await authed(`/api/v1/snapshots/${snapshotId}`, { method: "DELETE" });
   });
 
-  test("GET /api/snapshots/999999/tags returns 404 for unknown snapshot", async () => {
-    const res = await authed("/api/snapshots/999999/tags");
+  test("GET /api/v1/snapshots/999999/tags returns 404 for unknown snapshot", async () => {
+    const res = await authed("/api/v1/snapshots/999999/tags");
     expect(res.status).toBe(404);
   });
 
-  test("DELETE /api/tags/:id removes the tag (204)", async () => {
-    const res = await authed(`/api/tags/${tagId}`, { method: "DELETE" });
+  test("DELETE /api/v1/tags/:id removes the tag (204)", async () => {
+    const res = await authed(`/api/v1/tags/${tagId}`, { method: "DELETE" });
     expect(res.status).toBe(204);
   });
 
-  test("DELETE /api/tags/999999 returns 404", async () => {
-    const res = await authed("/api/tags/999999", { method: "DELETE" });
+  test("DELETE /api/v1/tags/999999 returns 404", async () => {
+    const res = await authed("/api/v1/tags/999999", { method: "DELETE" });
     expect(res.status).toBe(404);
   });
 });
@@ -663,15 +664,15 @@ describe("tags", () => {
 describe("schedules", () => {
   let scheduleId: number;
 
-  test("GET /api/schedules returns empty list initially", async () => {
-    const res = await authed("/api/schedules");
+  test("GET /api/v1/schedules returns empty list initially", async () => {
+    const res = await authed("/api/v1/schedules");
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(Array.isArray(body)).toBe(true);
+    expect(Array.isArray((body as { items: unknown }).items)).toBe(true);
   });
 
-  test("POST /api/schedules with valid cron returns 201", async () => {
-    const res = await authed("/api/schedules", {
+  test("POST /api/v1/schedules with valid cron returns 201", async () => {
+    const res = await authed("/api/v1/schedules", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ url: "https://schedule-test.example.com", cron: "0 * * * *" }),
@@ -690,8 +691,8 @@ describe("schedules", () => {
     scheduleId = body.id;
   });
 
-  test("POST /api/schedules with invalid URL returns 400", async () => {
-    const res = await authed("/api/schedules", {
+  test("POST /api/v1/schedules with invalid URL returns 400", async () => {
+    const res = await authed("/api/v1/schedules", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ url: "not-a-url", cron: "0 * * * *" }),
@@ -699,20 +700,20 @@ describe("schedules", () => {
     expect(res.status).toBe(400);
   });
 
-  test("GET /api/schedules/:id returns schedule", async () => {
-    const res = await authed(`/api/schedules/${scheduleId}`);
+  test("GET /api/v1/schedules/:id returns schedule", async () => {
+    const res = await authed(`/api/v1/schedules/${scheduleId}`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { id: number; paused: boolean };
     expect(body.id).toBe(scheduleId);
   });
 
-  test("GET /api/schedules/999999 returns 404", async () => {
-    const res = await authed("/api/schedules/999999");
+  test("GET /api/v1/schedules/999999 returns 404", async () => {
+    const res = await authed("/api/v1/schedules/999999");
     expect(res.status).toBe(404);
   });
 
-  test("PATCH /api/schedules/:id pauses the schedule", async () => {
-    const res = await authed(`/api/schedules/${scheduleId}`, {
+  test("PATCH /api/v1/schedules/:id pauses the schedule", async () => {
+    const res = await authed(`/api/v1/schedules/${scheduleId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ paused: true }),
@@ -722,8 +723,8 @@ describe("schedules", () => {
     expect(body.paused).toBe(true);
   });
 
-  test("PATCH /api/schedules/:id resumes the schedule", async () => {
-    const res = await authed(`/api/schedules/${scheduleId}`, {
+  test("PATCH /api/v1/schedules/:id resumes the schedule", async () => {
+    const res = await authed(`/api/v1/schedules/${scheduleId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ paused: false }),
@@ -733,8 +734,8 @@ describe("schedules", () => {
     expect(body.paused).toBe(false);
   });
 
-  test("PATCH /api/schedules/999999 returns 404", async () => {
-    const res = await authed("/api/schedules/999999", {
+  test("PATCH /api/v1/schedules/999999 returns 404", async () => {
+    const res = await authed("/api/v1/schedules/999999", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ paused: true }),
@@ -742,20 +743,20 @@ describe("schedules", () => {
     expect(res.status).toBe(404);
   });
 
-  test("DELETE /api/schedules/:id removes the schedule (204)", async () => {
-    const res = await authed(`/api/schedules/${scheduleId}`, { method: "DELETE" });
+  test("DELETE /api/v1/schedules/:id removes the schedule (204)", async () => {
+    const res = await authed(`/api/v1/schedules/${scheduleId}`, { method: "DELETE" });
     expect(res.status).toBe(204);
   });
 
-  test("DELETE /api/schedules/999999 returns 404", async () => {
-    const res = await authed("/api/schedules/999999", { method: "DELETE" });
+  test("DELETE /api/v1/schedules/999999 returns 404", async () => {
+    const res = await authed("/api/v1/schedules/999999", { method: "DELETE" });
     expect(res.status).toBe(404);
   });
 });
 
 describe("settings", () => {
-  test("GET /api/settings/info returns version and storagePath", async () => {
-    const res = await authed("/api/settings/info");
+  test("GET /api/v1/settings/info returns version and storagePath", async () => {
+    const res = await authed("/api/v1/settings/info");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       version: string;
@@ -769,8 +770,8 @@ describe("settings", () => {
 });
 
 describe("stats", () => {
-  test("GET /api/stats returns stats object", async () => {
-    const res = await authed("/api/stats");
+  test("GET /api/v1/stats returns stats object", async () => {
+    const res = await authed("/api/v1/stats");
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(typeof body).toBe("object");
@@ -779,8 +780,8 @@ describe("stats", () => {
 });
 
 describe("import", () => {
-  test("POST /api/import with text content returns 202", async () => {
-    const res = await authed("/api/import", {
+  test("POST /api/v1/import with text content returns 202", async () => {
+    const res = await authed("/api/v1/import", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -795,13 +796,13 @@ describe("import", () => {
     expect(body.queued).toBeGreaterThanOrEqual(1);
   });
 
-  test("POST /api/import: text format queues the same URL again (no deduplication for non-RSS)", async () => {
+  test("POST /api/v1/import: text format queues the same URL again (no deduplication for non-RSS)", async () => {
     // The import route only deduplicates for RSS format. Text imports always queue.
     const payload = {
       content: "https://no-dedup-test.example.com",
       format: "text",
     };
-    const first = await authed("/api/import", {
+    const first = await authed("/api/v1/import", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
@@ -812,7 +813,7 @@ describe("import", () => {
     expect(firstBody.skipped).toBe(0);
 
     // Second import of same URL — text format does not deduplicate
-    const second = await authed("/api/import", {
+    const second = await authed("/api/v1/import", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
@@ -823,11 +824,11 @@ describe("import", () => {
     expect(secondBody.skipped).toBe(0);
   });
 
-  test("GET /api/imports lists import history", async () => {
-    const res = await authed("/api/imports");
+  test("GET /api/v1/imports lists import history", async () => {
+    const res = await authed("/api/v1/imports");
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(Array.isArray(body)).toBe(true);
+    expect(Array.isArray((body as { items: unknown }).items)).toBe(true);
   });
 });
 
@@ -836,7 +837,7 @@ describe("rate limiting", () => {
   // from other tests sharing the "unknown" default IP bucket.
   const RATE_LIMIT_IP = "192.0.2.99";
 
-  test("POST /api/snapshots returns 429 after exceeding 60 req/min limit", async () => {
+  test("POST /api/v1/snapshots returns 429 after exceeding 60 req/min limit", async () => {
     // Send 60 requests (the limit) — all should succeed
     const headers = {
       "content-type": "application/json",
@@ -846,12 +847,16 @@ describe("rate limiting", () => {
     const body = JSON.stringify({ url: "http://localhost:1" }); // fast-fail URL
 
     for (let i = 0; i < 60; i++) {
-      const res = await fetch(`${baseUrl}/api/snapshots`, { method: "POST", headers, body });
+      const res = await fetch(`${baseUrl}/api/v1/snapshots`, { method: "POST", headers, body });
       expect(res.status).toBe(202);
     }
 
     // 61st request must be rate-limited
-    const limitedRes = await fetch(`${baseUrl}/api/snapshots`, { method: "POST", headers, body });
+    const limitedRes = await fetch(`${baseUrl}/api/v1/snapshots`, {
+      method: "POST",
+      headers,
+      body,
+    });
     expect(limitedRes.status).toBe(429);
     const limitedBody = (await limitedRes.json()) as { error: string };
     expect(limitedBody.error).toBe("rate limit exceeded");
@@ -865,15 +870,15 @@ describe("login rate limiting", () => {
     const body = JSON.stringify({ username: ADMIN_USERNAME, password: "definitely-wrong" });
 
     for (let i = 0; i < 10; i++) {
-      const res = await fetch(`${baseUrl}/api/auth/login`, { method: "POST", headers, body });
+      const res = await fetch(`${baseUrl}/api/v1/auth/login`, { method: "POST", headers, body });
       expect(res.status).toBe(401);
     }
-    const limited = await fetch(`${baseUrl}/api/auth/login`, { method: "POST", headers, body });
+    const limited = await fetch(`${baseUrl}/api/v1/auth/login`, { method: "POST", headers, body });
     expect(limited.status).toBe(429);
     expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
 
     // Another client is unaffected.
-    const other = await fetch(`${baseUrl}/api/auth/login`, {
+    const other = await fetch(`${baseUrl}/api/v1/auth/login`, {
       method: "POST",
       headers: { ...headers, "x-forwarded-for": "192.0.2.51" },
       body,
@@ -911,7 +916,7 @@ describe("archive → search round trip", () => {
 
   async function waitUntilSettled(id: number): Promise<string> {
     for (let i = 0; i < 300; i++) {
-      const res = await authed(`/api/snapshots/${id}`);
+      const res = await authed(`/api/v1/snapshots/${id}`);
       const { status } = (await res.json()) as { status: string };
       if (status !== "pending") return status;
       await Bun.sleep(200);
@@ -921,7 +926,7 @@ describe("archive → search round trip", () => {
 
   test("a snapshot created over HTTP is archived, summarised and searchable", async () => {
     const url = `http://127.0.0.1:${origin.port}/notes`;
-    const created = await authed("/api/snapshots", {
+    const created = await authed("/api/v1/snapshots", {
       method: "POST",
       headers: { "content-type": "application/json", "x-forwarded-for": "192.0.2.60" },
       body: JSON.stringify({ url }),
@@ -932,7 +937,7 @@ describe("archive → search round trip", () => {
     expect(await waitUntilSettled(id)).toBe("done");
 
     // Detail carries the same summary fields as the list.
-    const detail = (await (await authed(`/api/snapshots/${id}`)).json()) as {
+    const detail = (await (await authed(`/api/v1/snapshots/${id}`)).json()) as {
       title: string;
       extractors: string[];
       tags: unknown[];
@@ -947,7 +952,7 @@ describe("archive → search round trip", () => {
     }
 
     // Search hits carry status/title/extractors and an escaped snippet.
-    const search = (await (await authed("/api/snapshots?q=cryosphere")).json()) as {
+    const search = (await (await authed("/api/v1/snapshots?q=cryosphere")).json()) as {
       total: number;
       items: { id: number; snippet: string; status: string; title: string; extractors: string[] }[];
     };
@@ -963,7 +968,7 @@ describe("archive → search round trip", () => {
 
   test("URLs imported over HTTP are archived too", async () => {
     const base = `http://127.0.0.1:${origin.port}`;
-    const res = await authed("/api/import", {
+    const res = await authed("/api/v1/import", {
       method: "POST",
       headers: { "content-type": "application/json", "x-forwarded-for": "192.0.2.61" },
       body: JSON.stringify({ content: `${base}/imported-a\n${base}/imported-b\n`, format: "text" }),
@@ -974,7 +979,7 @@ describe("archive → search round trip", () => {
     let pending = 2;
     for (let i = 0; i < 300 && pending > 0; i++) {
       await Bun.sleep(200);
-      const list = (await (await authed("/api/snapshots?limit=1000")).json()) as {
+      const list = (await (await authed("/api/v1/snapshots?limit=1000")).json()) as {
         items: { url: string; status: string }[];
       };
       const imported = list.items.filter((s) => s.url.includes("/imported-"));
@@ -1004,7 +1009,7 @@ describe("archive preview", () => {
     );
     await db.close();
 
-    const res = await authed(`/api/snapshots/${id}/archives/dom-snapshot/preview`);
+    const res = await authed(`/api/v1/snapshots/${id}/archives/dom-snapshot/preview`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/html");
     expect(await res.text()).toBe(hostile);
@@ -1021,14 +1026,14 @@ describe("archive preview", () => {
     expect(res.headers.get("content-disposition")).toBeNull();
 
     // Only the HTML formats have a preview; everything else stays download-only.
-    expect((await authed(`/api/snapshots/${id}/archives/html/preview`)).status).toBe(400);
-    expect((await authed(`/api/snapshots/${id}/archives/singlefile/preview`)).status).toBe(404);
+    expect((await authed(`/api/v1/snapshots/${id}/archives/html/preview`)).status).toBe(400);
+    expect((await authed(`/api/v1/snapshots/${id}/archives/singlefile/preview`)).status).toBe(404);
     expect(
-      (await fetch(`${baseUrl}/api/snapshots/${id}/archives/dom-snapshot/preview`)).status,
+      (await fetch(`${baseUrl}/api/v1/snapshots/${id}/archives/dom-snapshot/preview`)).status,
     ).toBe(401);
 
     // Downloads are still attachments, and the app shell still forbids being framed.
-    const download = await authed(`/api/snapshots/${id}/archives/dom-snapshot/download`);
+    const download = await authed(`/api/v1/snapshots/${id}/archives/dom-snapshot/download`);
     expect(download.headers.get("content-disposition")).toContain("attachment");
     const shell = await fetch(`${baseUrl}/health`);
     expect(shell.headers.get("x-frame-options")).toBe("DENY");
@@ -1073,20 +1078,20 @@ describe("public read / private write", () => {
   });
 
   test("setup status advertises the mode", async () => {
-    const body = (await (await anon("/api/setup/status")).json()) as { publicRead: boolean };
+    const body = (await (await anon("/api/v1/setup/status")).json()) as { publicRead: boolean };
     expect(body.publicRead).toBe(true);
   });
 
   test("anonymous visitors can browse snapshots, tags, stats and files", async () => {
     for (const path of [
-      "/api/snapshots",
-      "/api/snapshots?q=public",
-      `/api/snapshots/${snapshotId}`,
-      `/api/snapshots/${snapshotId}/tags`,
-      `/api/snapshots/${snapshotId}/archives/dom-snapshot/download`,
-      `/api/snapshots/${snapshotId}/archives/dom-snapshot/preview`,
-      "/api/tags",
-      "/api/stats",
+      "/api/v1/snapshots",
+      "/api/v1/snapshots?q=public",
+      `/api/v1/snapshots/${snapshotId}`,
+      `/api/v1/snapshots/${snapshotId}/tags`,
+      `/api/v1/snapshots/${snapshotId}/archives/dom-snapshot/download`,
+      `/api/v1/snapshots/${snapshotId}/archives/dom-snapshot/preview`,
+      "/api/v1/tags",
+      "/api/v1/stats",
     ]) {
       const res = await anon(path);
       expect(`${path} → ${res.status}`).toBe(`${path} → 200`);
@@ -1095,15 +1100,15 @@ describe("public read / private write", () => {
 
   test("anonymous visitors cannot change anything", async () => {
     const attempts: [string, RequestInit][] = [
-      ["/api/snapshots", jsonBody({ url: "https://example.com" })],
-      [`/api/snapshots/${snapshotId}`, { method: "DELETE" }],
-      ["/api/tags", jsonBody({ name: "anon-tag" })],
-      [`/api/snapshots/${snapshotId}/tags`, jsonBody({ tagId: 1 })],
-      ["/api/import", jsonBody({ content: "https://example.com", format: "text" })],
-      ["/api/schedules", jsonBody({ url: "https://example.com", cron: "* * * * *" })],
-      ["/api/settings/keys", jsonBody({ name: "anon-key" })],
+      ["/api/v1/snapshots", jsonBody({ url: "https://example.com" })],
+      [`/api/v1/snapshots/${snapshotId}`, { method: "DELETE" }],
+      ["/api/v1/tags", jsonBody({ name: "anon-tag" })],
+      [`/api/v1/snapshots/${snapshotId}/tags`, jsonBody({ tagId: 1 })],
+      ["/api/v1/import", jsonBody({ content: "https://example.com", format: "text" })],
+      ["/api/v1/schedules", jsonBody({ url: "https://example.com", cron: "* * * * *" })],
+      ["/api/v1/settings/keys", jsonBody({ name: "anon-key" })],
       [
-        "/api/auth/change-password",
+        "/api/v1/auth/change-password",
         jsonBody({ currentPassword: ADMIN_PASSWORD, newPassword: "anon-password-1" }),
       ],
     ];
@@ -1112,45 +1117,58 @@ describe("public read / private write", () => {
       expect(`${init.method} ${path} → ${res.status}`).toBe(`${init.method} ${path} → 401`);
     }
     // The snapshot is still there.
-    expect((await anon(`/api/snapshots/${snapshotId}`)).status).toBe(200);
+    expect((await anon(`/api/v1/snapshots/${snapshotId}`)).status).toBe(200);
   });
 
   test("private read routes stay private", async () => {
     for (const path of [
-      "/api/auth/me",
-      "/api/schedules",
-      "/api/imports",
-      "/api/settings/info",
-      "/api/settings/keys",
+      "/api/v1/auth/me",
+      "/api/v1/schedules",
+      "/api/v1/imports",
+      "/api/v1/settings/info",
+      "/api/v1/settings/keys",
     ]) {
       const res = await anon(path);
       expect(`${path} → ${res.status}`).toBe(`${path} → 401`);
     }
   });
 
-  test("storage paths are shown to the admin but not to anonymous visitors", async () => {
-    type Detail = { archiveResults: { extractor: string; content: string }[] };
-    const contentOf = (d: Detail, extractor: string) =>
-      d.archiveResults.find((r) => r.extractor === extractor)?.content;
+  test("storage paths never leave the server; every result has a download URL", async () => {
+    type Result = {
+      extractor: string;
+      content: string | null;
+      downloadUrl: string;
+      previewUrl: string | null;
+    };
+    type Detail = { archiveResults: Result[] };
+    const resultOf = (d: Detail, extractor: string) =>
+      d.archiveResults.find((r) => r.extractor === extractor);
 
-    const asGuest = (await (await anon(`/api/snapshots/${snapshotId}`)).json()) as Detail;
-    expect(contentOf(asGuest, "dom-snapshot")).toBe(
-      `/api/snapshots/${snapshotId}/archives/dom-snapshot/download`,
-    );
-    expect(JSON.stringify(asGuest)).not.toContain(testDir);
-    // Inline content (article text) is the archive itself and stays readable.
-    expect(contentOf(asGuest, "readability")).toContain("Public page");
-
-    const asAdmin = (await (await authed(`/api/snapshots/${snapshotId}`)).json()) as Detail;
-    expect(contentOf(asAdmin, "dom-snapshot")).toBe(storedRef);
+    const asGuest = (await (await anon(`/api/v1/snapshots/${snapshotId}`)).json()) as Detail;
+    const asAdmin = (await (await authed(`/api/v1/snapshots/${snapshotId}`)).json()) as Detail;
+    for (const detail of [asGuest, asAdmin]) {
+      expect(JSON.stringify(detail)).not.toContain(testDir);
+      expect(JSON.stringify(detail)).not.toContain(storedRef);
+      expect(resultOf(detail, "dom-snapshot")).toMatchObject({
+        content: null,
+        downloadUrl: `/api/v1/snapshots/${snapshotId}/archives/dom-snapshot/download`,
+        previewUrl: `/api/v1/snapshots/${snapshotId}/archives/dom-snapshot/preview`,
+      });
+      // Inline content (article text) is the archive itself and stays readable.
+      expect(resultOf(detail, "readability")?.content).toContain("Public page");
+      expect(resultOf(detail, "readability")?.previewUrl).toBeNull();
+    }
+    // The advertised URL serves the file.
+    const download = await anon(resultOf(asGuest, "dom-snapshot")?.downloadUrl ?? "/missing");
+    expect(download.status).toBe(200);
   });
 
   test("turning the mode off closes the archive again", async () => {
     Reflect.deleteProperty(process.env, "WEBFROST_PUBLIC_READ");
     try {
-      expect((await anon("/api/snapshots")).status).toBe(401);
-      expect((await anon(`/api/snapshots/${snapshotId}`)).status).toBe(401);
-      const status = (await (await anon("/api/setup/status")).json()) as { publicRead: boolean };
+      expect((await anon("/api/v1/snapshots")).status).toBe(401);
+      expect((await anon(`/api/v1/snapshots/${snapshotId}`)).status).toBe(401);
+      const status = (await (await anon("/api/v1/setup/status")).json()) as { publicRead: boolean };
       expect(status.publicRead).toBe(false);
     } finally {
       process.env.WEBFROST_PUBLIC_READ = "true";
@@ -1163,7 +1181,7 @@ describe("review regressions", () => {
     // The admin already exists here, so both must be refused — and stay refused
     // even when they race each other past the first existence check.
     const attempt = (username: string) =>
-      fetch(`${baseUrl}/api/setup`, {
+      fetch(`${baseUrl}/api/v1/setup`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-forwarded-for": "192.0.2.70" },
         body: JSON.stringify({ username, password: "another-password-1" }),
@@ -1183,8 +1201,8 @@ describe("review regressions", () => {
 
   test("only the exact login and setup paths are public", async () => {
     // An existing protected route whose path ends like a public one must still ask
-    // for credentials: /api/snapshots/:id/tags with a crafted id is the closest
-    // real example, POST /api/snapshots/setup/tags does not exist but GET-able
+    // for credentials: /api/v1/snapshots/:id/tags with a crafted id is the closest
+    // real example, POST /api/v1/snapshots/setup/tags does not exist but GET-able
     // siblings do.
     const post = (path: string) =>
       fetch(`${baseUrl}${path}`, {
@@ -1193,24 +1211,24 @@ describe("review regressions", () => {
         body: "{}",
       });
     // Paths that only end like a public route are never served anonymously.
-    for (const path of ["/api/snapshots/setup", "/api/tags/auth/login", "/api/x/setup/"]) {
+    for (const path of ["/api/v1/snapshots/setup", "/api/v1/tags/auth/login", "/api/v1/x/setup/"]) {
       const res = await post(path);
       expect([401, 404]).toContain(res.status);
     }
     // The real ones still are (wrong credentials → 401 from the handler, not from auth;
     // setup → 409 because the admin exists).
-    expect((await post("/api/setup")).status).not.toBe(401);
+    expect((await post("/api/v1/setup")).status).not.toBe(401);
   });
 
   test("fractional paging values do not break the list or the search", async () => {
-    const list = await authed("/api/snapshots?limit=2.5&page=1.5");
+    const list = await authed("/api/v1/snapshots?limit=2.5&page=1.5");
     expect(list.status).toBe(200);
     const listBody = (await list.json()) as { limit: number; page: number; items: unknown[] };
     expect(listBody.limit).toBe(2);
     expect(listBody.page).toBe(1);
     expect(listBody.items.length).toBeGreaterThan(0);
 
-    const search = await authed("/api/snapshots?q=cryosphere&limit=1.9");
+    const search = await authed("/api/v1/snapshots?q=cryosphere&limit=1.9");
     expect(search.status).toBe(200);
     const searchBody = (await search.json()) as { total: number; limit: number; items: unknown[] };
     expect(searchBody.limit).toBe(1);
@@ -1220,7 +1238,7 @@ describe("review regressions", () => {
 
   test("search honours the status filter", async () => {
     const total = async (query: string) =>
-      ((await (await authed(`/api/snapshots?${query}`)).json()) as { total: number }).total;
+      ((await (await authed(`/api/v1/snapshots?${query}`)).json()) as { total: number }).total;
 
     const all = await total("q=cryosphere");
     expect(all).toBeGreaterThanOrEqual(1);
@@ -1232,7 +1250,7 @@ describe("review regressions", () => {
 
 describe("list ordering", () => {
   test("the first page holds the most recently created snapshots", async () => {
-    const list = (await (await authed("/api/snapshots?limit=5")).json()) as {
+    const list = (await (await authed("/api/v1/snapshots?limit=5")).json()) as {
       total: number;
       items: { id: number }[];
     };
@@ -1248,6 +1266,124 @@ describe("list ordering", () => {
       expect(list.total).toBeGreaterThan(5);
     } finally {
       await db.close();
+    }
+  });
+});
+
+describe("the v1 contract", () => {
+  const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+
+  test("the deprecated /api alias serves the same routes and points to /api/v1", async () => {
+    const v1 = await authed("/api/v1/tags?limit=5");
+    const legacy = await authed("/api/tags?limit=5");
+    expect(legacy.status).toBe(200);
+    expect(await legacy.json()).toEqual(await v1.json());
+    expect(legacy.headers.get("deprecation")).toBe("true");
+    expect(legacy.headers.get("link")).toBe('</api/v1/tags?limit=5>; rel="successor-version"');
+    expect(v1.headers.get("deprecation")).toBeNull();
+    expect(v1.headers.get("link")).toBeNull();
+
+    // Errors on the alias carry the headers too.
+    const missing = await authed("/api/snapshots/999999");
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get("deprecation")).toBe("true");
+    expect(await missing.json()).toEqual({ error: "not found", code: "NOT_FOUND" });
+    const unauthenticated = await fetch(`${baseUrl}/api/stats`);
+    expect(unauthenticated.status).toBe(401);
+    expect(unauthenticated.headers.get("deprecation")).toBe("true");
+
+    // /health stays unversioned.
+    const health = await fetch(`${baseUrl}/health`);
+    expect(health.status).toBe(200);
+    expect(health.headers.get("deprecation")).toBeNull();
+  });
+
+  test("a file download on the alias keeps its body and gains the deprecation headers", async () => {
+    const { openDb, createStorageBackend, sql } = await import("@webfrost/core");
+    const db = await openDb(testDir);
+    const id = await db.insert(
+      sql`INSERT INTO snapshots (url, status) VALUES ('https://alias.example/', 'done')`,
+    );
+    const ref = await createStorageBackend(testDir).putText(id, "dom.html", "<p>alias</p>");
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, 'dom-snapshot', ${ref})`,
+    );
+    await db.close();
+
+    const res = await authed(`/api/snapshots/${id}/archives/dom-snapshot/download`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("<p>alias</p>");
+    expect(res.headers.get("deprecation")).toBe("true");
+    expect(res.headers.get("link")).toBe(
+      `</api/v1/snapshots/${id}/archives/dom-snapshot/download>; rel="successor-version"`,
+    );
+  });
+
+  test("every list endpoint returns the { items, total, page, limit } envelope", async () => {
+    const snap = (await (
+      await authed("/api/v1/snapshots", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: "https://envelope.example.com" }),
+      })
+    ).json()) as { id: number };
+    for (const path of [
+      "/api/v1/snapshots",
+      "/api/v1/snapshots?q=envelope",
+      "/api/v1/tags",
+      `/api/v1/snapshots/${snap.id}/tags`,
+      "/api/v1/schedules",
+      "/api/v1/imports",
+      "/api/v1/settings/keys",
+    ]) {
+      const res = await authed(`${path}${path.includes("?") ? "&" : "?"}page=1&limit=1000`);
+      expect(`${path} → ${res.status}`).toBe(`${path} → 200`);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(Object.keys(body).sort()).toEqual(["items", "limit", "page", "total"]);
+      expect(Array.isArray(body.items)).toBe(true);
+      expect(body.page).toBe(1);
+      // The cap applies to every list.
+      expect(body.limit).toBe(200);
+    }
+  });
+
+  test("timestamps are ISO 8601 UTC with a Z", async () => {
+    const schedule = (await (
+      await authed("/api/v1/schedules", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: "https://iso.example.com", cron: "0 * * * *" }),
+      })
+    ).json()) as { createdAt: string; nextRunAt: string; lastRunAt: string | null };
+    expect(schedule.createdAt).toMatch(ISO_UTC);
+    expect(schedule.nextRunAt).toMatch(ISO_UTC);
+    expect(schedule.lastRunAt).toBeNull();
+
+    const key = (await (
+      await authed("/api/v1/settings/keys", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "iso-key", expiresAt: "2099-01-02T03:04:05.678+00:00" }),
+      })
+    ).json()) as { createdAt: string; expiresAt: string };
+    expect(key.createdAt).toMatch(ISO_UTC);
+    expect(key.expiresAt).toBe("2099-01-02T03:04:05Z");
+
+    const list = (await (await authed("/api/v1/snapshots?limit=1")).json()) as {
+      items: { createdAt: string }[];
+    };
+    expect(list.items[0]?.createdAt).toMatch(ISO_UTC);
+  });
+
+  test("an expiresAt that is not a timestamp, or is in the past, is a VALIDATION error", async () => {
+    for (const expiresAt of ["tomorrow", "2001-01-01T00:00:00Z"]) {
+      const res = await authed("/api/v1/settings/keys", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "bad-expiry", expiresAt }),
+      });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { code: string }).code).toBe("VALIDATION");
     }
   });
 });

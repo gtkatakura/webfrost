@@ -8,18 +8,18 @@ import {
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
 import { getDb } from "../context";
-import { apiErrorHandler } from "../errors";
+import { apiError, apiErrorHandler } from "../errors";
 import { MAX_CRON_LENGTH, MAX_URL_LENGTH } from "../limits";
+import { isoTimestamp, isoTimestampRequired, paginate } from "../serialize";
 
-function mapSchedule(s: Schedule | null) {
-  if (!s) return null;
+function mapSchedule(s: Schedule) {
   return {
     id: s.id,
     url: s.url,
     cron: s.cron,
-    createdAt: s.created_at,
-    lastRunAt: s.last_run_at,
-    nextRunAt: s.next_run_at,
+    createdAt: isoTimestampRequired(s.created_at),
+    lastRunAt: isoTimestamp(s.last_run_at),
+    nextRunAt: isoTimestamp(s.next_run_at),
     paused: s.paused === 1,
     lastStatus: s.last_status,
     consecutiveFailures: s.consecutive_failures,
@@ -38,12 +38,10 @@ export const schedulesRouter = new Elysia({ prefix: "/schedules" })
       try {
         parsed = new URL(url);
       } catch {
-        set.status = 400;
-        return { error: "invalid url" };
+        return apiError(set, 400, "VALIDATION", "invalid url");
       }
       if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        set.status = 400;
-        return { error: "invalid url" };
+        return apiError(set, 400, "VALIDATION", "invalid url");
       }
 
       const db = await getDb();
@@ -56,8 +54,7 @@ export const schedulesRouter = new Elysia({ prefix: "/schedules" })
       } catch (err) {
         const msg = err instanceof Error ? err.message : "unknown error";
         if (msg.includes("Cron expression") || msg.includes("cron")) {
-          set.status = 400;
-          return { error: msg };
+          return apiError(set, 400, "VALIDATION", msg);
         }
         throw err;
       } finally {
@@ -71,29 +68,31 @@ export const schedulesRouter = new Elysia({ prefix: "/schedules" })
       }),
     },
   )
-  .get("/", async () => {
-    const db = await getDb();
-    try {
-      return (await listSchedules(db)).map(mapSchedule);
-    } finally {
-      await db.close();
-    }
-  })
+  .get(
+    "/",
+    async ({ query }) => {
+      const db = await getDb();
+      try {
+        return paginate((await listSchedules(db)).map(mapSchedule), query);
+      } finally {
+        await db.close();
+      }
+    },
+    { query: t.Object({ page: t.Optional(t.String()), limit: t.Optional(t.String()) }) },
+  )
   .get(
     "/:id",
     async ({ params, set }) => {
       const id = Number(params.id);
       if (!Number.isInteger(id) || id <= 0) {
-        set.status = 404;
-        return { error: "not found" };
+        return apiError(set, 404, "NOT_FOUND", "not found");
       }
 
       const db = await getDb();
       try {
         const schedule = await getSchedule(db, id);
         if (!schedule) {
-          set.status = 404;
-          return { error: "not found" };
+          return apiError(set, 404, "NOT_FOUND", "not found");
         }
         return mapSchedule(schedule);
       } finally {
@@ -107,18 +106,17 @@ export const schedulesRouter = new Elysia({ prefix: "/schedules" })
     async ({ params, body, set }) => {
       const id = Number(params.id);
       if (!Number.isInteger(id) || id <= 0) {
-        set.status = 404;
-        return { error: "not found" };
+        return apiError(set, 404, "NOT_FOUND", "not found");
       }
 
       const db = await getDb();
       try {
         const found = await pauseSchedule(db, id, body.paused);
         if (!found) {
-          set.status = 404;
-          return { error: "not found" };
+          return apiError(set, 404, "NOT_FOUND", "not found");
         }
         const schedule = await getSchedule(db, id);
+        if (!schedule) return apiError(set, 404, "NOT_FOUND", "not found");
         return mapSchedule(schedule);
       } finally {
         await db.close();
@@ -134,16 +132,14 @@ export const schedulesRouter = new Elysia({ prefix: "/schedules" })
     async ({ params, set }) => {
       const id = Number(params.id);
       if (!Number.isInteger(id) || id <= 0) {
-        set.status = 404;
-        return { error: "not found" };
+        return apiError(set, 404, "NOT_FOUND", "not found");
       }
 
       const db = await getDb();
       try {
         const removed = await removeSchedule(db, id);
         if (!removed) {
-          set.status = 404;
-          return { error: "not found" };
+          return apiError(set, 404, "NOT_FOUND", "not found");
         }
         set.status = 204;
         return null;

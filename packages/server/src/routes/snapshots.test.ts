@@ -60,8 +60,8 @@ describe("POST /snapshots", () => {
       }),
     );
     expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body).toEqual({ error: "invalid url" });
+    const body = (await res.json()) as { error: string; code: string };
+    expect(body).toEqual({ error: "invalid url", code: "VALIDATION" });
   });
 
   test("returns 202 with id/url/status for valid URL (fire and forget)", async () => {
@@ -224,7 +224,7 @@ describe("GET /snapshots", () => {
     const item = body.items[0];
     expect(item?.title).toBe("Test Article");
     expect(item?.excerpt).toBe("A short excerpt about something.");
-    expect(item?.screenshotUrl).toBe(`/api/snapshots/${id}/archives/screenshot/download`);
+    expect(item?.screenshotUrl).toBe(`/api/v1/snapshots/${id}/archives/screenshot/download`);
   });
 
   test("returns null title, excerpt, screenshotUrl when extractors did not run", async () => {
@@ -790,8 +790,8 @@ describe("GET /snapshots/:id", () => {
     const app = await getApp();
     const res = await app.handle(new Request("http://localhost/snapshots/99999"));
     expect(res.status).toBe(404);
-    const body = (await res.json()) as { error: string };
-    expect(body).toEqual({ error: "not found" });
+    const body = (await res.json()) as { error: string; code: string };
+    expect(body).toEqual({ error: "not found", code: "NOT_FOUND" });
   });
 
   test("returns snapshot with archiveResults for existing snapshot", async () => {
