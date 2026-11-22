@@ -309,12 +309,14 @@ function PromoVideo({
 }
 
 /**
- * Android and other browsers keep a playing video in the page: ask for full screen when it starts. The
- * click on play still counts as the user's gesture. An iPhone has no requestFullscreen on a video; it
- * goes full screen by itself (no playsInline).
+ * On a phone or tablet, Android and other browsers keep a playing video in the page: ask for full screen
+ * when it starts. The tap on play still counts as the user's gesture. A desktop window made narrow also
+ * shows the vertical cut, but it has a mouse, so the video stays in the page there. An iPhone has no
+ * requestFullscreen on a video; it goes full screen by itself (no playsInline).
  */
 function enterFullscreen(event: React.SyntheticEvent<HTMLVideoElement>) {
   const video = event.currentTarget;
+  if (!matchMedia("(hover: none) and (pointer: coarse)").matches) return;
   if (document.fullscreenElement || !video.requestFullscreen) return;
   video.requestFullscreen().catch(() => {});
 }
