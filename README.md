@@ -24,10 +24,10 @@ keeping and lets you search what you saved. Run it from a terminal, a script or 
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshot-dark.webp">
-  <img src=".github/assets/screenshot-light.webp" width="1280" alt="The WebFrost web UI: the snapshot list with screenshot thumbnails, titles, extractor badges, tags and status">
+  <img src=".github/assets/screenshot-light.webp" width="1280" alt="The WebFrost web UI: the snapshot list as cards, each with a screenshot, title, address, status and capture time">
 </picture>
 
-📖 **Documentation: [webfrost.dev](https://webfrost.dev)**
+📖 **Documentation: [webfrost.dev](https://webfrost.dev)** · 🧊 **Live demo: [demo.webfrost.dev](https://demo.webfrost.dev)**, a read-only archive of a few pages and videos
 
 > WebFrost is young (`0.x`). It works, and it is tested, but the HTTP API can still change before 1.0
 > (it is versioned: `/api/v1`). See the [roadmap](ROADMAP.md).

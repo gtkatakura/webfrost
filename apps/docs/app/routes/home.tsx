@@ -159,6 +159,18 @@ export default function Home() {
             external: true,
             icon: <GitHubMark className="size-4" />,
           }}
+          note={
+            <>
+              Or look around first:{" "}
+              <a
+                href="https://demo.webfrost.dev"
+                className="font-medium text-fd-primary underline-offset-4 hover:underline"
+              >
+                the live demo
+              </a>
+              , a read-only archive of a few pages and videos.
+            </>
+          }
           art={
             <Picture
               image={mascot}

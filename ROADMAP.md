@@ -7,19 +7,16 @@ issue.
 WebFrost is `0.x`: the HTTP API, the SDK and the on-disk layout can still change between minor versions.
 Every breaking change is called out in the [changelog](CHANGELOG.md).
 
-## Now: first public release (0.1.0)
+## Now
 
-- **Easy to install anywhere.** A Docker image for amd64 and arm64 (Apple Silicon, Raspberry Pi, ARM
-  NAS), and a single `webfrost` binary for macOS, Linux and Windows with `webfrost serve`, `setup` and
-  `doctor`, installable with a script or Homebrew.
-- **Hardening.** CSRF protection for browser sessions, safer media downloads (yt-dlp), valid WARC files
-  for compressed and binary responses, a non-root container, request size limits, graceful shutdown.
-- **Your choice of database.** SQLite stays the default for one person on one machine, with a guide
-  and an optional Compose service for continuous backups with Litestream. PostgreSQL and MySQL are
-  supported through `DATABASE_URL`, with full-text search on each, for teams and for running several
-  WebFrost servers against one database.
+- **Archive again** a snapshot in place, from its details, the API or the SDK: for a page that changed or
+  a video a site refused the first time.
 
 ## Next
+
+- **Archive on your machine, keep it on the server.** Video sites often refuse server addresses ("confirm
+  you're not a bot"): archive from your own connection with the CLI and send the snapshot to your server.
+- **A Windows binary.** Until then, Windows runs the Docker image.
 
 - **Browser extension** for Chrome and Firefox: archive the page you are on in one click.
 - **Webhooks** when a snapshot finishes or fails.
@@ -41,13 +38,15 @@ Every breaking change is called out in the [changelog](CHANGELOG.md).
 
 ## Already there
 
-Eight formats from one visit (WARC, raw HTML, readable text, PDF, full-page screenshot, DOM snapshot,
-self-contained HTML, video); full-text search; tags; imports from bookmarks, OPML, RSS/Atom and URL
+A Docker image for amd64 and arm64 and a single `webfrost` binary for macOS and Linux (script or
+Homebrew); SQLite by default with Litestream backups, or PostgreSQL and MySQL; eight formats from one visit
+(WARC, raw HTML, readable text, PDF, full-page screenshot, DOM snapshot, self-contained HTML, video), in a
+light or dark color scheme, complete for single-page apps; full-text search; tags; imports from bookmarks, OPML, RSS/Atom and URL
 lists; cron and feed schedules run by the server; a job queue with crash recovery and per-site pacing;
 filesystem or S3-compatible storage; API keys, revocable sessions and rate limits; read-only public mode;
 an SSRF guard for fetches and the headless browser; CLI, a versioned HTTP API (`/api/v1`, one error format,
 one pagination format) with a TypeScript SDK, and a web UI with the
-WebFrost look in light and dark, clear error states, accessible dialogs and a phone layout; optional
+WebFrost look in light and dark, a card view of the archive, a full-window viewer per snapshot, clear error states, accessible dialogs and a phone layout; optional
 OpenTelemetry traces, metrics and logs, sent only to a collector you configure.
 
 ## Contributing

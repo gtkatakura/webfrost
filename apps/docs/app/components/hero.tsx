@@ -336,6 +336,7 @@ export function SplitDeveloperHero({
   description,
   primaryAction,
   secondaryAction,
+  note,
   codeTabs,
   art,
 }: {
@@ -344,6 +345,8 @@ export function SplitDeveloperHero({
   description: string;
   primaryAction: HeroAction;
   secondaryAction?: HeroAction;
+  /** A line under the buttons, for a lighter third way in (the demo). */
+  note?: React.ReactNode;
   codeTabs?: CodeTab[];
   /** Shown in the right column instead of the code window. */
   art?: React.ReactNode;
@@ -387,6 +390,14 @@ export function SplitDeveloperHero({
             <ActionButton action={primaryAction} variant="primary" />
             {secondaryAction && <ActionButton action={secondaryAction} variant="secondary" />}
           </div>
+          {note && (
+            <p
+              className="rise text-sm text-muted-foreground"
+              style={{ "--i": 3 } as React.CSSProperties}
+            >
+              {note}
+            </p>
+          )}
         </div>
         <div className="rise relative min-w-0" style={{ "--i": 4 } as React.CSSProperties}>
           <div
