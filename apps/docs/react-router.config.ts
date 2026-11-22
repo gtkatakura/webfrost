@@ -1,6 +1,7 @@
 import { glob } from "node:fs/promises";
 import type { Config } from "@react-router/dev/config";
 import { createGetUrl, getSlugs } from "fumadocs-core/source";
+import { hiddenDocs } from "./app/lib/unpublished";
 
 const getUrl = createGetUrl("/docs");
 
@@ -10,6 +11,7 @@ export default {
   async prerender({ getStaticPaths }) {
     const paths = new Set<string>(getStaticPaths());
     for await (const entry of glob("**/*.{md,mdx}", { cwd: "content/docs" })) {
+      if (hiddenDocs.has(entry)) continue;
       paths.add(getUrl(getSlugs(entry)));
     }
     return [...paths];

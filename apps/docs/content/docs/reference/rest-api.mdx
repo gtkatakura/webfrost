@@ -4,7 +4,9 @@ description: Every WebFrost HTTP route with authentication, request and response
 icon: Globe
 ---
 
-The server exposes a JSON REST API under `/api/v1`, plus an unauthenticated `GET /health`. The web UI and the [SDK](/docs/reference/sdk) use these same routes. Examples assume `API=http://localhost:3000/api/v1` and `KEY` holds an API key.
+import { sdkPublished } from "@/lib/unpublished";
+
+The server exposes a JSON REST API under `/api/v1`, plus an unauthenticated `GET /health`. The web UI uses these same routes{sdkPublished && <>, and so does the <a href="/docs/reference/sdk">SDK</a></>}. Examples assume `API=http://localhost:3000/api/v1` and `KEY` holds an API key.
 
 ## Versioning
 
@@ -335,9 +337,11 @@ Every error status carries an [error code](#errors).
 | `429` | Rate limited; see `Retry-After` |
 
 <Cards>
-  <Card title="SDK" href="/docs/reference/sdk">
-    A typed client for these routes.
-  </Card>
+  {sdkPublished && (
+    <Card title="SDK" href="/docs/reference/sdk">
+      A typed client for these routes.
+    </Card>
+  )}
   <Card title="Security" href="/docs/architecture/security">
     Headers, SSRF and rate limiting.
   </Card>

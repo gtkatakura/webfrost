@@ -5,6 +5,7 @@ import { Picture } from "@/components/picture";
 import { baseOptions } from "@/lib/layout.shared";
 import { repoUrl } from "@/lib/shared";
 import { shareMeta } from "@/lib/site";
+import { sdkPublished } from "@/lib/unpublished";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 import {
   Archive,
@@ -36,7 +37,7 @@ export function meta() {
   ];
 }
 
-const codeTabs: CodeTab[] = [
+const allCodeTabs: CodeTab[] = [
   {
     label: "Docker",
     language: "bash",
@@ -102,7 +103,7 @@ const pillars: Tile[] = [
   },
 ];
 
-const surfaces: Tile[] = [
+const allSurfaces: Tile[] = [
   {
     icon: Terminal,
     label: "CLI",
@@ -132,6 +133,12 @@ const surfaces: Tile[] = [
     href: "/docs/guides/web-ui",
   },
 ];
+
+// The SDK is shown once @webfrost/sdk is on npm (see lib/unpublished.ts).
+const codeTabs = sdkPublished ? allCodeTabs : allCodeTabs.filter((tab) => tab.label !== "SDK");
+const surfaces = sdkPublished
+  ? allSurfaces
+  : allSurfaces.filter((tile) => tile.label !== "TypeScript SDK");
 
 export default function Home() {
   return (
@@ -185,10 +192,10 @@ export default function Home() {
           tiles={pillars}
         />
         <FeatureGrid
-          eyebrow="Four ways in"
+          eyebrow={surfaces.length === 4 ? "Four ways in" : "Three ways in"}
           title="Use it the way that fits."
           tiles={surfaces}
-          columns={4}
+          columns={surfaces.length === 4 ? 4 : 3}
         />
         <section className="mx-auto max-w-6xl px-6 pt-4 pb-24">
           <div className="flex flex-col items-start gap-4 rounded-2xl border border-border bg-card px-6 py-8 sm:flex-row sm:items-center sm:justify-between sm:px-8">
