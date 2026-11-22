@@ -1,5 +1,11 @@
 # @webfrost/ui
 
+## 0.3.1
+
+### Patch Changes
+
+- @webfrost/sdk@0.3.1
+
 ## 0.3.0
 
 ### Patch Changes
