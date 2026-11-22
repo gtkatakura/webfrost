@@ -44,11 +44,19 @@ export function missingLibraries(stderr: string): string[] {
  * answers to the old names, Ubuntu does not: ask apt which one this system has.
  */
 function aptPackages(): string[] {
-  return LINUX_BROWSER_PACKAGES.apt.split(" ").map((name) => {
-    const t64 = `${name}t64`;
-    const probe = Bun.spawnSync(["apt-cache", "show", t64], { stdout: "ignore", stderr: "ignore" });
-    return probe.exitCode === 0 ? t64 : name;
-  });
+  const names = LINUX_BROWSER_PACKAGES.apt.split(" ");
+  // One apt-cache call for all of them: it prints the packages it knows and skips the rest.
+  const probe = Bun.spawnSync(
+    ["apt-cache", "show", "--no-all-versions", ...names.map((n) => `${n}t64`)],
+    {
+      stdout: "pipe",
+      stderr: "ignore",
+    },
+  );
+  const known = new Set(
+    [...probe.stdout.toString().matchAll(/^Package: (\S+)$/gm)].map((m) => m[1] as string),
+  );
+  return names.map((name) => (known.has(`${name}t64`) ? `${name}t64` : name));
 }
 
 /** The command that installs what Chromium needs on this kind of Linux, as text for a hint. */
