@@ -328,12 +328,20 @@ jobs:
       # compiled binary uses (bundling, embedded files, the Chromium installer), which tests miss.
       - name: Compile the linux-x64 binary
         run: bun run build:binary
-      - name: Run it
+      # Run it with node_modules gone, as on a user's machine: a module the bundle still resolves from
+      # disk (jsdom 30 did) works here but fails everywhere else.
+      - name: Run it without node_modules
         run: |
-          bin=packages/cli/dist-binary/linux-x64/webfrost
+          bin="$RUNNER_TEMP/webfrost"
+          cp packages/cli/dist-binary/linux-x64/webfrost "$bin"
+          rm -rf node_modules packages/*/node_modules apps/*/node_modules
+          export WEBFROST_DIR="$RUNNER_TEMP/archive"
           "$bin" --version
           "$bin" help > /dev/null
-          WEBFROST_DIR="$(mktemp -d)" "$bin" doctor || true
+          "$bin" init
+          "$bin" add https://example.com --json | tee add.json
+          grep -q '"status": "done"' add.json
+          "$bin" doctor || true
 
   docker-build:
     name: Docker build

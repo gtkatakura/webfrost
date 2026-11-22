@@ -14,6 +14,7 @@
  * - packages/ui/dist is embedded: the stub packages/cli/src/ui-assets.ts is replaced by a
  *   module that imports every UI file with `type: "file"`.
  * - jsdom reads default-stylesheet.css from disk at load time: the file is inlined.
+ * - jsdom 30 resolves its synchronous-XHR worker path at load time: replaced with an unused path.
  * - css-tree (a jsdom dependency) loads its data files with createRequire(import.meta.url),
  *   which a bundle cannot resolve: its CommonJS build, which uses plain require(), is used.
  * - Playwright's optional electron and chromium-bidi modules are not installed and not
@@ -86,6 +87,29 @@ const bundleFixesPlugin: BunPlugin = {
       const pkg = Bun.resolveSync("css-tree/package.json", dirname(args.importer));
       return { path: join(dirname(pkg), "cjs", "index.cjs") };
     });
+
+    // jsdom 30 resolves its synchronous-XHR worker file when XMLHttpRequest-impl.js loads. That file
+    // is not inside a compiled binary, so loading jsdom would fail. WebFrost runs jsdom without
+    // scripts, so synchronous XHR never happens: keep a path that is never opened.
+    build.onLoad(
+      { filter: /jsdom[\\/]lib[\\/]jsdom[\\/]living[\\/]xhr[\\/]XMLHttpRequest-impl\.js$/ },
+      async (args) => {
+        const source = await Bun.file(args.path).text();
+        const line = 'const syncWorkerFile = require.resolve("./xhr-sync-worker.js");';
+        if (!source.includes(line)) {
+          throw new Error(
+            "jsdom changed: XMLHttpRequest-impl.js no longer resolves xhr-sync-worker.js the expected way",
+          );
+        }
+        return {
+          contents: source.replace(
+            line,
+            'const syncWorkerFile = "/webfrost-binary/no-sync-xhr.js";',
+          ),
+          loader: "js",
+        };
+      },
+    );
 
     // jsdom: inline the default stylesheet it reads from disk when loaded.
     build.onLoad(
