@@ -25,6 +25,7 @@ FROM oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3
 WORKDIR /app
 COPY --from=build /app/apps/docs/build/client build/client
 COPY --from=build /app/apps/docs/build/server.js build/server.js
+COPY --from=build /app/apps/docs/build/csp.json build/csp.json
 ENV PORT=3000
 USER bun
 EXPOSE 3000
