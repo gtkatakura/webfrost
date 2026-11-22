@@ -58,6 +58,17 @@ function ytDlpArgs(options: string[], url: string): string[] {
   return [...YT_DLP_BASE_ARGS, ...options, "--", url];
 }
 
+/** The first ERROR line yt-dlp printed, without its prefix and trimmed to a readable length. */
+export function ytDlpError(stderr: string): string | null {
+  const line = stderr.split("\n").find((l) => l.startsWith("ERROR:"));
+  if (!line) return null;
+  const text = line
+    .replace(/^ERROR:\s*(\[[^\]]+\]\s*)?/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > 200 ? `${text.slice(0, 197)}...` : text;
+}
+
 /**
  * Download and archive video/audio from media-hosting URLs (YouTube, Vimeo, etc.)
  * using yt-dlp.
@@ -102,8 +113,11 @@ export async function mediaExtractor(
   }
 
   if (metaResult.exitCode !== 0) {
-    // URL not supported by yt-dlp — not an error, just not a media URL
-    return;
+    // A site yt-dlp does not know is simply not a media page. Anything else (a video the site refuses to
+    // hand out, "Sign in to confirm you're not a bot", a removed video) is a failure worth showing.
+    const reason = ytDlpError(metaResult.stderr);
+    if (!reason || /unsupported url/i.test(reason)) return;
+    throw new Error(`yt-dlp: ${reason}`);
   }
   const metadataJson = metaResult.stdout.trim() || "{}";
 

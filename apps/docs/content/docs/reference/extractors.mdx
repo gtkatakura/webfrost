@@ -34,6 +34,7 @@ The PDF, screenshot, DOM snapshot and SingleFile files come from the browser; th
 | An extractor exceeds `WEBFROST_EXTRACTOR_TIMEOUT_MS` (60 s) | That extractor is recorded as failed. Its downloads are cancelled and nothing it produces afterwards is kept. |
 | A yt-dlp call exceeds `WEBFROST_MEDIA_TIMEOUT_MS` (10 min) | yt-dlp is killed together with the processes it started (ffmpeg). |
 | `yt-dlp` is not installed, or the URL is not on a site yt-dlp supports | `media` and `media-metadata` are skipped silently. No entry, no failure. |
+| The site is one yt-dlp supports but it refuses the video (private, removed, or "Sign in to confirm you're not a bot", which video sites often answer to server addresses) | `media` fails with yt-dlp's reason, shown in the snapshot's Details. |
 | The media download fails or exceeds the size cap | `media-metadata` may exist without `media`. |
 | Readability finds no article | The `readability` result exists with `null` fields. |
 

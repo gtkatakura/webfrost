@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { sql } from "kysely";
 import { type Db, openDb } from "../db";
 import { FilesystemBackend } from "../storage";
-import { YT_DLP_BASE_ARGS, type YtDlpSpawner, mediaExtractor } from "./media";
+import { YT_DLP_BASE_ARGS, type YtDlpSpawner, mediaExtractor, ytDlpError } from "./media";
 
 type SpawnResult = { exitCode: number | null; stdout: string; stderr: string };
 
@@ -21,7 +21,11 @@ function makeSpawner(responses: Array<SpawnResult | Error>): YtDlpSpawner {
 }
 
 const OK: SpawnResult = { exitCode: 0, stdout: "", stderr: "" };
-const FAIL: SpawnResult = { exitCode: 1, stdout: "", stderr: "ERROR" };
+const FAIL: SpawnResult = {
+  exitCode: 1,
+  stdout: "",
+  stderr: "ERROR: Unsupported URL: https://example.com/page\n",
+};
 const META_OK: SpawnResult = {
   exitCode: 0,
   stdout: '{"title":"Test Video","duration":120}',
@@ -81,6 +85,32 @@ describe("mediaExtractor", () => {
     ).resolves.toBeUndefined();
 
     expect(await archiveRows()).toHaveLength(0);
+  });
+
+  test("fails with yt-dlp's reason when a media site refuses the video", async () => {
+    const spawner = makeSpawner([
+      {
+        exitCode: 1,
+        stdout: "",
+        stderr:
+          "WARNING: [youtube] No title found in player responses\nERROR: [youtube] aqz-KE-bpKQ: Sign in to confirm you’re not a bot. Use --cookies\n",
+      },
+    ]);
+
+    await expect(
+      mediaExtractor(db, 1, makeStorage(), "https://www.youtube.com/watch?v=aqz-KE-bpKQ", {
+        _spawner: spawner,
+      }),
+    ).rejects.toThrow("yt-dlp: aqz-KE-bpKQ: Sign in to confirm you’re not a bot");
+    expect(await archiveRows()).toHaveLength(0);
+  });
+
+  test("ytDlpError keeps the first ERROR line, without prefix, at a readable length", () => {
+    expect(ytDlpError("WARNING: x\nERROR: [vimeo] 123: Private video\nERROR: later")).toBe(
+      "123: Private video",
+    );
+    expect(ytDlpError("WARNING: only a warning")).toBeNull();
+    expect(ytDlpError(`ERROR: ${"x".repeat(500)}`)?.length).toBe(200);
   });
 
   test("stores metadata and video path on successful video download", async () => {
