@@ -203,6 +203,7 @@ export default function Home() {
             width={720}
             height={1280}
             className="mx-auto mt-6 aspect-[9/16] w-full max-w-sm sm:hidden"
+            fullscreen
           />
           <PromoVideo
             cut={{ poster: widePoster, webm: wideWebm, mp4: wideMp4 }}
@@ -278,18 +279,23 @@ function PromoVideo({
   width,
   height,
   className,
+  fullscreen = false,
 }: {
   cut: { poster: string; webm: string; mp4: string };
   width: number;
   height: number;
   className: string;
+  /** The vertical cut fills a phone screen: play it full screen. */
+  fullscreen?: boolean;
 }) {
   return (
     <video
       className={`rounded-2xl border border-border bg-[#05091a] shadow-2xl shadow-blue-900/20 ${className}`}
       controls
-      playsInline
+      // Without playsInline an iPhone plays the video in its own full-screen player.
+      playsInline={!fullscreen}
       preload="none"
+      onPlay={fullscreen ? enterFullscreen : undefined}
       poster={cut.poster}
       width={width}
       height={height}
@@ -300,4 +306,15 @@ function PromoVideo({
       <a href={cut.mp4}>Download the video (MP4)</a>
     </video>
   );
+}
+
+/**
+ * Android and other browsers keep a playing video in the page: ask for full screen when it starts. The
+ * click on play still counts as the user's gesture. An iPhone has no requestFullscreen on a video; it
+ * goes full screen by itself (no playsInline).
+ */
+function enterFullscreen(event: React.SyntheticEvent<HTMLVideoElement>) {
+  const video = event.currentTarget;
+  if (document.fullscreenElement || !video.requestFullscreen) return;
+  video.requestFullscreen().catch(() => {});
 }
