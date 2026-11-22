@@ -15,7 +15,8 @@ Run with `WEBFROST_LOG_LEVEL=debug` (or `--verbose` on the CLI) first. Debug out
 **Fix:**
 
 ```bash
-bunx playwright install chromium
+webfrost doctor    # is a Chromium found, and which one
+webfrost setup     # install a headless Chromium if none is
 # or use a browser you already have
 export WEBFROST_CHROMIUM_PATH=/usr/bin/chromium
 ```
@@ -26,7 +27,7 @@ The Docker image already bundles Chromium. A message starting with `blocked:` me
 
 **Cause:** `yt-dlp` is not installed, or the URL is not a media page. Media extraction is then skipped silently and no failure is recorded. The Docker image bundles `yt-dlp` and ffmpeg.
 
-**Fix:** install it (`brew install yt-dlp` or `pip install yt-dlp`) and make sure `yt-dlp` is on `PATH`. If a media page yields metadata but no media file, the download may have exceeded the 500 MB cap or failed; check the debug log.
+**Fix:** install it (`brew install yt-dlp`, `sudo apt install yt-dlp` or `pipx install yt-dlp`, see [Install](/docs/getting-started/install#yt-dlp-and-ffmpeg)) and make sure `yt-dlp` is on `PATH`; `webfrost doctor` checks it. If a media page yields metadata but no media file, the download may have exceeded the 500 MB cap or failed; check the debug log.
 
 ## Snapshots stay `pending` or end `failed`
 
@@ -57,7 +58,7 @@ After a crash or restart, snapshots left `pending` are re-queued automatically: 
 
 ## Server exits with `SESSION_SECRET env var is required`
 
-The server refuses to start without `SESSION_SECRET` unless `AUTH_DISABLED=true`. With Docker Compose, `compose.yml` refuses to start until it is set in `.env`.
+The Docker image refuses to start without `SESSION_SECRET` unless `AUTH_DISABLED=true`, and `compose.yml` refuses to start until it is set in `.env`. (`webfrost serve` generates one instead.)
 
 ```bash
 export SESSION_SECRET=$(openssl rand -hex 32)
@@ -84,7 +85,7 @@ A secret shorter than 32 characters starts, with a warning.
 **Fix:** look for a stuck process holding the database open. If it persists after a clean shutdown, checkpoint the write-ahead log:
 
 ```bash
-sqlite3 ./data/archive.db "PRAGMA wal_checkpoint(TRUNCATE);"
+sqlite3 ~/.webfrost/archive.db "PRAGMA wal_checkpoint(TRUNCATE);"   # or $WEBFROST_DIR/archive.db
 ```
 
 Do not do this while [Litestream](/docs/guides/backups#continuous-backups-with-litestream) replicates the archive: stop Litestream first, and let it take a fresh snapshot afterwards. With many writers on one archive, PostgreSQL or MySQL (`DATABASE_URL`) avoids the single-writer lock altogether.
@@ -107,17 +108,23 @@ The installer puts the binary in `~/.local/bin`, which is not on every `PATH`. A
 
 Run `webfrost setup`. It installs a headless Chromium into WebFrost's cache directory, unless it finds one. If setup says the downloaded browser does not start on Linux, a system library is missing: install Chromium from your package manager (`apt install chromium`) or the libraries Playwright lists. A `WEBFROST_CHROMIUM_PATH` that points at a missing file is an error on purpose; unset it or fix it.
 
-## `bun: command not found`
-
-Only needed when running from a source checkout. Install Bun from [bun.sh](https://bun.sh) and add `~/.bun/bin` to `PATH`. With [mise](https://mise.jdx.dev/): `mise exec bun -- bun run webfrost add https://example.com`.
-
 ## `Unknown command: --verbose`
 
 `--verbose` and `--quiet` go after the command: `webfrost add https://example.com --verbose`. You can also set `WEBFROST_LOG_LEVEL=debug`.
 
-## Archive a login-protected page
+## Authenticated pages
 
-Not supported. See [Authenticated pages](/docs/guides/authenticated-pages).
+**Symptom:** a page you can read while signed in is archived as its login page, an error page or a paywall.
+
+**Cause:** WebFrost archives every page as an anonymous visitor. Each snapshot gets a fresh headless Chromium context with no stored session, and there is no way yet to pass it cookies, a browser profile or custom headers (`Authorization` included), from the CLI, the API or the web UI. `WEBFROST_CHROMIUM_PATH` changes which Chromium binary runs, never its profile.
+
+**What to do instead:**
+
+1. **Archive a public address of the same content**, if there is one: a share link, a public export, a print or cached view.
+2. **Save the page yourself** while signed in, for example with the SingleFile browser extension, and keep the file next to your archive. WebFrost cannot import such a file yet.
+3. **Follow the roadmap**: cookie and browser-profile support is tracked in [ROADMAP.md](https://github.com/gtkatakura/webfrost/blob/main/ROADMAP.md).
+
+Pages on your own network are a different limitation: private, loopback and link-local addresses are blocked unless `WEBFROST_ALLOW_PRIVATE_URLS=true`. See [SSRF protection](/docs/architecture/security#ssrf-protection).
 
 <Cards>
   <Card title="Configuration" href="/docs/reference/configuration">

@@ -1,0 +1,62 @@
+---
+title: Why WebFrost
+description: The ideas behind WebFrost, the design choices that follow from them, and an honest comparison with ArchiveBox, which inspired it.
+icon: Lightbulb
+---
+
+WebFrost exists because of [ArchiveBox](https://archivebox.io). ArchiveBox showed what a self-hosted web archive should be: give it a URL and it keeps the page in every format worth keeping, on your own machine, in files you can read without it. WebFrost takes that idea as given and asks a narrower question: how cheaply can it be done for every page, so that archiving a whole bookmarks file or a feed every hour stays light enough for a small server?
+
+## One visit per page
+
+Archiving a page in many formats is mostly a question of how many times you load it. A WARC wants the server's response. Readable text and raw HTML can come from that same response. A PDF, a screenshot, the rendered DOM and a self-contained HTML copy all want the page as a browser shows it.
+
+WebFrost visits each page **twice, at most**: one HTTP fetch and one browser navigation.
+
+- The fetch goes through the SSRF guard once. The WARC, the raw HTML and the Readability text are all built from its response.
+- Chromium opens the page once. The PDF, the screenshot, the DOM snapshot and the SingleFile copy are all taken from that one loaded page, in parallel.
+- yt-dlp runs only for media pages, next to the rest.
+
+So adding a format costs the work of producing that format, not another download and another render. It also makes the formats agree with each other: the screenshot and the PDF show the same load of the page, not two loads a few seconds apart with different ads, cookie banners or A/B variants. [Pipeline](/docs/architecture/pipeline) walks through a snapshot step by step.
+
+## Design choices
+
+**One process, one archive.** The server, the web UI, the scheduler and the job queue run in one Bun process (`webfrost serve`, or the Docker image). There is no message broker, no worker fleet and no cache server to run. Concurrency is a setting (`WEBFROST_CONCURRENCY`), and a separate `webfrost schedule worker` is an option, not a requirement.
+
+**Files first.** By default an archive is one directory: a SQLite database and one folder per snapshot holding WARC, PDF, PNG and HTML files. Every one of those formats opens without WebFrost; if the project disappeared tomorrow, your archive would not. PostgreSQL or MySQL (for the metadata) and an S3-compatible bucket (for the files) are there for deployments that want them, never required. See [Storage model](/docs/architecture/storage-model).
+
+**Every surface is first-class.** The CLI works straight on the archive directory, with or without a server running. The HTTP API is versioned (`/api/v1`) and does everything the web UI does; the UI itself is just another API client. That makes WebFrost easy to drive from scripts, cron jobs, other programs and coding agents.
+
+**Jobs that survive.** Each snapshot is a job with a lease. A crash, a deploy or a restart does not lose work: a sweep adopts orphaned jobs and runs them again, at most three times. Archives of one site are spaced out (`WEBFROST_DOMAIN_DELAY_MS`), so a big import does not hammer one server.
+
+**Safe to put on a network.** Archiving means fetching URLs that other people supply, so the guard against reaching private addresses covers the first fetch, every redirect and every request the browser makes. Archived pages are previewed in a sandbox with no scripts, and the API has keys, revocable sessions and rate limits. See [Security](/docs/architecture/security).
+
+**One binary.** The `webfrost` executable carries the runtime, the CLI, the server and the web UI. Installing it needs no Bun, Node, Python or Docker; `webfrost setup` fetches a headless Chromium only if the machine has none.
+
+## WebFrost and ArchiveBox
+
+ArchiveBox is the most mature open-source self-hosted web archiver, and WebFrost would not exist without it. The two make different trade-offs:
+
+| | ArchiveBox | WebFrost |
+|---|---|---|
+| How a page is captured | Each extractor runs on its own, most of them as a separate program, so a page is fetched and rendered several times | One HTTP fetch and one browser navigation shared by every format |
+| Formats | Many, including some WebFrost does not have (a `wget` mirror, git repositories, archive.org submission) | WARC, raw HTML, Readability text, PDF, screenshot, DOM snapshot, SingleFile, media |
+| Inputs | Many: a browser extension, browser history, Pocket and Pinboard exports, bookmarks, feeds, plain lists | Bookmarks (Netscape), OPML, RSS and Atom feeds, plain URL lists, and cron schedules |
+| Pages behind a login | Supported, through cookies or a browser profile | Not yet: every page is archived as an anonymous visitor ([on the roadmap](https://github.com/gtkatakura/webfrost/blob/main/ROADMAP.md)) |
+| Runtime | Python and Django, plus the tools each extractor calls | One `webfrost` binary, or one Docker image |
+| Data | A folder with SQLite and the files | A folder with SQLite and the files by default; PostgreSQL, MySQL and S3 optional |
+| Maturity | Years of real-world use and a large community | New (`0.x`) |
+
+Choose ArchiveBox if you need its inputs, its extra formats or authenticated archiving today, or simply the confidence of a long track record. Choose WebFrost if you want every page in every format at the cost of one visit, a small footprint for schedules and large imports, and an API and CLI built to be scripted.
+
+<Callout type="info" title="Performance numbers">
+WebFrost was built for performance, but this page makes no speed claims yet. The repository has a head-to-head benchmark against ArchiveBox ([`bench/vs-archivebox`](https://github.com/gtkatakura/webfrost/tree/main/bench/vs-archivebox)) that archives the same pages in both under Docker and records wall time, CPU, memory and disk use. Its results will be published in [BENCHMARKS.md](https://github.com/gtkatakura/webfrost/blob/main/BENCHMARKS.md) once it has run, with the machine it ran on.
+</Callout>
+
+<Cards>
+  <Card title="Overview" href="/docs/architecture/overview">
+    The components and how they fit together.
+  </Card>
+  <Card title="Pipeline" href="/docs/architecture/pipeline">
+    One snapshot, from request to done.
+  </Card>
+</Cards>

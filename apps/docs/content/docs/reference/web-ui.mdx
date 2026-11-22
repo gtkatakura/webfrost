@@ -1,0 +1,164 @@
+---
+title: Web UI
+description: Every page of the WebFrost web interface, what a guest sees, and the keyboard shortcuts.
+icon: LayoutDashboard
+---
+
+import dashboardLight from "@/assets/screens/dashboard-light.webp?preset=content";
+import dashboardDark from "@/assets/screens/dashboard-dark.webp?preset=content";
+import snapshotsLight from "@/assets/screens/snapshots-light.webp?preset=content";
+import snapshotsDark from "@/assets/screens/snapshots-dark.webp?preset=content";
+import panelLight from "@/assets/screens/snapshot-panel-light.webp?preset=content";
+import panelDark from "@/assets/screens/snapshot-panel-dark.webp?preset=content";
+import searchLight from "@/assets/screens/search-light.webp?preset=content";
+import searchDark from "@/assets/screens/search-dark.webp?preset=content";
+
+The server serves the web UI next to the REST API, at `http://localhost:3000` by default. It talks to the server only through the API, so it can do what an [API key](/docs/reference/rest-api) can do, no more.
+
+## Addresses
+
+Pages live after a `#` in the address, so a link to a page or a snapshot works whatever the reverse proxy in front does with paths.
+
+| Address | Page | Guests |
+|---|---|---|
+| `/#/` | Dashboard | Yes |
+| `/#/snapshots` | Snapshots | Yes |
+| `/#/snapshots/:id` | Snapshots, with the detail panel of snapshot `:id` open | Yes |
+| `/#/search?q=…` | Search | Yes |
+| `/#/tags` | Tags | Yes, read-only |
+| `/#/schedules` | Schedules | No |
+| `/#/import` | Import | No |
+| `/#/settings` | Settings | No |
+| `/#/settings/api-keys` | API keys | No |
+| `/#/setup` | First-run setup, only until an admin exists | |
+| `/#/login` | Sign in | |
+
+`?page=` selects a page of results on Snapshots and Search. An unknown address goes to the Dashboard.
+
+## First run and sign-in
+
+Until an admin exists, every address leads to **setup**: a username, a password of at least 8 characters, and, when the server sets `WEBFROST_SETUP_TOKEN`, a **Setup token** field. The second step shows your first API key once, with a **Copy key** button. After that you sign in with that username and password. There is one admin account.
+
+<Callout type="warn" title="Login bounces back to the login page?">
+The session cookie is `Secure`, so browsers drop it on plain-HTTP origins other than `localhost`. Serve WebFrost over TLS, or set `WEBFROST_INSECURE_COOKIES=true` for an HTTP-only deployment. See [Deploy](/docs/guides/deploy#tls-and-cookies).
+</Callout>
+
+If the server cannot be reached at all, the UI says so and offers **Retry** instead of a login form.
+
+## Pages
+
+### Dashboard
+
+<Screenshot light={dashboardLight} dark={dashboardDark} alt="The dashboard: an archive field, four statistics cards and the recent activity list" />
+
+- An archive field: paste a URL and press **Archive**. **Import** and **View Failures** link to those pages.
+- Four cards: **Total Snapshots**, **Storage Used** (and across how many extractors), **Success Rate** (last 30 days) and **Failed Today**.
+- **Pipeline**, while snapshots are pending: each one with the extractors that have finished. The page refreshes every 5 seconds until they are done.
+- **Recent Activity**: the latest 30 finished snapshots, grouped by day, with their extractors and status.
+
+### Snapshots
+
+<Screenshot light={snapshotsLight} dark={snapshotsDark} alt="The snapshot list with thumbnails, titles, extractor badges, tags and status" />
+
+All snapshots, newest first, 20 per page. Each row shows the URL (with the title and a thumbnail of the screenshot in the comfortable density), a badge per extractor (green when it produced output, red when it did not), tags, status and capture time.
+
+- **Filter by URL or title…** narrows the rows of the current page.
+- The two buttons next to it switch between comfortable and compact rows; the choice is remembered.
+- **New Snapshot** archives a URL, or links to Import.
+- Check rows (or the header box to select the page) for the bulk bar: **Delete** the selection, or add a tag to all of it.
+
+### Snapshot detail
+
+<Screenshot light={panelLight} dark={panelDark} alt="The detail panel of an archived Wikipedia article, on the Reader tab" />
+
+Clicking a snapshot opens a panel over the list, at `/#/snapshots/:id`. Close it with the **×** button, `Escape` or a click beside it.
+
+| Tab | Shows |
+|---|---|
+| **Reader** | The article extracted by Readability: title, byline and text, as plain text. Opens first when there is one; otherwise Screenshot, then Raw. |
+| **Screenshot** | The full-page screenshot, with zoom from 25 % to 300 % and a download link. |
+| **DOM** | The SingleFile copy, or the DOM snapshot, in a sandboxed frame that runs no scripts and loads nothing from the network. |
+| **Media** | The video or audio saved by yt-dlp, with its metadata. |
+| **Raw** | Downloads of the HTML, WARC, PDF, SingleFile and DOM snapshot files that exist. |
+| **History** | Every extractor result with its capture time, newest first. |
+
+Move between tabs with the arrow keys, `Home` and `End`. The side column shows the URL (with a copy button), status, capture time, tags (add with **+**, remove with **×**), the extractors that produced output, and **Delete**. While the snapshot is pending, the panel refreshes every 5 seconds.
+
+### Search
+
+<Screenshot light={searchLight} dark={searchDark} alt="Search results with the matching words highlighted in each snippet" />
+
+Full-text search over the extracted text, URL, title and tag names, 20 results per page, with the matching words highlighted. The query goes into the address (`?q=`) as you type.
+
+- **Filter this page**: status, date (last 7, 30 or 90 days), extractor and tag. These filters apply to the results already on the page; they do not search the rest of the archive.
+- **Save** keeps the query as a named saved search, shown as a chip under the search box. Up to 10 are kept, in your browser (`localStorage`), not on the server.
+
+### Tags
+
+Every tag as a chip. Signed in, you create tags (a name and a colour) and delete them; deleting a tag removes it from every snapshot.
+
+### Schedules
+
+Create a schedule from a URL and a cron expression, typed or picked from a preset (hourly, every 6 or 12 hours, daily, weekly). Each row shows the schedule, a health badge (**On schedule**, **Overdue** or **Never run**), the last and next run, and expands to the next 5 run times. Delete asks for confirmation inline.
+
+The UI creates URL schedules. A schedule that follows an RSS feed is created with the CLI or the API: see [Scheduled archiving](/docs/guides/scheduled-archiving#rss-feeds).
+
+### Import
+
+Choose a format (**RSS / Atom** feed URL, **OPML File**, **Bookmarks HTML**, **Plain Text URLs**), then give the URL, file or list. The result shows how many URLs were found, queued and skipped. The **History** tab lists the latest 50 imports. See [Bulk import](/docs/guides/bulk-import).
+
+### Settings and API keys
+
+**Settings** has four cards: **API Keys** (a link to the keys page), **Change Password** (signs out every other session), **Appearance** (the theme) and **Server Info** (version, storage path and snapshot count).
+
+**API keys** creates and revokes keys for the REST API. A new key is shown once, when you create it.
+
+## Read-only guest view
+
+With `WEBFROST_PUBLIC_READ=true`, visitors browse the archive without signing in: Dashboard, Snapshots (with the detail panel and its downloads), Search and Tags. The sidebar shows a **Read-only** marker and a **Sign in** link, and controls that change the archive are hidden. Opening a page that needs an account leads to the login screen, and back to that page after signing in. See [Public read](/docs/guides/public-read) before turning it on.
+
+## Navigation
+
+The sidebar has Dashboard, Snapshots, Schedules and Tags, then Import and Settings. At the top, **Search…** opens the search palette; at the bottom are **Dark mode**, **Shortcuts**, the signed-in user and **Sign out**. The arrow at the top collapses the sidebar to icons, and the choice is remembered.
+
+Below 1024 px wide, the sidebar becomes a drawer opened with the **Menu** button in the top bar.
+
+## Keyboard shortcuts
+
+| Keys | Action |
+|---|---|
+| `Ctrl+K` (`Cmd+K` on a Mac) | Open the search palette, from anywhere |
+| `?` | Show or hide the shortcuts |
+| `g` then `h` | Go to the Dashboard |
+| `g` then `s` | Go to Snapshots |
+| `g` then `t` | Go to Tags |
+| `g` then `i` | Go to Import (signed in only) |
+| `Escape` | Close the open panel, dialog or drawer |
+
+The second key of a `g` sequence must follow within 1 second. `?` and the `g` sequences are off while you type in a field.
+
+In the search palette, type to search, move with `↑` and `↓`, press `Enter` to open the selected snapshot (or the Search page when nothing matches), and `Escape` to close. It shows up to 8 results; **See all results** opens the Search page.
+
+## Theme
+
+On the first visit the UI follows the system's light or dark setting. **Dark mode** in the sidebar (or **Appearance** in Settings) switches it, and the choice is saved in the browser.
+
+## What the browser remembers
+
+These live in `localStorage`, per browser, and never reach the server:
+
+| Key | Holds |
+|---|---|
+| `webfrost-theme` | `light` or `dark` |
+| `webfrost-sidebar-collapsed` | Whether the sidebar is collapsed |
+| `webfrost-snapshot-density` | Comfortable or compact rows |
+| `webfrost-saved-searches` | Saved searches |
+
+<Cards>
+  <Card title="Archive your first page" href="/docs/getting-started/first-archive">
+    Archive, inspect every format, search.
+  </Card>
+  <Card title="Public read" href="/docs/guides/public-read">
+    Share the archive read-only.
+  </Card>
+</Cards>

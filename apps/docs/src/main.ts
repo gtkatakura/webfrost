@@ -1,6 +1,7 @@
 // Hands out the files `react-router build` wrote to build/client. No rendering happens here: every page
 // was written at build time. Runs the published site (apps/docs/Dockerfile) and `bun run start` locally.
 import { join, normalize } from "node:path";
+import { redirectFor } from "./redirects";
 
 const root = join(import.meta.dir, "../build/client");
 
@@ -54,6 +55,14 @@ const server = Bun.serve({
     if (path === "/up") return new Response("ok");
     if (req.method !== "GET" && req.method !== "HEAD")
       return new Response("Method not allowed", { status: 405 });
+    // Pages that moved: a permanent redirect, so links and search engines follow.
+    const moved = redirectFor(path);
+    if (moved) {
+      return new Response(null, {
+        status: 301,
+        headers: { ...securityHeaders, location: moved, "cache-control": "public, max-age=86400" },
+      });
+    }
     const clean = path.replace(/\/+$/, "");
     return (
       (await file(path)) ??

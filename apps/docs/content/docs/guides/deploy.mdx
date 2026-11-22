@@ -40,21 +40,23 @@ docker build -f packages/server/Dockerfile -t webfrost-server .
 
 ## Docker Compose
 
-The Compose file, [`compose.yml`](https://webfrost.dev/compose.yml) (`docker-compose.prod.yml` in the repository), is the recommended setup:
+The Compose file, [`compose.yml`](https://webfrost.dev/compose.yml) (`docker-compose.prod.yml` in the repository), is the recommended setup. Download it into an empty directory and start it:
 
 ```bash
+mkdir webfrost && cd webfrost
+curl -fsSLO https://webfrost.dev/compose.yml
 [ -f .env ] || echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
 docker compose up -d
 ```
 
-Compose substitutes `${VAR}` from `.env`. `SESSION_SECRET` is required; the rest are optional.
+Compose substitutes `${VAR}` from `.env` in the same directory. `SESSION_SECRET` is required; the rest are optional. From a clone of the repository, add `-f docker-compose.prod.yml` to every `docker compose` command.
 
 | Compose variable | Default | Passed to the container as |
 |---|---|---|
 | `SESSION_SECRET` | none, required | `SESSION_SECRET` |
 | `PORT` | `3000` | Host port only (the container always listens on 3000) |
-| `GITHUB_REPOSITORY` | `gtkatakura/webfrost` | Builds the image name `ghcr.io/$GITHUB_REPOSITORY/server` |
-| `IMAGE_TAG` | `latest` | Image tag |
+| `IMAGE_TAG` | `latest` | Image tag of `ghcr.io/gtkatakura/webfrost/server` |
+| `WEBFROST_SETUP_TOKEN` | empty | `WEBFROST_SETUP_TOKEN` |
 | `WEBFROST_TRUST_PROXY` | `false` | `WEBFROST_TRUST_PROXY` |
 | `WEBFROST_CONCURRENCY` | `3` | `WEBFROST_CONCURRENCY` |
 | `TZ` | `UTC` | `TZ` |
@@ -64,12 +66,16 @@ Compose substitutes `${VAR}` from `.env`. `SESSION_SECRET` is required; the rest
 | `WEBFROST_DOMAIN_DELAY_MS` | `1000` | `WEBFROST_DOMAIN_DELAY_MS` |
 | `WEBFROST_SCHEDULER` | `true` | `WEBFROST_SCHEDULER` |
 | `WEBFROST_LOG_LEVEL` | `info` | `WEBFROST_LOG_LEVEL` |
+| `DATABASE_URL` | empty (SQLite) | `DATABASE_URL`, see [Choosing a database](#choosing-a-database) |
 | `WEBFROST_STORAGE_BACKEND`, `S3_*` | filesystem | [Storage](/docs/guides/storage) |
+| `OTEL_*` | commented out | Uncomment them in `compose.yml` to use them: [Observability](/docs/guides/observability) |
+
+Any other variable from [Configuration](/docs/reference/configuration) needs a line of its own under the service's `environment:`.
 
 The file also sets `restart: unless-stopped` and `init: true` (it reaps the Chromium and yt-dlp child processes), and defines a health check. To pin a release:
 
 ```bash
-IMAGE_TAG=0.2.0 docker compose up -d
+IMAGE_TAG=0.1.0 docker compose up -d
 ```
 
 A single `docker run` also works:
@@ -202,7 +208,7 @@ docker run -d -p 3000:3000 \
   ghcr.io/gtkatakura/webfrost/server:latest
 ```
 
-The setup page then asks for the token, and API calls must send it as `X-Setup-Token` or a `setupToken` field. With Compose, add `WEBFROST_SETUP_TOKEN` to the service's `environment`. Once setup is done the token has no further use; remove it at the next restart if you like.
+The setup page then asks for the token, and API calls must send it as `X-Setup-Token` or a `setupToken` field. With Compose, put `WEBFROST_SETUP_TOKEN` in `.env`; `compose.yml` passes it through. Once setup is done the token has no further use; remove it at the next restart if you like.
 
 ## Shutdown
 
@@ -286,22 +292,16 @@ WEBFROST_DIR=/path/to/data webfrost schedule worker
 
 The worker needs the same `WEBFROST_DIR`, `TZ` and storage variables as the server. The Docker image has no CLI, so run the worker with the `webfrost` binary on the same host or volume. Running both at once is safe, because a due schedule is claimed atomically and only one process runs it. See [Scheduled archiving](/docs/guides/scheduled-archiving#who-runs-the-schedules).
 
-## Hardening checklist
+## Hardening
 
-- [ ] `SESSION_SECRET` set from a secret store, 32 or more random characters.
-- [ ] `AUTH_DISABLED` unset.
-- [ ] TLS in front of the server, and `WEBFROST_TRUST_PROXY=true` if, and only if, the proxy overwrites `X-Forwarded-For`.
-- [ ] `WEBFROST_ALLOW_PRIVATE_URLS` unset unless you archive intranet pages on purpose.
-- [ ] `WEBFROST_PUBLIC_READ` set only if everything archived may be seen by anyone who can reach the server.
-- [ ] Container egress to internal networks and `169.254.169.254` blocked.
-- [ ] Data directory readable only by the service user.
-- [ ] Backups tested with a restore.
-
-Details and reasoning: [Security](/docs/architecture/security#deployment-checklist).
+Before the server is reachable by other people, work through [Harden a deployment](/docs/guides/harden-a-deployment): secrets, setup token, proxy headers, egress, file permissions and backups.
 
 <Cards>
   <Card title="Configuration" href="/docs/reference/configuration">
     Every environment variable.
+  </Card>
+  <Card title="Harden a deployment" href="/docs/guides/harden-a-deployment">
+    The checklist before going public.
   </Card>
   <Card title="Troubleshooting" href="/docs/guides/troubleshooting">
     Fix common problems.

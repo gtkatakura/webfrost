@@ -2,15 +2,14 @@
   "title": "Guides",
   "icon": "Compass",
   "pages": [
-    "web-ui",
     "bulk-import",
     "scheduled-archiving",
     "public-read",
     "storage",
     "deploy",
+    "harden-a-deployment",
     "backups",
     "observability",
-    "troubleshooting",
-    "authenticated-pages"
+    "troubleshooting"
   ]
 }

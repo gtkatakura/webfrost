@@ -1,5 +1,14 @@
 {
   "title": "Reference",
   "icon": "BookBookmark",
-  "pages": ["cli", "rest-api", "sdk", "configuration", "extractors", "database", "disk-layout"]
+  "pages": [
+    "cli",
+    "rest-api",
+    "sdk",
+    "web-ui",
+    "configuration",
+    "extractors",
+    "database",
+    "disk-layout"
+  ]
 }

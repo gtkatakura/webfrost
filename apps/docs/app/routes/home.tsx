@@ -130,7 +130,7 @@ const allSurfaces: Tile[] = [
     label: "Web UI",
     body: "Dashboard, search with highlights, previews of every format, tags, schedules and imports.",
     accent: "text-[var(--tint-4)]",
-    href: "/docs/guides/web-ui",
+    href: "/docs/reference/web-ui",
   },
 ];
 

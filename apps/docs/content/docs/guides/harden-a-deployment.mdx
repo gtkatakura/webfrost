@@ -1,0 +1,109 @@
+---
+title: Harden a deployment
+description: The checklist to work through before a WebFrost server is reachable by other people, with the setting or command for each step.
+icon: Lock
+---
+
+Work through these steps before the server is reachable from a network you do not fully control. Each one names the setting to change; the reasoning behind them is in [Security](/docs/architecture/security) and the [threat model](/docs/architecture/threat-model). The examples use the Docker Compose setup from [Deploy](/docs/guides/deploy), where settings go in `.env` next to `compose.yml`.
+
+## Checklist
+
+- [ ] `SESSION_SECRET` set from a secret store, 32 or more random characters.
+- [ ] `AUTH_DISABLED` unset.
+- [ ] First-run setup finished before the port is exposed, or `WEBFROST_SETUP_TOKEN` set.
+- [ ] TLS in front of the server; `WEBFROST_TRUST_PROXY=true` only behind a proxy that sets `X-Forwarded-For`, with `WEBFROST_TRUSTED_PROXY_HOPS` matching the proxies that append to it.
+- [ ] `WEBFROST_ALLOW_PRIVATE_URLS` unset, unless you archive intranet pages on purpose.
+- [ ] `WEBFROST_PUBLIC_READ` set only if everything in the archive may be seen by anyone who can reach the server.
+- [ ] Egress from the container to internal networks and metadata endpoints blocked.
+- [ ] The data directory readable only by the service user.
+- [ ] Backups taken, and a restore tested.
+- [ ] Image kept up to date.
+
+## 1. Set the session secret
+
+`SESSION_SECRET` signs session cookies. Generate it once and keep it out of version control:
+
+```bash
+[ -f .env ] || echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
+chmod 600 .env
+```
+
+The Compose file refuses to start without it. A secret shorter than 32 characters starts with a warning; replace it. Rotating the secret signs everyone out. With the `webfrost` binary, `webfrost serve` generates a secret into `<data dir>/session-secret` when none is set, so protecting the data directory (step 7) protects the secret too.
+
+## 2. Keep authentication on
+
+Never set `AUTH_DISABLED=true` on a reachable server: it turns off every login check. It is meant for local development, and on its own it makes the server listen on `127.0.0.1` only; setting `HOST=0.0.0.0` next to it exposes an archive anyone can change.
+
+## 3. Claim the instance first
+
+Until an admin exists, whoever reaches the setup page first becomes the admin, and the server logs a warning at every start while that is the case. Either finish setup before you publish the port, or require a token:
+
+```bash
+echo "WEBFROST_SETUP_TOKEN=$(openssl rand -hex 16)" >> .env
+docker compose up -d
+```
+
+The setup page then asks for the token (API calls send it as `X-Setup-Token`). Once setup is done the token has no further use.
+
+## 4. Put TLS and a proxy in front
+
+WebFrost does not terminate TLS. Put Caddy, nginx or Traefik in front (see [Reverse proxy](/docs/guides/deploy#reverse-proxy)), and publish the container's port on the loopback interface only, so the proxy is the only way in. In `compose.yml`:
+
+```yaml
+    ports:
+      - "127.0.0.1:${PORT:-3000}:3000"
+```
+
+Then tell WebFrost to trust the proxy's `X-Forwarded-For`, or every client shares the proxy's rate limit:
+
+```bash
+WEBFROST_TRUST_PROXY=true
+# one proxy (the default); 2 with a CDN in front of the proxy
+WEBFROST_TRUSTED_PROXY_HOPS=1
+```
+
+Set `WEBFROST_TRUST_PROXY` only when the server is reachable through the proxy alone: a client that connects directly can put anything in that header. Keep `WEBFROST_INSECURE_COOKIES` unset once TLS is in place.
+
+## 5. Decide what may be archived and read
+
+- Leave `WEBFROST_ALLOW_PRIVATE_URLS` unset. With it, anyone who can create a snapshot can make the server fetch loopback, private and link-local addresses, cloud metadata endpoints included.
+- Set `WEBFROST_PUBLIC_READ=true` only if every snapshot may be seen by anyone who reaches the server. It exposes the whole archive, not a selection. See [Public read](/docs/guides/public-read).
+
+## 6. Block egress to internal networks
+
+The SSRF guard checks every address the pipeline connects to, but it has gaps a network rule does not: DNS rebinding, redirects inside the browser, and yt-dlp's own requests (see [Residual risks](/docs/architecture/security#residual-risks)). If people you do not fully trust can submit URLs, give the container no route to your internal ranges and to `169.254.169.254`, with your firewall or your orchestrator's network policy.
+
+## 7. Protect the data directory
+
+The data directory holds the database (password hash, API key hashes, sessions), the generated session secret when there is one, and every archived page. Make it readable by the service user only:
+
+```bash
+# the webfrost binary, as the user that runs it
+chmod 700 ~/.webfrost
+```
+
+The Docker image runs as UID 1000, and a named volume is created with that owner. For a bind mount, `chown -R 1000:1000` it and `chmod 700` it. Do not add capabilities to the container or mount anything else from the host: the container is Chromium's sandbox.
+
+## 8. Back up, and test a restore
+
+Back up the database and the archive files together; one is useless without the other. Recipes for SQLite (including continuous replication with Litestream), PostgreSQL and MySQL are in [Backups](/docs/guides/backups). A backup you have never restored is a hope, not a backup.
+
+## 9. Stay up to date
+
+Chromium and yt-dlp parse untrusted content, and fixes ship in new images. Pin a version with `IMAGE_TAG` and upgrade deliberately:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Watch the [releases](https://github.com/gtkatakura/webfrost/releases) for security fixes, and report vulnerabilities privately as described in [Security](/docs/architecture/security#reporting-vulnerabilities).
+
+<Cards>
+  <Card title="Security" href="/docs/architecture/security">
+    Why each control exists and what it does not cover.
+  </Card>
+  <Card title="Deploy" href="/docs/guides/deploy">
+    Compose, reverse proxy, database and health checks.
+  </Card>
+</Cards>

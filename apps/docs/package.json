@@ -8,6 +8,7 @@
     "dev": "react-router dev --port 5174",
     "build": "react-router build",
     "start": "bun src/main.ts",
+    "test": "bun test src",
     "typecheck": "react-router typegen && tsc --noEmit"
   },
   "dependencies": {
