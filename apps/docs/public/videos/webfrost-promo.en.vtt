@@ -1,0 +1,25 @@
+WEBVTT
+
+00:00:00.400 --> 00:00:03.662
+You know that great article you saved to read later?
+
+00:00:03.662 --> 00:00:05.700
+One day, the link is just gone.
+
+00:00:05.805 --> 00:00:07.874
+WebFrost fixes that.
+
+00:00:07.984 --> 00:00:12.653
+Give it a URL, and it keeps the page in every format worth keeping:
+
+00:00:12.653 --> 00:00:17.361
+the full page, a reader view, a screenshot, even the video.
+
+00:00:18.585 --> 00:00:23.746
+Run it on your own machine, or deploy it to your home lab, a VPS, or the cloud.
+
+00:00:23.746 --> 00:00:26.269
+And search everything you saved.
+
+00:00:26.378 --> 00:00:31.647
+It's open source, with a live demo at demo.webfrost.dev.

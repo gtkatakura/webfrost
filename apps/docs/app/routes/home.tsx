@@ -179,6 +179,37 @@ export default function Home() {
             />
           }
         />
+        <section className="mx-auto max-w-5xl px-6 pt-4 pb-8" aria-labelledby="promo-title">
+          <span className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
+            See it in 30 seconds
+          </span>
+          <h2
+            id="promo-title"
+            className="mt-3 text-balance text-3xl font-semibold tracking-tight sm:text-4xl"
+          >
+            One URL in, every format out.
+          </h2>
+          {/* Narrated, so it never plays on its own. The files live in Git LFS (.gitattributes). */}
+          <video
+            className="mt-6 aspect-video w-full rounded-2xl border border-border bg-[#05091a] shadow-2xl shadow-blue-900/20"
+            controls
+            playsInline
+            preload="none"
+            poster="/videos/webfrost-promo-poster.webp"
+            width={1920}
+            height={1080}
+          >
+            <source src="/videos/webfrost-promo.webm" type="video/webm" />
+            <source src="/videos/webfrost-promo.mp4" type="video/mp4" />
+            <track
+              kind="captions"
+              src="/videos/webfrost-promo.en.vtt"
+              srcLang="en"
+              label="English"
+            />
+            <a href="/videos/webfrost-promo.mp4">Download the video (MP4)</a>
+          </video>
+        </section>
         <section className="py-12 sm:py-16">
           <div className="mx-auto grid max-w-6xl items-center gap-10 px-6 lg:grid-cols-[2fr_3fr]">
             <div>

@@ -355,6 +355,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          # the docs image bakes in the promo videos, which live in Git LFS
+          lfs: true
 
       - uses: docker/setup-buildx-action@v4.4.1
 
