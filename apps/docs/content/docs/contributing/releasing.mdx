@@ -104,7 +104,7 @@ docker stop wf-smoke
 A `v*.*.*` tag pushed by hand still releases that commit, as long as CI passed on it (the **CI gate** job checks):
 
 ```bash
-git tag -a v0.2.0-rc.1 -m "WebFrost v0.2.0-rc.1" <commit>
+git tag v0.2.0-rc.1 <commit>   # or git tag -s, to sign the tag itself
 git push origin v0.2.0-rc.1
 ```
 
@@ -149,7 +149,7 @@ A tag pushed by the workflow itself (with `GITHUB_TOKEN`) starts no other workfl
 |---|---|---|
 | CI gate | tag or dispatch | Fails unless the commit already has a successful CI run. It does not run the tests again. |
 | Changesets | CI succeeded on `main` | Creates or updates the `chore: version packages` pull request. When that pull request is merged, it publishes to npm with `changeset publish`, using npm trusted publishing (OIDC) with provenance. While every package is private this publishes nothing and passes. |
-| Release tag | after Changesets | Reads the shared version from `packages/core/package.json` (and fails if another package in the fixed group differs). Creates an annotated `v<version>` tag on the commit CI tested and pushes it, only when no changeset is pending, the version is not `0.0.0`, Changesets is not in pre-release mode and the tag does not exist. Otherwise it does nothing, so every later CI run on `main` is a no-op until the next Version Packages merge. Runs one at a time across the repository. |
+| Release tag | after Changesets | Reads the shared version from `packages/core/package.json` (and fails if another package in the fixed group differs). Creates a lightweight `v<version>` tag (GitHub shows the merge commit's signature) on the commit CI tested and pushes it, only when no changeset is pending, the version is not `0.0.0`, Changesets is not in pre-release mode and the tag does not exist. Otherwise it does nothing, so every later CI run on `main` is a no-op until the next Version Packages merge. Runs one at a time across the repository. |
 | Release version | a tag from either path, or dispatch | Resolves the tag, version and commit the jobs below use. No permissions. |
 | Docker to GHCR | after Release version | Builds `packages/server/Dockerfile` for `linux/amd64` and `linux/arm64` (QEMU and Buildx) and pushes `ghcr.io/gtkatakura/webfrost/server`. Layers are cached in GitHub Actions. |
 | Binaries | after Release version, not on dispatch | `bun build --compile` for `darwin-arm64`, `darwin-x64`, `linux-x64`, and `linux-arm64` on one Linux runner (Bun cross-compiles), with the UI embedded and the tag as the version. Packs `webfrost-<os>-<arch>.tar.gz` and `checksums.txt` (SHA-256). |
