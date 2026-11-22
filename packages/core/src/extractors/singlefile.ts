@@ -22,6 +22,23 @@ import type { StorageBackend } from "../storage";
  * failed extractor without failing the snapshot. Individual assets that fail
  * to download are left as external references.
  */
+/** A media condition no screen matches (a 0.001 px viewport), and one every screen matches. */
+const NEVER = "(max-width: 0.001px)";
+const ALWAYS = "(min-width: 0px)";
+
+/**
+ * Keep the archived copy in the theme it was archived in. Its stylesheets still hold both themes behind
+ * `prefers-color-scheme`, which a browser answers with the viewer's system setting (a frame does not take
+ * the embedding page's color-scheme), so a page archived dark showed light on a light system. The
+ * condition for the archived scheme becomes always true and the other never true, wherever it appears:
+ * @media rules, <link media>, <source media>, inline styles.
+ */
+export function freezeColorScheme(html: string, scheme: "light" | "dark"): string {
+  return html.replace(/\(\s*prefers-color-scheme\s*:\s*(light|dark)\s*\)/gi, (_m, value: string) =>
+    value.toLowerCase() === scheme ? ALWAYS : NEVER,
+  );
+}
+
 export async function singleFileExtractor(
   db: Db,
   snapshotId: number,
@@ -33,7 +50,14 @@ export async function singleFileExtractor(
   const pageUrl = page.url();
   const html = await page.content();
 
-  const inlined = await inlineAssets(html, pageUrl, signal);
+  // The theme the page was archived in, as the page itself saw it.
+  const dark = await Promise.resolve()
+    .then(() => page.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches))
+    .catch(() => false);
+  const inlined = freezeColorScheme(
+    await inlineAssets(html, pageUrl, signal),
+    dark ? "dark" : "light",
+  );
   // Inlining fetches every asset and can outlive the pipeline's timeout for this
   // extractor: if it was given up on, do not store or record a late result.
   signal?.throwIfAborted();

@@ -344,8 +344,6 @@ describe("DetailPage — renders results", () => {
     // No app sidebar and nothing beside the page: it has the window.
     expect(screen.queryByRole("navigation")).toBeNull();
     expect(screen.queryByText("Extractors")).toBeNull();
-    // The frame follows the app's theme, so CSS dark modes in the archived page follow it too.
-    expect((frame as HTMLIFrameElement).style.colorScheme).toBe("light");
 
     // Details is a view of its own, in place of the page.
     fireEvent.click(screen.getByRole("tab", { name: /Details/ }));

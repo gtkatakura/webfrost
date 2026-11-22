@@ -6,7 +6,7 @@ import { sql } from "kysely";
 import type { Page } from "playwright";
 import { type Db, openDb } from "../db";
 import { FilesystemBackend } from "../storage";
-import { inlineAssets, singleFileExtractor } from "./singlefile";
+import { freezeColorScheme, inlineAssets, singleFileExtractor } from "./singlefile";
 
 /** Minimal Page stub whose content() always throws. */
 function makeFailingPage(): Page {
@@ -391,5 +391,25 @@ describe("inlineAssets — real-world markup", () => {
     expect(out).not.toContain("<source");
     expect(out).not.toContain("srcset");
     expect(out).toBe(`<picture><img src="data:image/png;base64,iVBORw=="></picture>`);
+  });
+});
+
+describe("freezeColorScheme", () => {
+  const html = `<style>body{color:#000}@media (prefers-color-scheme: dark){body{color:#fff}}
+@media screen and (prefers-color-scheme:light) and (min-width:600px){p{color:red}}</style>
+<link rel="stylesheet" media="(prefers-color-scheme: DARK)" href="x.css">`;
+
+  test("a page archived dark keeps its dark rules and drops the light ones", () => {
+    const out = freezeColorScheme(html, "dark");
+    expect(out).not.toContain("prefers-color-scheme");
+    expect(out).toContain("@media (min-width: 0px){body{color:#fff}}");
+    expect(out).toContain("@media screen and (max-width: 0.001px) and (min-width:600px)");
+    expect(out).toContain('media="(min-width: 0px)"');
+  });
+
+  test("a page archived light does the opposite", () => {
+    const out = freezeColorScheme(html, "light");
+    expect(out).toContain("@media (max-width: 0.001px){body{color:#fff}}");
+    expect(out).toContain("@media screen and (min-width: 0px) and (min-width:600px)");
   });
 });

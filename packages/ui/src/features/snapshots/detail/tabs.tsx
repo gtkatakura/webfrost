@@ -3,7 +3,6 @@ import type { ArchiveResult } from "@webfrost/sdk";
 import { Clock, Download, RefreshCcw, ZoomIn, ZoomOut } from "lucide-react";
 import { type RefObject, useState } from "react";
 import { useClient } from "../../../context";
-import { useThemeContext } from "../../../context/theme";
 import { snapshotKeys } from "../../../hooks/useSnapshots";
 import { shortDateTime } from "../../../lib/format";
 import { parseReadability, splitParagraphs } from "../../../lib/readability";
@@ -135,9 +134,6 @@ export function PageTab({
   frameRef,
 }: { results: ArchiveResult[]; frameRef?: RefObject<HTMLIFrameElement> }) {
   const shown = pageResult(results);
-  // The frame's color-scheme is what the archived page sees as prefers-color-scheme: a page
-  // whose CSS has a dark mode follows the app's theme, whichever theme it was archived in.
-  const { theme } = useThemeContext();
   if (!shown) {
     return (
       <TabEmpty message="No archived page: the SingleFile and DOM extractors did not run or failed." />
@@ -153,7 +149,6 @@ export function PageTab({
       title="Archived page preview"
       sandbox=""
       allowFullScreen
-      style={{ colorScheme: theme }}
       className="size-full border-0 bg-white"
     />
   );
