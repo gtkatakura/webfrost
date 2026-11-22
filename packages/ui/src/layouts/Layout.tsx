@@ -42,10 +42,11 @@ export function Layout() {
   }
 
   async function handleLogout() {
+    // On a public instance the user becomes a guest: go to the dashboard first, because once the
+    // session ends the guard of a sign-in-only page would send them to /login instead.
+    if (publicRead) navigate("/");
     try {
       await logout();
-      // On a public instance the user becomes a guest: land on the dashboard, not /login.
-      if (publicRead) navigate("/");
     } catch {
       toast.error("Logout failed. Please try again.");
     }

@@ -18,15 +18,15 @@ jobs:
     name: Lint
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
       # Tools (Bun) at the versions pinned in mise.toml.
-      - uses: jdx/mise-action@v5.2.6
+      - uses: jdx/mise-action@v5.2.8
         with:
           install_args: bun
 
       - name: Cache Bun dependencies
-        uses: actions/cache@v5.0.4
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
@@ -43,15 +43,15 @@ jobs:
     name: Typecheck
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
       # Tools (Bun) at the versions pinned in mise.toml.
-      - uses: jdx/mise-action@v5.2.6
+      - uses: jdx/mise-action@v5.2.8
         with:
           install_args: bun
 
       - name: Cache Bun dependencies
-        uses: actions/cache@v5.0.4
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
@@ -72,15 +72,15 @@ jobs:
     name: Unit Tests
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
       # Tools (Bun) at the versions pinned in mise.toml.
-      - uses: jdx/mise-action@v5.2.6
+      - uses: jdx/mise-action@v5.2.8
         with:
           install_args: bun
 
       - name: Cache Bun dependencies
-        uses: actions/cache@v5.0.4
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
@@ -94,7 +94,7 @@ jobs:
       # those tests are skipped rather than failed.
       - name: Cache Playwright browsers
         id: playwright-cache
-        uses: actions/cache@v5.0.4
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/bun.lock') }}
@@ -165,15 +165,15 @@ jobs:
             # root: every test archive gets its own database (CREATE DATABASE).
             url: mysql://root:webfrost@127.0.0.1:3306/webfrost
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
       # Tools (Bun) at the versions pinned in mise.toml.
-      - uses: jdx/mise-action@v5.2.6
+      - uses: jdx/mise-action@v5.2.8
         with:
           install_args: bun
 
       - name: Cache Bun dependencies
-        uses: actions/cache@v5.0.4
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
@@ -186,7 +186,7 @@ jobs:
       # The browser SSRF guard and pipeline tests drive a real Chromium.
       - name: Cache Playwright browsers
         id: playwright-cache
-        uses: actions/cache@v5.0.4
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/bun.lock') }}
@@ -229,15 +229,15 @@ jobs:
     name: Server API E2E Tests
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
       # Tools (Bun) at the versions pinned in mise.toml.
-      - uses: jdx/mise-action@v5.2.6
+      - uses: jdx/mise-action@v5.2.8
         with:
           install_args: bun
 
       - name: Cache Bun dependencies
-        uses: actions/cache@v5.0.4
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
@@ -255,15 +255,15 @@ jobs:
     name: E2E Tests
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
       # Tools (Bun) at the versions pinned in mise.toml.
-      - uses: jdx/mise-action@v5.2.6
+      - uses: jdx/mise-action@v5.2.8
         with:
           install_args: bun
 
       - name: Cache Bun dependencies
-        uses: actions/cache@v5.0.4
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
@@ -275,7 +275,7 @@ jobs:
 
       - name: Cache Playwright browsers
         id: playwright-cache
-        uses: actions/cache@v5.0.4
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/bun.lock') }}
@@ -303,7 +303,7 @@ jobs:
 
       - name: Upload test traces
         if: failure()
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: playwright-traces-${{ github.sha }}
           path: packages/ui/test-results/
@@ -313,14 +313,14 @@ jobs:
     name: Docker build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
       - uses: docker/setup-buildx-action@v4.4.1
 
       # Build only, no push: a broken Dockerfile (for example a missing workspace manifest)
       # must fail the pull request, not the release.
       - name: Build server image
-        uses: docker/build-push-action@v7.0.0
+        uses: docker/build-push-action@v7.4.0
         with:
           context: .
           file: packages/server/Dockerfile
@@ -329,7 +329,7 @@ jobs:
           cache-to: type=gha,scope=server,mode=max
 
       - name: Build docs image
-        uses: docker/build-push-action@v7.0.0
+        uses: docker/build-push-action@v7.4.0
         with:
           context: .
           file: apps/docs/Dockerfile
