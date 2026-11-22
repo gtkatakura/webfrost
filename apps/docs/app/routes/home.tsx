@@ -154,17 +154,20 @@ export default function Home() {
           description="WebFrost archives a URL to every format worth keeping, on your own machine, and lets you search what you saved. Run it from a terminal, a script or a browser."
           primaryAction={{ label: "Get started", href: "/docs/getting-started/quickstart" }}
           secondaryAction={{
-            label: "Live demo",
+            label: "Try the live demo",
             href: "https://demo.webfrost.dev/#/snapshots",
             external: true,
             icon: <Eye className="size-4" aria-hidden="true" />,
           }}
-          tertiaryAction={{
-            label: "View on GitHub",
-            href: repoUrl,
-            external: true,
-            icon: <GitHubMark className="size-4" />,
-          }}
+          note={
+            <a
+              href={repoUrl}
+              className="inline-flex items-center gap-1.5 text-muted-foreground no-underline transition-colors hover:text-fd-foreground"
+            >
+              <GitHubMark className="size-3.5" />
+              Open source, MIT · Source on GitHub
+            </a>
+          }
           art={
             <Picture
               image={mascot}
