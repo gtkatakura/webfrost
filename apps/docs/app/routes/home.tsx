@@ -62,7 +62,7 @@ webfrost import bookmarks.html`,
     code: `import { WebFrostClient } from "@webfrost/sdk";
 
 const client = new WebFrostClient({
-  baseUrl: "http://localhost:3000/api",
+  baseUrl: "http://localhost:3000",
   apiKey: process.env.WEBFROST_API_KEY,
 });
 
