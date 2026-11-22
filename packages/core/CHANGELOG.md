@@ -1,5 +1,18 @@
 # @webfrost/core
 
+## 0.2.0
+
+### Minor Changes
+
+- 037d94f: A snapshot can be archived again in place. The snapshot's Details view has an **Archive again** button, the API has `POST /snapshots/:id/retry` (rate limited like snapshot creation, `409` while the snapshot is still being archived) and the SDK has `retrySnapshot(id)`. The snapshot keeps its id, address and color scheme, and every format is replaced by the new run: useful for a page that changed or a video a site refused the first time.
+
+### Patch Changes
+
+- 4ab82e0: Long pages get their screenshot in about half a second instead of timing out: a page taller than the 10000 px limit is shot through a viewport that tall, so Chromium paints only what is kept instead of the whole page.
+- 07c0901: Video prefers VP9 or AV1 with Opus, so it plays in Chromium builds without H.264 and AAC. H.264 and AAC come next, and AVI, FLV and WMV only when the site offers nothing else.
+- 07c0901: Lists load a small thumbnail instead of the full-page screenshot: a WebP 640 px wide of the first screen, about 17 KB each, roughly 13 times less data on a page of cards. A long page gets a screenshot cut at 10000 px instead of none, with the extractor's whole time budget to paint it, and the card skeletons keep the layout still while the list loads.
+- 66ff385: A video snapshot gets a poster: a representative frame taken with ffmpeg after the download (`media-poster`, `media/poster.jpg`). Lists show it instead of the page's thumbnail, and the player uses it as its cover.
+
 ## 0.1.0
 
 ### Minor Changes
