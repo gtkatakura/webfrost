@@ -22,9 +22,9 @@ Documentation: https://webfrost.dev/docs. The pages to fetch for details are
 arm64, runs as UID 1000):
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/gtkatakura/webfrost/main/docker-compose.prod.yml
+curl -fsSLO https://webfrost.dev/compose.yml
 [ -f .env ] || echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
-docker compose -f docker-compose.prod.yml up -d
+docker compose up -d
 curl -fsS http://localhost:3000/health      # {"status":"ok"}
 ```
 
@@ -59,7 +59,7 @@ Never set `AUTH_DISABLED=true` on anything reachable from a network.
 ## Choosing a database
 
 - **SQLite** (default): one person or a small team on one server. Nothing to run. Back it up
-  continuously with Litestream: `docker compose -f docker-compose.prod.yml --profile backup up -d`
+  continuously with Litestream: `docker compose --profile backup up -d`
   after setting the `LITESTREAM_*` variables (see the Backups guide). WebFrost keeps SQLite in WAL mode
   and never checkpoints by hand, which is what Litestream needs.
 - **PostgreSQL** or **MySQL 8+**: when a database server already exists, for managed backups, or to run

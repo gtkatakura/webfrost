@@ -1,7 +1,11 @@
 # Production deployment of the WebFrost server (API + web UI + scheduler).
+# Also served as https://webfrost.dev/compose.yml:
 #
+#   curl -fsSLO https://webfrost.dev/compose.yml
 #   [ -f .env ] || echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
-#   docker compose -f docker-compose.prod.yml up -d
+#   docker compose up -d
+#
+# (From a clone of the repository: docker compose -f docker-compose.prod.yml up -d)
 #
 # Compose reads .env from this directory for the ${...} substitutions below.
 # Then open http://localhost:3000 and create the admin user.

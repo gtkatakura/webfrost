@@ -32,10 +32,9 @@ keeping and lets you search what you saved. Run it from a terminal, a script or 
 so every format works out of the box, on amd64 and arm64:
 
 ```bash
-curl -fsSLO \
-  https://raw.githubusercontent.com/gtkatakura/webfrost/main/docker-compose.prod.yml
+curl -fsSLO https://webfrost.dev/compose.yml
 echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
-docker compose -f docker-compose.prod.yml up -d
+docker compose up -d
 ```
 
 Open http://localhost:3000 and create the admin user. For a real deployment (reverse proxy, TLS,

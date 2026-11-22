@@ -57,7 +57,7 @@ After a crash or restart, snapshots left `pending` are re-queued automatically: 
 
 ## Server exits with `SESSION_SECRET env var is required`
 
-The server refuses to start without `SESSION_SECRET` unless `AUTH_DISABLED=true`. With Docker Compose, `docker-compose.prod.yml` refuses to start until it is set in `.env`.
+The server refuses to start without `SESSION_SECRET` unless `AUTH_DISABLED=true`. With Docker Compose, `compose.yml` refuses to start until it is set in `.env`.
 
 ```bash
 export SESSION_SECRET=$(openssl rand -hex 32)

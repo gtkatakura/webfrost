@@ -40,11 +40,11 @@ docker build -f packages/server/Dockerfile -t webfrost-server .
 
 ## Docker Compose
 
-`docker-compose.prod.yml` in the repository root is the recommended setup:
+The Compose file, [`compose.yml`](https://webfrost.dev/compose.yml) (`docker-compose.prod.yml` in the repository), is the recommended setup:
 
 ```bash
 [ -f .env ] || echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
-docker compose -f docker-compose.prod.yml up -d
+docker compose up -d
 ```
 
 Compose substitutes `${VAR}` from `.env`. `SESSION_SECRET` is required; the rest are optional.
@@ -69,7 +69,7 @@ Compose substitutes `${VAR}` from `.env`. `SESSION_SECRET` is required; the rest
 The file also sets `restart: unless-stopped` and `init: true` (it reaps the Chromium and yt-dlp child processes), and defines a health check. To pin a release:
 
 ```bash
-IMAGE_TAG=0.2.0 docker compose -f docker-compose.prod.yml up -d
+IMAGE_TAG=0.2.0 docker compose up -d
 ```
 
 A single `docker run` also works:
@@ -84,8 +84,8 @@ docker run -d -p 3000:3000 \
 ### Update
 
 ```bash
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
+docker compose pull
+docker compose up -d
 ```
 
 Snapshots that were `pending` when the old container stopped are re-queued automatically by the new one: a snapshot is adopted once its lease (45 seconds) has expired, at the next recovery sweep (every minute). See [Pipeline](/docs/architecture/pipeline#jobs-leases-and-recovery).
@@ -93,8 +93,8 @@ Snapshots that were `pending` when the old container stopped are re-queued autom
 ### Roll back
 
 ```bash
-docker compose -f docker-compose.prod.yml stop
-IMAGE_TAG=<previous-version> docker compose -f docker-compose.prod.yml up -d
+docker compose stop
+IMAGE_TAG=<previous-version> docker compose up -d
 curl http://localhost:3000/health
 ```
 
@@ -159,7 +159,7 @@ Start MySQL with `--innodb-ft-min-token-size=1` if searches for words of one or 
 </Tab>
 </Tabs>
 
-With Compose, put `DATABASE_URL` in `.env`; `docker-compose.prod.yml` passes it to the container. Every process that shares the archive (the server, a `webfrost schedule worker`, CLI commands) must use the same `DATABASE_URL` and storage settings. Search syntax and ranking differ slightly between engines; see [full-text search](/docs/reference/database#full-text-search).
+With Compose, put `DATABASE_URL` in `.env`; `compose.yml` passes it to the container. Every process that shares the archive (the server, a `webfrost schedule worker`, CLI commands) must use the same `DATABASE_URL` and storage settings. Search syntax and ranking differ slightly between engines; see [full-text search](/docs/reference/database#full-text-search).
 
 Switching engines on a populated archive is not automatic: there is no built-in export from one database to another yet. Choose before you start archiving, or re-archive the URLs (`webfrost import`) into the new database.
 
@@ -227,12 +227,12 @@ State lives in two places: the database (by default `archive.db` in `WEBFROST_DI
 Stop the container so nothing is writing, then archive the volume:
 
 ```bash
-docker compose -f docker-compose.prod.yml stop
+docker compose stop
 
 docker run --rm -v webfrost_data:/data -v "$PWD":/backup alpine \
   tar -czf "/backup/webfrost-$(date +%Y%m%d-%H%M%S).tar.gz" -C /data .
 
-docker compose -f docker-compose.prod.yml start
+docker compose start
 ```
 
 Compose prefixes the volume name with the project name (the directory name by default); check with `docker volume ls`.
@@ -257,12 +257,12 @@ Nightly at 2:00, keeping 7 days:
 <Tab value="Restore">
 
 ```bash
-docker compose -f docker-compose.prod.yml stop
+docker compose stop
 
 docker run --rm -v webfrost_data:/data -v "$PWD":/backup alpine \
   tar -xzf /backup/webfrost-20260101-120000.tar.gz -C /data
 
-docker compose -f docker-compose.prod.yml start
+docker compose start
 curl http://localhost:3000/health
 curl -H "Authorization: Bearer $KEY" http://localhost:3000/api/snapshots
 ```

@@ -96,7 +96,7 @@ cd webfrost
 ### Start the stack
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d
+docker compose up -d
 curl http://localhost:3000/health
 # {"status":"ok"}
 ```
@@ -142,7 +142,7 @@ The Docker image does not contain the `webfrost` CLI, so `webfrost admin create`
 </Callout>
 
 <Callout type="warn" title="Image tags">
-Compose pulls `ghcr.io/gtkatakura/webfrost/server:latest` by default (set `IMAGE_TAG` to pin another tag). If that tag is not published yet, build the image locally: uncomment the `build:` block in `docker-compose.prod.yml`, comment out `image:`, and run `docker compose -f docker-compose.prod.yml up -d --build`.
+Compose pulls `ghcr.io/gtkatakura/webfrost/server:latest` by default (set `IMAGE_TAG` to pin another tag). If that tag is not published yet, build the image locally: uncomment the `build:` block in `compose.yml`, comment out `image:`, and run `docker compose up -d --build`.
 </Callout>
 
 </Tab>

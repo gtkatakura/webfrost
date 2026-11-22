@@ -14,6 +14,8 @@ COPY packages/ui/package.json packages/ui/
 COPY apps/docs/package.json apps/docs/
 RUN bun install --frozen-lockfile --ignore-scripts
 COPY apps/docs apps/docs
+# Served as /compose.yml by the site (see vite.config.ts).
+COPY docker-compose.prod.yml ./
 WORKDIR /app/apps/docs
 # Pages are prerendered and images resized here (vite-imagetools); then the server is bundled to one file.
 RUN bun run build && bun build src/main.ts --target bun --outfile build/server.js

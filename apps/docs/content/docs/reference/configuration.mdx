@@ -84,7 +84,7 @@ Setup and provider endpoints: [Storage](/docs/guides/storage).
 
 | Variable | Default | Description |
 |---|---|---|
-| `IMAGE_TAG` | `latest` | Image tag that `docker-compose.prod.yml` pulls |
+| `IMAGE_TAG` | `latest` | Image tag that `compose.yml` pulls |
 | `GITHUB_REPOSITORY` | `gtkatakura/webfrost` | Builds the image name `ghcr.io/$GITHUB_REPOSITORY/server` |
 | `LITESTREAM_S3_BUCKET` | none | Bucket the optional `litestream` service (profile `backup`) replicates `archive.db` to. See [Backups](/docs/guides/backups). |
 | `LITESTREAM_S3_PATH` | `webfrost/archive.db` | Path of the replica inside the bucket |
@@ -127,7 +127,7 @@ docker run -d -p 3000:3000 \
 </Tab>
 <Tab value="Compose">
 
-`docker-compose.prod.yml` substitutes `${VAR}` from `.env`. `SESSION_SECRET` is required; the other variables above, including the storage ones, are optional and passed through.
+`compose.yml` substitutes `${VAR}` from `.env`. `SESSION_SECRET` is required; the other variables above, including the storage ones, are optional and passed through.
 
 ```bash
 echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env

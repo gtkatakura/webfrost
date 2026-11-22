@@ -1,6 +1,6 @@
 import mascot from "@/assets/brand/mascot.webp?preset=hero";
 import { FeatureGrid, type Tile } from "@/components/features";
-import { type CodeTab, CodeWindow, SplitDeveloperHero } from "@/components/hero";
+import { type CodeTab, CodeWindow, GitHubMark, SplitDeveloperHero } from "@/components/hero";
 import { Picture } from "@/components/picture";
 import { baseOptions } from "@/lib/layout.shared";
 import { repoUrl } from "@/lib/shared";
@@ -8,8 +8,10 @@ import { shareMeta } from "@/lib/site";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 import {
   Archive,
+  Braces,
   CalendarClock,
   Code2,
+  Container,
   Database,
   Eye,
   LayoutDashboard,
@@ -38,21 +40,25 @@ const codeTabs: CodeTab[] = [
   {
     label: "Docker",
     language: "bash",
-    code: `echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
-docker compose -f docker-compose.prod.yml up -d
+    icon: <Container className="size-3.5" strokeWidth={1.8} />,
+    code: `curl -fsSLO https://webfrost.dev/compose.yml
+echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
+docker compose up -d
 # open http://localhost:3000 and create the admin user`,
   },
   {
     label: "CLI",
     language: "bash",
-    code: `export WEBFROST_DIR=./archive
-bun run webfrost add https://example.com
-bun run webfrost search "example domain"
-bun run webfrost import bookmarks.html`,
+    icon: <Terminal className="size-3.5" strokeWidth={1.8} />,
+    code: `curl -fsSL https://webfrost.dev/install.sh | sh
+webfrost add https://example.com
+webfrost search "example domain"
+webfrost import bookmarks.html`,
   },
   {
     label: "SDK",
     language: "typescript",
+    icon: <Braces className="size-3.5" strokeWidth={1.8} />,
     code: `import { WebFrostClient } from "@webfrost/sdk";
 
 const client = new WebFrostClient({
@@ -140,7 +146,12 @@ export default function Home() {
           }
           description="WebFrost archives a URL to every format worth keeping, on your own machine, and lets you search what you saved. Run it from a terminal, a script or a browser."
           primaryAction={{ label: "Get started", href: "/docs/getting-started/quickstart" }}
-          secondaryAction={{ label: "View on GitHub", href: repoUrl, external: true }}
+          secondaryAction={{
+            label: "View on GitHub",
+            href: repoUrl,
+            external: true,
+            icon: <GitHubMark className="size-4" />,
+          }}
           art={
             <Picture
               image={mascot}
