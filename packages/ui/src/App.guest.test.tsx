@@ -127,8 +127,8 @@ describe("guest mode (publicRead + no session)", () => {
     expect(screen.queryByLabelText("Select all")).toBeNull();
 
     expect(screen.getAllByRole("link", { name: /Sign in/ }).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Read-only").length).toBeGreaterThan(0);
-    expect(screen.queryByText("Sign out")).toBeNull();
+    expect(screen.getAllByText("Read-only archive").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
     const names = linkNames();
     for (const hidden of ["Schedules", "Import", "Settings"]) {
       expect(names).not.toContain(hidden);
@@ -216,8 +216,8 @@ describe("signed in on a public-read instance", () => {
     await screen.findByText("https://alpha.example");
     expect(screen.getByText("New Snapshot")).toBeTruthy();
     expect(screen.getAllByRole("checkbox").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Sign out").length).toBeGreaterThan(0);
-    expect(screen.queryByText("Read-only")).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Sign out" }).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Read-only archive")).toBeNull();
     const names = linkNames();
     for (const shown of ["Schedules", "Import", "Settings"]) {
       expect(names).toContain(shown);
@@ -237,12 +237,12 @@ describe("signed in on a public-read instance", () => {
     const { client } = mockClient({ publicRead: true, signedIn: true });
     renderApp(client, "/schedules");
 
-    const [signOut] = await screen.findAllByText("Sign out");
+    const [signOut] = await screen.findAllByRole("button", { name: "Sign out" });
     fireEvent.click(signOut as HTMLElement);
 
     await screen.findByText("Total Snapshots");
     expect(screen.queryByText("Sign in to continue")).toBeNull();
-    expect(screen.getAllByText("Read-only").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Read-only archive").length).toBeGreaterThan(0);
   });
 });
 
@@ -252,7 +252,7 @@ describe("private instance (publicRead false)", () => {
     renderApp(client, "/snapshots");
 
     await screen.findByText("Sign in to continue");
-    expect(screen.queryByText("Read-only")).toBeNull();
+    expect(screen.queryByText("Read-only archive")).toBeNull();
   });
 
   test("a missing publicRead field is treated as private", async () => {

@@ -15,7 +15,7 @@ import {
   Tag,
   Upload,
 } from "lucide-react";
-import type { ElementType } from "react";
+import type { ElementType, ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Logo, Mark } from "../../components/Logo";
 
@@ -43,10 +43,50 @@ export const MOD_KEY =
   typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
 
 const itemBase =
-  "flex w-full items-center gap-2.5 rounded-md border-0 bg-transparent py-1.5 text-left text-ui-sm no-underline transition-colors hover:no-underline";
+  "flex w-full items-center gap-3 rounded-lg border-0 bg-transparent py-2 text-left text-ui-base no-underline transition-colors hover:no-underline";
 
 function itemCls(compact: boolean, extra = "text-mid hover:bg-subtle hover:text-high") {
-  return `${itemBase} ${compact ? "justify-center px-0" : "px-2.5"} ${extra}`;
+  return `${itemBase} ${compact ? "justify-center px-0" : "px-3"} ${extra}`;
+}
+
+/** A small, quiet heading over a group of links (hidden when the sidebar is icon-only). */
+function SectionLabel({ children, compact }: { children: string; compact: boolean }) {
+  if (compact) return <div className="mx-3 my-2 h-px bg-border" />;
+  return (
+    <div className="px-3 pt-4 pb-1.5 text-ui-xs font-semibold uppercase tracking-wider text-low">
+      {children}
+    </div>
+  );
+}
+
+/** Icon-only button in the account row; the label is its tooltip and accessible name. */
+function IconAction({
+  label,
+  onClick,
+  children,
+  danger = false,
+  pressed,
+}: {
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+  danger?: boolean;
+  pressed?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      aria-pressed={pressed}
+      className={`inline-flex size-9 items-center justify-center rounded-lg border-0 bg-transparent text-mid transition-colors hover:bg-subtle ${
+        danger ? "hover:text-danger" : "hover:text-high"
+      }`}
+    >
+      {children}
+    </button>
+  );
 }
 
 function NavItem({
@@ -72,7 +112,7 @@ function NavItem({
           : "text-mid hover:bg-subtle hover:text-high",
       )}`}
     >
-      <Icon size={16} aria-hidden="true" className={`shrink-0 ${active ? "text-accent" : ""}`} />
+      <Icon size={18} aria-hidden="true" className={`shrink-0 ${active ? "text-accent" : ""}`} />
       {!compact && <span className="truncate">{label}</span>}
     </Link>
   );
@@ -148,18 +188,18 @@ export function Sidebar(props: SidebarProps) {
       )}
 
       {/* Search trigger */}
-      <div className="mb-2 px-2">
+      <div className="px-3">
         <button
           type="button"
           onClick={props.onOpenSearch}
           title={compact ? `Search (${MOD_KEY} K)` : undefined}
           aria-label={compact ? "Search" : undefined}
           aria-keyshortcuts="Control+K Meta+K"
-          className={`flex w-full items-center gap-2 rounded-md border border-border bg-overlay py-1.5 text-ui-sm text-mid transition-colors hover:border-border-strong hover:bg-subtle ${
-            compact ? "justify-center px-0" : "px-2.5"
+          className={`flex w-full items-center gap-3 rounded-lg border border-border bg-overlay py-2 text-ui-base text-mid transition-colors hover:border-border-strong hover:bg-subtle ${
+            compact ? "justify-center px-0" : "px-3"
           }`}
         >
-          <Search size={14} aria-hidden="true" className="shrink-0" />
+          <Search size={18} aria-hidden="true" className="shrink-0" />
           {!compact && (
             <>
               <span className="flex-1 text-left">Search…</span>
@@ -169,95 +209,95 @@ export function Sidebar(props: SidebarProps) {
         </button>
       </div>
 
-      <nav aria-label="Main" className="flex flex-col gap-0.5 px-2">
-        {primary.map((entry) => (
-          <NavItem key={entry.to} entry={entry} active={isActive(entry.to)} compact={compact} />
-        ))}
+      <nav aria-label="Main" className="flex flex-col px-3">
+        <SectionLabel compact={compact}>Archive</SectionLabel>
+        <div className="flex flex-col gap-1">
+          {primary.map((entry) => (
+            <NavItem key={entry.to} entry={entry} active={isActive(entry.to)} compact={compact} />
+          ))}
+        </div>
+        {secondary.length > 0 && (
+          <>
+            <SectionLabel compact={compact}>Manage</SectionLabel>
+            <div className="flex flex-col gap-1">
+              {secondary.map((entry) => (
+                <NavItem
+                  key={entry.to}
+                  entry={entry}
+                  active={isActive(entry.to)}
+                  compact={compact}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </nav>
 
-      {secondary.length > 0 && (
-        <>
-          <div className="mx-3 my-3 h-px bg-border" />
-          {/* Not a second nav landmark: it belongs to the main navigation above. */}
-          <div className="flex flex-col gap-0.5 px-2">
-            {secondary.map((entry) => (
-              <NavItem key={entry.to} entry={entry} active={isActive(entry.to)} compact={compact} />
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* Bottom section */}
-      <div className="mt-auto flex flex-col gap-0.5 border-t border-border px-2 py-3">
-        <button
-          type="button"
-          onClick={props.onToggleTheme}
-          aria-pressed={props.theme === "dark"}
-          title={compact ? "Dark mode" : undefined}
-          aria-label={compact ? "Dark mode" : undefined}
-          className={itemCls(compact)}
-        >
-          {props.theme === "dark" ? (
-            <Sun size={14} aria-hidden="true" />
-          ) : (
-            <Moon size={14} aria-hidden="true" />
-          )}
-          {!compact && <span className="text-ui-xs">Dark mode</span>}
-        </button>
-
-        <button
-          type="button"
-          onClick={props.onOpenShortcuts}
-          title={compact ? "Keyboard shortcuts" : undefined}
-          aria-label={compact ? "Keyboard shortcuts" : undefined}
-          className={itemCls(compact)}
-        >
-          <KeyboardIcon size={14} aria-hidden="true" />
-          {!compact && <span className="text-ui-xs">Shortcuts</span>}
-        </button>
-
-        {/* Guest: read-only indicator + sign in */}
-        {isGuest && (
-          <>
-            {!compact && (
-              <span
-                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-ui-xs text-low"
-                title="You are browsing a public, read-only archive"
-              >
-                <Eye size={11} aria-hidden="true" />
-                Read-only
+      {/* Account and preferences */}
+      <div className="mt-auto border-t border-border px-3 py-3">
+        {canWrite && username && !compact && (
+          <div className="mb-2 flex items-center gap-3 rounded-lg px-2 py-2">
+            <span
+              aria-hidden="true"
+              className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-accent-soft text-ui-base font-semibold text-accent"
+            >
+              {username.slice(0, 1).toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-ui-base font-medium text-high" title={username}>
+                {username}
               </span>
+              <span className="block text-ui-xs text-low">Admin</span>
+            </span>
+          </div>
+        )}
+
+        {isGuest && !compact && (
+          <span
+            className="mb-2 flex items-center gap-2 px-3 py-1 text-ui-sm text-low"
+            title="You are browsing a public, read-only archive"
+          >
+            <Eye size={14} aria-hidden="true" />
+            Read-only archive
+          </span>
+        )}
+
+        <div className={`flex gap-1 ${compact ? "flex-col items-center" : "items-center"}`}>
+          <IconAction
+            label={props.theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            onClick={props.onToggleTheme}
+            pressed={props.theme === "dark"}
+          >
+            {props.theme === "dark" ? (
+              <Sun size={18} aria-hidden="true" />
+            ) : (
+              <Moon size={18} aria-hidden="true" />
             )}
+          </IconAction>
+          <IconAction label="Keyboard shortcuts" onClick={props.onOpenShortcuts}>
+            <KeyboardIcon size={18} aria-hidden="true" />
+          </IconAction>
+          {!compact && <span className="flex-1" />}
+          {isGuest && (
             <Link
               to="/login"
               state={{ from: `${location.pathname}${location.search}` }}
               title={compact ? "Sign in" : undefined}
               aria-label={compact ? "Sign in" : undefined}
-              className={itemCls(compact)}
+              className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 text-ui-base font-medium text-accent no-underline hover:bg-subtle hover:no-underline ${
+                compact ? "w-9 justify-center px-0" : ""
+              }`}
             >
-              <LogIn size={14} aria-hidden="true" />
-              {!compact && <span className="text-ui-xs">Sign in</span>}
+              <LogIn size={18} aria-hidden="true" />
+              {!compact && "Sign in"}
             </Link>
-          </>
-        )}
-
-        {canWrite && !compact && username && (
-          <span className="truncate px-2.5 py-1 text-ui-xs text-low" title={username}>
-            {username}
-          </span>
-        )}
-        {canWrite && (
-          <button
-            type="button"
-            onClick={props.onLogout}
-            title={compact ? "Sign out" : undefined}
-            aria-label={compact ? "Sign out" : undefined}
-            className={itemCls(compact, "text-mid hover:bg-subtle hover:text-danger")}
-          >
-            <LogOut size={14} aria-hidden="true" />
-            {!compact && <span className="text-ui-xs">Sign out</span>}
-          </button>
-        )}
+          )}
+          {canWrite && (
+            <IconAction label="Sign out" onClick={props.onLogout} danger>
+              <LogOut size={18} aria-hidden="true" />
+            </IconAction>
+          )}
+        </div>
       </div>
     </div>
   );
