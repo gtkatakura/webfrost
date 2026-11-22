@@ -115,6 +115,33 @@ const MAX_TAGS = 100;
 const MAX_TAG_NAME_LENGTH = 100;
 const MAX_URL_LENGTH = 8192;
 const MAX_ERROR_LENGTH = 10_000;
+/**
+ * Largest inline result (`html`, `readability`), in UTF-8 bytes: the pipeline's fetch never
+ * returns a page over 50 MB, so a real archive never has more.
+ */
+export const MAX_INLINE_CONTENT_BYTES = 50 * 1024 * 1024;
+/** Readability fields the app reads; each must be a string or null. */
+const READABILITY_TEXT_FIELDS = ["title", "byline", "excerpt", "textContent", "content"];
+
+/** Check the Readability JSON the list, the reader view and the search index read. */
+function checkReadability(content: string, where: string): void {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    fail(`${where}.content must be the Readability JSON`);
+  }
+  if (!isObject(parsed)) fail(`${where}.content must be the Readability JSON`);
+  for (const [key, value] of Object.entries(parsed)) {
+    if (READABILITY_TEXT_FIELDS.includes(key)) {
+      if (value !== null && typeof value !== "string") {
+        fail(`${where}.content: Readability ${key} must be a string or null`);
+      }
+    } else if (value !== null && typeof value === "object") {
+      fail(`${where}.content: Readability ${key} must not be an object or array`);
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Timestamps
@@ -270,15 +297,14 @@ export function parseManifest(raw: unknown): BundleManifest {
     if (content !== null && typeof content !== "string")
       fail(`${where}.content must be a string or null`);
     if (error === null && content === null) fail(`${where}: a successful result needs content`);
-    if (extractor === "readability" && typeof content === "string") {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(content);
-      } catch {
-        fail(`${where}.content must be the Readability JSON`);
-      }
-      if (!isObject(parsed)) fail(`${where}.content must be the Readability JSON`);
+    if (
+      typeof content === "string" &&
+      Buffer.byteLength(content, "utf8") > MAX_INLINE_CONTENT_BYTES
+    ) {
+      fail(`${where}.content is larger than ${MAX_INLINE_CONTENT_BYTES} bytes`);
     }
+    if (extractor === "readability" && typeof content === "string")
+      checkReadability(content, where);
     return { ...base, content: content as string | null };
   });
 
@@ -286,7 +312,8 @@ export function parseManifest(raw: unknown): BundleManifest {
     format: BUNDLE_FORMAT,
     version: BUNDLE_VERSION,
     snapshot: {
-      url: s.url,
+      // The parsed form, so what is stored is exactly what was validated.
+      url: parsedUrl.href,
       status: s.status,
       createdAt,
       colorScheme: colorScheme as "light" | "dark" | null,

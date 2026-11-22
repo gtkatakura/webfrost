@@ -7,6 +7,7 @@ import { sql } from "kysely";
 import {
   BundleError,
   type BundleManifest,
+  MAX_INLINE_CONTENT_BYTES,
   exportSnapshotBundle,
   importSnapshotBundle,
   parseManifest,
@@ -524,5 +525,77 @@ describe("spoolToTempFile", () => {
     expect(await Bun.file(spooled.path).text()).toBe("hello");
     await spooled.remove();
     expect(existsSync(spooled.path)).toBe(false);
+  });
+});
+
+describe("inline results and the snapshot URL", () => {
+  const at = "2026-01-02T03:04:05Z";
+  const readability = (content: string) => [
+    { extractor: "readability", content, error: null, durationMs: 1, sizeBytes: 1, createdAt: at },
+  ];
+
+  test("Readability fields that are not strings are refused, and nothing is stored", async () => {
+    const cases: [string, RegExp][] = [
+      [JSON.stringify({ title: { a: 1 } }), /title must be a string or null/],
+      [JSON.stringify({ title: "ok", textContent: ["x"] }), /textContent must be a string or null/],
+      [JSON.stringify({ title: "ok", excerpt: 3 }), /excerpt must be a string or null/],
+      [JSON.stringify({ title: "ok", extra: { nested: true } }), /extra must not be an object/],
+    ];
+    for (const [content, message] of cases) {
+      const path = writeBundle({
+        "manifest.json": JSON.stringify(manifest({}, readability(content))),
+      });
+      await expectRejected(path, message);
+    }
+  });
+
+  test("well-formed Readability JSON with nulls imports", async () => {
+    const content = JSON.stringify({
+      title: "T",
+      byline: null,
+      excerpt: null,
+      textContent: "x",
+      length: 1,
+    });
+    const path = writeBundle({
+      "manifest.json": JSON.stringify(manifest({}, readability(content))),
+    });
+    const { id } = await importSnapshotBundle(target, targetStorage, path);
+    expect(id).toBeGreaterThan(0);
+  });
+
+  test("inline content over the cap is refused", () => {
+    const huge = "x".repeat(MAX_INLINE_CONTENT_BYTES + 1);
+    const results = [
+      { extractor: "html", content: huge, error: null, durationMs: 1, sizeBytes: 1, createdAt: at },
+    ];
+    expect(() => parseManifest(manifest({}, results))).toThrow(/larger than/);
+  });
+
+  test("the URL is stored in its parsed, normalised form", async () => {
+    const snapshot = {
+      url: "HTTPS://Example.COM/a b",
+      status: "done" as const,
+      createdAt: at,
+      colorScheme: null,
+      tags: [],
+    };
+    const html = [
+      {
+        extractor: "html",
+        content: "<p>x</p>",
+        error: null,
+        durationMs: 1,
+        sizeBytes: 8,
+        createdAt: at,
+      },
+    ];
+    const path = writeBundle({ "manifest.json": JSON.stringify(manifest({ snapshot }, html)) });
+    const imported = await importSnapshotBundle(target, targetStorage, path);
+    expect(imported.url).toBe("https://example.com/a%20b");
+    const row = await target.get<{ url: string }>(
+      sql`SELECT url FROM snapshots WHERE id = ${imported.id}`,
+    );
+    expect(row?.url).toBe("https://example.com/a%20b");
   });
 });

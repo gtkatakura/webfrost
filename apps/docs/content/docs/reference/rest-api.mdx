@@ -266,7 +266,8 @@ It needs credentials like every write (an API key, or a session with the [CSRF c
 The server treats a bundle as untrusted input:
 
 - The manifest is checked strictly: unknown fields, an unknown `version`, a non-`http(s)` URL, a timestamp that is not ISO 8601 UTC (`YYYY-MM-DDTHH:MM:SSZ`) or an extractor outside the list below are refused.
-- Inline results (`html`, `readability`) carry `content` and no file. `readability` content must be the Readability JSON object.
+- Inline results (`html`, `readability`) carry `content` and no file, at most 50 MiB (UTF-8) each, the most the pipeline's fetch can return. `readability` content must be the Readability JSON object: `title`, `byline`, `excerpt`, `textContent` and `content` are strings or `null`, and no field holds an object or array.
+- `snapshot.url` is stored in its parsed, normalised form (`HTTPS://Example.COM/a b` becomes `https://example.com/a%20b`).
 - A successful file-backed result names its entry in `file`, and each extractor has fixed names: `screenshot.png`, `thumbnail.webp`, `page.pdf`, `archive.warc`, `dom.html`, `singlefile.html`, `media.mp4` or `media.mp3`, `media-metadata.json`, `poster.jpg`. No other name, and so no path, is accepted. A failed result has no file.
 - Every entry must be referenced by the manifest exactly once. Duplicate names, unreferenced entries, encrypted, ZIP64 or overlapping entries are refused.
 - Sizes are checked from the ZIP directory before anything is written, and again while each entry is decompressed (fed to the inflater 4 KiB at a time, it is stopped within about 4 MiB of passing its declared size; the CRC must match), so a zip bomb stops at its declared size.

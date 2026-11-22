@@ -162,6 +162,35 @@ describe("POST /api/v1/snapshots/import", () => {
     expect(readdirSync(join(serverDir, "tmp"))).toEqual([]);
   });
 
+  test("Readability JSON with an object title is a 400 (not a 500 from indexing), nothing stored", async () => {
+    const manifest = {
+      format: "webfrost-snapshot",
+      version: 1,
+      snapshot: {
+        url: "https://x.example/",
+        status: "done",
+        createdAt: "2026-01-01T00:00:00Z",
+        colorScheme: null,
+        tags: [],
+      },
+      results: [
+        {
+          extractor: "readability",
+          content: JSON.stringify({ title: { a: 1 }, textContent: "x" }),
+          error: null,
+          durationMs: 1,
+          sizeBytes: 1,
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+    };
+    const bundle = zipSync({ "manifest.json": new TextEncoder().encode(JSON.stringify(manifest)) });
+    const res = await postBundle(bundle);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toMatch(/title must be a string/);
+    expect(await snapshotCount()).toBe(0);
+  });
+
   test("anything but application/zip is a 415", async () => {
     const res = await postBundle("{}", { "content-type": "application/json" });
     expect(res.status).toBe(415);
