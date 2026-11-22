@@ -1,0 +1,178 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "One scheduler tick",
+    "output": "apps/docs/diagrams-src/schedule-run/schedule-run.html",
+    "quality_profile": "showcase",
+    "locale": "en",
+    "repository": {
+      "url": "https://github.com/gtkatakura/webfrost",
+      "revision": "0d1b94e076a4214bd0ee14f9f02d2c5a7641a769"
+    },
+    "legend": {
+      "entries": {
+        "dashed": {
+          "label": "feeds only"
+        }
+      }
+    }
+  },
+  "participants": [
+    {
+      "id": "sched",
+      "type": "backend",
+      "label": "Scheduler",
+      "sublabel": "server or worker",
+      "sources": [
+        {
+          "path": "packages/core/src/scheduler.ts",
+          "line": 114,
+          "end_line": 164
+        },
+        {
+          "path": "packages/core/src/scheduler.ts",
+          "line": 170,
+          "end_line": 188
+        }
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "Database",
+      "sublabel": "schedules, snapshots",
+      "sources": [
+        {
+          "path": "packages/core/src/schedules.ts",
+          "line": 62,
+          "end_line": 91
+        },
+        {
+          "path": "packages/core/src/scheduler.ts",
+          "line": 42,
+          "end_line": 53
+        }
+      ]
+    },
+    {
+      "id": "feed",
+      "type": "external",
+      "label": "Feed",
+      "sublabel": "rss_feed schedules",
+      "sources": [
+        {
+          "path": "packages/core/src/scheduler.ts",
+          "line": 87,
+          "end_line": 108
+        }
+      ]
+    },
+    {
+      "id": "runner",
+      "type": "backend",
+      "label": "JobRunner",
+      "sublabel": "shared, bounded",
+      "sources": [
+        {
+          "path": "packages/core/src/jobs.ts",
+          "line": 87,
+          "end_line": 111
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 300,
+      "label": "Every 30 s: find and claim"
+    },
+    {
+      "from": 308,
+      "to": 520,
+      "label": "Each claimed schedule"
+    }
+  ],
+  "messages": [
+    {
+      "id": "due",
+      "from": "sched",
+      "to": "db",
+      "y": 165,
+      "label": "due and not paused",
+      "note": "skips one this process is still running"
+    },
+    {
+      "id": "claim",
+      "from": "sched",
+      "to": "db",
+      "y": 225,
+      "label": "claim: advance next_run_at",
+      "variant": "security",
+      "note": "only if unchanged; 0 rows means another process won"
+    },
+    {
+      "id": "claimed",
+      "from": "db",
+      "to": "sched",
+      "y": 285,
+      "label": "1 row: claimed",
+      "variant": "return"
+    },
+    {
+      "id": "items",
+      "from": "sched",
+      "to": "feed",
+      "y": 325,
+      "label": "fetch items",
+      "variant": "dashed",
+      "note": "feeds only; known URLs skipped"
+    },
+    {
+      "id": "create",
+      "from": "sched",
+      "to": "db",
+      "y": 380,
+      "label": "INSERT snapshot + job"
+    },
+    {
+      "id": "enqueue",
+      "from": "sched",
+      "to": "runner",
+      "y": 410,
+      "label": "enqueue",
+      "variant": "emphasis"
+    },
+    {
+      "id": "settled",
+      "from": "runner",
+      "to": "sched",
+      "y": 440,
+      "label": "pipeline settled",
+      "variant": "return"
+    },
+    {
+      "id": "status",
+      "from": "sched",
+      "to": "db",
+      "y": 470,
+      "label": "last_status, failures",
+      "note": "a feed succeeds when the feed was read"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "sched",
+      "from": 161,
+      "to": 476,
+      "type": "backend"
+    },
+    {
+      "participant": "runner",
+      "from": 406,
+      "to": 444,
+      "type": "backend"
+    }
+  ]
+}

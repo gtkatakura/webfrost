@@ -1,0 +1,243 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "WebFrost system overview",
+    "output": "apps/docs/diagrams-src/system-overview/system-overview.html",
+    "quality_profile": "showcase",
+    "locale": "en",
+    "repository": {
+      "url": "https://github.com/gtkatakura/webfrost",
+      "revision": "0d1b94e076a4214bd0ee14f9f02d2c5a7641a769"
+    }
+  },
+  "components": [
+    {
+      "id": "ui",
+      "type": "frontend",
+      "label": "Web UI",
+      "sublabel": "React SPA via SDK",
+      "pos": [40, 40],
+      "size": [150, 56],
+      "sources": [{ "path": "packages/ui/src/App.tsx", "line": 8 }]
+    },
+    {
+      "id": "sdk",
+      "type": "external",
+      "label": "SDK, curl, scripts",
+      "sublabel": "REST clients",
+      "pos": [230, 40],
+      "size": [150, 56],
+      "sources": [{ "path": "packages/sdk/src/client.ts", "line": 99, "end_line": 102 }]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "HTTP API",
+      "sublabel": "Elysia, /api/v1 + static UI",
+      "pos": [40, 170],
+      "size": [340, 60],
+      "sources": [
+        { "path": "packages/server/src/index.ts", "line": 97, "end_line": 166 },
+        { "path": "packages/server/src/routes/snapshots.ts", "line": 113, "end_line": 141 }
+      ]
+    },
+    {
+      "id": "scheduler",
+      "type": "backend",
+      "label": "Scheduler",
+      "sublabel": "polls every 30 s",
+      "pos": [40, 282],
+      "size": [150, 56],
+      "sources": [
+        { "path": "packages/core/src/scheduler.ts", "line": 166, "end_line": 188 },
+        { "path": "packages/server/src/index.ts", "line": 227, "end_line": 233 }
+      ]
+    },
+    {
+      "id": "recovery",
+      "type": "backend",
+      "label": "Recovery sweep",
+      "sublabel": "every 60 s",
+      "pos": [40, 372],
+      "size": [150, 56],
+      "sources": [
+        { "path": "packages/server/src/index.ts", "line": 200, "end_line": 225 },
+        { "path": "packages/core/src/jobs.ts", "line": 130, "end_line": 193 }
+      ]
+    },
+    {
+      "id": "runner",
+      "type": "backend",
+      "label": "JobRunner",
+      "sublabel": "WEBFROST_CONCURRENCY slots",
+      "pos": [300, 300],
+      "size": [180, 60],
+      "sources": [{ "path": "packages/core/src/jobs.ts", "line": 50, "end_line": 111 }]
+    },
+    {
+      "id": "pipeline",
+      "type": "backend",
+      "label": "Pipeline",
+      "sublabel": "extractors in parallel",
+      "pos": [300, 470],
+      "size": [180, 60],
+      "sources": [
+        { "path": "packages/core/src/pipeline.ts", "line": 137, "end_line": 157 },
+        { "path": "packages/core/src/pipeline.ts", "line": 359, "end_line": 404 }
+      ]
+    },
+    {
+      "id": "cli",
+      "type": "frontend",
+      "label": "webfrost CLI",
+      "sublabel": "own process",
+      "pos": [640, 380],
+      "size": [150, 56],
+      "sources": [
+        { "path": "packages/cli/src/commands/archive.ts", "line": 50, "end_line": 57 },
+        { "path": "packages/cli/src/commands/schedule.ts", "line": 100, "end_line": 132 }
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "Database",
+      "sublabel": "SQLite, PostgreSQL or MySQL",
+      "pos": [640, 470],
+      "size": [180, 60],
+      "sources": [{ "path": "packages/core/src/db.ts", "line": 515, "end_line": 528 }]
+    },
+    {
+      "id": "storage",
+      "type": "database",
+      "label": "File storage",
+      "sublabel": "snapshots/ or S3 bucket",
+      "pos": [640, 580],
+      "size": [180, 60],
+      "sources": [{ "path": "packages/core/src/storage/index.ts", "line": 24, "end_line": 49 }]
+    },
+    {
+      "id": "fetch",
+      "type": "security",
+      "label": "HTTP fetch",
+      "sublabel": "safeFetch, once",
+      "pos": [150, 640],
+      "size": [140, 56],
+      "sources": [
+        { "path": "packages/core/src/fetch-cache.ts", "line": 39, "end_line": 50 },
+        { "path": "packages/core/src/ssrf-guard.ts", "line": 290 }
+      ]
+    },
+    {
+      "id": "chromium",
+      "type": "security",
+      "label": "Chromium",
+      "sublabel": "browser guard",
+      "pos": [320, 640],
+      "size": [140, 56],
+      "sources": [
+        { "path": "packages/core/src/pipeline.ts", "line": 243, "end_line": 258 },
+        { "path": "packages/core/src/browser-guard.ts", "line": 46, "end_line": 100 }
+      ]
+    },
+    {
+      "id": "ytdlp",
+      "type": "backend",
+      "label": "yt-dlp",
+      "sublabel": "subprocess",
+      "pos": [490, 640],
+      "size": [140, 56],
+      "sources": [{ "path": "packages/core/src/extractors/media.ts", "line": 36, "end_line": 43 }]
+    },
+    {
+      "id": "web",
+      "type": "external",
+      "label": "Public web",
+      "sublabel": "pages, feeds, media",
+      "pos": [300, 780],
+      "size": [180, 56],
+      "sources": [{ "path": "packages/core/src/ssrf-guard.ts", "line": 198, "end_line": 220 }]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Server process (@webfrost/server)",
+      "wraps": ["api", "scheduler", "recovery", "runner", "pipeline"]
+    }
+  ],
+  "connections": [
+    { "id": "ui-api", "from": "ui", "to": "api", "label": "REST" },
+    { "id": "sdk-api", "from": "sdk", "to": "api", "label": "REST" },
+    {
+      "id": "api-runner",
+      "from": "api",
+      "to": "runner",
+      "label": "enqueue (202)",
+      "variant": "emphasis"
+    },
+    { "id": "sched-runner", "from": "scheduler", "to": "runner", "label": "due schedules" },
+    { "id": "recovery-runner", "from": "recovery", "to": "runner", "label": "orphaned jobs" },
+    {
+      "id": "runner-pipeline",
+      "from": "runner",
+      "to": "pipeline",
+      "label": "run",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cli-pipeline",
+      "from": "cli",
+      "to": "pipeline",
+      "label": "library calls",
+      "variant": "dashed"
+    },
+    { "id": "pipeline-db", "from": "pipeline", "to": "db", "label": "results, status" },
+    { "id": "pipeline-storage", "from": "pipeline", "to": "storage", "label": "files" },
+    { "id": "pipeline-fetch", "from": "pipeline", "to": "fetch" },
+    { "id": "pipeline-chromium", "from": "pipeline", "to": "chromium" },
+    { "id": "pipeline-ytdlp", "from": "pipeline", "to": "ytdlp" },
+    {
+      "id": "fetch-web",
+      "from": "fetch",
+      "to": "web",
+      "label": "public hosts",
+      "variant": "security"
+    },
+    {
+      "id": "chromium-web",
+      "from": "chromium",
+      "to": "web",
+      "label": "one load",
+      "variant": "security"
+    },
+    { "id": "ytdlp-web", "from": "ytdlp", "to": "web", "label": "media" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Clients",
+      "items": [
+        "The UI and SDK reach the server only over REST",
+        "The CLI calls @webfrost/core in its own process: add runs the pipeline inline, import and schedule worker start their own JobRunner"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "One process",
+      "items": [
+        "The server embeds the job runner, scheduler and recovery sweep",
+        "WEBFROST_SCHEDULER=false leaves schedules to a separate worker"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Data",
+      "items": [
+        "The API and pipeline read and write the database; files go to the storage backend",
+        "Any database works with either storage backend"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "diagram_type": "tree",
+  "meta": {
+    "title": "The archive folder",
+    "output": "apps/docs/diagrams-src/archive-folder/archive-folder.html",
+    "quality_profile": "showcase",
+    "locale": "en",
+    "repository": {
+      "url": "https://github.com/gtkatakura/webfrost",
+      "revision": "0d1b94e076a4214bd0ee14f9f02d2c5a7641a769"
+    }
+  },
+  "layout": {
+    "direction": "right",
+    "gapX": 28,
+    "gapY": 24
+  },
+  "nodes": [
+    {
+      "id": "root",
+      "label": "$WEBFROST_DIR/",
+      "sublabel": "the whole archive",
+      "sources": [
+        {
+          "path": "packages/core/src/database/config.ts",
+          "line": 47,
+          "end_line": 60
+        }
+      ]
+    },
+    {
+      "id": "db",
+      "label": "archive.db",
+      "parent": "root",
+      "sublabel": "SQLite: metadata, search, sessions",
+      "sources": [
+        {
+          "path": "packages/core/src/database/config.ts",
+          "line": 60
+        }
+      ]
+    },
+    {
+      "id": "wal",
+      "label": "archive.db-wal, -shm",
+      "parent": "root",
+      "sublabel": "WAL files while in use",
+      "sources": [
+        {
+          "path": "packages/core/src/database/config.ts",
+          "line": 60
+        }
+      ]
+    },
+    {
+      "id": "snap",
+      "label": "snapshots/<snapshot-id>/",
+      "parent": "root",
+      "sublabel": "one per snapshot (integer id)",
+      "sources": [
+        {
+          "path": "packages/core/src/storage/index.ts",
+          "line": 49
+        },
+        {
+          "path": "packages/core/src/storage/filesystem.ts",
+          "line": 10,
+          "end_line": 20
+        }
+      ]
+    },
+    {
+      "id": "warc",
+      "label": "archive.warc",
+      "parent": "snap",
+      "sublabel": "HTTP response as sent",
+      "sources": [
+        {
+          "path": "packages/core/src/extractors/warc.ts",
+          "line": 163
+        }
+      ]
+    },
+    {
+      "id": "pdf",
+      "label": "page.pdf",
+      "parent": "snap",
+      "sublabel": "PDF",
+      "sources": [
+        {
+          "path": "packages/core/src/extractors/pdf.ts",
+          "line": 21,
+          "end_line": 28
+        }
+      ]
+    },
+    {
+      "id": "png",
+      "label": "screenshot.png",
+      "parent": "snap",
+      "sublabel": "full-page PNG",
+      "sources": [
+        {
+          "path": "packages/core/src/extractors/screenshot.ts",
+          "line": 21,
+          "end_line": 28
+        }
+      ]
+    },
+    {
+      "id": "dom",
+      "label": "dom.html",
+      "parent": "snap",
+      "sublabel": "DOM snapshot",
+      "sources": [
+        {
+          "path": "packages/core/src/extractors/dom-snapshot.ts",
+          "line": 26
+        }
+      ]
+    },
+    {
+      "id": "single",
+      "label": "singlefile.html",
+      "parent": "snap",
+      "sublabel": "self-contained HTML",
+      "sources": [
+        {
+          "path": "packages/core/src/extractors/singlefile.ts",
+          "line": 41
+        }
+      ]
+    },
+    {
+      "id": "media",
+      "label": "media/",
+      "parent": "snap",
+      "sublabel": "only when yt-dlp found media",
+      "sources": [
+        {
+          "path": "packages/core/src/extractors/media.ts",
+          "line": 54,
+          "end_line": 56
+        }
+      ]
+    },
+    {
+      "id": "video",
+      "label": "media.mp4",
+      "parent": "media",
+      "sublabel": "or media.mp3 (audio only)",
+      "sources": [
+        {
+          "path": "packages/core/src/extractors/media.ts",
+          "line": 112,
+          "end_line": 177
+        }
+      ]
+    },
+    {
+      "id": "meta",
+      "label": "media-metadata.json",
+      "parent": "media",
+      "sublabel": "yt-dlp metadata",
+      "sources": [
+        {
+          "path": "packages/core/src/extractors/media.ts",
+          "line": 99
+        }
+      ]
+    }
+  ]
+}

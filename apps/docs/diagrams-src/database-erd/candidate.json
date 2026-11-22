@@ -1,0 +1,627 @@
+{
+  "schema_version": 1,
+  "diagram_type": "erd",
+  "meta": {
+    "title": "WebFrost database schema",
+    "output": "apps/docs/diagrams-src/database-erd/database-erd.html",
+    "quality_profile": "showcase",
+    "locale": "en",
+    "repository": {
+      "url": "https://github.com/gtkatakura/webfrost",
+      "revision": "0d1b94e076a4214bd0ee14f9f02d2c5a7641a769"
+    }
+  },
+  "layout": {
+    "mode": "grid"
+  },
+  "entities": [
+    {
+      "id": "snapshots_fts",
+      "label": "snapshots_fts",
+      "sublabel": "SQLite: FTS5 virtual table",
+      "tag": "search",
+      "row": 0,
+      "col": 0,
+      "attributes": [
+        {
+          "name": "rowid",
+          "type": "INTEGER"
+        },
+        {
+          "name": "url",
+          "type": "FTS5"
+        },
+        {
+          "name": "title",
+          "type": "FTS5"
+        },
+        {
+          "name": "text_content",
+          "type": "FTS5"
+        },
+        {
+          "name": "tags",
+          "type": "FTS5"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/core/src/database/migrations.ts",
+          "line": 90,
+          "end_line": 95
+        },
+        {
+          "path": "packages/core/src/search.ts",
+          "line": 71,
+          "end_line": 73
+        }
+      ]
+    },
+    {
+      "id": "search_index",
+      "label": "search_index",
+      "sublabel": "PostgreSQL, MySQL instead",
+      "tag": "search",
+      "row": 1,
+      "col": 0,
+      "attributes": [
+        {
+          "name": "snapshot_id",
+          "type": "BIGINT",
+          "key": ["pk", "fk"],
+          "references": "snapshots.id"
+        },
+        {
+          "name": "url",
+          "type": "TEXT"
+        },
+        {
+          "name": "title",
+          "type": "TEXT"
+        },
+        {
+          "name": "text_content",
+          "type": "TEXT"
+        },
+        {
+          "name": "tags",
+          "type": "TEXT"
+        },
+        {
+          "name": "search_text",
+          "type": "TEXT"
+        },
+        {
+          "name": "search_vector",
+          "type": "tsvector"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/core/src/database/migrations.ts",
+          "line": 263,
+          "end_line": 271
+        },
+        {
+          "path": "packages/core/src/database/migrations.ts",
+          "line": 395,
+          "end_line": 404
+        }
+      ]
+    },
+    {
+      "id": "admin_users",
+      "label": "admin_users",
+      "tag": "access",
+      "row": 2,
+      "col": 0,
+      "attributes": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "key": "pk"
+        },
+        {
+          "name": "username",
+          "type": "TEXT",
+          "key": "uk"
+        },
+        {
+          "name": "password_hash",
+          "type": "TEXT"
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/core/src/database/migrations.ts",
+          "line": 96,
+          "end_line": 101
+        }
+      ]
+    },
+    {
+      "id": "api_keys",
+      "label": "api_keys",
+      "tag": "access",
+      "row": 3,
+      "col": 0,
+      "attributes": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "key": "pk"
+        },
+        {
+          "name": "name",
+          "type": "TEXT"
+        },
+        {
+          "name": "key_hash",
+          "type": "TEXT"
+        },
+        {
+          "name": "expires_at",
+          "type": "TEXT"
+        },
+        {
+          "name": "last_used_at",
+          "type": "TEXT"
+        },
+        {
+          "name": "revoked_at",
+          "type": "TEXT"
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/core/src/database/migrations.ts",
+          "line": 102,
+          "end_line": 110
+        }
+      ]
+    },
+    {
+      "id": "sessions",
+      "label": "sessions",
+      "tag": "access",
+      "row": 4,
+      "col": 0,
+      "attributes": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "key": "pk"
+        },
+        {
+          "name": "username",
+          "type": "TEXT"
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT"
+        },
+        {
+          "name": "expires_at",
+          "type": "TEXT"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/core/src/database/migrations.ts",
+          "line": 119,
+          "end_line": 124
+        }
+      ]
+    },
+    {
+      "id": "snapshots",
+      "label": "snapshots",
+      "tag": "archive",
+      "row": 0,
+      "col": 1,
+      "attributes": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "key": "pk"
+        },
+        {
+          "name": "url",
+          "type": "TEXT"
+        },
+        {
+          "name": "status",
+          "type": "TEXT"
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/core/src/database/migrations.ts",
+          "line": 51,
+          "end_line": 56
+        }
+      ]
+    },
+    {
+      "id": "archive_results",
+      "label": "archive_results",
+      "tag": "archive",
+      "row": 1,
+      "col": 1,
+      "attributes": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "key": "pk"
+        },
+        {
+          "name": "snapshot_id",
+          "type": "INTEGER",
+          "key": "fk",
+          "references": "snapshots.id"
+        },
+        {
+          "name": "extractor",
+          "type": "TEXT"
+        },
+        {
+          "name": "content",
+          "type": "TEXT"
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT"
+        },
+        {
+          "name": "duration_ms",
+          "type": "INTEGER"
+        },
+        {
+          "name": "error",
+          "type": "TEXT"
+        },
+        {
+          "name": "size_bytes",
+          "type": "INTEGER"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/core/src/database/migrations.ts",
+          "line": 57,
+          "end_line": 63
+        },
+        {
+          "path": "packages/core/src/database/migrations.ts",
+          "line": 133,
+          "end_line": 135
+        },
+        {
+          "path": "packages/core/src/database/migrations.ts",
+          "line": 154,
+          "end_line": 156
+        }
+      ]
+    },
+    {
+      "id": "job_queue",
+      "label": "job_queue",
+      "tag": "archive",
+      "row": 2,
+      "col": 1,
+      "attributes": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "key": "pk"
+        },
+        {
+          "name": "snapshot_id",
+          "type": "INTEGER",
+          "key": "fk",
+          "references": "snapshots.id"
+        },
+        {
+          "name": "status",
+          "type": "TEXT"
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT"
+        },
+        {
+          "name": "heartbeat_at",
+          "type": "TEXT"
+        },
+        {
+          "name": "attempts",
+          "type": "INTEGER"
+        },
+        {
+          "name": "lease_token",
+          "type": "TEXT"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/core/src/database/migrations.ts",
+          "line": 64,
+          "end_line": 69
+        },
+        {
+          "path": "packages/core/src/database/migrations.ts",
+          "line": 136,
+          "end_line": 139
+        },
+        {
+          "path": "packages/core/src/database/migrations.ts",
+          "line": 156,
+          "end_line": 157
+        }
+      ]
+    },
+    {
+      "id": "snapshot_tags",
+      "label": "snapshot_tags",
+      "tag": "tags",
+      "row": 0,
+      "col": 2,
+      "attributes": [
+        {
+          "name": "snapshot_id",
+          "type": "INTEGER",
+          "key": ["pk", "fk"],
+          "references": "snapshots.id"
+        },
+        {
+          "name": "tag_id",
+          "type": "INTEGER",
+          "key": ["pk", "fk"],
+          "references": "tags.id"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/core/src/database/migrations.ts",
+          "line": 85,
+          "end_line": 89
+        }
+      ]
+    },
+    {
+      "id": "tags",
+      "label": "tags",
+      "tag": "tags",
+      "row": 1,
+      "col": 2,
+      "attributes": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "key": "pk"
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "key": "uk"
+        },
+        {
+          "name": "slug",
+          "type": "TEXT",
+          "key": "uk"
+        },
+        {
+          "name": "color",
+          "type": "TEXT"
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/core/src/database/migrations.ts",
+          "line": 78,
+          "end_line": 84
+        }
+      ]
+    },
+    {
+      "id": "schedules",
+      "label": "schedules",
+      "tag": "automation",
+      "row": 2,
+      "col": 2,
+      "attributes": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "key": "pk"
+        },
+        {
+          "name": "url",
+          "type": "TEXT"
+        },
+        {
+          "name": "cron",
+          "type": "TEXT"
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT"
+        },
+        {
+          "name": "last_run_at",
+          "type": "TEXT"
+        },
+        {
+          "name": "next_run_at",
+          "type": "TEXT"
+        },
+        {
+          "name": "kind",
+          "type": "TEXT"
+        },
+        {
+          "name": "paused",
+          "type": "INTEGER"
+        },
+        {
+          "name": "last_status",
+          "type": "TEXT"
+        },
+        {
+          "name": "consecutive_failures",
+          "type": "INTEGER"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/core/src/database/migrations.ts",
+          "line": 70,
+          "end_line": 77
+        },
+        {
+          "path": "packages/core/src/database/migrations.ts",
+          "line": 127,
+          "end_line": 132
+        }
+      ]
+    },
+    {
+      "id": "imports",
+      "label": "imports",
+      "tag": "automation",
+      "row": 3,
+      "col": 2,
+      "attributes": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "key": "pk"
+        },
+        {
+          "name": "source_url",
+          "type": "TEXT"
+        },
+        {
+          "name": "format",
+          "type": "TEXT"
+        },
+        {
+          "name": "queued",
+          "type": "INTEGER"
+        },
+        {
+          "name": "skipped",
+          "type": "INTEGER"
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT"
+        }
+      ],
+      "sources": [
+        {
+          "path": "packages/core/src/database/migrations.ts",
+          "line": 111,
+          "end_line": 118
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "id": "snap-results",
+      "from": "snapshots",
+      "to": "archive_results",
+      "label": "per extractor",
+      "fromCardinality": "one",
+      "toCardinality": "many"
+    },
+    {
+      "id": "snap-jobs",
+      "from": "snapshots",
+      "to": "job_queue",
+      "label": "job, lease",
+      "fromCardinality": "one",
+      "toCardinality": "many"
+    },
+    {
+      "id": "snap-tags",
+      "from": "snapshots",
+      "to": "snapshot_tags",
+      "label": "tagged",
+      "fromCardinality": "one",
+      "toCardinality": "many"
+    },
+    {
+      "id": "tag-snaps",
+      "from": "tags",
+      "to": "snapshot_tags",
+      "label": "applied",
+      "fromCardinality": "one",
+      "toCardinality": "many"
+    },
+    {
+      "id": "snap-index",
+      "from": "snapshots",
+      "to": "search_index",
+      "label": "indexed",
+      "fromCardinality": "one",
+      "toCardinality": "one",
+      "toOptional": true
+    },
+    {
+      "id": "snap-fts",
+      "from": "snapshots",
+      "to": "snapshots_fts",
+      "label": "rowid",
+      "fromCardinality": "one",
+      "toCardinality": "one",
+      "toOptional": true,
+      "identifying": false,
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Archive",
+      "items": [
+        "snapshots.status is pending, done or failed",
+        "archive_results.content holds inline data or a storage reference to a file",
+        "job_queue carries the lease: heartbeat_at, lease_token, attempts"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Search",
+      "items": [
+        "SQLite indexes into the FTS5 table snapshots_fts, keyed by rowid = snapshots.id",
+        "PostgreSQL and MySQL use search_index instead; search_vector exists on PostgreSQL only"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Types",
+      "items": [
+        "SQLite column types shown; PostgreSQL and MySQL use BIGINT ids and VARCHAR where they need an index",
+        "Timestamps are UTC text on every engine"
+      ]
+    }
+  ]
+}

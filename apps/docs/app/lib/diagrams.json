@@ -1,0 +1,46 @@
+{
+  "archive-folder": {
+    "width": 912,
+    "height": 995
+  },
+  "core-modules": {
+    "width": 890,
+    "height": 734
+  },
+  "database-erd": {
+    "width": 982,
+    "height": 1134
+  },
+  "download-flow": {
+    "width": 920,
+    "height": 658
+  },
+  "import-flow": {
+    "width": 920,
+    "height": 638
+  },
+  "package-dependencies": {
+    "width": 850,
+    "height": 468
+  },
+  "schedule-run": {
+    "width": 920,
+    "height": 618
+  },
+  "snapshot-lifecycle": {
+    "width": 761,
+    "height": 348
+  },
+  "snapshot-request": {
+    "width": 920,
+    "height": 1073
+  },
+  "system-overview": {
+    "width": 860,
+    "height": 904
+  },
+  "threat-dataflow": {
+    "width": 853,
+    "height": 626
+  }
+}

@@ -8,21 +8,11 @@ A WebFrost archive is a directory. A database holds the metadata and search inde
 
 ## One directory
 
-```
-$WEBFROST_DIR/
-├── archive.db              SQLite: metadata, FTS5 index, schedules, sessions
-│                           (absent when DATABASE_URL points at PostgreSQL or MySQL)
-└── snapshots/
-    └── <snapshot-id>/      one directory per snapshot
-        ├── archive.warc
-        ├── page.pdf
-        ├── screenshot.png
-        ├── dom.html
-        ├── singlefile.html
-        └── media/          only when yt-dlp found media
-            ├── media.mp4   or media.mp3
-            └── media-metadata.json
-```
+<ArchDiagram
+  name="archive-folder"
+  alt="The archive folder: WEBFROST_DIR holds archive.db (with its WAL files while in use) and snapshots/, which has one folder per snapshot id containing archive.warc, page.pdf, screenshot.png, dom.html, singlefile.html and, when yt-dlp found media, a media/ folder with media.mp4 or media.mp3 and media-metadata.json."
+  caption="One directory per archive, one folder per snapshot. archive.db is absent when DATABASE_URL points at PostgreSQL or MySQL."
+/>
 
 The `html` and `readability` results live in the database. Files exist only for extractors that ran and succeeded. See [Disk layout](/docs/reference/disk-layout).
 
@@ -36,6 +26,12 @@ The `html` and `readability` results live in the database. Files exist only for 
 - **admin_users**, **sessions**, **api_keys**: the admin account, login sessions and hashed API keys.
 - **imports**: history of bulk imports.
 - **snapshots_fts** (SQLite) or **search_index** (PostgreSQL, MySQL): the full-text index over URL, title, text and tags.
+
+<ArchDiagram
+  name="database-erd"
+  alt="Entity-relationship diagram of every table and column. snapshots is the hub: archive_results and job_queue reference it one-to-many, snapshot_tags joins it to tags, and search_index (PostgreSQL, MySQL) or the FTS5 table snapshots_fts (SQLite) holds one search row per snapshot. admin_users, api_keys, sessions, schedules and imports stand alone."
+  caption="Every table and column, grouped by what they serve. Column types are SQLite's, except search_index (PostgreSQL)."
+/>
 
 The tables are the same on every engine; column detail and the per-engine differences are in [Database](/docs/reference/database).
 

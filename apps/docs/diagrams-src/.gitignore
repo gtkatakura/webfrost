@@ -1,0 +1,7 @@
+# Only the candidates are sources. The rendered HTML is copied to public/diagrams/, and
+# Archify's receipts and review folders are local evidence.
+*
+!*/
+!.gitignore
+!*/candidate.json
+review-*/

@@ -82,16 +82,13 @@ This documentation site in `apps/docs`. See [Development](/docs/contributing/dev
 
 ## Dependencies
 
-<Mermaid chart={`flowchart LR
-  cli[cli] --> core[core]
-  server[server] --> core
-  ui[ui] --> sdk[sdk]
-  ui -.REST.-> server
-  sdk -.REST.-> server
-  docs[docs]
-`} />
+<ArchDiagram
+  name="package-dependencies"
+  alt="Package dependencies: @webfrost/cli imports @webfrost/core and @webfrost/server, @webfrost/server imports @webfrost/core, and @webfrost/ui imports @webfrost/sdk, which reaches the server over REST at /api/v1. @webfrost/docs depends on no other package."
+  caption="Solid arrows are workspace imports; the dashed arrow is HTTP at runtime."
+/>
 
-The CLI and server depend on core. The UI and SDK depend on nothing internal at runtime: they reach the server over HTTP.
+The CLI and server depend on core, and the CLI also depends on the server, which `webfrost serve` starts in its own process. The UI uses the SDK, and at runtime both reach the server only over HTTP. The docs site stands alone.
 
 ## Add an extractor
 

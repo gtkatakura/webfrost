@@ -46,7 +46,9 @@
       "**/*.lock",
       "apps/docs/build/**",
       "apps/docs/.react-router/**",
-      "apps/docs/.source/**"
+      "apps/docs/.source/**",
+      "apps/docs/diagrams-src/*/*.*.json",
+      "apps/docs/diagrams-src/*/review-*/**"
     ]
   }
 }

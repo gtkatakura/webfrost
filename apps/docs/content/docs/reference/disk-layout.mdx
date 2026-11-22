@@ -6,20 +6,11 @@ icon: FolderTree
 
 Everything WebFrost stores lives under `WEBFROST_DIR` (S3 files aside).
 
-```
-$WEBFROST_DIR/
-├── archive.db                  SQLite database: metadata, search index, schedules, sessions
-└── snapshots/
-    └── <snapshot-id>/          one directory per snapshot (integer id)
-        ├── archive.warc        WARC: the HTTP response as sent, plus redirects
-        ├── page.pdf            PDF
-        ├── screenshot.png      full-page PNG
-        ├── dom.html            DOM snapshot
-        ├── singlefile.html     self-contained HTML
-        └── media/              only when yt-dlp found media
-            ├── media.mp4       video (or media.mp3 for the audio-only fallback)
-            └── media-metadata.json
-```
+<ArchDiagram
+  name="archive-folder"
+  alt="The archive folder: WEBFROST_DIR holds archive.db (with its WAL files while in use) and snapshots/, which has one folder per snapshot id containing archive.warc, page.pdf, screenshot.png, dom.html, singlefile.html and, when yt-dlp found media, a media/ folder with media.mp4 or media.mp3 and media-metadata.json."
+  caption="Everything under WEBFROST_DIR. The WARC also records redirects; media.mp3 replaces media.mp4 for the audio-only fallback."
+/>
 
 The `html` and `readability` results are stored in the database, not as files. A file exists only if its extractor ran and succeeded, so most snapshots lack some of these.
 

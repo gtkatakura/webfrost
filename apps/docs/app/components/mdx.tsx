@@ -3,15 +3,15 @@ import { Step, Steps } from "fumadocs-ui/components/steps";
 import { Tab, Tabs } from "fumadocs-ui/components/tabs";
 import defaultMdxComponents from "fumadocs-ui/mdx";
 import type { MDXComponents } from "mdx/types";
-import { Mermaid } from "./mermaid";
+import { ArchDiagram } from "./arch-diagram";
 import { Picture } from "./picture";
 
 // What a page may use without importing it.
 export function getMDXComponents(components?: MDXComponents) {
   return {
     ...defaultMdxComponents,
+    ArchDiagram,
     Callout,
-    Mermaid,
     Picture,
     Step,
     Steps,

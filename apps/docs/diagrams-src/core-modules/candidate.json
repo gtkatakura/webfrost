@@ -1,0 +1,199 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Inside @webfrost/core",
+    "output": "apps/docs/diagrams-src/core-modules/core-modules.html",
+    "quality_profile": "showcase",
+    "locale": "en",
+    "repository": {
+      "url": "https://github.com/gtkatakura/webfrost",
+      "revision": "0d1b94e076a4214bd0ee14f9f02d2c5a7641a769"
+    }
+  },
+  "components": [
+    {
+      "id": "import",
+      "type": "backend",
+      "label": "Import",
+      "sublabel": "import.ts, rss.ts",
+      "pos": [40, 40],
+      "size": [170, 56],
+      "sources": [
+        { "path": "packages/core/src/import.ts", "line": 197 },
+        { "path": "packages/server/src/routes/import.ts", "line": 45, "end_line": 70 }
+      ]
+    },
+    {
+      "id": "scheduler",
+      "type": "backend",
+      "label": "Scheduler",
+      "sublabel": "scheduler.ts, cron.ts",
+      "pos": [250, 40],
+      "size": [190, 56],
+      "sources": [
+        { "path": "packages/core/src/scheduler.ts", "line": 68, "end_line": 108 },
+        { "path": "packages/core/src/scheduler.ts", "line": 114, "end_line": 164 }
+      ]
+    },
+    {
+      "id": "jobs",
+      "type": "backend",
+      "label": "JobRunner",
+      "sublabel": "jobs.ts: slots, leases",
+      "pos": [140, 170],
+      "size": [200, 60],
+      "sources": [
+        { "path": "packages/core/src/jobs.ts", "line": 74, "end_line": 111 },
+        { "path": "packages/core/src/jobs.ts", "line": 212, "end_line": 234 }
+      ]
+    },
+    {
+      "id": "throttle",
+      "type": "backend",
+      "label": "Throttle",
+      "sublabel": "throttle.ts, per host",
+      "pos": [460, 172],
+      "size": [160, 56],
+      "sources": [
+        { "path": "packages/core/src/throttle.ts", "line": 13, "end_line": 44 },
+        { "path": "packages/core/src/jobs.ts", "line": 202, "end_line": 210 }
+      ]
+    },
+    {
+      "id": "pipeline",
+      "type": "backend",
+      "label": "Pipeline",
+      "sublabel": "pipeline.ts",
+      "pos": [140, 310],
+      "size": [200, 60],
+      "sources": [
+        { "path": "packages/core/src/pipeline.ts", "line": 159, "end_line": 268 },
+        { "path": "packages/core/src/pipeline.ts", "line": 301, "end_line": 361 }
+      ]
+    },
+    {
+      "id": "search",
+      "type": "backend",
+      "label": "Search and tags",
+      "sublabel": "search.ts, tags.ts",
+      "pos": [460, 312],
+      "size": [160, 56],
+      "sources": [
+        { "path": "packages/core/src/search.ts", "line": 87, "end_line": 99 },
+        { "path": "packages/core/src/tags.ts", "line": 70 },
+        { "path": "packages/core/src/pipeline.ts", "line": 406, "end_line": 420 }
+      ]
+    },
+    {
+      "id": "auth",
+      "type": "security",
+      "label": "Auth",
+      "sublabel": "users, keys, sessions",
+      "pos": [670, 312],
+      "size": [160, 56],
+      "sources": [
+        { "path": "packages/core/src/auth.ts", "line": 38, "end_line": 63 },
+        { "path": "packages/core/src/auth.ts", "line": 295, "end_line": 330 }
+      ]
+    },
+    {
+      "id": "fetch",
+      "type": "security",
+      "label": "Fetch cache",
+      "sublabel": "fetch-cache.ts, ssrf-guard.ts",
+      "pos": [40, 470],
+      "size": [190, 56],
+      "sources": [
+        { "path": "packages/core/src/fetch-cache.ts", "line": 32, "end_line": 50 },
+        { "path": "packages/core/src/ssrf-guard.ts", "line": 290 }
+      ]
+    },
+    {
+      "id": "browser",
+      "type": "security",
+      "label": "Browser guard",
+      "sublabel": "browser-guard.ts",
+      "pos": [250, 470],
+      "size": [160, 56],
+      "sources": [{ "path": "packages/core/src/browser-guard.ts", "line": 46, "end_line": 100 }]
+    },
+    {
+      "id": "extractors",
+      "type": "backend",
+      "label": "Extractors",
+      "sublabel": "extractors/*, nine formats",
+      "pos": [430, 470],
+      "size": [190, 56],
+      "sources": [
+        { "path": "packages/core/src/pipeline.ts", "line": 301, "end_line": 346 },
+        { "path": "packages/core/src/results.ts", "line": 41, "end_line": 56 }
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "Data access",
+      "sublabel": "db.ts, database/ (Kysely)",
+      "pos": [650, 590],
+      "size": [200, 60],
+      "sources": [
+        { "path": "packages/core/src/db.ts", "line": 515, "end_line": 528 },
+        { "path": "packages/core/src/database/migrations.ts", "line": 1, "end_line": 20 }
+      ]
+    },
+    {
+      "id": "storage",
+      "type": "database",
+      "label": "Storage",
+      "sublabel": "storage/: filesystem or S3",
+      "pos": [430, 610],
+      "size": [190, 56],
+      "sources": [{ "path": "packages/core/src/storage/index.ts", "line": 24, "end_line": 49 }]
+    }
+  ],
+  "connections": [
+    { "id": "import-jobs", "from": "import", "to": "jobs", "label": "parsed URLs" },
+    { "id": "scheduler-jobs", "from": "scheduler", "to": "jobs", "label": "enqueue" },
+    { "id": "jobs-throttle", "from": "jobs", "to": "throttle", "label": "host slot" },
+    {
+      "id": "jobs-pipeline",
+      "from": "jobs",
+      "to": "pipeline",
+      "label": "run",
+      "variant": "emphasis"
+    },
+    { "id": "pipeline-search", "from": "pipeline", "to": "search", "label": "index if done" },
+    { "id": "pipeline-fetch", "from": "pipeline", "to": "fetch", "label": "fetch once" },
+    { "id": "pipeline-browser", "from": "pipeline", "to": "browser", "label": "one page" },
+    {
+      "id": "pipeline-extractors",
+      "from": "pipeline",
+      "to": "extractors",
+      "label": "run all",
+      "variant": "emphasis"
+    },
+    { "id": "extractors-storage", "from": "extractors", "to": "storage", "label": "files" },
+    { "id": "extractors-db", "from": "extractors", "to": "db", "label": "results" },
+    { "id": "search-db", "from": "search", "to": "db" },
+    { "id": "auth-db", "from": "auth", "to": "db" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Callers",
+      "items": [
+        "The server's import route and the CLI's import command parse with import.ts, then add each URL to the JobRunner",
+        "The pipeline sets the final status through results.ts, fenced by the job's lease"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Guards",
+      "items": [
+        "safeFetch checks every redirect hop",
+        "The browser guard checks, then seals, every request the page makes"
+      ]
+    }
+  ]
+}

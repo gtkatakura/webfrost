@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "WebFrost package dependencies",
+    "output": "apps/docs/diagrams-src/package-dependencies/package-dependencies.html",
+    "quality_profile": "showcase",
+    "locale": "en",
+    "repository": {
+      "url": "https://github.com/gtkatakura/webfrost",
+      "revision": "0d1b94e076a4214bd0ee14f9f02d2c5a7641a769"
+    }
+  },
+  "components": [
+    {
+      "id": "ui",
+      "type": "frontend",
+      "label": "@webfrost/ui",
+      "sublabel": "React SPA",
+      "pos": [40, 40],
+      "size": [170, 60],
+      "sources": [
+        { "path": "packages/ui/package.json", "line": 17 },
+        { "path": "packages/ui/src/App.tsx", "line": 8 }
+      ]
+    },
+    {
+      "id": "sdk",
+      "type": "frontend",
+      "label": "@webfrost/sdk",
+      "sublabel": "typed REST client",
+      "pos": [40, 190],
+      "size": [170, 60],
+      "sources": [{ "path": "packages/sdk/src/client.ts", "line": 99, "end_line": 102 }]
+    },
+    {
+      "id": "server",
+      "type": "backend",
+      "label": "@webfrost/server",
+      "sublabel": "Elysia API + static UI",
+      "pos": [330, 190],
+      "size": [180, 60],
+      "sources": [
+        { "path": "packages/server/package.json", "line": 16 },
+        { "path": "packages/server/src/ui-assets.ts", "line": 55, "end_line": 58 }
+      ]
+    },
+    {
+      "id": "cli",
+      "type": "backend",
+      "label": "@webfrost/cli",
+      "sublabel": "the webfrost command",
+      "pos": [640, 190],
+      "size": [170, 60],
+      "sources": [
+        { "path": "packages/cli/package.json", "line": 16, "end_line": 17 },
+        { "path": "packages/cli/src/commands/serve.ts", "line": 86, "end_line": 89 }
+      ]
+    },
+    {
+      "id": "core",
+      "type": "backend",
+      "label": "@webfrost/core",
+      "sublabel": "pipeline, database, storage",
+      "pos": [330, 340],
+      "size": [180, 60],
+      "sources": [{ "path": "packages/core/src/index.ts", "line": 1 }]
+    },
+    {
+      "id": "docs",
+      "type": "external",
+      "label": "@webfrost/docs",
+      "sublabel": "this site, standalone",
+      "pos": [40, 340],
+      "size": [170, 60],
+      "sources": [{ "path": "apps/docs/package.json", "line": 13, "end_line": 26 }]
+    }
+  ],
+  "connections": [
+    { "id": "ui-sdk", "from": "ui", "to": "sdk", "label": "imports" },
+    {
+      "id": "sdk-server",
+      "from": "sdk",
+      "to": "server",
+      "label": "REST /api/v1",
+      "variant": "dashed"
+    },
+    { "id": "cli-server", "from": "cli", "to": "server", "label": "imports (serve)" },
+    {
+      "id": "server-core",
+      "from": "server",
+      "to": "core",
+      "label": "imports",
+      "variant": "emphasis"
+    },
+    { "id": "cli-core", "from": "cli", "to": "core", "label": "imports", "variant": "emphasis" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Workspace dependencies",
+      "items": [
+        "cli depends on core and server; server depends on core",
+        "ui depends on sdk; sdk and docs depend on nothing internal"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "At runtime",
+      "items": [
+        "The UI and SDK reach the server over HTTP only",
+        "The server serves the built UI from packages/ui/dist"
+      ]
+    }
+  ]
+}

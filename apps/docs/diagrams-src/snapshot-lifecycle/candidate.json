@@ -1,0 +1,181 @@
+{
+  "schema_version": 3,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Snapshot job lifecycle",
+    "output": "apps/docs/diagrams-src/snapshot-lifecycle/snapshot-lifecycle.html",
+    "quality_profile": "showcase",
+    "locale": "en",
+    "repository": {
+      "url": "https://github.com/gtkatakura/webfrost",
+      "revision": "0d1b94e076a4214bd0ee14f9f02d2c5a7641a769"
+    }
+  },
+  "mainPath": ["pending", "running", "done"],
+  "states": [
+    {
+      "id": "pending",
+      "type": "start",
+      "label": "Pending",
+      "sublabel": "lease token issued",
+      "tag": "queued",
+      "sources": [
+        {
+          "path": "packages/core/src/pipeline.ts",
+          "line": 101,
+          "end_line": 119
+        },
+        {
+          "path": "packages/core/src/jobs.ts",
+          "line": 236,
+          "end_line": 265
+        }
+      ]
+    },
+    {
+      "id": "running",
+      "type": "active",
+      "label": "Running",
+      "sublabel": "heartbeat every 10 s",
+      "tag": "job only",
+      "sources": [
+        {
+          "path": "packages/core/src/pipeline.ts",
+          "line": 147,
+          "end_line": 157
+        },
+        {
+          "path": "packages/core/src/results.ts",
+          "line": 63,
+          "end_line": 80
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "type": "success",
+      "label": "Done",
+      "sublabel": "1+ extractor output",
+      "tag": "terminal",
+      "sources": [
+        {
+          "path": "packages/core/src/pipeline.ts",
+          "line": 384,
+          "end_line": 404
+        }
+      ]
+    },
+    {
+      "id": "orphaned",
+      "type": "waiting",
+      "label": "Orphaned",
+      "sublabel": "heartbeat over 45 s old",
+      "tag": "still pending",
+      "sources": [
+        {
+          "path": "packages/core/src/jobs.ts",
+          "line": 130,
+          "end_line": 146
+        },
+        {
+          "path": "packages/core/src/pipeline.ts",
+          "line": 55,
+          "end_line": 61
+        }
+      ]
+    },
+    {
+      "id": "failed",
+      "type": "failure",
+      "label": "Failed",
+      "sublabel": "no output, or given up",
+      "tag": "terminal",
+      "sources": [
+        {
+          "path": "packages/core/src/pipeline.ts",
+          "line": 218,
+          "end_line": 231
+        },
+        {
+          "path": "packages/core/src/jobs.ts",
+          "line": 162,
+          "end_line": 169
+        }
+      ]
+    }
+  ],
+  "transitions": [
+    {
+      "id": "pending-running",
+      "from": "pending",
+      "to": "running",
+      "label": "slot free"
+    },
+    {
+      "id": "running-done",
+      "from": "running",
+      "to": "done",
+      "label": "output stored"
+    },
+    {
+      "id": "running-failed",
+      "from": "running",
+      "to": "failed",
+      "label": "fetch fails",
+      "variant": "security",
+      "note": "or no extractor produced output"
+    },
+    {
+      "id": "pending-orphaned",
+      "from": "pending",
+      "to": "orphaned",
+      "label": "process dies",
+      "variant": "dashed"
+    },
+    {
+      "id": "running-orphaned",
+      "from": "running",
+      "to": "orphaned",
+      "label": "process dies",
+      "variant": "dashed"
+    },
+    {
+      "id": "orphaned-pending",
+      "from": "orphaned",
+      "to": "pending",
+      "label": "adopted",
+      "note": "new lease, attempts + 1"
+    },
+    {
+      "id": "orphaned-failed",
+      "from": "orphaned",
+      "to": "failed",
+      "label": "3 attempts",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Leases",
+      "items": [
+        "Creating a job issues a lease token and stamps heartbeat_at",
+        "The runner refreshes the heartbeat of every queued or running job"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Adopted (orphaned to pending)",
+      "items": [
+        "A recovery sweep runs at startup and every 60 s",
+        "It discards the interrupted run's partial results and issues a new token",
+        "Writes that name the old token are dropped (fencing)"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Snapshot status",
+      "items": ["Snapshots show only pending, done and failed", "running exists on job_queue only"]
+    }
+  ]
+}

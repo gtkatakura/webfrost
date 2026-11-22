@@ -1,0 +1,346 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "WebFrost data flow and trust boundaries",
+    "output": "apps/docs/diagrams-src/threat-dataflow/threat-dataflow.html",
+    "quality_profile": "showcase",
+    "locale": "en",
+    "repository": {
+      "url": "https://github.com/gtkatakura/webfrost",
+      "revision": "0d1b94e076a4214bd0ee14f9f02d2c5a7641a769"
+    },
+    "legend": {
+      "entries": {
+        "emphasis": {
+          "label": "signed in"
+        },
+        "security": {
+          "label": "untrusted"
+        },
+        "dashed": {
+          "label": "operator"
+        }
+      }
+    }
+  },
+  "stages": [
+    {
+      "label": "Callers"
+    },
+    {
+      "label": "Entry points"
+    },
+    {
+      "label": "Pipeline and data"
+    },
+    {
+      "label": "Guards to the web"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "admin",
+      "type": "frontend",
+      "label": "Admin, API keys",
+      "sublabel": "UI, SDK, curl",
+      "tag": "trusted to manage",
+      "stage": 0,
+      "row": 0,
+      "sources": [
+        {
+          "path": "packages/server/src/routes/auth.ts",
+          "line": 92,
+          "end_line": 112
+        }
+      ]
+    },
+    {
+      "id": "guest",
+      "type": "external",
+      "label": "Anonymous guest",
+      "sublabel": "WEBFROST_PUBLIC_READ",
+      "tag": "untrusted",
+      "stage": 0,
+      "row": 2,
+      "sources": [
+        {
+          "path": "packages/server/src/routes/auth.ts",
+          "line": 22,
+          "end_line": 41
+        },
+        {
+          "path": "packages/server/src/routes/auth.ts",
+          "line": 114,
+          "end_line": 123
+        }
+      ]
+    },
+    {
+      "id": "operator",
+      "type": "security",
+      "label": "Operator",
+      "sublabel": "shell, env, data dir",
+      "tag": "fully trusted",
+      "stage": 0,
+      "row": 3,
+      "sources": [
+        {
+          "path": "packages/server/src/index.ts",
+          "line": 51,
+          "end_line": 63
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "type": "security",
+      "label": "HTTP server",
+      "sublabel": "auth, rate limits, CSP",
+      "tag": "Elysia",
+      "stage": 1,
+      "row": 1,
+      "sources": [
+        {
+          "path": "packages/server/src/routes/auth.ts",
+          "line": 71,
+          "end_line": 125
+        },
+        {
+          "path": "packages/server/src/index.ts",
+          "line": 97,
+          "end_line": 163
+        }
+      ]
+    },
+    {
+      "id": "cli",
+      "type": "backend",
+      "label": "webfrost CLI",
+      "sublabel": "operator privileges",
+      "stage": 1,
+      "row": 3,
+      "sources": [
+        {
+          "path": "packages/cli/src/commands/archive.ts",
+          "line": 50,
+          "end_line": 57
+        }
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "Database",
+      "sublabel": "metadata, credentials",
+      "stage": 2,
+      "row": 0,
+      "sources": [
+        {
+          "path": "packages/core/src/db.ts",
+          "line": 515,
+          "end_line": 528
+        }
+      ]
+    },
+    {
+      "id": "pipeline",
+      "type": "backend",
+      "label": "Pipeline",
+      "sublabel": "via the JobRunner",
+      "stage": 2,
+      "row": 1,
+      "sources": [
+        {
+          "path": "packages/core/src/jobs.ts",
+          "line": 87,
+          "end_line": 111
+        },
+        {
+          "path": "packages/core/src/pipeline.ts",
+          "line": 137,
+          "end_line": 157
+        }
+      ]
+    },
+    {
+      "id": "files",
+      "type": "database",
+      "label": "Files",
+      "sublabel": "snapshots/ or S3",
+      "stage": 2,
+      "row": 2,
+      "sources": [
+        {
+          "path": "packages/core/src/storage/index.ts",
+          "line": 24,
+          "end_line": 49
+        },
+        {
+          "path": "packages/server/src/routes/snapshots.ts",
+          "line": 395,
+          "end_line": 419
+        }
+      ]
+    },
+    {
+      "id": "fetch",
+      "type": "security",
+      "label": "safeFetch",
+      "sublabel": "every hop checked",
+      "tag": "50 MB, 30 s",
+      "stage": 3,
+      "row": 0,
+      "sources": [
+        {
+          "path": "packages/core/src/ssrf-guard.ts",
+          "line": 198,
+          "end_line": 220
+        },
+        {
+          "path": "packages/core/src/ssrf-guard.ts",
+          "line": 290
+        }
+      ]
+    },
+    {
+      "id": "browser",
+      "type": "security",
+      "label": "Chromium + guard",
+      "sublabel": "sealed after load",
+      "tag": "no own sandbox",
+      "stage": 3,
+      "row": 1,
+      "sources": [
+        {
+          "path": "packages/core/src/browser-guard.ts",
+          "line": 46,
+          "end_line": 100
+        },
+        {
+          "path": "packages/core/src/pipeline.ts",
+          "line": 243,
+          "end_line": 258
+        }
+      ]
+    },
+    {
+      "id": "ytdlp",
+      "type": "backend",
+      "label": "yt-dlp",
+      "sublabel": "first URL checked",
+      "tag": "500 MB, 10 min",
+      "stage": 3,
+      "row": 2,
+      "sources": [
+        {
+          "path": "packages/core/src/extractors/media.ts",
+          "line": 17,
+          "end_line": 43
+        }
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "id": "admin-api",
+      "from": "admin",
+      "to": "api",
+      "label": "session, API key",
+      "variant": "emphasis"
+    },
+    {
+      "id": "guest-api",
+      "from": "guest",
+      "to": "api",
+      "label": "GET allowlist",
+      "variant": "security"
+    },
+    {
+      "id": "operator-cli",
+      "from": "operator",
+      "to": "cli",
+      "label": "commands"
+    },
+    {
+      "id": "api-pipeline",
+      "from": "api",
+      "to": "pipeline",
+      "label": "submitted URLs"
+    },
+    {
+      "id": "cli-pipeline",
+      "from": "cli",
+      "to": "pipeline",
+      "label": "same guards",
+      "variant": "dashed"
+    },
+    {
+      "id": "fetch-pipeline",
+      "from": "fetch",
+      "to": "pipeline",
+      "label": "untrusted body",
+      "variant": "security"
+    },
+    {
+      "id": "browser-pipeline",
+      "from": "browser",
+      "to": "pipeline",
+      "label": "hostile page",
+      "variant": "security"
+    },
+    {
+      "id": "ytdlp-pipeline",
+      "from": "ytdlp",
+      "to": "pipeline",
+      "label": "media files",
+      "variant": "security"
+    },
+    {
+      "id": "pipeline-db",
+      "from": "pipeline",
+      "to": "db",
+      "label": "results, status"
+    },
+    {
+      "id": "pipeline-files",
+      "from": "pipeline",
+      "to": "files",
+      "label": "captures"
+    },
+    {
+      "id": "files-api",
+      "from": "files",
+      "to": "api",
+      "label": "as attachment",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Untrusted",
+      "items": [
+        "Fetched pages and everything they load",
+        "Submitted URLs, feeds and import files",
+        "Anonymous guests: read routes only, no storage paths or raw errors"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Trusted to manage",
+      "items": [
+        "Admin and API key holders manage the archive",
+        "They are not trusted to reach the internal network through it"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Fully trusted",
+      "items": [
+        "The operator: shell, environment and data directory",
+        "The CLI runs with the operator's privileges and still applies the SSRF guard"
+      ]
+    }
+  ]
+}

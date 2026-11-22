@@ -1,0 +1,336 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "One snapshot, request to done",
+    "output": "apps/docs/diagrams-src/snapshot-request/snapshot-request.html",
+    "quality_profile": "showcase",
+    "locale": "en",
+    "repository": {
+      "url": "https://github.com/gtkatakura/webfrost",
+      "revision": "0d1b94e076a4214bd0ee14f9f02d2c5a7641a769"
+    },
+    "legend": {
+      "entries": {
+        "dashed": {
+          "label": "file writes"
+        }
+      }
+    }
+  },
+  "participants": [
+    {
+      "id": "entry",
+      "type": "frontend",
+      "label": "Entry point",
+      "sublabel": "API, CLI, schedule",
+      "sources": [
+        {
+          "path": "packages/server/src/routes/snapshots.ts",
+          "line": 113,
+          "end_line": 141
+        },
+        {
+          "path": "packages/core/src/pipeline.ts",
+          "line": 426,
+          "end_line": 436
+        }
+      ]
+    },
+    {
+      "id": "runner",
+      "type": "backend",
+      "label": "JobRunner",
+      "sublabel": "bounded",
+      "sources": [
+        {
+          "path": "packages/core/src/jobs.ts",
+          "line": 74,
+          "end_line": 111
+        },
+        {
+          "path": "packages/core/src/jobs.ts",
+          "line": 212,
+          "end_line": 234
+        }
+      ]
+    },
+    {
+      "id": "pipeline",
+      "type": "backend",
+      "label": "Pipeline",
+      "sublabel": "one snapshot",
+      "sources": [
+        {
+          "path": "packages/core/src/pipeline.ts",
+          "line": 137,
+          "end_line": 157
+        },
+        {
+          "path": "packages/core/src/pipeline.ts",
+          "line": 207,
+          "end_line": 268
+        },
+        {
+          "path": "packages/core/src/pipeline.ts",
+          "line": 359,
+          "end_line": 423
+        }
+      ]
+    },
+    {
+      "id": "fetch",
+      "type": "security",
+      "label": "safeFetch",
+      "sublabel": "fetch cache",
+      "sources": [
+        {
+          "path": "packages/core/src/fetch-cache.ts",
+          "line": 39,
+          "end_line": 50
+        },
+        {
+          "path": "packages/core/src/ssrf-guard.ts",
+          "line": 198,
+          "end_line": 220
+        }
+      ]
+    },
+    {
+      "id": "browser",
+      "type": "security",
+      "label": "Chromium",
+      "sublabel": "guarded",
+      "sources": [
+        {
+          "path": "packages/core/src/pipeline.ts",
+          "line": 243,
+          "end_line": 268
+        },
+        {
+          "path": "packages/core/src/browser-guard.ts",
+          "line": 46,
+          "end_line": 100
+        }
+      ]
+    },
+    {
+      "id": "ext",
+      "type": "backend",
+      "label": "Extractors",
+      "sublabel": "in parallel",
+      "sources": [
+        {
+          "path": "packages/core/src/pipeline.ts",
+          "line": 282,
+          "end_line": 357
+        }
+      ]
+    },
+    {
+      "id": "storage",
+      "type": "database",
+      "label": "Storage",
+      "sublabel": "disk or S3",
+      "sources": [
+        {
+          "path": "packages/core/src/storage/index.ts",
+          "line": 24,
+          "end_line": 49
+        }
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "Database",
+      "sublabel": "rows, status",
+      "sources": [
+        {
+          "path": "packages/core/src/pipeline.ts",
+          "line": 101,
+          "end_line": 119
+        },
+        {
+          "path": "packages/core/src/results.ts",
+          "line": 41,
+          "end_line": 80
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 345,
+      "label": "Create and queue"
+    },
+    {
+      "from": 355,
+      "to": 575,
+      "label": "Fetch once, load once"
+    },
+    {
+      "from": 580,
+      "to": 845,
+      "label": "Extract in parallel"
+    },
+    {
+      "from": 850,
+      "to": 975,
+      "label": "Record"
+    }
+  ],
+  "messages": [
+    {
+      "id": "insert",
+      "from": "entry",
+      "to": "db",
+      "y": 165,
+      "label": "INSERT snapshot + job",
+      "note": "pending; the heartbeat starts the lease"
+    },
+    {
+      "id": "enqueue",
+      "from": "entry",
+      "to": "runner",
+      "y": 235,
+      "label": "enqueue (API returns 202)",
+      "variant": "emphasis",
+      "note": "webfrost add runs the pipeline inline"
+    },
+    {
+      "id": "run",
+      "from": "runner",
+      "to": "pipeline",
+      "y": 305,
+      "label": "run, own DB handle",
+      "variant": "emphasis",
+      "note": "host slot first, then a concurrency slot"
+    },
+    {
+      "id": "fetch-page",
+      "from": "pipeline",
+      "to": "fetch",
+      "y": 375,
+      "label": "fetch page",
+      "variant": "security",
+      "note": "30 s, 50 MB, every redirect re-checked"
+    },
+    {
+      "id": "fetch-reply",
+      "from": "fetch",
+      "to": "pipeline",
+      "y": 445,
+      "label": "status, headers, body",
+      "variant": "return",
+      "note": "error or 400+: failed, nothing runs"
+    },
+    {
+      "id": "goto",
+      "from": "pipeline",
+      "to": "browser",
+      "y": 515,
+      "label": "launch, goto, seal",
+      "variant": "security",
+      "note": "30 s navigation"
+    },
+    {
+      "id": "page",
+      "from": "browser",
+      "to": "pipeline",
+      "y": 560,
+      "label": "page, or an error",
+      "variant": "return"
+    },
+    {
+      "id": "text-ext",
+      "from": "pipeline",
+      "to": "ext",
+      "y": 590,
+      "label": "html, readability, warc",
+      "note": "read the cached response"
+    },
+    {
+      "id": "browser-ext",
+      "from": "pipeline",
+      "to": "ext",
+      "y": 660,
+      "label": "pdf, screenshot, dom, singlefile",
+      "note": "share the one loaded page"
+    },
+    {
+      "id": "media-ext",
+      "from": "pipeline",
+      "to": "ext",
+      "y": 730,
+      "label": "media",
+      "note": "yt-dlp subprocess, 3 x 10 min"
+    },
+    {
+      "id": "files",
+      "from": "ext",
+      "to": "storage",
+      "y": 800,
+      "label": "write files",
+      "variant": "dashed"
+    },
+    {
+      "id": "outcomes",
+      "from": "ext",
+      "to": "pipeline",
+      "y": 828,
+      "label": "output or error",
+      "variant": "return"
+    },
+    {
+      "id": "results",
+      "from": "pipeline",
+      "to": "db",
+      "y": 862,
+      "label": "archive_results rows",
+      "note": "each extractor: 60 s cap; writes fenced by lease"
+    },
+    {
+      "id": "close",
+      "from": "pipeline",
+      "to": "browser",
+      "y": 932,
+      "label": "close (5 s cap)"
+    },
+    {
+      "id": "status",
+      "from": "pipeline",
+      "to": "db",
+      "y": 962,
+      "label": "done or failed, index",
+      "variant": "emphasis"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "pipeline",
+      "from": 301,
+      "to": 968,
+      "type": "backend"
+    },
+    {
+      "participant": "fetch",
+      "from": 371,
+      "to": 449,
+      "type": "security"
+    },
+    {
+      "participant": "browser",
+      "from": 511,
+      "to": 936,
+      "type": "security"
+    },
+    {
+      "participant": "ext",
+      "from": 586,
+      "to": 834,
+      "type": "backend"
+    }
+  ]
+}

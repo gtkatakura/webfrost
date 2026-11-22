@@ -164,7 +164,7 @@ Run `bun run docs:build`. It prerenders every page and fails on invalid MDX. Lin
 </Step>
 </Steps>
 
-Components available without an import: `Callout` (`type` is `info`, `warn` or `error`), `Steps` and `Step`, `Tabs` and `Tab`, `Cards` and `Card`, and `Mermaid` for diagrams.
+Components available without an import: `Callout` (`type` is `info`, `warn` or `error`), `Steps` and `Step`, `Tabs` and `Tab`, `Cards` and `Card`, `Picture` for images and `ArchDiagram` for diagrams (see below).
 
 <Callout type="warn" title="MDX pitfalls">
 In prose, write a bare `<` as `&lt;` or put it in backticks, and do the same for `{`. Comments are `{/* */}`, not `<!-- -->`. Inside fenced code blocks anything goes.
@@ -190,6 +190,65 @@ The build makes every width in AVIF, WebP and JPG plus a blurred placeholder, an
 | `touch-icon` | The iOS home-screen icon (a URL, 180×180) |
 
 After changing the mascot art in `app/assets/brand`, run `mise run brand`. It rewrites the images that are not built with the site: the link-preview master, the README banner, the GitHub social preview and the web app's favicon.
+
+### Diagrams
+
+The architecture diagrams are made with [Archify](https://github.com/tt-a1i/archify), which renders a JSON description of a diagram (architecture, sequence, lifecycle, data flow, ERD, tree…) to a checked, standalone HTML viewer. Each diagram has its source in `apps/docs/diagrams-src/<name>/candidate.json`: its type, nodes and relationships, and the lines of code each node is drawn from, pinned to a commit in `meta.repository.revision`.
+
+To change one, or add one:
+
+<Steps>
+<Step>
+
+Install the Archify skill, which carries its CLI (Node.js 18 or later):
+
+```bash
+npx skills add tt-a1i/archify
+```
+
+Below, `<archify>` is the folder the skill was installed in. A coding agent with the skill loaded can write and repair the candidate for you; its `SKILL.md` and `references/` describe the format.
+
+</Step>
+<Step>
+
+Edit `apps/docs/diagrams-src/<name>/candidate.json` and check it against the code. When it cites source lines, point `meta.repository.revision` at a commit that contains them. Then render and check it from the repository root:
+
+```bash
+node <archify>/bin/archify.mjs finalize <type> \
+  apps/docs/diagrams-src/<name>/candidate.json \
+  apps/docs/diagrams-src/<name>/<name>.html \
+  --repo-root . --quality showcase --json
+```
+
+`<type>` is the candidate's `diagram_type`. The command validates the layout and the cited sources, writes the HTML and opens it in a headless Chrome or Chromium (set `ARCHIFY_CHROME` to its path if it is not found). A failure names what to fix; fix the candidate and run it again.
+
+</Step>
+<Step>
+
+Publish it to the site:
+
+```bash
+mise run docs:diagrams           # every diagram
+bun apps/docs/scripts/diagrams.ts <name>   # or one
+```
+
+This exports the light and dark SVG through the viewer's own export, copies the HTML viewer to `apps/docs/public/diagrams/` and records the sizes in `apps/docs/app/lib/diagrams.json`. It uses Playwright's Chromium, or the one in `WEBFROST_CHROMIUM_PATH`.
+
+</Step>
+<Step>
+
+Show it on a page:
+
+```mdx
+<ArchDiagram name="system-overview" alt="What the diagram shows, in a sentence or two" caption="One line under it" />
+```
+
+It draws the variant that matches the site's theme, reserves its space before it loads, loads lazily, and links to the interactive viewer.
+
+</Step>
+</Steps>
+
+Commit `candidate.json`, the files in `public/diagrams/` and `app/lib/diagrams.json`. Archify's receipts next to the candidate are ignored.
 
 <Cards>
   <Card title="Project structure" href="/docs/contributing/project-structure">

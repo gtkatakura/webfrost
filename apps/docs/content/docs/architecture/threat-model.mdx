@@ -16,24 +16,11 @@ WebFrost is single-tenant and self-hosted. One operator runs the server; one adm
 API keys) uses it. Users submit URLs; the server fetches them with an HTTP client and a headless
 Chromium, and stores the results as files plus a SQLite database.
 
-```
-Browser (UI) / SDK / curl
-      │  session cookie or API key
-      ▼
-┌───────────────────────────┐
-│ @webfrost/server (Elysia) │  auth · rate limits · CSP · static UI
-└───────────┬───────────────┘
-            │ enqueue
-            ▼
-┌───────────────────────────┐      ┌───────────────────────────────┐
-│ JobRunner (bounded)       │─────▶│ pipeline                      │
-│ Scheduler (30 s poll)     │      │  safeFetch ───────▶ Internet  │
-└───────────────────────────┘      │  Chromium + guard ─▶ Internet │
-                                   │  yt-dlp ───────────▶ Internet │
-                                   └───────┬───────────────────────┘
-                                           ▼
-                              SQLite (archive.db) + snapshots/ or S3
-```
+<ArchDiagram
+  name="threat-dataflow"
+  alt="Data flow across trust zones. Admins and API key holders reach the HTTP server with a session or key, anonymous guests only on the GET allowlist when public read is on, and the fully trusted operator uses the CLI. The server and CLI hand submitted URLs to the pipeline, which writes results to the database and captures to files. Untrusted content reaches the pipeline only through safeFetch, the guarded Chromium and yt-dlp, and archived files go back out as downloads."
+  caption="Who sends what where, and which guard each untrusted input passes."
+/>
 
 The CLI drives the same core library directly against the data directory, without the HTTP layer.
 

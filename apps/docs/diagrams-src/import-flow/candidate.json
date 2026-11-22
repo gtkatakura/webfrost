@@ -1,0 +1,201 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Bulk import",
+    "output": "apps/docs/diagrams-src/import-flow/import-flow.html",
+    "quality_profile": "showcase",
+    "locale": "en",
+    "repository": {
+      "url": "https://github.com/gtkatakura/webfrost",
+      "revision": "0d1b94e076a4214bd0ee14f9f02d2c5a7641a769"
+    },
+    "legend": {
+      "entries": {
+        "dashed": {
+          "label": "in the background, later"
+        }
+      }
+    }
+  },
+  "participants": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "User",
+      "sublabel": "file, text or feed"
+    },
+    {
+      "id": "entry",
+      "type": "frontend",
+      "label": "CLI or API",
+      "sublabel": "import command, route",
+      "sources": [
+        {
+          "path": "packages/server/src/routes/import.ts",
+          "line": 45,
+          "end_line": 70
+        },
+        {
+          "path": "packages/server/src/routes/import.ts",
+          "line": 180,
+          "end_line": 206
+        },
+        {
+          "path": "packages/cli/src/commands/import.ts",
+          "line": 85,
+          "end_line": 135
+        }
+      ]
+    },
+    {
+      "id": "parser",
+      "type": "backend",
+      "label": "Import parser",
+      "sublabel": "text, OPML, Netscape, RSS",
+      "sources": [
+        {
+          "path": "packages/core/src/import.ts",
+          "line": 197,
+          "end_line": 208
+        }
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "Database",
+      "sublabel": "snapshots, imports",
+      "sources": [
+        {
+          "path": "packages/core/src/rss.ts",
+          "line": 30,
+          "end_line": 35
+        },
+        {
+          "path": "packages/core/src/import-history.ts",
+          "line": 14,
+          "end_line": 22
+        }
+      ]
+    },
+    {
+      "id": "runner",
+      "type": "backend",
+      "label": "JobRunner",
+      "sublabel": "WEBFROST_CONCURRENCY",
+      "sources": [
+        {
+          "path": "packages/core/src/jobs.ts",
+          "line": 74,
+          "end_line": 111
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 262,
+      "label": "Parse"
+    },
+    {
+      "from": 270,
+      "to": 395,
+      "label": "Each URL"
+    },
+    {
+      "from": 403,
+      "to": 540,
+      "label": "Answer, then archive"
+    }
+  ],
+  "messages": [
+    {
+      "id": "submit",
+      "from": "user",
+      "to": "entry",
+      "y": 165,
+      "label": "import file, or POST /import",
+      "variant": "emphasis"
+    },
+    {
+      "id": "parse",
+      "from": "entry",
+      "to": "parser",
+      "y": 195,
+      "label": "parse with the format",
+      "note": "detected from the name and content"
+    },
+    {
+      "id": "urls",
+      "from": "parser",
+      "to": "entry",
+      "y": 252,
+      "label": "URL list",
+      "variant": "return"
+    },
+    {
+      "id": "dedupe",
+      "from": "entry",
+      "to": "db",
+      "y": 285,
+      "label": "already archived?",
+      "note": "rss only: skip known URLs"
+    },
+    {
+      "id": "insert",
+      "from": "entry",
+      "to": "runner",
+      "y": 335,
+      "label": "add: INSERT pending, enqueue",
+      "variant": "emphasis"
+    },
+    {
+      "id": "rows",
+      "from": "runner",
+      "to": "db",
+      "y": 365,
+      "label": "snapshot + job rows"
+    },
+    {
+      "id": "history",
+      "from": "entry",
+      "to": "db",
+      "y": 420,
+      "label": "INSERT imports row",
+      "note": "API only"
+    },
+    {
+      "id": "answer",
+      "from": "entry",
+      "to": "user",
+      "y": 470,
+      "label": "queued, skipped, total",
+      "variant": "return",
+      "note": "API: 202 at once; CLI waits for the runs"
+    },
+    {
+      "id": "settle",
+      "from": "runner",
+      "to": "db",
+      "y": 520,
+      "label": "pipelines settle",
+      "variant": "dashed"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "entry",
+      "from": 161,
+      "to": 476,
+      "type": "frontend"
+    },
+    {
+      "participant": "runner",
+      "from": 331,
+      "to": 526,
+      "type": "backend"
+    }
+  ]
+}

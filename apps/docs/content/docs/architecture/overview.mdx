@@ -6,51 +6,17 @@ icon: Network
 
 WebFrost is a Bun monorepo with one shared library and thin layers on top. The server process is self-contained: it serves the API and UI, runs archive jobs and runs due schedules. No separate worker or queue service is required.
 
-## System context
+## System overview
 
-Who talks to WebFrost, and what WebFrost talks to.
+Who talks to WebFrost, what runs inside the server process, and what WebFrost talks to.
 
-<Mermaid chart={`flowchart LR
-  user([User]) -->|archive, search, manage| wf[WebFrost]
-  admin([Operator]) -->|deploy, configure, create admin| wf
-  wf -->|fetch URLs and feeds| web[("Public web")]
-  wf -->|headless sessions| chromium[Chromium]
-  wf -->|media downloads| ytdlp[yt-dlp and ffmpeg]
-  wf -->|database always, files by choice| store[("Local disk or S3")]
-`} />
+<ArchDiagram
+  name="system-overview"
+  alt="The web UI and REST clients call the HTTP API in the server process. The API, the scheduler and the recovery sweep hand snapshots to the JobRunner, which runs the pipeline. The CLI calls the pipeline directly in its own process. The pipeline writes results to the database (SQLite, PostgreSQL or MySQL) and files to the filesystem or S3, and reaches the public web through the guarded HTTP fetch, Chromium and yt-dlp."
+  caption="Clients, the server process and everything the pipeline reaches."
+/>
 
 ## Packages and processes
-
-<Mermaid chart={`flowchart TB
-  subgraph clients[Clients]
-    cli[webfrost CLI]
-    ui[Web UI in the browser]
-    sdk[SDK, curl, scripts]
-  end
-
-  subgraph server["Server process (@webfrost/server)"]
-    api[Elysia REST API and static UI]
-    runner[JobRunner]
-    sched["Scheduler (polls every 30 s)"]
-    recover["Recovery sweep (every 60 s)"]
-    api --> runner
-    sched --> runner
-    recover --> runner
-  end
-
-  core[["@webfrost/core: pipeline, extractors, database, auth, import"]]
-
-  ui -->|REST| api
-  sdk -->|REST| api
-  cli -->|library calls| core
-  server -.uses.-> core
-
-  core --> db[("database (SQLite + FTS5, PostgreSQL or MySQL)")]
-  core --> files[("snapshots/ on disk or S3 bucket")]
-  core --> chromium[Chromium via Playwright]
-  core --> ytdlp[yt-dlp subprocess]
-  core --> web[("Public web")]
-`} />
 
 | Package | Role | Entry point |
 |---|---|---|
@@ -65,25 +31,15 @@ Key relationships:
 - **CLI and server both use `core`.** Pipeline logic lives once, in core.
 - **The server embeds the scheduler and the job runner.** `WEBFROST_CONCURRENCY` bounds the pipelines of the whole process. `webfrost schedule worker` runs the same scheduler for CLI-only setups and can run next to the server on one archive, because due schedules are claimed atomically. `WEBFROST_SCHEDULER=false` turns off the server's scheduler.
 - **The UI talks only to the server**, through the same REST API as the SDK.
-- **The CLI works on the directory directly.** It does not call the server, so it works with no server running.
+- **The CLI works on the directory directly.** It does not call the server, so it works with no server running. (`webfrost serve` starts the server itself, in the CLI's process.)
 
 ## Inside `@webfrost/core`
 
-<Mermaid chart={`flowchart LR
-  import["import.ts and rss.ts"] --> jobs
-  scheduler["scheduler.ts, cron.ts, schedules.ts"] --> jobs
-  jobs["jobs.ts (JobRunner)"] --> pipeline[pipeline.ts]
-  pipeline --> cache["fetch-cache.ts and ssrf-guard.ts"]
-  pipeline --> guard[browser-guard.ts]
-  pipeline --> extractors[extractors/*]
-  pipeline --> throttle[throttle.ts]
-  pipeline --> db[db.ts]
-  pipeline --> storage[storage/*]
-  extractors --> chromium[Chromium]
-  extractors --> ytdlp[yt-dlp]
-  auth[auth.ts] --> db
-  search["search.ts, tags.ts"] --> db
-`} />
+<ArchDiagram
+  name="core-modules"
+  alt="Import and the scheduler hand URLs to the JobRunner, which waits for the per-host throttle and runs the pipeline. The pipeline fetches once through the fetch cache and SSRF guard, opens one browser page behind the browser guard, runs the extractors and indexes finished snapshots in search. Extractors write files to storage and results through the data-access layer, which search, tags and auth also use."
+  caption="The modules of @webfrost/core along one snapshot."
+/>
 
 | Component | Responsibility |
 |---|---|

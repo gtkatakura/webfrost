@@ -117,6 +117,10 @@ run = "bun run docs:build"
 description = "Serve the built docs site on http://localhost:5175"
 run = "bun run docs:preview"
 
+[tasks."docs:diagrams"]
+description = "Publish the Archify diagrams to the docs site: SVG in both themes, interactive HTML, sizes"
+run = "bun apps/docs/scripts/diagrams.ts"
+
 [tasks.brand]
 description = "Rewrite the brand images not built with the site (README banner, social preview, favicons)"
 run = "bun apps/docs/scripts/brand-images.ts"

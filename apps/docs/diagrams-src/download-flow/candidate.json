@@ -1,0 +1,187 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Downloading an archived file",
+    "output": "apps/docs/diagrams-src/download-flow/download-flow.html",
+    "quality_profile": "showcase",
+    "locale": "en",
+    "repository": {
+      "url": "https://github.com/gtkatakura/webfrost",
+      "revision": "0d1b94e076a4214bd0ee14f9f02d2c5a7641a769"
+    }
+  },
+  "participants": [
+    {
+      "id": "client",
+      "type": "external",
+      "label": "Client",
+      "sublabel": "UI, SDK, curl",
+      "sources": [
+        {
+          "path": "packages/server/src/routes/snapshots.ts",
+          "line": 21
+        }
+      ]
+    },
+    {
+      "id": "auth",
+      "type": "security",
+      "label": "Auth check",
+      "sublabel": "every /api route",
+      "sources": [
+        {
+          "path": "packages/server/src/routes/auth.ts",
+          "line": 70,
+          "end_line": 124
+        }
+      ]
+    },
+    {
+      "id": "route",
+      "type": "backend",
+      "label": "Download route",
+      "sublabel": "snapshots router",
+      "sources": [
+        {
+          "path": "packages/server/src/routes/snapshots.ts",
+          "line": 346,
+          "end_line": 424
+        }
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "Database",
+      "sublabel": "archive_results",
+      "sources": [
+        {
+          "path": "packages/server/src/routes/snapshots.ts",
+          "line": 363,
+          "end_line": 374
+        }
+      ]
+    },
+    {
+      "id": "storage",
+      "type": "database",
+      "label": "Storage",
+      "sublabel": "disk or S3",
+      "sources": [
+        {
+          "path": "packages/core/src/storage/filesystem.ts",
+          "line": 73,
+          "end_line": 82
+        },
+        {
+          "path": "packages/core/src/storage/s3.ts",
+          "line": 174,
+          "end_line": 195
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 395,
+      "label": "Authorise and look up"
+    },
+    {
+      "from": 402,
+      "to": 460,
+      "label": "Filesystem"
+    },
+    {
+      "from": 468,
+      "to": 560,
+      "label": "S3"
+    }
+  ],
+  "messages": [
+    {
+      "id": "request",
+      "from": "client",
+      "to": "auth",
+      "y": 165,
+      "label": "GET .../download",
+      "variant": "emphasis",
+      "note": "API key, session cookie or public read"
+    },
+    {
+      "id": "allowed",
+      "from": "auth",
+      "to": "route",
+      "y": 215,
+      "label": "allowed (else 401)",
+      "variant": "security"
+    },
+    {
+      "id": "lookup",
+      "from": "route",
+      "to": "db",
+      "y": 245,
+      "label": "latest result, no error",
+      "note": "extractor name checked against an allowlist first"
+    },
+    {
+      "id": "ref",
+      "from": "db",
+      "to": "route",
+      "y": 300,
+      "label": "storage reference",
+      "variant": "return"
+    },
+    {
+      "id": "validate",
+      "from": "route",
+      "to": "storage",
+      "y": 355,
+      "label": "validate the reference",
+      "variant": "security",
+      "note": "inside snapshots/ or under the prefix, else 403"
+    },
+    {
+      "id": "bytes",
+      "from": "storage",
+      "to": "route",
+      "y": 420,
+      "label": "file bytes",
+      "variant": "return"
+    },
+    {
+      "id": "attachment",
+      "from": "route",
+      "to": "client",
+      "y": 446,
+      "label": "200, attachment",
+      "variant": "return"
+    },
+    {
+      "id": "presign",
+      "from": "storage",
+      "to": "route",
+      "y": 488,
+      "label": "presigned URL (1 h)",
+      "variant": "return",
+      "note": "media-metadata is always streamed"
+    },
+    {
+      "id": "redirect",
+      "from": "route",
+      "to": "client",
+      "y": 545,
+      "label": "302 to the bucket",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "route",
+      "from": 211,
+      "to": 551,
+      "type": "backend"
+    }
+  ]
+}

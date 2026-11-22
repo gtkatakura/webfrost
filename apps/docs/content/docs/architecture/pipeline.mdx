@@ -8,43 +8,11 @@ A snapshot moves through the job runner into the pipeline, which fetches the pag
 
 ## One snapshot, request to `done`
 
-<Mermaid chart={`sequenceDiagram
-  actor User
-  participant Entry as CLI, server or SDK
-  participant Runner as JobRunner
-  participant Pipe as Pipeline
-  participant Cache as Fetch cache
-  participant Browser as Chromium
-  participant Ext as Extractors
-  participant DB as SQLite
-  participant FS as Storage
-
-  User->>Entry: webfrost add url, or POST /api/v1/snapshots
-  Entry->>DB: INSERT snapshot (pending) and job_queue row (lease starts)
-  Entry->>Runner: enqueue
-  Note over Runner: wait for the host slot, then a concurrency slot
-  Runner->>Pipe: run (own DB connection, heartbeat every 10 s)
-
-  Pipe->>Cache: fetch page (SSRF-guarded, 30 s)
-  Cache-->>Pipe: status, headers, body
-  Pipe->>Browser: launch, goto (30 s), seal guard
-  Browser-->>Pipe: page, or an error if unavailable
-
-  par text extractors (no browser)
-    Pipe->>Ext: html, warc, readability
-  and browser extractors
-    Pipe->>Ext: pdf, screenshot, dom-snapshot, singlefile
-  and media
-    Pipe->>Ext: media, media-metadata (yt-dlp)
-  end
-  Ext->>FS: write files
-  Ext-->>Pipe: outputs or errors, each with a timeout
-
-  Pipe->>DB: archive_results (output or error per extractor)
-  Pipe->>DB: snapshot status = done or failed
-  Pipe->>DB: index in FTS5 (done only)
-  Pipe->>Browser: close
-`} />
+<ArchDiagram
+  name="snapshot-request"
+  alt="Sequence of one snapshot: the entry point inserts a pending snapshot and its job, the JobRunner starts the pipeline, which fetches the page once through safeFetch, loads it once in a guarded Chromium, runs the text, browser and media extractors in parallel, writes files to storage and results to the database, closes the browser and sets the status to done or failed."
+  caption="One snapshot, from the request to its final status."
+/>
 
 In order:
 
@@ -61,6 +29,12 @@ In order:
 Every pipeline the server starts goes through one `JobRunner` (`packages/core/src/jobs.ts`), limited to `WEBFROST_CONCURRENCY` running at once (default 3). Each job opens its own database handle and closes it when it settles, so request handlers can close theirs as soon as the row is inserted. (On SQLite the handles of one process share a connection; on PostgreSQL and MySQL they borrow from the process's pool.)
 
 `job_queue.status` goes `pending`, `running`, then `done` or `failed`.
+
+<ArchDiagram
+  name="snapshot-lifecycle"
+  alt="State diagram of a snapshot job: pending, then running, then done. Running goes to failed when the fetch fails or no extractor produced output. A pending or running job whose process dies is orphaned once its heartbeat is over 45 seconds old; recovery adopts it back to pending with a new lease and one more attempt, and after 3 attempts marks it failed."
+  caption="A job's states. The snapshot row shows only pending, done and failed; running exists on the job alone."
+/>
 
 **Leases.** A job is leased through `job_queue.heartbeat_at` and `job_queue.lease_token`. The token is issued when the job is created; the pipeline refreshes the heartbeat every 10 seconds, and the runner refreshes it for everything it has queued or running, including jobs still waiting for a slot.
 
@@ -112,75 +86,29 @@ Fetching with `safeFetch` protects only the first request. Without more, a page 
 
 How the server serves an archived file.
 
-<Mermaid chart={`sequenceDiagram
-  actor Client
-  participant Server
-  participant Auth as Auth check
-  participant DB as SQLite
-  participant Store as Storage backend
-
-  Client->>Server: GET /api/v1/snapshots/:id/archives/:extractor/download
-  Server->>Auth: API key, session cookie or public read
-  Auth-->>Server: allowed, or 401
-  Server->>DB: result for snapshot and extractor, without error
-  DB-->>Server: storage reference
-  Server->>Store: validate the reference
-  alt filesystem
-    Store-->>Server: file bytes
-    Server-->>Client: 200 with Content-Disposition attachment
-  else S3
-    Store-->>Server: presigned URL (1 hour)
-    Server-->>Client: 302 redirect
-  end
-`} />
+<ArchDiagram
+  name="download-flow"
+  alt="Sequence of a download: the auth check admits an API key, a session or public read, the download route looks up the latest successful result and validates its storage reference, then either streams the file as a 200 attachment from the filesystem or redirects with a 302 to a presigned S3 URL."
+  caption="Serving an archived file from disk or from S3."
+/>
 
 The extractor name is checked against an allowlist, and the stored reference must lie inside `snapshots/` (filesystem) or under the configured prefix (S3) before any read. `media-metadata` is always streamed by the server.
 
 ## Import flow
 
-<Mermaid chart={`sequenceDiagram
-  actor User
-  participant Entry as CLI or API
-  participant Imp as Import module
-  participant DB as SQLite
-  participant Runner as JobRunner
-
-  User->>Entry: import urls.txt, or POST /api/v1/import
-  Entry->>Imp: parse content with the format
-  Imp-->>Entry: URL list
-  loop each URL
-    Entry->>DB: skip if the URL already has a snapshot (rss only)
-    Entry->>DB: INSERT snapshot (pending)
-    Entry->>Runner: enqueue
-  end
-  Entry->>DB: INSERT imports row
-  Entry-->>User: queued, skipped, total
-  loop queued URLs, up to WEBFROST_CONCURRENCY at once
-    Runner->>DB: pipeline finishes, snapshot done or failed
-  end
-`} />
+<ArchDiagram
+  name="import-flow"
+  alt="Sequence of a bulk import: the CLI or API has the import parser turn the input into URLs, skips already archived URLs for RSS, adds a pending snapshot and job per URL through the JobRunner, records the import (API only) and answers with queued, skipped and total while the pipelines run in the background."
+  caption="A bulk import, parsed once and queued per URL."
+/>
 
 ## Schedules
 
-<Mermaid chart={`sequenceDiagram
-  participant Sched as Scheduler (server or worker)
-  participant DB as SQLite
-  participant Runner as JobRunner
-
-  loop every 30 seconds
-    Sched->>DB: schedules due and not paused
-    loop each due schedule
-      Sched->>DB: claim: UPDATE next_run_at where it is unchanged
-      alt claimed by this process
-        Sched->>Runner: enqueue (a feed schedule enqueues each new item)
-        Runner-->>Sched: pipeline settled
-        Sched->>DB: last_status, consecutive_failures
-      else claimed elsewhere
-        Note over Sched: skip, another process won
-      end
-    end
-  end
-`} />
+<ArchDiagram
+  name="schedule-run"
+  alt="Sequence of one scheduler tick: the scheduler reads due, unpaused schedules, claims each by advancing next_run_at only if it is unchanged, fetches feed items for RSS schedules, inserts a snapshot and job, enqueues it on the JobRunner, waits for the pipeline and records last_status and consecutive failures."
+  caption="One scheduler tick, every 30 seconds."
+/>
 
 The claim advances `next_run_at` before the pipeline runs, so a slow run is not started again on the next tick, and two processes on one archive cannot both run the same schedule. A run that outlasts its cron period waits until it finishes. A cron expression that no longer parses is skipped without affecting other schedules.
 
