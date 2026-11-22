@@ -4,6 +4,13 @@ description: Archive a page, open every format WebFrost saved, and search it, fr
 icon: Archive
 ---
 
+import dashboardLight from "@/assets/screens/dashboard-light.webp?preset=content";
+import dashboardDark from "@/assets/screens/dashboard-dark.webp?preset=content";
+import panelLight from "@/assets/screens/snapshot-panel-light.webp?preset=content";
+import panelDark from "@/assets/screens/snapshot-panel-dark.webp?preset=content";
+import searchLight from "@/assets/screens/search-light.webp?preset=content";
+import searchDark from "@/assets/screens/search-dark.webp?preset=content";
+
 In about ten minutes you archive `https://example.com`, look at each saved format, and search the text. You need the [installed `webfrost` binary](/docs/getting-started/install), or a running [Docker server](/docs/getting-started/quickstart) for the UI part. Run `webfrost setup` once if you have no Chromium.
 
 ## 1. Archive a URL
@@ -24,7 +31,9 @@ The archive lives in `~/.webfrost` unless you set `WEBFROST_DIR`. `webfrost serv
 </Tab>
 <Tab value="Web UI">
 
-Open the dashboard, paste `https://example.com` into **Quick Archive** and submit. The snapshot appears in **Snapshots** as `pending` and turns `done` after a few seconds.
+Open `http://localhost:3000`, paste `https://example.com` into the field at the top of the **Dashboard** and press **Archive**. While it runs, the snapshot shows under **Pipeline** with each extractor as it finishes; then it moves to **Recent Activity** as `done`.
+
+<Screenshot light={dashboardLight} dark={dashboardDark} alt="The WebFrost dashboard: an archive field, four statistics cards and the recent activity list" />
 
 </Tab>
 <Tab value="API">
@@ -80,21 +89,23 @@ sqlite3 ~/.webfrost/archive.db \
 # {"title":"Example Domain","byline":null,"textContent":"...","excerpt":"..."}
 ```
 
-In the web UI, open the snapshot to see each extractor with its duration, file size and a download link, plus a sandboxed preview of the DOM snapshot and the SingleFile copy.
+In the web UI, click the snapshot in **Snapshots**. A panel opens over the list (its address is `/#/snapshots/1`) with one tab per view: **Reader** (the extracted article), **Screenshot**, **DOM** (a sandboxed preview of the SingleFile copy or DOM snapshot), **Media**, **Raw** (downloads of the HTML, WARC, PDF, SingleFile and DOM files) and **History**. The side column shows the URL, status, capture time, tags and extractors.
+
+<Screenshot light={panelLight} dark={panelDark} alt="A snapshot of a Wikipedia article open in the detail panel, on the Reader tab" />
 
 Which extractors ran, and why one may be missing, is in [Extractors](/docs/reference/extractors).
 
 ## 4. Search it
 
-WebFrost indexes the extracted text, the URL, the title and tag names with SQLite FTS5 when a snapshot finishes.
+When a snapshot finishes, WebFrost adds its extracted text, URL, title and tag names to the full-text index (SQLite FTS5 by default; PostgreSQL and MySQL use their own full-text search).
 
 <Tabs items={["CLI", "Web UI", "API"]}>
 <Tab value="CLI">
 
 ```bash
-webfrost search "illustrative examples"
+webfrost search "documentation examples"
 # 1	https://example.com
-#   ...This domain is for use in illustrative examples in documents...
+#   This domain is for use in documentation examples without needing permission. ...
 ```
 
 `--json`, `--limit` and `--page` are available too.
@@ -102,13 +113,15 @@ webfrost search "illustrative examples"
 </Tab>
 <Tab value="Web UI">
 
-Press `Ctrl+K` (or `Cmd+K`) to open the search palette, or use the **Search** page for ranked results with highlighted snippets and filters.
+Press `Ctrl+K` (or `Cmd+K`) to open the search palette. Press `Enter` there, or open `/#/search?q=…`, for the **Search** page: ranked results with the matching words highlighted, and filters for the page of results.
+
+<Screenshot light={searchLight} dark={searchDark} alt="Search results for the word archive, with the matches highlighted in each snippet" />
 
 </Tab>
 <Tab value="API">
 
 ```bash
-curl "http://localhost:3000/api/v1/snapshots?q=illustrative" \
+curl "http://localhost:3000/api/v1/snapshots?q=documentation" \
   -H "Authorization: Bearer $KEY"
 ```
 
@@ -133,8 +146,8 @@ Tag names are searchable too.
   <Card title="Scheduled archiving" href="/docs/guides/scheduled-archiving">
     Re-archive a page or follow a feed on a cron schedule.
   </Card>
-  <Card title="Web UI" href="/docs/guides/web-ui">
-    Everything the browser interface can do.
+  <Card title="Web UI" href="/docs/reference/web-ui">
+    Every page and keyboard shortcut.
   </Card>
   <Card title="How the pipeline works" href="/docs/architecture/pipeline">
     From request to done.

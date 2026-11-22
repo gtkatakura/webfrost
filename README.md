@@ -18,13 +18,19 @@ keeping and lets you search what you saved. Run it from a terminal, a script or 
   and are spaced out per site.
 - **Safe to put on a network.** API keys, revocable sessions, rate limits, a read-only public mode, and a
   guard that stops archived pages from reaching your internal network.
-- **Plain files, no lock-in.** An archive is a folder with one SQLite database and the files next to it,
-  or an S3-compatible bucket.
+- **Plain files, no lock-in.** An archive is a folder with one SQLite database and the files next to it.
+  PostgreSQL or MySQL for the metadata and an S3-compatible bucket for the files are options, not
+  requirements.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshot-dark.webp">
+  <img src=".github/assets/screenshot-light.webp" width="1280" alt="The WebFrost web UI: the snapshot list with screenshot thumbnails, titles, extractor badges, tags and status">
+</picture>
 
 📖 **Documentation: [webfrost.dev](https://webfrost.dev)**
 
-> WebFrost is young (`0.x`). It works, and it is tested, but the HTTP API and the SDK can still change
-> before 1.0. See the [roadmap](ROADMAP.md).
+> WebFrost is young (`0.x`). It works, and it is tested, but the HTTP API can still change before 1.0
+> (it is versioned: `/api/v1`). See the [roadmap](ROADMAP.md).
 
 ## Install
 
@@ -55,14 +61,14 @@ webfrost doctor
 webfrost serve
 ```
 
-**The SDK**, to talk to a server from your own code: `npm install @webfrost/sdk`.
+## Three ways in
 
-## Four ways in
-
-- **Web UI**: dashboard, search with highlights, previews of every format, tags, schedules, imports. [Guide](https://webfrost.dev/docs/guides/web-ui)
+- **Web UI**: dashboard, search with highlights, previews of every format, tags, schedules, imports. [Reference](https://webfrost.dev/docs/reference/web-ui)
 - **CLI**: archive, import, search and schedule from a terminal, straight against an archive folder. [Reference](https://webfrost.dev/docs/reference/cli)
 - **HTTP API**: everything the UI does, over REST, with API keys. [Reference](https://webfrost.dev/docs/reference/rest-api)
-- **TypeScript SDK**: a typed client with no dependencies, for Bun, Node and the browser. [Reference](https://webfrost.dev/docs/reference/sdk)
+
+A typed TypeScript client with no dependencies, `@webfrost/sdk`, lives in [`packages/sdk`](packages/sdk)
+and will be published to npm after the first release.
 
 ```bash
 webfrost add https://example.com
@@ -75,14 +81,11 @@ webfrost import bookmarks.html
 webfrost schedule add https://example.com --cron "0 * * * *"
 ```
 
-```ts
-import { WebFrostClient } from "@webfrost/sdk";
-
-const client = new WebFrostClient({
-  baseUrl: "http://localhost:3000",
-  apiKey: process.env.WEBFROST_API_KEY,
-});
-const { id } = await client.createSnapshot("https://example.com");
+```bash
+curl -X POST http://localhost:3000/api/v1/snapshots \
+  -H "Authorization: Bearer $WEBFROST_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com"}'
 ```
 
 ## Agent skills
@@ -94,8 +97,8 @@ Teach your coding agent (Claude Code, Codex, Cursor and others) to use and run W
 npx skills add gtkatakura/webfrost
 ```
 
-- `webfrost`: archive pages, search the archive, download formats, import and schedule, from the CLI,
-  the HTTP API or the SDK.
+- `webfrost`: archive pages, search the archive, download formats, import and schedule, from the CLI
+  or the HTTP API.
 - `webfrost-self-host`: install, configure, secure, back up and troubleshoot your own server.
 
 ## Why WebFrost
@@ -104,17 +107,19 @@ WebFrost is inspired by [ArchiveBox](https://archivebox.io), the most mature sel
 and owes it the idea: archive every page in every format worth keeping, on your own machine. It was
 built for performance. ArchiveBox runs each extractor on its own, so one page is fetched and rendered
 several times. WebFrost fetches a page once and opens it in the browser once, and every format comes
-from those two visits. It runs as one Bun process with SQLite, so archiving many pages, on a schedule or from
-a big import, stays light enough for a small server.
+from those two visits. It runs as one Bun process with SQLite (or your PostgreSQL or MySQL), so
+archiving many pages, on a schedule or from a big import, stays light enough for a small server.
 
-It also treats the CLI, the HTTP API and the SDK as first-class, so it is easy to drive from scripts
+It also treats the CLI and the HTTP API as first-class, so it is easy to drive from scripts
 and other programs. ArchiveBox supports more inputs today (a browser extension, browser history, Pocket
 and Pinboard exports) and has years of real-world use behind it. A [benchmark](BENCHMARKS.md) comparing
-the two is in the repository; its numbers will be published once it has run.
+the two is in the repository; its numbers will be published once it has run. More in
+[Why WebFrost](https://webfrost.dev/docs/architecture/why-webfrost).
 
 ## FAQ
 
-**Where is my data?** In `WEBFROST_DIR` (`~/.webfrost` for the binary, `/data` in Docker): `archive.db` plus one folder per snapshot. Back
+**Where is my data?** In `WEBFROST_DIR` (`~/.webfrost` for the binary, `/data` in Docker): `archive.db` plus one folder per snapshot
+(with `DATABASE_URL` the database is on your PostgreSQL or MySQL server; with the S3 backend the files are in a bucket). Back
 it up like any folder. See [Disk layout](https://webfrost.dev/docs/reference/disk-layout).
 
 **Can I archive pages behind a login?** Not yet: every page is fetched as an anonymous visitor. It is on the

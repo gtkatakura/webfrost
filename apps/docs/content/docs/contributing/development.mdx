@@ -88,6 +88,7 @@ Notes:
 
 - **Browser tests.** The tests that drive a real Chromium (for example `packages/core/src/browser-guard.test.ts`) are **skipped, not failed**, when no Chromium is found. Run them at least once if you change the pipeline or the guard: install Chromium with Playwright, or set `WEBFROST_CHROMIUM_PATH=/usr/bin/chromium`.
 - **S3 integration tests** run only when `MINIO_TEST_ENDPOINT` is set (also `MINIO_TEST_BUCKET`, `MINIO_TEST_ACCESS_KEY`, `MINIO_TEST_SECRET_KEY`). `docker compose -f docker-compose.dev.yml up -d` starts MinIO with a `webfrost` bucket.
+- **PostgreSQL and MySQL tests** run the same suites against another engine when `WEBFROST_TEST_DATABASE_URL` is set to a `postgres://` or `mysql://` URL (CI does this for both). The account needs `CREATE DATABASE`: every test archive gets its own database.
 - **UI end to end tests** run with `AUTH_DISABLED=true` in CI.
 - Assert the final state (snapshot status, stored files), not only the response: bugs here have mostly been of the "returns 202 but nothing happens afterwards" kind.
 
@@ -179,6 +180,17 @@ import shot from "@/assets/screens/search.png?preset=content";
 
 <Picture image={shot} sizes="(min-width: 1024px) 720px, 100vw" alt="Search results with highlighted matches" />
 ```
+
+A screenshot of the web UI comes in both themes. Keep the two masters in `app/assets/screens/` (`<name>-light.webp` and `<name>-dark.webp`, captured at 1440×900 with a device scale factor of 2) and draw them with `Screenshot`, which shows the one matching the site's theme:
+
+```mdx
+import searchLight from "@/assets/screens/search-light.webp?preset=content";
+import searchDark from "@/assets/screens/search-dark.webp?preset=content";
+
+<Screenshot light={searchLight} dark={searchDark} alt="Search results with highlighted matches" />
+```
+
+The README shows the same view through `.github/assets/screenshot-light.webp` and `-dark.webp` (1280 px wide, WebP quality 82). Capture against a fresh data directory with a few real public pages archived, never with private URLs or usernames other than `admin`.
 
 The build makes every width in AVIF, WebP and JPG plus a blurred placeholder, and the browser downloads only the one that fits the screen. `sizes` tells it how wide the image is drawn. The presets are in `apps/docs/image-presets.ts`:
 

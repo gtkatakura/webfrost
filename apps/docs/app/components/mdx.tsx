@@ -5,6 +5,7 @@ import defaultMdxComponents from "fumadocs-ui/mdx";
 import type { MDXComponents } from "mdx/types";
 import { ArchDiagram } from "./arch-diagram";
 import { Picture } from "./picture";
+import { Screenshot } from "./screenshot";
 
 // What a page may use without importing it.
 export function getMDXComponents(components?: MDXComponents) {
@@ -13,6 +14,7 @@ export function getMDXComponents(components?: MDXComponents) {
     ArchDiagram,
     Callout,
     Picture,
+    Screenshot,
     Step,
     Steps,
     Tab,
