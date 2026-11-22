@@ -20,15 +20,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
       # Tools (Bun) at the versions pinned in mise.toml.
-      - uses: jdx/mise-action@v5.2.6
+      - uses: jdx/mise-action@v5.2.8
         with:
           install_args: bun
 
       - name: Cache Bun dependencies
-        uses: actions/cache@v5.0.4
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
@@ -39,7 +39,7 @@ jobs:
 
       - name: Cache Playwright browsers
         id: playwright-cache
-        uses: actions/cache@v5.0.4
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/bun.lock') }}
@@ -51,7 +51,7 @@ jobs:
       - run: bun run bench
 
       - name: Upload bench results
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: bench-results-${{ github.sha }}
           path: bench/
@@ -65,16 +65,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v7.0.1
 
       # Tools (Bun) at the versions pinned in mise.toml.
       - name: Setup Bun
-        uses: jdx/mise-action@v5.2.6
+        uses: jdx/mise-action@v5.2.8
         with:
           install_args: bun
 
       - name: Cache Bun dependencies
-        uses: actions/cache@v5.0.4
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
@@ -120,7 +120,7 @@ jobs:
 
       - name: Upload results and report
         if: always()
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: vs-competitors-results-${{ github.sha }}
           path: bench/vs-archivebox/results/
