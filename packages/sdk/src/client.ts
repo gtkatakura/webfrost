@@ -18,6 +18,7 @@ import type {
   ImportOptions,
   ImportRecord,
   ImportResult,
+  ImportSnapshotOptions,
   IterateOptions,
   IterateSnapshotsOptions,
   ListSnapshotsOptions,
@@ -35,6 +36,7 @@ import type {
   Snapshot,
   SnapshotCreated,
   SnapshotDetail,
+  SnapshotImported,
   SnapshotPage,
   Tag,
   WebFrostClientOptions,
@@ -56,6 +58,14 @@ interface SendOptions {
   allow?: readonly number[];
   /** The caller consumes the body after the call, so the timeout must not outlive the headers. */
   streaming?: boolean;
+  /** Send these bytes as they are, with this content type, instead of `body`. */
+  raw?: {
+    body: Blob | Uint8Array | ReadableStream<Uint8Array>;
+    contentType: string;
+    contentLength?: number;
+  };
+  /** Overrides the client's timeout for this request; 0 disables it. */
+  timeoutMs?: number;
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -196,13 +206,18 @@ export class WebFrostClient {
     options: SendOptions,
     parse: (res: Response) => Promise<T>,
   ): Promise<T> {
-    const { signal, body, allow = [], streaming = false } = options;
+    const { signal, body, raw, allow = [], streaming = false } = options;
+    const timeoutMs = options.timeoutMs ?? this.timeoutMs;
     if (signal?.aborted) throw abortedError(signal);
 
     const headers = new Headers();
     if (this.apiKey) headers.set("Authorization", `Bearer ${this.apiKey}`);
     let payload: BodyInit | undefined;
-    if (body instanceof FormData) {
+    if (raw) {
+      headers.set("Content-Type", raw.contentType);
+      if (raw.contentLength !== undefined) headers.set("Content-Length", String(raw.contentLength));
+      payload = raw.body as BodyInit;
+    } else if (body instanceof FormData) {
       payload = body; // fetch sets the multipart boundary itself
     } else if (body !== undefined) {
       headers.set("Content-Type", "application/json");
@@ -214,11 +229,11 @@ export class WebFrostClient {
     signal?.addEventListener("abort", onAbort, { once: true });
     let timedOut = false;
     const timer =
-      this.timeoutMs > 0
+      timeoutMs > 0
         ? setTimeout(() => {
             timedOut = true;
             controller.abort();
-          }, this.timeoutMs)
+          }, timeoutMs)
         : undefined;
 
     const wrap = (err: unknown): WebFrostError => {
@@ -226,7 +241,7 @@ export class WebFrostClient {
       if (timedOut) {
         return new WebFrostError(
           0,
-          `request timed out after ${this.timeoutMs}ms`,
+          `request timed out after ${timeoutMs}ms`,
           undefined,
           "TIMEOUT",
           { cause: err },
@@ -253,6 +268,8 @@ export class WebFrostClient {
         credentials: this.credentials,
         signal: controller.signal,
         ...(payload !== undefined ? { body: payload } : {}),
+        // A streamed request body (Node's fetch requires saying so).
+        ...(payload instanceof ReadableStream ? { duplex: "half" } : {}),
       });
       if (!res.ok && !allow.includes(res.status)) throw await parseError(res);
       return await parse(res);
@@ -719,6 +736,31 @@ export class WebFrostClient {
     form.append("file", file, name);
     if (format) form.append("format", format);
     return this.json("POST", "/import/file", { body: form, signal: request?.signal });
+  }
+
+  /**
+   * Upload a snapshot bundle (a ZIP made by `webfrost export` or `webfrost push`) to
+   * POST /snapshots/import. The server stores it as a new snapshot and resolves with its id.
+   * A `ReadableStream` is streamed; pass `contentLength` with it when the size is known, so
+   * the server can refuse an oversized bundle before the upload starts. Uploads have no
+   * timeout unless `timeoutMs` is given. Never retried: a retry could import it twice.
+   */
+  importSnapshot(
+    bundle: Blob | Uint8Array | ReadableStream<Uint8Array>,
+    request?: ImportSnapshotOptions,
+  ): Promise<SnapshotImported> {
+    // fetch measures a Blob or a Uint8Array itself; only a stream needs the length spelled out
+    // (browsers drop the header, and send the stream only over HTTP/2).
+    const contentLength = bundle instanceof ReadableStream ? request?.contentLength : undefined;
+    return this.json("POST", "/snapshots/import", {
+      raw: {
+        body: bundle,
+        contentType: "application/zip",
+        ...(contentLength !== undefined ? { contentLength } : {}),
+      },
+      signal: request?.signal,
+      timeoutMs: request?.timeoutMs ?? 0,
+    });
   }
 
   /** List past imports, newest first, one page at a time. */

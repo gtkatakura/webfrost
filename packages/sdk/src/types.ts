@@ -17,6 +17,21 @@ export interface SnapshotCreated {
   status: "pending";
 }
 
+/** Response from POST /snapshots/import (201 Created): the new snapshot. */
+export interface SnapshotImported {
+  id: number;
+  url: string;
+  status: "done" | "failed";
+}
+
+/** Options for {@link WebFrostClient.importSnapshot}. */
+export interface ImportSnapshotOptions extends RequestOptions {
+  /** Size of the bundle in bytes, for a stream (a Blob or Uint8Array knows its own). */
+  contentLength?: number;
+  /** Give up after this many milliseconds; default 0, no timeout (bundles can be large). */
+  timeoutMs?: number;
+}
+
 /** Tag attached to a snapshot */
 export interface Tag {
   id: number;

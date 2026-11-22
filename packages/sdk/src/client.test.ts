@@ -533,3 +533,73 @@ describe("WebFrostClient.retrySnapshot", () => {
     expect((missing as WebFrostError).code).toBe("NOT_FOUND");
   });
 });
+
+describe("WebFrostClient.importSnapshot", () => {
+  test("POSTs the bundle as application/zip with the API key and returns the new snapshot", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ id: 42, url: "https://video.example/watch", status: "done" }, 201),
+    );
+    const client = new WebFrostClient({ baseUrl: BASE, apiKey: "wf_secret" });
+    const bundle = new Uint8Array([0x50, 0x4b, 0x05, 0x06]);
+    const result = await client.importSnapshot(bundle);
+
+    expect(result).toEqual({ id: 42, url: "https://video.example/watch", status: "done" });
+    const [calledUrl, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(calledUrl).toBe(`${BASE}/api/v1/snapshots/import`);
+    expect(init.method).toBe("POST");
+    expect(init.body).toBe(bundle);
+    const headers = new Headers(init.headers);
+    expect(headers.get("content-type")).toBe("application/zip");
+    expect(headers.get("authorization")).toBe("Bearer wf_secret");
+  });
+
+  test("streams a ReadableStream with its declared length, half duplex", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ id: 1, url: "https://x.example", status: "failed" }, 201),
+    );
+    const client = new WebFrostClient({ baseUrl: BASE });
+    const stream = new Blob([new Uint8Array(10)]).stream();
+    await client.importSnapshot(stream, { contentLength: 10 });
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit & { duplex?: string }];
+    expect(init.body).toBe(stream);
+    expect(init.duplex).toBe("half");
+    expect(new Headers(init.headers).get("content-length")).toBe("10");
+  });
+
+  test("a rejected bundle surfaces the server's error, and is never retried", async () => {
+    fetchSpy.mockResolvedValue(
+      jsonResponse(
+        { error: "invalid manifest: unknown field manifest.x", code: "VALIDATION" },
+        400,
+      ),
+    );
+    const client = new WebFrostClient({ baseUrl: BASE, retries: 3 });
+    const err = (await client
+      .importSnapshot(new Blob(["x"]))
+      .catch((e: unknown) => e)) as WebFrostError;
+    expect(err).toBeInstanceOf(WebFrostError);
+    expect(err.status).toBe(400);
+    expect(err.code).toBe("VALIDATION");
+    expect(err.message).toBe("invalid manifest: unknown field manifest.x");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("has no timeout by default, unlike other requests", async () => {
+    fetchSpy.mockImplementation(
+      (_url: string, init: RequestInit) =>
+        new Promise((resolve, reject) => {
+          init.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+          setTimeout(
+            () => resolve(jsonResponse({ id: 1, url: "https://x.example", status: "done" }, 201)),
+            60,
+          );
+        }),
+    );
+    const client = new WebFrostClient({ baseUrl: BASE, timeoutMs: 20 });
+    expect((await client.importSnapshot(new Blob(["x"]))).id).toBe(1);
+    const timedOut = (await client
+      .importSnapshot(new Blob(["x"]), { timeoutMs: 10 })
+      .catch((e: unknown) => e)) as WebFrostError;
+    expect(timedOut.code).toBe("TIMEOUT");
+  });
+});

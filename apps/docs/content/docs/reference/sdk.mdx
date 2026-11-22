@@ -181,6 +181,15 @@ Archive a snapshot again, in place: same id, URL and color scheme, every result 
 await client.retrySnapshot(7);
 ```
 
+### `importSnapshot(bundle, options?): Promise<SnapshotImported>`
+
+Upload a [snapshot bundle](/docs/reference/rest-api#import-a-snapshot-bundle) (the ZIP that `webfrost export` writes) and resolve with the new snapshot, `{ id, url, status: "done" | "failed" }`. `bundle` is a `Blob`, a `Uint8Array` or a `ReadableStream<Uint8Array>`; a stream is sent as it is read, so pass `contentLength` with it when you know the size. `options` is `{ contentLength?, timeoutMs?, signal? }`. Uploads have no timeout unless `timeoutMs` is given, and are never retried (a retry could import the snapshot twice). A rejected bundle throws `VALIDATION`; one over the server's limit `PAYLOAD_TOO_LARGE`.
+
+```ts
+const imported = await client.importSnapshot(await fs.openAsBlob("snapshot-12.zip"));
+console.log(imported.id);
+```
+
 ### `archiveUrl(id, extractor, kind?): string`
 
 A URL for `<a href>`, `<img src>` or `<iframe src>`. `kind` is `"download"` (default) for the stored file, or `"preview"` for the sandboxed HTML preview that some extractors have. The URL carries no credentials: the browser sends the session cookie. An API key cannot go in a URL, so use `downloadArchive` with one.
@@ -278,6 +287,7 @@ type ImportFormat = "rss" | "opml" | "netscape" | "text";
 type ScheduleRunStatus = "success" | "failed";
 
 interface SnapshotCreated { id: number; url: string; status: "pending" }
+interface SnapshotImported { id: number; url: string; status: "done" | "failed" }
 
 interface Snapshot {
   id: number;
