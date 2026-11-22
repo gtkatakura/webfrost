@@ -5,9 +5,11 @@ import {
   initTelemetry,
   shutdownTelemetry,
   startScheduler,
+  sweepStaleBundleUploads,
+  sweepStaleImports,
 } from "@webfrost/core";
 import { Elysia } from "elysia";
-import { getDb, getRunner, getWebfrostDir } from "./context";
+import { getDb, getRunner, getStorage, getWebfrostDir } from "./context";
 import { appContentSecurityPolicy } from "./csp";
 import { apiErrorHandler, withErrorCode } from "./errors";
 import { listenerMaxBodyBytes } from "./limits";
@@ -255,6 +257,7 @@ export function startBackgroundWork(): { stop: () => void } {
   };
   void recover();
   const recovery = setInterval(() => void recover(), RECOVERY_INTERVAL_MS);
+  void sweepInterruptedImports(dir);
 
   if (process.env.WEBFROST_SCHEDULER === "false") {
     logger.info("WEBFROST_SCHEDULER=false — schedules are not run by this process");
@@ -269,6 +272,29 @@ export function startBackgroundWork(): { stop: () => void } {
       scheduler.stop();
     },
   };
+}
+
+/**
+ * Clean up after bundle imports a crash interrupted: upload spool folders under
+ * WEBFROST_DIR/tmp and snapshots left `importing`, both only once they are over an hour old,
+ * so an import another process is running right now is left alone. Never throws.
+ */
+export async function sweepInterruptedImports(dir: string): Promise<void> {
+  try {
+    const uploads = await sweepStaleBundleUploads(dir);
+    const db = await getDb();
+    let snapshots = 0;
+    try {
+      snapshots = await sweepStaleImports(db, getStorage());
+    } finally {
+      await db.close();
+    }
+    if (uploads > 0 || snapshots > 0) {
+      logger.info({ uploads, snapshots }, "removed bundle imports interrupted by a restart");
+    }
+  } catch (err) {
+    logger.error({ err }, "sweeping interrupted bundle imports failed");
+  }
 }
 
 /**

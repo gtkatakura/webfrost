@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -254,6 +254,120 @@ describe("POST /snapshots/import — authentication", () => {
     } finally {
       Reflect.deleteProperty(process.env, "SESSION_SECRET");
       if (previous !== undefined) process.env.AUTH_DISABLED = previous;
+    }
+  });
+});
+
+describe("bundle import limits and crash recovery", () => {
+  test("at most two imports run at once; a third is a 429 with Retry-After", async () => {
+    const { activeBundleImports } = await import("./snapshot-import");
+    // Two uploads that stay open until released.
+    const releases: (() => void)[] = [];
+    const held = [0, 1].map(() => {
+      let release = () => {};
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array([0x50, 0x4b]));
+          release = () => controller.close();
+        },
+      });
+      const pending = postBundle(body);
+      releases.push(() => release());
+      return pending;
+    });
+    for (let i = 0; i < 50 && activeBundleImports() < 2; i++) await Bun.sleep(10);
+    expect(activeBundleImports()).toBe(2);
+
+    const bundle = await laptopBundle();
+    const third = await postBundle(bundle);
+    expect(third.status).toBe(429);
+    expect(third.headers.get("retry-after")).toBe("30");
+    expect(await snapshotCount()).toBe(0);
+
+    for (const release of releases) release();
+    for (const res of await Promise.all(held)) expect(res.status).toBe(400);
+    expect(activeBundleImports()).toBe(0);
+    expect((await postBundle(bundle)).status).toBe(201);
+  });
+
+  test("a listening server gives the upload a finite idle timeout, lifted once the body is in", async () => {
+    const { app } = await import("../index");
+    const { BUNDLE_IMPORT_IDLE_TIMEOUT_SECONDS } = await import("./snapshot-import");
+    app.listen({ port: 0, hostname: "127.0.0.1" });
+    try {
+      const server = app.server as NonNullable<typeof app.server>;
+      const calls: number[] = [];
+      const original = server.timeout.bind(server);
+      server.timeout = (req: Request, seconds: number) => {
+        calls.push(seconds);
+        return original(req, seconds);
+      };
+      const res = await fetch(`http://127.0.0.1:${server.port}/api/v1/snapshots/import`, {
+        method: "POST",
+        headers: { "content-type": "application/zip", ...authHeader },
+        body: "not a zip, long enough to have no end record",
+      });
+      expect(res.status).toBe(400);
+      // Finite while the upload streams in (Bun's maximum), lifted once the body is complete.
+      expect(calls).toEqual([BUNDLE_IMPORT_IDLE_TIMEOUT_SECONDS, 0]);
+      expect(BUNDLE_IMPORT_IDLE_TIMEOUT_SECONDS).toBeGreaterThan(0);
+      expect(BUNDLE_IMPORT_IDLE_TIMEOUT_SECONDS).toBeLessThanOrEqual(255);
+    } finally {
+      await app.stop();
+    }
+  });
+
+  test("a snapshot still importing is hidden, and delete or retry answer 409", async () => {
+    const db = await openDb(serverDir);
+    const id = await db.insert(
+      sql`INSERT INTO snapshots (url, status) VALUES ('https://x.example/', 'importing')`,
+    );
+    await db.close();
+    const { app } = await import("../index");
+    const call = (method: string, path: string) =>
+      app.handle(
+        new Request(`http://localhost/api/v1/snapshots${path}`, { method, headers: authHeader }),
+      );
+    expect((await call("GET", `/${id}`)).status).toBe(404);
+    const list = (await (await call("GET", "")).json()) as { total: number };
+    expect(list.total).toBe(0);
+    expect((await call("DELETE", `/${id}`)).status).toBe(409);
+    expect((await call("POST", `/${id}/retry`)).status).toBe(409);
+    expect(await snapshotCount()).toBe(1);
+  });
+
+  test("startup removes stale spool folders and imports a crash left behind, only when old", async () => {
+    const { sweepInterruptedImports } = await import("../index");
+    const tmp = join(serverDir, "tmp");
+    const stale = join(tmp, `bundle-${crypto.randomUUID()}`);
+    const fresh = join(tmp, `bundle-${crypto.randomUUID()}`);
+    mkdirSync(stale, { recursive: true });
+    mkdirSync(fresh, { recursive: true });
+    const old = new Date(Date.now() - 2 * 3600 * 1000);
+    utimesSync(stale, old, old);
+
+    const db = await openDb(serverDir);
+    const insert = async (ago: number) => {
+      const id = await db.insert(
+        sql`INSERT INTO snapshots (url, status) VALUES ('https://x.example/', 'importing')`,
+      );
+      await db.run(
+        sql`INSERT INTO job_queue (snapshot_id, status, created_at) VALUES (${id}, 'importing', ${db.ago(ago)})`,
+      );
+      return id;
+    };
+    await insert(2 * 3600);
+    const recent = await insert(10);
+    await db.close();
+
+    await sweepInterruptedImports(serverDir);
+    expect(readdirSync(tmp)).toEqual([fresh.split("/").pop() as string]);
+    const check = await openDb(serverDir);
+    try {
+      const rows = await check.all<{ id: number }>(sql`SELECT id FROM snapshots`);
+      expect(rows.map((r) => Number(r.id))).toEqual([recent]);
+    } finally {
+      await check.close();
     }
   });
 });

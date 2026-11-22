@@ -256,6 +256,12 @@ server accepts. Only authenticated admins can send one, and it is still treated 
   attachments.
 - Nothing is fetched during an import and no pipeline runs.
 
+At most two imports run at once (a third gets `429`), and an upload is closed after 255 seconds
+without data, so stalled uploads cannot hold the slots. While its files are copied an
+import's snapshot is `importing`: hidden from the API, and it cannot be retried or deleted. The
+server removes spool folders and `importing` snapshots a crash left behind at startup, once they are
+an hour old.
+
 A rejected bundle answers `400` and stores nothing; a failure after the checks removes what was
 written.
 

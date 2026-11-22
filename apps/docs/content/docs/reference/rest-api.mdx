@@ -233,12 +233,13 @@ curl -X POST $API/snapshots/import -H "Authorization: Bearer $KEY" \
 
 The import always creates a **new** snapshot with a new id. Its status (`done` or `failed`), creation time, color scheme, results (inline content, errors, durations) and files come from the bundle; tags are matched by name and created when missing; a `done` snapshot is added to the search index. Nothing is fetched and no pipeline runs. Importing the same bundle twice makes two snapshots.
 
-It needs credentials like every write (an API key, or a session with the [CSRF check](/docs/architecture/security#cross-site-requests-csrf)), also when public read is on, and counts against the 60-per-minute [rate limit](#rate-limits) of snapshot creation.
+It needs credentials like every write (an API key, or a session with the [CSRF check](/docs/architecture/security#cross-site-requests-csrf)), also when public read is on, and counts against the 60-per-minute [rate limit](#rate-limits) of snapshot creation. At most two imports run at once per server process; a third gets `429` `RATE_LIMITED` with `Retry-After: 30` before its body is read. While the upload streams in, the connection may go up to 255 seconds without data before it is closed; once the body is complete there is no idle timeout while the server copies it into storage.
 
 | Status | When |
 |---|---|
 | `201` | Imported: `{ id, url, status }` |
 | `400` `VALIDATION` | The bundle is not a valid ZIP, its manifest breaks the format, or its entries break a rule below. Nothing is stored. |
+| `429` `RATE_LIMITED` | Two imports are already running, or the rate limit; see `Retry-After` |
 | `413` `PAYLOAD_TOO_LARGE` | The upload, or its content once decompressed, is over `WEBFROST_IMPORT_BUNDLE_MAX_BYTES` (default 2 GiB) |
 | `415` `UNSUPPORTED_MEDIA_TYPE` | The body is not `application/zip` |
 
@@ -274,7 +275,7 @@ The server treats a bundle as untrusted input:
 - The server picks where each file is stored and serves it with the content type of its extractor, never one from the bundle. Archived HTML is still shown only through the sandboxed [preview](#archive-files).
 - `sizeBytes` is recomputed from what was stored.
 
-If something fails after the checks (a corrupt entry discovered while decompressing, storage unavailable), everything written for the import is removed again. While the files are copied the new snapshot already exists, as `failed` with no results.
+If something fails after the checks (a corrupt entry discovered while decompressing, storage unavailable), everything written for the import is removed again. While the files are copied the new snapshot exists with the internal status `importing`: it is left out of lists, search, stats and `GET /snapshots/:id` (`404`), and `DELETE` or `POST /snapshots/:id/retry` on it answer `409` `CONFLICT`. If the server dies during an import, the next start removes that snapshot and its files, and the upload left in `WEBFROST_DIR/tmp`, once they are over an hour old.
 
 #### Archive results
 

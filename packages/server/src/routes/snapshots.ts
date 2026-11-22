@@ -1,4 +1,5 @@
 import {
+  SnapshotBusyError,
   deleteSnapshot,
   getSnapshot,
   getSnapshotsByIds,
@@ -307,7 +308,15 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       const db = await getDb();
       const storage = getStorage();
       try {
-        const deleted = await deleteSnapshot(db, id, storage);
+        let deleted: boolean;
+        try {
+          deleted = await deleteSnapshot(db, id, storage);
+        } catch (err) {
+          if (err instanceof SnapshotBusyError) {
+            return apiError(set, 409, "CONFLICT", "snapshot is being imported");
+          }
+          throw err;
+        }
         if (!deleted) return apiError(set, 404, "NOT_FOUND", "not found");
         set.status = 204;
         return null;

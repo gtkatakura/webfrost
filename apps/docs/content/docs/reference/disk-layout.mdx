@@ -16,7 +16,7 @@ Next to `screenshot.png` there is `thumbnail.webp`: a small WebP of the first sc
 
 SQLite also creates `archive.db-wal` and `archive.db-shm` next to the database while it is in use (write-ahead logging). Keep them with the database.
 
-`tmp/` holds snapshot bundles being uploaded to `POST /api/v1/snapshots/import` ([`webfrost push`](/docs/guides/push)), one private folder per request, removed when the request ends. It needs no backup.
+`tmp/` holds snapshot bundles being uploaded to `POST /api/v1/snapshots/import` ([`webfrost push`](/docs/guides/push)), one private folder (`bundle-<uuid>`) per request, removed when the request ends; folders a crash left behind are removed at the next server start once they are an hour old. It needs no backup.
 
 ## Snapshot ids
 
