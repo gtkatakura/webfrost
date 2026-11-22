@@ -34,7 +34,12 @@ function snapshotSummary(s: SnapshotWithExtractors) {
     extractors: s.extractors,
     title: s.title,
     excerpt: s.excerpt,
-    screenshotUrl: s.hasScreenshot ? archiveDownloadPath(s.id, "screenshot") : null,
+    // Lists show this as a thumbnail: the small JPEG when there is one, not a full page of several MB.
+    screenshotUrl: s.hasThumbnail
+      ? archiveDownloadPath(s.id, "thumbnail")
+      : s.hasScreenshot
+        ? archiveDownloadPath(s.id, "screenshot")
+        : null,
     tags: s.tags.map(serializeTag),
   };
 }
@@ -44,6 +49,7 @@ const FILE_BASED_EXTRACTORS = new Set([
   "warc",
   "pdf",
   "screenshot",
+  "thumbnail",
   "dom-snapshot",
   "singlefile",
   "media",
@@ -73,6 +79,7 @@ const ALLOWED_EXTRACTORS = new Set([
   "pdf",
   "readability",
   "screenshot",
+  "thumbnail",
   "dom-snapshot",
   "singlefile",
   "media",
@@ -103,6 +110,7 @@ const FILE_EXTRACTORS: Record<string, { contentType: string; filename: string }>
   warc: { contentType: "application/warc", filename: "archive.warc" },
   pdf: { contentType: "application/pdf", filename: "page.pdf" },
   screenshot: { contentType: "image/png", filename: "screenshot.png" },
+  thumbnail: { contentType: "image/jpeg", filename: "thumbnail.jpg" },
   "dom-snapshot": { contentType: "text/html", filename: "dom.html" },
   singlefile: { contentType: "text/html", filename: "singlefile.html" },
   "media-metadata": { contentType: "application/json", filename: "media-metadata.json" },

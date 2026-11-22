@@ -124,6 +124,20 @@ describe("ListPage — empty state", () => {
   });
 });
 
+describe("ListPage — loading", () => {
+  test("shows a grid of card skeletons and a disabled Select all while loading", async () => {
+    const client = mockClient({ listSnapshots: () => new Promise<SnapshotPage>(() => {}) });
+    renderApp(client, "/snapshots");
+
+    const status = await screen.findByRole("status", { name: "Loading snapshots" });
+    expect(status.tagName).toBe("UL");
+    expect(status.className).toContain("grid");
+    expect(status.querySelectorAll("li")).toHaveLength(12);
+    const selectAll = screen.getByLabelText("Select all") as HTMLInputElement;
+    expect(selectAll.disabled).toBe(true);
+  });
+});
+
 describe("ListPage — data renders", () => {
   test("renders a row for each snapshot", async () => {
     const snapshots = [

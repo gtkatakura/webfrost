@@ -32,6 +32,8 @@ export interface SnapshotWithExtractors extends Snapshot {
   title: string | null;
   excerpt: string | null;
   hasScreenshot: boolean;
+  /** A small JPEG of the first screen; snapshots archived before it existed have none. */
+  hasThumbnail: boolean;
 }
 
 export interface PaginatedResult<T> {
@@ -49,6 +51,7 @@ interface SnapshotRow {
   extractor_names: string | null;
   readability_content: string | null;
   has_screenshot: number | null;
+  has_thumbnail: number | null;
 }
 
 // Failed extractors leave a row with `error` set and no content; joining only the
@@ -61,7 +64,8 @@ function snapshotSelect(db: Db): RawBuilder<SnapshotRow> {
   return sql<SnapshotRow>`SELECT s.id, s.url, s.status, s.created_at,
      ${names} AS extractor_names,
      MAX(CASE WHEN ar.extractor = 'readability' THEN ar.content END) AS readability_content,
-     MAX(CASE WHEN ar.extractor = 'screenshot' THEN 1 END) AS has_screenshot
+     MAX(CASE WHEN ar.extractor = 'screenshot' THEN 1 END) AS has_screenshot,
+     MAX(CASE WHEN ar.extractor = 'thumbnail' THEN 1 END) AS has_thumbnail
    FROM snapshots s
    LEFT JOIN archive_results ar ON ar.snapshot_id = s.id AND ar.error IS NULL`;
 }
@@ -119,6 +123,7 @@ function toSnapshot(r: SnapshotRow, tags: Map<number, Tag[]>): SnapshotWithExtra
     title,
     excerpt,
     hasScreenshot: Number(r.has_screenshot) === 1,
+    hasThumbnail: Number(r.has_thumbnail) === 1,
   };
 }
 

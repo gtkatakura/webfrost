@@ -16,20 +16,21 @@ A snapshot is **`done`** when at least one extractor produced output and **`fail
 | `readability` | JSON in the database | none | The article as found by Mozilla Readability: `title`, `byline`, `textContent` (plain text, paragraph breaks kept) and `excerpt`. When the page is not an article, `title` falls back to the page's `<title>` and the other fields are `null`. Feeds the search index. Only the first 10 MB of the page are parsed (`WEBFROST_READABILITY_MAX_BYTES`). |
 | `html` | text in the database | none | The HTML response body as text, decoded with the page's charset (the `Content-Type` charset, then `<meta charset>`, then UTF-8). |
 | `pdf` | `page.pdf` | Chromium | Full-page PDF rendered by the browser, with backgrounds printed. It follows the archived theme (light or dark). |
-| `screenshot` | `screenshot.png` | Chromium | Full-page PNG. |
+| `thumbnail` | `thumbnail.jpg` | Chromium | The first screen (the viewport) as a JPEG, quality 60. Lists and cards load it instead of the full-page screenshot, which can be several MB. It is taken before the screenshot, so it exists even when the full page fails. Snapshots archived before it existed have none. |
+| `screenshot` | `screenshot.png` | Chromium | Full-page PNG, cut at 16000 px: Chromium cannot paint a taller image, so a longer page (a long article) is cut there instead of failing. |
 | `dom-snapshot` | `dom.html` | Chromium | The serialized DOM after the page loaded, which includes content built by JavaScript. |
 | `singlefile` | `singlefile.html` | Chromium | The rendered page as one HTML file, with external stylesheets, their fonts, `img` images and images referenced from CSS inlined as data URIs. Stylesheet media queries are kept, HTML entities in URLs are decoded, and `srcset` and `<picture>` sources are dropped so the inlined image is the one shown. Assets that cannot be downloaded, or that no longer fit in the 100 MB budget (`WEBFROST_SINGLEFILE_MAX_BYTES`), stay as external links. |
-| `media` | `media/media.mp4` or `media/media.mp3` | yt-dlp | The video, as an mp4 a browser plays: an mp4 the site offers comes first (some sites, like archive.org, also offer AVI or OGV), up to `WEBFROST_MEDIA_MAX_HEIGHT` (1080p by default), preferring H.264 video and AAC audio, or an audio-only mp3 when no video can be downloaded. Skipped over 500 MB. For a playlist or channel URL, only the first item. |
+| `media` | `media/media.mp4` or `media/media.mp3` | yt-dlp | The video, as an mp4 a browser plays, up to `WEBFROST_MEDIA_MAX_HEIGHT` (1080p by default). VP9 or AV1 video with Opus audio comes first, because Chromium builds without the patented codecs cannot play H.264 or AAC; H.264 and AAC come next, and AVI, FLV and WMV, which no browser plays, only when the site offers nothing else (archive.org lists them first). Falls back to an audio-only mp3 when no video can be downloaded. Skipped over 500 MB. For a playlist or channel URL, only the first item. |
 | `media-metadata` | `media/media-metadata.json` | yt-dlp | The yt-dlp metadata (title, uploader, duration, formats). |
 
-The PDF, screenshot, DOM snapshot and SingleFile files come from the browser; the WARC, Readability and HTML results come from the HTTP fetch. When the URL is not text (a PDF or an image linked directly), `html` and `readability` do not run and the file is kept, byte for byte, in the WARC. The `html` and `readability` results are stored in the database, not as files. File names are the same on the filesystem and in S3. See [Disk layout](/docs/reference/disk-layout).
+The PDF, screenshot, thumbnail, DOM snapshot and SingleFile files come from the browser; the WARC, Readability and HTML results come from the HTTP fetch. When the URL is not text (a PDF or an image linked directly), `html` and `readability` do not run and the file is kept, byte for byte, in the WARC. The `html` and `readability` results are stored in the database, not as files. File names are the same on the filesystem and in S3. See [Disk layout](/docs/reference/disk-layout).
 
 ## When something fails or is skipped
 
 | Situation | Result |
 |---|---|
 | The page fetch fails or the server answers HTTP 400 or higher | No extractor runs. The snapshot is `failed`. |
-| Chromium is missing, navigation fails, or a request violates the SSRF policy | `pdf`, `screenshot`, `dom-snapshot` and `singlefile` are recorded as failed with an `error`. The rest still run. |
+| Chromium is missing, navigation fails, or a request violates the SSRF policy | `pdf`, `thumbnail`, `screenshot`, `dom-snapshot` and `singlefile` are recorded as failed with an `error`. The rest still run. |
 | The page redirects to a private address inside the browser | The same four are recorded as failed (`blocked: page redirected to a non-public address`), so nothing from the internal host is captured. |
 | An extractor exceeds `WEBFROST_EXTRACTOR_TIMEOUT_MS` (60 s) | That extractor is recorded as failed. Its downloads are cancelled and nothing it produces afterwards is kept. |
 | A yt-dlp call exceeds `WEBFROST_MEDIA_TIMEOUT_MS` (10 min) | yt-dlp is killed together with the processes it started (ffmpeg). |

@@ -290,7 +290,7 @@ describe("mediaExtractor: format selection", () => {
     else process.env.WEBFROST_MEDIA_MAX_HEIGHT = saved;
   });
 
-  async function sortArg(): Promise<string | undefined> {
+  async function sortArg(flag = "-S"): Promise<string | undefined> {
     const calls: string[][] = [];
     const spawner: YtDlpSpawner = async (args) => {
       calls.push(args);
@@ -300,21 +300,27 @@ describe("mediaExtractor: format selection", () => {
       _spawner: spawner,
     });
     const video = calls[1] ?? [];
-    return video[video.indexOf("-S") + 1];
+    return video[video.indexOf(flag) + 1];
   }
 
-  test("prefers up to 1080p, H.264 and AAC by default", async () => {
+  test("prefers up to 1080p, VP9 and Opus by default", async () => {
     Reflect.deleteProperty(process.env, "WEBFROST_MEDIA_MAX_HEIGHT");
-    expect(await sortArg()).toBe("ext:mp4:m4a,res:1080,vcodec:h264,acodec:aac");
+    expect(await sortArg()).toBe("res:1080,vcodec:vp9,acodec:opus");
+  });
+
+  test("takes AVI, FLV and WMV only as a last resort", async () => {
+    expect(await sortArg("-f")).toBe(
+      "bv*[ext!=avi][ext!=flv][ext!=wmv]+ba/b[ext!=avi][ext!=flv][ext!=wmv]/bv*+ba/b",
+    );
   });
 
   test("honours WEBFROST_MEDIA_MAX_HEIGHT", async () => {
     process.env.WEBFROST_MEDIA_MAX_HEIGHT = "720";
-    expect(await sortArg()).toBe("ext:mp4:m4a,res:720,vcodec:h264,acodec:aac");
+    expect(await sortArg()).toBe("res:720,vcodec:vp9,acodec:opus");
   });
 
   test("WEBFROST_MEDIA_MAX_HEIGHT=0 removes the height limit", async () => {
     process.env.WEBFROST_MEDIA_MAX_HEIGHT = "0";
-    expect(await sortArg()).toBe("ext:mp4:m4a,vcodec:h264,acodec:aac");
+    expect(await sortArg()).toBe("vcodec:vp9,acodec:opus");
   });
 });

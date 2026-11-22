@@ -134,10 +134,11 @@ export async function mediaExtractor(
     lease,
   );
 
-  // Step 2: the video, merged to mp4. "Best" on YouTube is 4K AV1 (hundreds of MB for a few
-  // minutes, and AV1 does not play everywhere): prefer up to WEBFROST_MEDIA_MAX_HEIGHT
-  // (1080 by default), H.264 and AAC, which every browser plays, and take what exists. The mp4 container comes
-  // first: some sites (archive.org) do not name their codecs, and an AVI or OGV does not play in a browser.
+  // Step 2: the video, merged to mp4, in a format browsers play: VP9 or AV1 video with Opus audio first (free
+  // codecs: Chromium builds without the patented ones play no H.264 or AAC), then whatever else exists, up to
+  // WEBFROST_MEDIA_MAX_HEIGHT (1080 by default; "best" on YouTube is 4K, hundreds of MB for a few minutes).
+  // AVI, FLV and WMV, which no browser plays, are taken only when nothing else exists (archive.org lists them
+  // first and does not name their codecs).
   const maxHeight = envInt("WEBFROST_MEDIA_MAX_HEIGHT", DEFAULT_MEDIA_MAX_HEIGHT);
   const videoLocalPath = await storage.localPath(snapshotId, "media/media.mp4");
   let videoResult: SpawnResult;
@@ -146,9 +147,9 @@ export async function mediaExtractor(
       ytDlpArgs(
         [
           "-f",
-          "bestvideo+bestaudio/best",
+          "bv*[ext!=avi][ext!=flv][ext!=wmv]+ba/b[ext!=avi][ext!=flv][ext!=wmv]/bv*+ba/b",
           "-S",
-          `ext:mp4:m4a,${maxHeight > 0 ? `res:${maxHeight},` : ""}vcodec:h264,acodec:aac`,
+          `${maxHeight > 0 ? `res:${maxHeight},` : ""}vcodec:vp9,acodec:opus`,
           "--merge-output-format",
           "mp4",
           "--max-filesize",

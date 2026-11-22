@@ -57,7 +57,7 @@ PostgreSQL connection options go in the URL as usual, for example `?sslmode=requ
 | `WEBFROST_MEDIA_TIMEOUT_MS` | `600000` | Timeout for each `yt-dlp` run. A media archive can run it up to three times, and the media extractor as a whole is allowed three times this value. |
 | `WEBFROST_COLOR_SCHEME` | `light` | `light` or `dark`. The theme the browser archives pages in (screenshot, PDF, Page view) when the request does not choose one: the CLI, schedules and imports. The web UI archives in its own current theme. |
 | `WEBFROST_SETTLE_MS` | `5000` | After the page's load event, wait up to this long for the network to go quiet before capturing, so single-page apps finish loading. Requests still go through the SSRF guard. `0` disables the wait. |
-| `WEBFROST_MEDIA_MAX_HEIGHT` | `1080` | Video is downloaded at up to this height, preferring H.264 and AAC, which every browser plays. `0` means no limit: the best quality, for example 4K AV1. |
+| `WEBFROST_MEDIA_MAX_HEIGHT` | `1080` | Video is downloaded at up to this height, preferring VP9 or AV1 with Opus, which Chromium plays even without the patented codecs. `0` means no limit: the best quality, for example 4K AV1. |
 | `WEBFROST_READABILITY_MAX_BYTES` | `10485760` | HTML longer than this (10 MB) is cut before the readable-text extraction, which blocks the process while it runs. `0` turns the cap off. |
 | `WEBFROST_SINGLEFILE_CONCURRENCY` | `8` | Images, stylesheets and fonts the self-contained HTML downloads at the same time. |
 | `WEBFROST_SINGLEFILE_MAX_BYTES` | `104857600` | Total bytes the self-contained HTML may inline (100 MB). Assets past the budget stay as links to the live site. |

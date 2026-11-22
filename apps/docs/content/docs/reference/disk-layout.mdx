@@ -12,7 +12,7 @@ Everything WebFrost stores lives under `WEBFROST_DIR` (S3 files aside).
   caption="Everything under WEBFROST_DIR. The WARC also records redirects; media.mp3 replaces media.mp4 for the audio-only fallback."
 />
 
-The `html` and `readability` results are stored in the database, not as files. A file exists only if its extractor ran and succeeded, so most snapshots lack some of these.
+Next to `screenshot.png` there is `thumbnail.jpg`: a small JPEG of the first screen, which lists and cards load instead of the full page. The `html` and `readability` results are stored in the database, not as files. A file exists only if its extractor ran and succeeded, so most snapshots lack some of these.
 
 SQLite also creates `archive.db-wal` and `archive.db-shm` next to the database while it is in use (write-ahead logging). Keep them with the database.
 

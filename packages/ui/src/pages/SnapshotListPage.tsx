@@ -6,7 +6,12 @@ import { EmptyState, ErrorState, Skeleton } from "../components/ui/StateViews";
 import { useAuth } from "../context/auth";
 import { BulkBar } from "../features/snapshots/BulkBar";
 import { NewSnapshotMenu } from "../features/snapshots/NewSnapshotMenu";
-import { type Density, SnapshotCard, SnapshotRow } from "../features/snapshots/SnapshotRow";
+import {
+  type Density,
+  SnapshotCard,
+  SnapshotCardSkeleton,
+  SnapshotRow,
+} from "../features/snapshots/SnapshotRow";
 import { useBulkSnapshots } from "../hooks/useBulkSnapshots";
 import { useCreateSnapshot, useSnapshots } from "../hooks/useSnapshots";
 import { useTags } from "../hooks/useTags";
@@ -172,13 +177,15 @@ export function SnapshotListPage() {
       </div>
 
       {/* Cards have no table header: select all sits in a slim bar of its own. */}
-      {density === "grid" && canWrite && !loading && !isError && filtered.length > 0 && (
+      {/* Shown while loading too (disabled), so the cards do not move down when the data arrives. */}
+      {density === "grid" && canWrite && !isError && (loading || filtered.length > 0) && (
         <div className="flex h-9 shrink-0 items-center border-b border-border bg-surface px-4 sm:px-5">
           <label className="flex cursor-pointer items-center gap-2 text-ui-xs font-medium text-mid">
             <input
               type="checkbox"
               checked={bulk.allSelected}
               onChange={bulk.toggleAll}
+              disabled={loading}
               aria-label="Select all"
               className="accent-accent"
             />
@@ -214,7 +221,18 @@ export function SnapshotListPage() {
 
       {/* ── List ─────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
-        {loading ? (
+        {loading && density === "grid" ? (
+          <ul
+            className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-4 p-4 sm:p-5"
+            role="status"
+            aria-label="Loading snapshots"
+          >
+            {Array.from({ length: 12 }, (_, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: placeholders
+              <SnapshotCardSkeleton key={i} />
+            ))}
+          </ul>
+        ) : loading ? (
           // Skeleton rows are <li> without a link, so they are never mistaken for data rows.
           <ul className="m-0 list-none p-0" role="status" aria-label="Loading snapshots">
             {Array.from({ length: 10 }, (_, i) => (

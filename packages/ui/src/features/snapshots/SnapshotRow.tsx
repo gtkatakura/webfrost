@@ -2,6 +2,7 @@ import type { Snapshot } from "@webfrost/sdk";
 import { Camera, Clock } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ExtractorChip, StatusBadge } from "../../components/StatusBadge";
+import { Skeleton } from "../../components/ui/StateViews";
 import { shortDateTime } from "../../lib/format";
 
 export type Density = "comfortable" | "compact" | "grid";
@@ -166,12 +167,14 @@ export function SnapshotCard({
           )}
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-1 p-3">
-          <span className="line-clamp-2 text-ui-sm font-medium leading-snug text-high">
+          {/* Fixed height (two title lines, one address line) so every card, and its skeleton, is the
+              same size: nothing moves when the page loads. */}
+          <span className="line-clamp-2 min-h-[2lh] text-ui-sm font-medium leading-snug text-high">
             {label}
           </span>
-          {snapshot.title && (
-            <span className="truncate font-mono text-ui-xs text-mid">{snapshot.url}</span>
-          )}
+          <span className="truncate font-mono text-ui-xs text-mid">
+            {snapshot.title ? snapshot.url : "\u00a0"}
+          </span>
           <div className="mt-auto flex items-center justify-between gap-2 pt-2">
             <StatusBadge status={snapshot.status} />
             <span className="flex items-center gap-1 text-ui-xs text-low">
@@ -196,6 +199,28 @@ export function SnapshotCard({
           />
         </label>
       )}
+    </li>
+  );
+}
+
+/** A card while the list loads: the same box as {@link SnapshotCard}, so nothing shifts when data arrives. */
+export function SnapshotCardSkeleton() {
+  return (
+    <li className="flex list-none flex-col overflow-hidden rounded-xl border border-border bg-surface">
+      <Skeleton className="aspect-[16/10] rounded-none border-b border-border" />
+      <div className="flex flex-1 flex-col gap-1 p-3">
+        <div className="flex min-h-[2lh] flex-col justify-center gap-1.5 text-ui-sm leading-snug">
+          <Skeleton className="h-3 w-11/12" />
+          <Skeleton className="h-3 w-2/3" />
+        </div>
+        <div className="flex h-[1lh] items-center text-ui-xs">
+          <Skeleton className="h-2.5 w-1/2" />
+        </div>
+        <div className="mt-auto flex items-center justify-between gap-2 pt-2">
+          <Skeleton className="h-5 w-12 rounded-full" />
+          <Skeleton className="h-2.5 w-24" />
+        </div>
+      </div>
     </li>
   );
 }

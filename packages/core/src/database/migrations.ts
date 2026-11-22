@@ -24,6 +24,7 @@ export const SCHEMA_VERSION = 4;
 /** Extractors whose `content` holds a storage reference rather than the data itself. */
 export const FILE_BACKED_EXTRACTORS = [
   "screenshot",
+  "thumbnail",
   "pdf",
   "warc",
   "dom-snapshot",

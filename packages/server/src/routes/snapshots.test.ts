@@ -292,6 +292,32 @@ describe("GET /snapshots", () => {
     expect(item?.screenshotUrl).toBe(`/api/v1/snapshots/${id}/archives/screenshot/download`);
   });
 
+  test("screenshotUrl points at the thumbnail when there is one, else at the screenshot", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = await openDb(testDir);
+    const both = await createSnapshot(db, "https://example.com/both");
+    const only = await createSnapshot(db, "https://example.com/only-screenshot");
+    for (const [id, extractor] of [
+      [both, "screenshot"],
+      [both, "thumbnail"],
+      [only, "screenshot"],
+    ] as const) {
+      await db.run(
+        sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${extractor}, ${`ref-${id}-${extractor}`})`,
+      );
+    }
+    await db.close();
+
+    const app = await getApp();
+    const res = await app.handle(new Request("http://localhost/snapshots"));
+    const body = (await res.json()) as {
+      items: Array<{ id: number; screenshotUrl: string | null }>;
+    };
+    const url = (id: number) => body.items.find((i) => i.id === id)?.screenshotUrl;
+    expect(url(both)).toBe(`/api/v1/snapshots/${both}/archives/thumbnail/download`);
+    expect(url(only)).toBe(`/api/v1/snapshots/${only}/archives/screenshot/download`);
+  });
+
   test("returns null title, excerpt, screenshotUrl when extractors did not run", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
     const db = await openDb(testDir);
@@ -589,6 +615,31 @@ describe("GET /snapshots/:id/archives/:extractor/download — file extractors", 
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("image/png");
     expect(res.headers.get("content-disposition")).toContain("screenshot.png");
+  });
+
+  test("returns the thumbnail as a JPEG", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/thumb");
+    const snapshotsDir = join(testDir, "snapshots");
+    mkdirSync(snapshotsDir, { recursive: true });
+    const filePath = join(snapshotsDir, `${id}-thumbnail.jpg`);
+    writeFileSync(filePath, new Uint8Array([0xff, 0xd8, 0xff]));
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${"thumbnail"}, ${filePath})`,
+    );
+    await db.close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request(`http://localhost/snapshots/${id}/archives/thumbnail/download`),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("image/jpeg");
+    expect(res.headers.get("content-disposition")).toContain("thumbnail.jpg");
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(new Uint8Array([0xff, 0xd8, 0xff]));
   });
 
   test("returns dom-snapshot HTML with correct headers", async () => {
