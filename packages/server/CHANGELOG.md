@@ -1,5 +1,23 @@
 # @webfrost/server
 
+## 0.2.0
+
+### Minor Changes
+
+- 66ff385: `WEBFROST_DEFAULT_THEME` (`light` or `dark`) sets the web UI's theme for visitors who have not chosen one, with no flash of the other theme. Unset, the UI follows the system setting as before.
+- 037d94f: A snapshot can be archived again in place. The snapshot's Details view has an **Archive again** button, the API has `POST /snapshots/:id/retry` (rate limited like snapshot creation, `409` while the snapshot is still being archived) and the SDK has `retrySnapshot(id)`. The snapshot keeps its id, address and color scheme, and every format is replaced by the new run: useful for a page that changed or a video a site refused the first time.
+
+### Patch Changes
+
+- 07c0901: Lists load a small thumbnail instead of the full-page screenshot: a WebP 640 px wide of the first screen, about 17 KB each, roughly 13 times less data on a page of cards. A long page gets a screenshot cut at 10000 px instead of none, with the extractor's whole time budget to paint it, and the card skeletons keep the layout still while the list loads.
+- 66ff385: A video snapshot gets a poster: a representative frame taken with ffmpeg after the download (`media-poster`, `media/poster.jpg`). Lists show it instead of the page's thumbnail, and the player uses it as its cover.
+- Updated dependencies [4ab82e0]
+- Updated dependencies [07c0901]
+- Updated dependencies [037d94f]
+- Updated dependencies [07c0901]
+- Updated dependencies [66ff385]
+  - @webfrost/core@0.2.0
+
 ## 0.1.0
 
 ### Minor Changes
