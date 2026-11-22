@@ -1,5 +1,6 @@
 /** The scripts the release workflow runs: formula generation and release notes. */
 import { describe, expect, test } from "bun:test";
+import { aurPackage } from "../../../scripts/aur-pkgbuild";
 import { formula, parseChecksums } from "../../../scripts/homebrew-formula";
 import { sectionFor } from "../../../scripts/release-notes";
 
@@ -46,5 +47,29 @@ describe("release notes", () => {
 
   test("returns null when there is no section", () => {
     expect(sectionFor(changelog, "9.9.9")).toBeNull();
+  });
+});
+
+describe("AUR package", () => {
+  test("PKGBUILD and .SRCINFO point at the release tarballs with their hashes, per architecture", () => {
+    const { pkgbuild, srcinfo } = aurPackage("1.2.3", parseChecksums(CHECKSUMS), "o/r");
+    expect(pkgbuild).toContain("pkgname=webfrost-bin\npkgver=1.2.3\npkgrel=1");
+    expect(pkgbuild).toContain(
+      'source_x86_64=("webfrost-1.2.3-x86_64.tar.gz::https://github.com/o/r/releases/download/v1.2.3/webfrost-linux-x64.tar.gz")',
+    );
+    expect(pkgbuild).toContain(`sha256sums_aarch64=('${HASH("c")}')`);
+    // A Bun-compiled binary breaks when stripped.
+    expect(pkgbuild).toContain("options=('!strip')");
+    expect(pkgbuild).toContain('install -Dm755 webfrost "$pkgdir/usr/bin/webfrost"');
+    expect(srcinfo).toStartWith("pkgbase = webfrost-bin\n");
+    expect(srcinfo).toContain(`\tsha256sums_x86_64 = ${HASH("d")}\n`);
+    expect(srcinfo).toContain("\tdepends = nss\n");
+    expect(srcinfo).toEndWith("pkgname = webfrost-bin\n");
+  });
+
+  test("a missing tarball is an error, not an empty hash", () => {
+    expect(() =>
+      aurPackage("1.2.3", parseChecksums(`${HASH("d")}  webfrost-linux-x64.tar.gz`)),
+    ).toThrow("webfrost-linux-arm64.tar.gz");
   });
 });
