@@ -1,10 +1,13 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { basename } from "node:path";
 import {
+  BundleError,
   type ImportFormat,
   JobRunner,
+  createStorageBackend,
   detectFormat,
   getSnapshot,
+  importSnapshotBundle,
   isUrlArchived,
   parseUrls,
   safeFetch,
@@ -14,6 +17,18 @@ import { CliError, UsageError } from "../errors";
 import { withDb } from "./shared";
 
 const FORMATS: readonly ImportFormat[] = ["rss", "opml", "netscape", "text"];
+
+/** True when the file starts like a ZIP archive (a snapshot bundle). */
+async function isZipFile(path: string): Promise<boolean> {
+  try {
+    const head = await Bun.file(path).slice(0, 4).bytes();
+    return (
+      head.length === 4 && head[0] === 0x50 && head[1] === 0x4b && head[2] === 3 && head[3] === 4
+    );
+  } catch {
+    return false;
+  }
+}
 
 function isHttpUrl(source: string): boolean {
   try {
@@ -29,7 +44,7 @@ export const importCommand: Command = {
   name: "import",
   summary: "Bulk-archive the URLs of a bookmarks file, OPML, RSS feed or text list",
   description:
-    "Read URLs from a file or an http(s) address and archive each one. The format is detected from the content unless --format is given.",
+    "Read URLs from a file or an http(s) address and archive each one. The format is detected from the content unless --format is given. A snapshot bundle (a ZIP from `webfrost export`) is stored as a new snapshot instead, without archiving anything again.",
   args: [{ name: "source", description: "A file path or an http(s) URL" }],
   options: {
     format: {
@@ -46,6 +61,7 @@ Exit codes:
   examples: [
     "webfrost import bookmarks.html",
     "webfrost import --format=rss https://example.com/feed.xml",
+    "webfrost import snapshot-12.zip",
   ],
   async run(ctx) {
     const source = ctx.args[0] ?? "";
@@ -59,6 +75,22 @@ Exit codes:
     // Same SSRF-safe fetcher as everywhere else (size cap, timeout, private ranges refused
     // unless WEBFROST_ALLOW_PRIVATE_URLS=true).
     const isSourceUrl = isHttpUrl(source);
+
+    // A snapshot bundle (`webfrost export`): stored as it is, nothing is archived again.
+    if (!isSourceUrl && formatFlag === undefined && (await isZipFile(source))) {
+      try {
+        const imported = await withDb(ctx, (db) =>
+          importSnapshotBundle(db, createStorageBackend(ctx.dir), source),
+        );
+        ctx.logger.info(
+          `Imported snapshot bundle ${basename(source)} as snapshot ${imported.id} (${imported.status}): ${imported.url}`,
+        );
+        return 0;
+      } catch (err) {
+        if (err instanceof BundleError) throw new CliError(err.message);
+        throw err;
+      }
+    }
     let content: string;
     let filename: string;
     if (isSourceUrl) {

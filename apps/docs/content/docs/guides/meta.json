@@ -3,6 +3,7 @@
   "icon": "Compass",
   "pages": [
     "bulk-import",
+    "push",
     "scheduled-archiving",
     "public-read",
     "storage",

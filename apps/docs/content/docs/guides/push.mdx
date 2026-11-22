@@ -1,0 +1,52 @@
+---
+title: Archive on your machine, keep it on the server
+description: Archive a page with the webfrost CLI on your own computer, then send the finished snapshot to your WebFrost server with webfrost push.
+icon: Send
+---
+
+Your server is where the archive lives, but it is not always the best place to archive from. The common case is video: YouTube and other video sites often refuse requests from server and data-center addresses ("Sign in to confirm you're not a bot"), so the `media` extractor fails on the server while the same video downloads fine from your home connection. It also helps when you are on a laptop and want everything kept in one place.
+
+`webfrost push` covers both: archive with the CLI where it works, then send the finished snapshot to the server. The server stores it as a new snapshot, with the same files (video included), results, tags and capture time, as if it had archived it itself. It does not fetch anything again.
+
+## Before you start
+
+- The `webfrost` CLI on your machine ([install](/docs/getting-started/install)), with `yt-dlp` on `PATH` for videos (`webfrost doctor` checks).
+- An API key of the server: in the web UI, **Settings → API keys → Create**, or on the server `webfrost admin key create --name laptop`. The key is shown once.
+
+## Archive and push
+
+```bash
+# 1. Archive locally, into ~/.webfrost on your machine
+webfrost add https://www.youtube.com/watch?v=...
+# Snapshot 12 done ...
+
+# 2. Send it to the server
+export WEBFROST_API_KEY=wf_...
+webfrost push 12 --to https://archive.example.com
+# Pushed snapshot 12 (73.4 MB): snapshot 57 on https://archive.example.com, done
+```
+
+Snapshot 57 now shows up in the server's web UI and search, with the video, its poster and every other format. Ids are per archive, so the server's id differs from your local one. Push several at once with `webfrost push 12 13 14 --to ...`; add `--json` for a result per snapshot.
+
+The key is read only from `WEBFROST_API_KEY`, never from a command-line flag, so it does not land in your shell history or in the process list. Put it in your shell profile or a password manager's CLI rather than typing it each time.
+
+Your local copy stays where it was. Remove it with `webfrost delete 12` once the push succeeded, if you do not want to keep it.
+
+## Without push
+
+A snapshot can travel as a file too. `webfrost export 12 -o talk.zip` writes a **snapshot bundle**: one ZIP with the snapshot's files and a `manifest.json`. Then either:
+
+- copy it to the server's machine and run `webfrost import talk.zip` there (with the server's `WEBFROST_DIR`), or
+- upload it yourself: `curl -X POST https://archive.example.com/api/v1/snapshots/import -H "Authorization: Bearer $WEBFROST_API_KEY" -H "Content-Type: application/zip" --data-binary @talk.zip`.
+
+See [the import route](/docs/reference/rest-api#import-a-snapshot-bundle) for the format.
+
+## Large videos
+
+The server accepts bundles up to `WEBFROST_IMPORT_BUNDLE_MAX_BYTES` (default 2 GiB), checked both as uploaded and once decompressed. It streams the upload to `WEBFROST_DIR/tmp` before storing it (in S3 too, when that is the backend), so that disk needs room for the largest bundle.
+
+A reverse proxy or tunnel in front of the server often has its own, lower upload limit (nginx `client_max_body_size` defaults to 1 MB, and some CDNs cap request bodies at 100 MB). If push fails with `HTTP 413`, raise the proxy's limit, or push from inside your network to the server's own address.
+
+## What the server checks
+
+A bundle is an upload of files, so the server treats it as untrusted: the manifest must match the format exactly, extractor names come from a fixed list, every file has a fixed name (no paths), every file in the ZIP must be referenced, and sizes are capped before and while decompressing. The server decides where files are stored and which content type they are served with; archived HTML is shown only through the sandboxed preview, as for any snapshot. A bundle that breaks a rule gets `400` and nothing is stored. Details: [Security](/docs/architecture/security#snapshot-bundles).

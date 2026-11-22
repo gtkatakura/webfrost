@@ -10,6 +10,7 @@ import {
 } from "./archive";
 import { doctorCommand } from "./doctor";
 import { importCommand } from "./import";
+import { exportCommand, pushCommand } from "./push";
 import { scheduleGroup } from "./schedule";
 import { serveCommand } from "./serve";
 import { setupCommand } from "./setup";
@@ -24,6 +25,8 @@ export const commands: CommandNode[] = [
   listCommand,
   searchCommand,
   importCommand,
+  exportCommand,
+  pushCommand,
   deleteCommand,
   scheduleGroup,
   tagGroup,

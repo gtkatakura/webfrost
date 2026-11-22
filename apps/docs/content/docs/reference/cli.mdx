@@ -152,6 +152,47 @@ webfrost import --format=rss https://example.com/feed.xml
 
 Only `rss` imports skip URLs that already have a snapshot. Ctrl+C stops at once; snapshots that did not finish stay `pending` and resume the next time `serve` or `schedule worker` runs. Details and format rules: [Bulk import](/docs/guides/bulk-import).
 
+A **snapshot bundle** (a ZIP file from `webfrost export`) is recognised by its content and imported as it is: one new snapshot with the bundle's files, results and tags, without archiving anything again. `--format` does not apply to it.
+
+```bash
+webfrost import snapshot-12.zip
+# Imported snapshot bundle snapshot-12.zip as snapshot 31 (done): https://example.com/
+```
+
+## Push and export
+
+Archive on one machine, keep the snapshot on another. The guide: [Archive on your machine, keep it on the server](/docs/guides/push).
+
+### `webfrost push <id...> --to <url>`
+
+Export each snapshot as a bundle and upload it to a WebFrost server ([`POST /api/v1/snapshots/import`](/docs/reference/rest-api#import-a-snapshot-bundle)), which stores it as a new snapshot with a new id: same files, results, status, creation time and tag names (tags are created on the server when missing). The snapshots must have finished (`done` or `failed`).
+
+```bash
+export WEBFROST_API_KEY=wf_...        # an API key of the server
+webfrost push 12 --to https://archive.example.com
+# Pushed snapshot 12 (73.4 MB): snapshot 57 on https://archive.example.com, done
+webfrost push 12 13 14 --to https://archive.example.com --json
+```
+
+| Option | Description |
+|---|---|
+| `--to <url>` | Required. The server's base URL (no `/api/v1`). |
+| `--json` | Print `[{ id, ok, remote: { id, url, status }, bytes, error }]`, one per snapshot. |
+
+The key comes from `WEBFROST_API_KEY` only, never from a flag, so it does not end up in shell history or process lists. Without it the command fails before sending anything. Create a key in the web UI (Settings, API keys) or with `webfrost admin key create --name laptop` on the server. A plain-`http` URL other than localhost prints a warning, since the key and the archive travel unencrypted. Redirects are not followed, so the key never goes to another host.
+
+Each bundle is written to a temporary file and uploaded with its size known; on a terminal, uploads over 1 MB show a progress line. One snapshot that fails (not found, refused by the server) does not stop the others. Exit code 0 when every snapshot was stored, 1 otherwise, 2 for a usage error. A reverse proxy in front of the server may have its own upload limit below the server's `WEBFROST_IMPORT_BUNDLE_MAX_BYTES` (default 2 GiB); raise it for large videos.
+
+### `webfrost export <id> [-o <file>]`
+
+Write a snapshot's bundle to a file, `snapshot-<id>.zip` by default. `--json` prints `{ id, path, bytes }`. Import it with `webfrost import <file>` into another local archive, or upload it with `curl` to [`POST /api/v1/snapshots/import`](/docs/reference/rest-api#import-a-snapshot-bundle).
+
+```bash
+webfrost export 12 -o talk.zip
+```
+
+The bundle is a ZIP with `manifest.json` (the snapshot, its tag names and every result) and the snapshot's files; the format is described in the [REST API reference](/docs/reference/rest-api#import-a-snapshot-bundle). Files are streamed from storage (filesystem or S3) into the ZIP one at a time, so memory use does not grow with the size of the snapshot. No file may reach 4 GiB (plain ZIP, no ZIP64).
+
 ## Tags
 
 | Command | Description |
@@ -233,6 +274,7 @@ Every command that opens a browser (`add`, `import`, `schedule worker`, `serve`)
 | `WEBFROST_DOMAIN_DELAY_MS` | `1000` | Spacing of archives of the same host, in milliseconds |
 | `WEBFROST_CHROMIUM_PATH` | none | Use an existing Chromium or Chrome binary |
 | `WEBFROST_PASSWORD` | none | Password for `admin create` |
+| `WEBFROST_API_KEY` | none | API key of the server `push` uploads to |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | none | Send traces and metrics of every command to your OpenTelemetry collector; flushed when the command ends. See [Observability](/docs/guides/observability). |
 
 Timeouts, storage and the server variables `serve` reads are in [Configuration](/docs/reference/configuration).
