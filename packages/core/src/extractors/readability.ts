@@ -100,6 +100,18 @@ export function blockText(root: Node): string {
     .replace(/\uE001/g, "\t");
 }
 
+/**
+ * Readability takes the title, byline and excerpt from the page's metadata (JSON-LD, meta tags) and decodes only
+ * five entities there; sites write `should&nbsp;know` or `&#8211;` too. Decode them all, as text.
+ */
+export function plain(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const text = value.includes("&")
+    ? (JSDOM.fragment(`<p>${value.replace(/</g, "&lt;")}</p>`).textContent ?? value)
+    : value;
+  return text.replace(/\u00a0/g, " ").trim() || null;
+}
+
 interface ReadabilityResult {
   title: string | null;
   byline: string | null;
@@ -127,12 +139,12 @@ export async function readabilityExtractor(
     const reader = new Readability(dom.window.document);
     const article = reader.parse();
     result = {
-      title: article?.title || pageTitle,
-      byline: article?.byline ?? null,
+      title: plain(article?.title) || pageTitle,
+      byline: plain(article?.byline),
       textContent: article?.content
         ? blockText(JSDOM.fragment(article.content))
         : (article?.textContent ?? null),
-      excerpt: article?.excerpt ?? null,
+      excerpt: plain(article?.excerpt),
     };
   } catch {
     result = { title: null, byline: null, textContent: null, excerpt: null };

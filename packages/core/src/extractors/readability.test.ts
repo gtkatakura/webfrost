@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { JSDOM } from "jsdom";
 import { sql } from "kysely";
 import { type Db, openDb } from "../db";
-import { blockText, capHtml, readabilityExtractor } from "./readability";
+import { blockText, capHtml, plain, readabilityExtractor } from "./readability";
 
 let testDir: string;
 let db: Db;
@@ -163,5 +163,17 @@ describe("readabilityExtractor: text and title", () => {
     const html = `<html><head><title>  A Video Page </title></head><body><iframe src="https://example.com/embed"></iframe></body></html>`;
     await readabilityExtractor(db, 1, "https://example.com/v", html);
     expect((await stored()).title).toBe("A Video Page");
+  });
+});
+
+describe("plain", () => {
+  test("decodes every entity sites put in their metadata, and nbsp becomes a space", () => {
+    expect(plain("what every programmer should&nbsp;know")).toBe(
+      "what every programmer should know",
+    );
+    expect(plain("A &#8211; B &amp; C &lt;tag&gt;")).toBe("A \u2013 B & C <tag>");
+    expect(plain("<b>not markup</b>")).toBe("<b>not markup</b>");
+    expect(plain("   ")).toBeNull();
+    expect(plain(null)).toBeNull();
   });
 });
