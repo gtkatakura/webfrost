@@ -28,6 +28,8 @@ webfrost push 12 --to https://archive.example.com
 
 Snapshot 57 now shows up in the server's web UI and search, with the video, its poster and every other format. Ids are per archive, so the server's id differs from your local one. Push several at once with `webfrost push 12 13 14 --to ...`; add `--json` for a result per snapshot.
 
+Use an `https` URL. Plain `http` is refused unless the server is on this machine, or you pass `--insecure` for a network you trust (a home LAN, a VPN), since the key and the snapshot would travel unencrypted.
+
 The key is read only from `WEBFROST_API_KEY`, never from a command-line flag, so it does not land in your shell history or in the process list. Put it in your shell profile or a password manager's CLI rather than typing it each time.
 
 Your local copy stays where it was. Remove it with `webfrost delete 12` once the push succeeded, if you do not want to keep it.

@@ -18,6 +18,8 @@ import {
   sql,
 } from "@webfrost/core";
 
+import { isLoopbackHost, printable } from "./commands/push";
+
 const CLI = join(import.meta.dir, "index.ts");
 
 let serverDir: string;
@@ -174,6 +176,61 @@ describe("webfrost push", () => {
     expect(
       (await runCli(["push", "1", "--to", "ftp://x"], { WEBFROST_API_KEY: apiKey })).exitCode,
     ).toBe(2);
+  });
+});
+
+describe("webfrost push over plain HTTP and hostile server replies", () => {
+  test("plain HTTP to another machine is refused without --insecure, before anything is sent", async () => {
+    const id = await seedLaptop();
+    const result = await runCli(["push", String(id), "--to", "http://192.0.2.10:3000"], {
+      WEBFROST_API_KEY: apiKey,
+    });
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("plain HTTP");
+    expect(result.stderr).toContain("--insecure");
+  });
+
+  test("loopback names count as this machine; other hosts do not", () => {
+    for (const host of ["localhost", "app.localhost", "127.0.0.1", "127.8.9.10", "[::1]"]) {
+      expect(isLoopbackHost(host)).toBe(true);
+    }
+    for (const host of ["192.168.1.2", "example.com", "localhost.example.com", "128.0.0.1"]) {
+      expect(isLoopbackHost(host)).toBe(false);
+    }
+  });
+
+  test("control characters in a server's error are not printed to the terminal", async () => {
+    const id = await seedLaptop();
+    const hostile = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      async fetch(req) {
+        await req.arrayBuffer();
+        return Response.json(
+          { error: "\u001b]0;pwned\u0007\u001b[2J\rfake success\u009b31m", code: "VALIDATION" },
+          { status: 400 },
+        );
+      },
+    });
+    try {
+      const result = await runCli(
+        ["push", String(id), "--to", `http://127.0.0.1:${hostile.port}`],
+        {
+          WEBFROST_API_KEY: apiKey,
+        },
+      );
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("fake success");
+      // No control character other than the newlines between log lines.
+      const controls = [...result.stderr].filter((c) => {
+        const code = c.charCodeAt(0);
+        return (code < 0x20 && c !== "\n") || (code >= 0x7f && code <= 0x9f);
+      });
+      expect(controls).toEqual([]);
+    } finally {
+      hostile.stop(true);
+    }
+    expect(printable("a\u001b[31mb\r\nc")).toBe("a [31mb c");
   });
 });
 

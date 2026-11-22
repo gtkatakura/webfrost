@@ -177,9 +177,10 @@ webfrost push 12 13 14 --to https://archive.example.com --json
 | Option | Description |
 |---|---|
 | `--to <url>` | Required. The server's base URL (no `/api/v1`). |
+| `--insecure` | Allow a plain-`http` `--to` URL that is not this machine. Without it such a URL is a usage error (exit 2), since the key and the archive would travel unencrypted. |
 | `--json` | Print `[{ id, ok, remote: { id, url, status }, bytes, error }]`, one per snapshot. |
 
-The key comes from `WEBFROST_API_KEY` only, never from a flag, so it does not end up in shell history or process lists. Without it the command fails before sending anything. Create a key in the web UI (Settings, API keys) or with `webfrost admin key create --name laptop` on the server. A plain-`http` URL other than localhost prints a warning, since the key and the archive travel unencrypted. Redirects are not followed, so the key never goes to another host.
+The key comes from `WEBFROST_API_KEY` only, never from a flag, so it does not end up in shell history or process lists. Without it the command fails before sending anything. Create a key in the web UI (Settings, API keys) or with `webfrost admin key create --name laptop` on the server. A plain-`http` URL is accepted for this machine (`localhost`, `*.localhost`, `127.0.0.0/8`, `[::1]`) and otherwise only with `--insecure`, which still prints a warning. Text from the server (error messages) is printed with control characters removed, so a hostile server cannot send terminal escape sequences. Redirects are not followed, so the key never goes to another host.
 
 Each bundle is written to a temporary file and uploaded with its size known; on a terminal, uploads over 1 MB show a progress line. One snapshot that fails (not found, refused by the server) does not stop the others. Exit code 0 when every snapshot was stored, 1 otherwise, 2 for a usage error. A reverse proxy in front of the server may have its own upload limit below the server's `WEBFROST_IMPORT_BUNDLE_MAX_BYTES` (default 2 GiB); raise it for large videos.
 

@@ -6,6 +6,26 @@ import { type Command, type Context, parseHttpUrl, parseId } from "../cli";
 import { CliError, UsageError } from "../errors";
 import { printJson, withDb } from "./shared";
 
+/**
+ * Text from the server, safe to print: control characters (terminal escape sequences, carriage
+ * returns that overwrite the line) are replaced, and it is cut to `max` characters.
+ */
+export function printable(text: string, max = 200): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: matching them is the point.
+  return text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").slice(0, max);
+}
+
+/** True for a loopback host, where plain HTTP never leaves the machine. */
+export function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  return (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "::1" ||
+    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)
+  );
+}
+
 /** Bundles smaller than this upload without a progress line. */
 const PROGRESS_MIN_BYTES = 1024 * 1024;
 
@@ -128,7 +148,11 @@ async function upload(
     // Not JSON (a proxy's error page): reported by status below.
   }
   if (res.status === 201 && typeof body.id === "number") {
-    return { id: body.id, url: String(body.url), status: String(body.status) };
+    return {
+      id: body.id,
+      url: printable(String(body.url), 8192),
+      status: printable(String(body.status)),
+    };
   }
   if (res.status >= 300 && res.status < 400) {
     throw new Error(
@@ -142,7 +166,7 @@ async function upload(
     );
   }
   throw new Error(
-    `the server refused it: ${body.error ?? (text.slice(0, 200) || "no details")} (HTTP ${res.status})`,
+    `the server refused it: ${printable(typeof body.error === "string" ? body.error : text) || "no details"} (HTTP ${res.status})`,
   );
 }
 
@@ -158,6 +182,11 @@ export const pushCommand: Command = {
       type: "string",
       value: "url",
       description: "The server's base URL, e.g. https://archive.example.com",
+    },
+    insecure: {
+      type: "boolean",
+      description:
+        "Allow a plain-HTTP --to URL that is not this machine (the key travels unencrypted)",
     },
     json: {
       type: "boolean",
@@ -178,11 +207,18 @@ Exit codes:
   examples: [
     "WEBFROST_API_KEY=wf_... webfrost push 12 --to https://archive.example.com",
     "webfrost push 12 13 14 --to https://archive.example.com --json",
+    "webfrost push 12 --to http://192.168.1.20:3000 --insecure",
   ],
   async run(ctx) {
     const to = ctx.string("to");
     if (!to) throw new UsageError("Missing --to <url>: the server to push to.", ["push"]);
     const base = parseHttpUrl(to, ["push"]);
+    if (base.protocol === "http:" && !isLoopbackHost(base.hostname) && !ctx.bool("insecure")) {
+      throw new UsageError(
+        `${base.origin} is plain HTTP: the API key and the snapshot would travel unencrypted. Use https, or pass --insecure if this network is trusted.`,
+        ["push"],
+      );
+    }
     const ids = ctx.args.map((raw) => parseId(raw, "snapshot id", ["push"]));
     const apiKey = process.env.WEBFROST_API_KEY;
     if (!apiKey) {
@@ -190,11 +226,9 @@ Exit codes:
         "WEBFROST_API_KEY is not set. Create an API key on the server (Settings > API keys) and export it: WEBFROST_API_KEY=wf_... webfrost push ...",
       );
     }
-    const local =
-      base.hostname === "localhost" || base.hostname === "127.0.0.1" || base.hostname === "[::1]";
-    if (base.protocol === "http:" && !local) {
+    if (base.protocol === "http:" && !isLoopbackHost(base.hostname)) {
       ctx.logger.warn(
-        `${base.origin} is plain HTTP: the API key and the snapshot travel unencrypted.`,
+        `${base.origin} is plain HTTP (--insecure): the API key and the snapshot travel unencrypted.`,
       );
     }
     const endpoint = `${base.href.replace(/\/+$/, "")}/api/v1/snapshots/import`;
