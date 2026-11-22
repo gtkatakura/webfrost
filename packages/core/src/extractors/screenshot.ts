@@ -56,19 +56,22 @@ export async function screenshotExtractor(
   const height = await page
     .evaluate(() => document.documentElement.scrollHeight)
     .catch(() => MAX_SCREENSHOT_HEIGHT);
-  // Painting a long page with many images takes seconds (about 18 s for a 10000 px Wikipedia article),
-  // longer while the other extractors share the browser: allow all the extractor's own time, not 30 s.
+  // Allow the extractor's own time, not Playwright's 30 s: a heavy page shares the browser with the others.
   const timeout = Math.max(1_000, envInt("WEBFROST_EXTRACTOR_TIMEOUT_MS", 60_000) - 5_000);
-  await page.screenshot(
-    height > MAX_SCREENSHOT_HEIGHT
-      ? {
-          path: localPath,
-          fullPage: true,
-          clip: { x: 0, y: 0, width, height: MAX_SCREENSHOT_HEIGHT },
-          timeout,
-        }
-      : { path: localPath, fullPage: true, timeout },
-  );
+  if (height > MAX_SCREENSHOT_HEIGHT) {
+    // fullPage would lay out and paint the whole page (40000 px for a long article: 18 s and more) before the
+    // clip cuts it. A viewport as tall as the limit paints only what is kept: about half a second. The page is
+    // shared with the other extractors, so the viewport goes back right after.
+    const viewport = page.viewportSize() ?? { width, height: 720 };
+    await page.setViewportSize({ width, height: MAX_SCREENSHOT_HEIGHT });
+    try {
+      await page.screenshot({ path: localPath, timeout });
+    } finally {
+      await page.setViewportSize(viewport).catch(() => {});
+    }
+  } else {
+    await page.screenshot({ path: localPath, fullPage: true, timeout });
+  }
   // The pipeline gave up on this extractor (timeout): do not record a late result.
   signal?.throwIfAborted();
 

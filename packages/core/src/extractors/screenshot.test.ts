@@ -48,6 +48,9 @@ function makeRecordingPage(scrollHeight: number) {
     },
     evaluate: async () => scrollHeight,
     viewportSize: () => ({ width: 1000, height: 800 }),
+    setViewportSize: async (size: { width: number; height: number }) => {
+      shots.push({ viewport: size } as ShotOptions);
+    },
   } as unknown as Page;
   return { page, shots };
 }
@@ -129,10 +132,8 @@ describe("screenshotExtractor", () => {
       process.env.WEBFROST_EXTRACTOR_TIMEOUT_MS = "20000";
       const b = makeRecordingPage(20_000);
       await screenshotExtractor(db, 1, makeStorage(), b.page);
-      expect(b.shots[1]).toMatchObject({
-        timeout: 15_000,
-        clip: { height: MAX_SCREENSHOT_HEIGHT },
-      });
+      // [1] is the taller viewport; [2] is the shot itself.
+      expect(b.shots[2]).toMatchObject({ timeout: 15_000 });
     } finally {
       // biome-ignore lint/performance/noDelete: restoring an unset variable
       if (saved === undefined) delete process.env.WEBFROST_EXTRACTOR_TIMEOUT_MS;
@@ -156,13 +157,14 @@ describe("screenshotExtractor", () => {
     expect(rows.map((r) => r.extractor)).toEqual(["thumbnail"]);
   });
 
-  test("cuts a page taller than the limit with a clip", async () => {
+  test("shoots a page taller than the limit through a viewport as tall as the limit, then restores it", async () => {
     const { page, shots } = makeRecordingPage(MAX_SCREENSHOT_HEIGHT + 1);
     await screenshotExtractor(db, 1, makeStorage(), page);
-    expect(shots[1]).toMatchObject({
-      fullPage: true,
-      clip: { x: 0, y: 0, width: 1000, height: MAX_SCREENSHOT_HEIGHT },
-    });
+    // [0] thumbnail, then: grow the viewport, shoot it (not the full page), put it back.
+    expect(shots[1]).toEqual({ viewport: { width: 1000, height: MAX_SCREENSHOT_HEIGHT } } as never);
+    expect(shots[2]?.fullPage).toBeUndefined();
+    expect(shots[2]?.path).toEndWith("screenshot.png");
+    expect(shots[3]).toEqual({ viewport: { width: 1000, height: 800 } } as never);
   });
 
   test("does not clip a page exactly at the limit", async () => {
