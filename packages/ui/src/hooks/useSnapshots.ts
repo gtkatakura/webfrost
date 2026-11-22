@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SnapshotPage } from "@webfrost/sdk";
 import { toast } from "sonner";
 import { useClient } from "../context";
+import { useThemeContext } from "../context/theme";
 import { errorMessage } from "../lib/errors";
 
 export const snapshotKeys = {
@@ -36,8 +37,10 @@ export function useSnapshots(page = 1, limit = 20) {
 export function useCreateSnapshot(onCreated?: () => void) {
   const client = useClient();
   const queryClient = useQueryClient();
+  // The page is archived the way the person archiving it sees the web: in their theme.
+  const { theme } = useThemeContext();
   return useMutation({
-    mutationFn: (url: string) => client.createSnapshot(url),
+    mutationFn: (url: string) => client.createSnapshot(url, { colorScheme: theme }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: snapshotKeys.all });
       queryClient.invalidateQueries({ queryKey: ["stats"] });

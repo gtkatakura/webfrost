@@ -11,11 +11,8 @@ const labelCls = "mb-1 mt-0 text-ui-xs font-medium text-low";
 export function MetadataSidebar({
   detail,
   onDelete,
-  hidden = false,
 }: {
   detail: SnapshotDetail;
-  /** Collapsed from md up (the page gets the room); on a phone the details always stack below. */
-  hidden?: boolean;
   /** Omitted for read-only guests: no Delete control is rendered. */
   onDelete?: (() => void) | undefined;
 }) {
@@ -29,11 +26,7 @@ export function MetadataSidebar({
   }
 
   return (
-    <div
-      className={`flex shrink-0 flex-col gap-4 border-t border-border bg-surface p-3 md:w-56 md:overflow-y-auto md:border-t-0 md:border-l ${
-        hidden ? "md:hidden" : ""
-      }`}
-    >
+    <div className="flex w-full flex-col gap-4 rounded-lg border border-border bg-surface p-4">
       <div>
         <p className={labelCls}>URL</p>
         <div className="flex items-start gap-1">

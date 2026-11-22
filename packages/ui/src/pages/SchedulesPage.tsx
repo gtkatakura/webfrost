@@ -39,14 +39,18 @@ export function SchedulesPage() {
   const activeCount = schedules.filter((s) => s.nextRunAt !== null).length;
 
   return (
-    <main className="mx-auto max-w-[940px] px-4 py-8 sm:px-5">
-      <PageHeader icon={<CalendarClock size={20} />} title="Schedules">
-        {!loading && schedules.length > 0 && (
-          <span className="rounded-full bg-accent/10 px-2 py-0.5 text-ui-xs font-semibold text-accent">
-            {activeCount} active
-          </span>
-        )}
-      </PageHeader>
+    <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
+      <PageHeader
+        title="Schedules"
+        badge={
+          !loading &&
+          schedules.length > 0 && (
+            <span className="rounded-full bg-accent/10 px-2 py-0.5 text-ui-xs font-semibold text-accent-text">
+              {activeCount} active
+            </span>
+          )
+        }
+      />
 
       <AddScheduleForm />
 
@@ -61,13 +65,13 @@ export function SchedulesPage() {
       ) : (
         <div className="overflow-hidden rounded-xl border border-border bg-surface">
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
+            <table className="block w-full border-collapse sm:table">
+              <thead className="hidden sm:table-header-group">
                 <tr className="border-b border-border bg-overlay">
                   {COLUMNS.map((h, i) => (
                     <th
                       key={h}
-                      className={`whitespace-nowrap py-2 pr-3 text-left text-ui-xs font-semibold tracking-wider text-mid uppercase ${
+                      className={`label-caps whitespace-nowrap py-2 pr-3 text-left ${
                         i === 0 ? "pl-4" : ""
                       }`}
                     >
@@ -79,7 +83,7 @@ export function SchedulesPage() {
                   </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="block sm:table-row-group">
                 {schedules.map((s) => (
                   <ScheduleRow
                     key={s.id}

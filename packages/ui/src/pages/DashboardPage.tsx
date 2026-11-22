@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DashboardStats, Snapshot } from "@webfrost/sdk";
-import { Camera, CircleX, HardDrive, TrendingUp, TriangleAlert, Upload } from "lucide-react";
+import { Camera, HardDrive, TrendingUp, TriangleAlert, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button, buttonClasses } from "../components/ui/Button";
-import { EmptyState, ErrorState } from "../components/ui/StateViews";
+import { EmptyState, ErrorState, PageHeader } from "../components/ui/StateViews";
 import { UrlField } from "../components/ui/UrlField";
 import { useClient } from "../context";
 import { useAuth } from "../context/auth";
@@ -88,17 +88,14 @@ export function DashboardPage() {
   const failedToday = stats?.failedToday ?? 0;
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
-      <div className="mb-8">
-        <h1 className="mb-1 mt-0 text-2xl font-bold text-high">Dashboard</h1>
-        <p className="m-0 text-ui-base text-mid">Overview of your WebFrost archive</p>
-      </div>
+    <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
+      <PageHeader title="Dashboard" description="Overview of your WebFrost archive" />
 
       {canWrite && (
         <form
           onSubmit={handleArchive}
           noValidate
-          className="mb-8 flex flex-wrap items-start gap-2 rounded-xl border border-border bg-surface p-4"
+          className="mb-6 flex flex-col gap-2 rounded-xl border border-border bg-surface p-3 sm:flex-row sm:items-start"
         >
           <UrlField
             label="Archive a URL"
@@ -110,23 +107,30 @@ export function DashboardPage() {
               setUrlError(null);
             }}
             error={urlError}
-            className="min-w-48 flex-1"
+            size="lg"
+            className="flex-1"
           />
-          <Button type="submit" size="lg" disabled={archive.isPending} className="shrink-0">
-            {archive.isPending ? "Archiving…" : "Archive"}
-          </Button>
-          <Link to="/import" className={`${buttonClasses("secondary", "lg")} shrink-0`}>
-            <Upload size={14} aria-hidden="true" />
-            Import
-          </Link>
-          <Link to="/snapshots" className={`${buttonClasses("secondary", "lg")} shrink-0`}>
-            <CircleX size={14} aria-hidden="true" />
-            View Failures
-          </Link>
+          <div className="flex gap-2">
+            <Button
+              type="submit"
+              size="lg"
+              disabled={archive.isPending}
+              className="flex-1 sm:flex-none"
+            >
+              {archive.isPending ? "Archiving…" : "Archive"}
+            </Button>
+            <Link
+              to="/import"
+              className={`${buttonClasses("secondary", "lg")} flex-1 sm:flex-none`}
+            >
+              <Upload size={14} aria-hidden="true" />
+              Import
+            </Link>
+          </div>
         </form>
       )}
 
-      <div className="mb-8 grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
           icon={<Camera size={16} />}
           label="Total Snapshots"
@@ -158,8 +162,8 @@ export function DashboardPage() {
           danger={failedToday > 0}
           sub={
             failedToday > 0 ? (
-              <Link to="/snapshots" className="text-danger">
-                View failures →
+              <Link to="/snapshots" className="font-medium text-danger">
+                View failures
               </Link>
             ) : (
               "All good today"

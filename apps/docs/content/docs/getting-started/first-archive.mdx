@@ -89,9 +89,9 @@ sqlite3 ~/.webfrost/archive.db \
 # {"title":"Example Domain","byline":null,"textContent":"...","excerpt":"..."}
 ```
 
-In the web UI, click the snapshot in **Snapshots**. A panel opens over the list (its address is `/#/snapshots/1`) with one tab per view: **Page** (the archived page in a sandbox, with full view, full screen and open in a new tab), **Reader** (the extracted article), **Screenshot**, **Media**, **Files** (downloads of the HTML, WARC, PDF, SingleFile and DOM files) and **History**. The side column shows the URL, status, capture time, tags and extractors.
+In the web UI, click the snapshot in **Snapshots**. It opens on the whole window (its address is `/#/snapshots/1`) with one view per format: **Page** (the archived page in a sandbox, which can go full screen or open in a new tab), **Reader** (the extracted article), **Screenshot**, **Media**, **Files** (downloads of the HTML, WARC, PDF, SingleFile and DOM files) and **Details**. It opens on Media when the snapshot has a video, else on Page. **Details** (`I`) shows the URL, status, capture time, tags and extractors.
 
-<Screenshot light={panelLight} dark={panelDark} alt="A snapshot of a Wikipedia article open in the detail panel, on the Reader tab" />
+<Screenshot light={panelLight} dark={panelDark} alt="A snapshot of a Wikipedia article open in the viewer" />
 
 Which extractors ran, and why one may be missing, is in [Extractors](/docs/reference/extractors).
 

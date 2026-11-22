@@ -20,7 +20,7 @@ Column names are `snake_case`. Timestamps are UTC text in the form `YYYY-MM-DD H
 | Full-text search | FTS5 table `snapshots_fts` | `search_index.search_vector` (tsvector, GIN) | `search_index` FULLTEXT index |
 | Job claiming | `BEGIN IMMEDIATE` | `SELECT … FOR UPDATE SKIP LOCKED` | `SELECT … FOR UPDATE SKIP LOCKED` |
 
-The current schema version is **3**. Versions 1 and 2 are the SQLite schema of earlier releases; an archive created by them is upgraded in place, without data loss, the first time it is opened (version 3 adds `archive_results.size_bytes` and `job_queue.lease_token`). PostgreSQL and MySQL databases start at version 3.
+The current schema version is **4**. Versions 1 and 2 are the SQLite schema of earlier releases; an archive created by them is upgraded in place, without data loss, the first time it is opened (version 3 adds `archive_results.size_bytes` and `job_queue.lease_token`). Version 4 adds `snapshots.color_scheme`. PostgreSQL and MySQL databases start at version 3 and are upgraded to 4 the same way.
 
 ### SQLite
 
@@ -46,6 +46,7 @@ One row per archived URL.
 | `url` | TEXT | The archived URL |
 | `status` | TEXT | `pending`, `done` or `failed`. `done` means at least one extractor produced output. |
 | `created_at` | TEXT | Creation time |
+| `color_scheme` | TEXT | `light` or `dark`: the theme the page was archived in. `NULL` for snapshots made before schema version 4, which use the server default. |
 
 ### archive_results
 

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type {
   DashboardStats,
   Snapshot,
@@ -13,11 +13,15 @@ import { WebFrostError } from "@webfrost/sdk";
 import { MemoryRouter } from "react-router-dom";
 import App from "./App";
 import { ClientContext } from "./context";
-import { SnapshotDetailPanel } from "./features/snapshots/detail/SnapshotDetailPanel";
 
 afterEach(() => {
   cleanup();
 });
+
+/** Status, tags and Delete live in the viewer's Details view. */
+async function openDetails() {
+  fireEvent.click(await screen.findByRole("tab", { name: /Details/ }));
+}
 
 // ---------------------------------------------------------------------------
 // Mock client factory
@@ -38,7 +42,10 @@ const defaultStats: DashboardStats = {
 
 function mockClient(overrides: {
   listSnapshots?: () => Promise<SnapshotPage>;
-  createSnapshot?: (url: string) => Promise<SnapshotCreated>;
+  createSnapshot?: (
+    url: string,
+    options?: { colorScheme?: "light" | "dark" },
+  ) => Promise<SnapshotCreated>;
   getSnapshot?: (id: number) => Promise<SnapshotDetail | null>;
   getStats?: () => Promise<DashboardStats>;
 }): WebFrostClient {
@@ -250,8 +257,9 @@ describe("DetailPage — renders results", () => {
     });
     const client = mockClient({ getSnapshot: () => Promise.resolve(detail) });
     renderApp(client, "/snapshots/7");
+    await openDetails();
 
-    await screen.findByRole("link", { name: /archive-test\.com/ });
+    await screen.findAllByRole("link", { name: /archive-test\.com/ });
     expect(screen.getAllByText("warc").length).toBeGreaterThan(0);
     expect(screen.getAllByText("pdf").length).toBeGreaterThan(0);
   });
@@ -281,7 +289,7 @@ describe("DetailPage — renders results", () => {
     expect(link.getAttribute("href")).toBe(pdfUrl);
   });
 
-  test("opens on the archived page, which can be opened full view and in its own tab", async () => {
+  test("opens on the archived page, filling the window, with its details closed", async () => {
     const previewUrl = "/api/v1/snapshots/13/archives/singlefile/preview";
     const detail = makeDetail({
       id: 13,
@@ -305,7 +313,6 @@ describe("DetailPage — renders results", () => {
         },
       ],
     });
-    localStorage.removeItem("webfrost-viewer-full");
     const client = mockClient({ getSnapshot: () => Promise.resolve(detail) });
     renderApp(client, "/snapshots/13");
 
@@ -314,24 +321,40 @@ describe("DetailPage — renders results", () => {
     const frame = screen.getByTitle("Archived page preview");
     expect(frame.getAttribute("src")).toBe(previewUrl);
     expect(frame.getAttribute("sandbox")).toBe("");
-    const open = screen.getByRole("link", { name: /Open in new tab/ });
+    const open = screen.getByRole("link", { name: "Open the archived page in a new tab" });
     expect(open.getAttribute("href")).toBe(previewUrl);
     expect(open.getAttribute("rel")).toContain("noopener");
+    expect(screen.getByRole("button", { name: "Full screen" })).toBeTruthy();
+    // No app sidebar and nothing beside the page: it has the window.
+    expect(screen.queryByRole("navigation")).toBeNull();
+    expect(screen.queryByText("Extractors")).toBeNull();
+    // The frame follows the app's theme, so CSS dark modes in the archived page follow it too.
+    expect((frame as HTMLIFrameElement).style.colorScheme).toBe("light");
 
-    fireEvent.click(screen.getByRole("button", { name: "Full view" }));
-    expect(screen.getByRole("dialog").className).toContain("w-screen");
-    expect(screen.getByRole("button", { name: "Show details" })).toBeTruthy();
-    expect(localStorage.getItem("webfrost-viewer-full")).toBe("1");
-    fireEvent.click(screen.getByRole("button", { name: "Exit full view" }));
-    expect(localStorage.getItem("webfrost-viewer-full")).toBe("0");
+    // Details is a view of its own, in place of the page.
+    fireEvent.click(screen.getByRole("tab", { name: /Details/ }));
+    expect(screen.getByText("Extractors")).toBeTruthy();
+    expect(screen.queryByTitle("Archived page preview")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to snapshots" }));
+    await screen.findByRole("heading", { name: "Snapshots" });
+  });
+
+  test("the old ?detail= address opens the viewer", async () => {
+    const detail = makeDetail({ id: 14, url: "https://legacy.example" });
+    const client = mockClient({ getSnapshot: () => Promise.resolve(detail) });
+    renderApp(client, "/snapshots?detail=14");
+    await screen.findByRole("button", { name: "Back to snapshots" });
+    expect(screen.getByRole("link", { name: /legacy\.example/ })).toBeTruthy();
   });
 
   test("shows fallback when archiveResults is empty", async () => {
     const detail = makeDetail({ id: 8, url: "https://empty.com", archiveResults: [] });
     const client = mockClient({ getSnapshot: () => Promise.resolve(detail) });
     renderApp(client, "/snapshots/8");
+    await openDetails();
 
-    await screen.findByRole("link", { name: /empty\.com/ });
+    await screen.findAllByRole("link", { name: /empty\.com/ });
     expect(screen.getByText("None yet")).toBeTruthy();
   });
 
@@ -399,16 +422,8 @@ describe("Reader tab", () => {
       ],
     });
     const client = mockClient({ getSnapshot: () => Promise.resolve(detail) });
-    const queryClient = new QueryClient();
-    const { container } = render(
-      <QueryClientProvider client={queryClient}>
-        <ClientContext.Provider value={client}>
-          <MemoryRouter>
-            <SnapshotDetailPanel snapshotId={30} onClose={() => {}} onDeleted={async () => {}} />
-          </MemoryRouter>
-        </ClientContext.Provider>
-      </QueryClientProvider>,
-    );
+    const { container } = renderApp(client, "/snapshots/30");
+    fireEvent.click(await screen.findByRole("tab", { name: /Reader/ }));
 
     await screen.findByText("First paragraph.");
     expect(screen.getByText("Reader Title")).toBeTruthy();
@@ -472,6 +487,96 @@ describe("ListPage — failures are not empty", () => {
     renderApp(client, "/snapshots?detail=abc");
     await screen.findByText("https://example.com");
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("Snapshot list layouts and shortcuts", () => {
+  test("the cards layout shows a card per snapshot and is remembered", async () => {
+    localStorage.removeItem("webfrost-snapshot-density");
+    const client = mockClient({
+      listSnapshots: () =>
+        Promise.resolve(snapshotPage([makeSnapshot({ id: 3, url: "https://cards.example" })])),
+    });
+    renderApp(client, "/snapshots");
+    await screen.findByText("https://cards.example");
+
+    fireEvent.click(screen.getByRole("button", { name: "Cards" }));
+    const card = screen.getByRole("link", { name: /cards\.example/ });
+    expect(card.getAttribute("href")).toBe("/snapshots/3");
+    expect(card.closest("ul")?.className).toContain("grid");
+    expect(localStorage.getItem("webfrost-snapshot-density")).toBe("grid");
+    localStorage.removeItem("webfrost-snapshot-density");
+  });
+
+  test("/ focuses the page's filter and Ctrl+B collapses the sidebar", async () => {
+    localStorage.removeItem("webfrost-sidebar-collapsed");
+    const client = mockClient({
+      listSnapshots: () => Promise.resolve(snapshotPage([makeSnapshot({ id: 1 })])),
+    });
+    renderApp(client, "/snapshots");
+    await screen.findByText("https://example.com");
+
+    fireEvent.keyDown(document.body, { key: "/" });
+    expect(document.activeElement).toBe(screen.getByLabelText("Filter this page by URL or title"));
+
+    fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+    expect(localStorage.getItem("webfrost-sidebar-collapsed")).toBe("true");
+    fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+    expect(localStorage.getItem("webfrost-sidebar-collapsed")).toBe("false");
+  });
+});
+
+describe("Archiving in the app's theme and video snapshots", () => {
+  test("a new snapshot is archived in the app's current theme", async () => {
+    localStorage.setItem("webfrost-theme", "dark");
+    const calls: Array<{ url: string; colorScheme: string | undefined }> = [];
+    const client = mockClient({
+      createSnapshot: (url, options) => {
+        calls.push({ url, colorScheme: options?.colorScheme });
+        return Promise.resolve({ id: 2, url, status: "pending" });
+      },
+    });
+    renderApp(client, "/snapshots");
+
+    fireEvent.click(await screen.findByRole("button", { name: /New Snapshot/ }));
+    const dialog = screen.getByRole("dialog", { name: "Archive a URL" });
+    fireEvent.change(within(dialog).getByRole("textbox"), {
+      target: { value: "https://dark.example" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archive" }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toEqual({ url: "https://dark.example/", colorScheme: "dark" });
+    localStorage.removeItem("webfrost-theme");
+  });
+
+  test("a snapshot with a video opens on Media, not on the archived page", async () => {
+    const detail = makeDetail({
+      id: 21,
+      url: "https://video.example/watch",
+      archiveResults: [
+        {
+          id: 50,
+          extractor: "singlefile",
+          content: null,
+          downloadUrl: "/api/v1/snapshots/21/archives/singlefile/download",
+          previewUrl: "/api/v1/snapshots/21/archives/singlefile/preview",
+          createdAt: "2024-01-15T10:02:00Z",
+        },
+        {
+          id: 51,
+          extractor: "media",
+          content: null,
+          downloadUrl: "/api/v1/snapshots/21/archives/media/download",
+          previewUrl: null,
+          createdAt: "2024-01-15T10:02:00Z",
+        },
+      ],
+    });
+    const client = mockClient({ getSnapshot: () => Promise.resolve(detail) });
+    renderApp(client, "/snapshots/21");
+
+    const media = await screen.findByRole("tab", { name: /Media/ });
+    await waitFor(() => expect(media.getAttribute("aria-selected")).toBe("true"));
   });
 });
 

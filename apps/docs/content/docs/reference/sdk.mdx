@@ -106,13 +106,15 @@ for await (const tag of client.iterateTags()) console.log(tag.name);
 
 ## Snapshots
 
-### `createSnapshot(url: string): Promise<SnapshotCreated>`
+### `createSnapshot(url: string, options?): Promise<SnapshotCreated>`
 
-Queue a URL. Returns at once with `status: "pending"`.
+Queue a URL. Returns at once with `status: "pending"`. `options` is `{ colorScheme?, signal? }`; `colorScheme` (`"light"` or `"dark"`) is the theme the page is archived in, and defaults to the server's `WEBFROST_COLOR_SCHEME`.
 
 ```ts
 const snapshot = await client.createSnapshot("https://example.com");
 // { id: 1, url: "https://example.com", status: "pending" }
+
+await client.createSnapshot("https://example.com", { colorScheme: "dark" });
 ```
 
 The server archives in the background. Poll `getSnapshot` until `status` is no longer `pending`; it becomes `done` (at least one extractor produced output) or `failed`.

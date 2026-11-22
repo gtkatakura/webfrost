@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 interface ShortcutOptions {
   onToggleHelp: () => void;
   onOpenSearch?: () => void;
+  onToggleSidebar?: () => void;
   /** Guests cannot reach write-only pages, so their shortcuts are not bound. */
   canWrite?: boolean;
 }
@@ -11,6 +12,7 @@ interface ShortcutOptions {
 export function useKeyboardShortcuts({
   onToggleHelp,
   onOpenSearch,
+  onToggleSidebar,
   canWrite = true,
 }: ShortcutOptions) {
   const navigate = useNavigate();
@@ -28,6 +30,26 @@ export function useKeyboardShortcuts({
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         onOpenSearch?.();
+        return;
+      }
+
+      // Cmd+B / Ctrl+B = show or hide the sidebar (also from inside a field, like in editors)
+      if (e.key === "b" && (e.metaKey || e.ctrlKey) && !e.altKey && !target.isContentEditable) {
+        e.preventDefault();
+        onToggleSidebar?.();
+        return;
+      }
+
+      // "/" = focus this page's own search field; pages without one open the palette
+      if (e.key === "/" && !isEditable && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        const field = document.querySelector<HTMLInputElement>("[data-page-search]");
+        if (field) {
+          field.focus();
+          field.select();
+        } else {
+          onOpenSearch?.();
+        }
         return;
       }
 
@@ -82,16 +104,21 @@ export function useKeyboardShortcuts({
       window.removeEventListener("keydown", handleKeyDown);
       if (seqTimerRef.current) clearTimeout(seqTimerRef.current);
     };
-  }, [navigate, onToggleHelp, onOpenSearch, canWrite]);
+  }, [navigate, onToggleHelp, onOpenSearch, onToggleSidebar, canWrite]);
 }
 
 export const SHORTCUTS = [
   { keys: ["⌘", "K"], description: "Open search palette" },
+  { keys: ["/"], description: "Search or filter on this page" },
+  { keys: ["⌘", "B"], description: "Show or hide the sidebar" },
   { keys: ["?"], description: "Show keyboard shortcuts" },
   { keys: ["g", "h"], description: "Go to home / dashboard" },
   { keys: ["g", "s"], description: "Go to snapshots" },
   { keys: ["g", "t"], description: "Go to tags" },
   { keys: ["g", "i"], description: "Go to import" },
+  { keys: ["F"], description: "Snapshot: show the page full screen" },
+  { keys: ["I"], description: "Snapshot: show or hide the details" },
+  { keys: ["Esc"], description: "Snapshot: back to the list" },
 ];
 
 /** Shortcuts shown in the help modal; "go to import" is hidden for read-only guests. */

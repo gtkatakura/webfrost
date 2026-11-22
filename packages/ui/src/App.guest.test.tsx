@@ -161,6 +161,7 @@ describe("guest mode (publicRead + no session)", () => {
   test("snapshot detail shows tags without any editing or delete controls", async () => {
     const { client, calls } = mockClient({ publicRead: true, signedIn: false });
     renderApp(client, "/snapshots/5");
+    fireEvent.click(await screen.findByRole("tab", { name: /Details/ }));
 
     await screen.findByText("alpha-tag");
     expect(screen.queryByLabelText(/Remove tag/)).toBeNull();
@@ -227,6 +228,7 @@ describe("signed in on a public-read instance", () => {
   test("detail page keeps tag editing and delete", async () => {
     const { client } = mockClient({ publicRead: true, signedIn: true });
     renderApp(client, "/snapshots/5");
+    fireEvent.click(await screen.findByRole("tab", { name: /Details/ }));
 
     await screen.findByText("alpha-tag");
     expect(screen.getByLabelText("Remove tag alpha-tag")).toBeTruthy();

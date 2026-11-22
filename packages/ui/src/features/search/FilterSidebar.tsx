@@ -1,5 +1,5 @@
 import type { Tag } from "@webfrost/sdk";
-import { X } from "lucide-react";
+import { Check, X } from "lucide-react";
 import type { ReactNode } from "react";
 
 export const DATE_PRESETS = [
@@ -45,11 +45,7 @@ export function toggled<T>(set: Set<T>, value: T): Set<T> {
 }
 
 function SectionLabel({ children }: { children: ReactNode }) {
-  return (
-    <div className="mb-1.5 mt-4 text-ui-xs font-bold tracking-wider text-mid uppercase">
-      {children}
-    </div>
-  );
+  return <h3 className="label-caps mb-1 mt-5 px-2">{children}</h3>;
 }
 
 function FilterChip({
@@ -68,20 +64,21 @@ function FilterChip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-1 text-ui-sm transition-colors ${
+      className={`flex h-8 w-full items-center gap-2 rounded-md border-0 px-2 text-left text-ui-sm transition-colors ${
         active
-          ? "border-accent bg-accent/10 font-semibold text-high"
-          : "border-border bg-transparent text-mid hover:border-border-strong hover:text-high"
+          ? "bg-accent/10 font-medium text-high"
+          : "bg-transparent text-mid hover:bg-subtle hover:text-high"
       }`}
     >
       {dot && (
         <span
-          className="size-1.5 shrink-0 rounded-full"
+          className="size-2 shrink-0 rounded-full"
           style={{ background: dot }}
           aria-hidden="true"
         />
       )}
-      {children}
+      <span className="min-w-0 flex-1 truncate">{children}</span>
+      {active && <Check size={14} className="shrink-0 text-accent" aria-hidden="true" />}
     </button>
   );
 }
@@ -98,28 +95,26 @@ export function FilterSidebar({
 }) {
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between">
-        <h2 className="m-0 text-ui-sm font-bold tracking-wider text-mid uppercase">
-          Filter this page
-        </h2>
+      <div className="mb-2 flex min-h-7 items-center justify-between px-2">
+        <h2 className="m-0 text-ui-base font-semibold text-high">Filter this page</h2>
         {hasFilters(filters) && (
           <button
             type="button"
             onClick={() => onChange(NO_FILTERS)}
-            className="inline-flex items-center gap-1 border-0 bg-transparent p-0 text-ui-xs text-mid hover:text-high"
+            className="inline-flex h-7 items-center gap-1 rounded-md border-0 bg-transparent px-1.5 text-ui-xs text-mid hover:bg-subtle hover:text-high"
           >
-            <X size={10} aria-hidden="true" />
+            <X size={12} aria-hidden="true" />
             Clear all
           </button>
         )}
       </div>
-      <p className="m-0 rounded-md bg-overlay px-2.5 py-2 text-ui-xs leading-snug text-mid">
+      <p className="m-0 mx-2 rounded-md bg-overlay px-2.5 py-2 text-ui-xs text-mid">
         These filters apply to the current page of results only. They do not search the rest of your
         archive.
       </p>
 
       <SectionLabel>Status</SectionLabel>
-      <div className="flex flex-col items-start gap-1">
+      <div className="flex flex-col gap-0.5">
         {STATUSES.map((s) => (
           <FilterChip
             key={s}
@@ -133,7 +128,7 @@ export function FilterSidebar({
       </div>
 
       <SectionLabel>Date</SectionLabel>
-      <div className="flex flex-col items-start gap-1">
+      <div className="flex flex-col gap-0.5">
         {DATE_PRESETS.map(({ label, days }) => (
           <FilterChip
             key={label}
@@ -146,7 +141,7 @@ export function FilterSidebar({
       </div>
 
       <SectionLabel>Has extractor</SectionLabel>
-      <div className="flex flex-col items-start gap-1">
+      <div className="flex flex-col gap-0.5">
         {KNOWN_EXTRACTORS.map((ext) => (
           <FilterChip
             key={ext}
@@ -161,7 +156,7 @@ export function FilterSidebar({
       {allTags.length > 0 && (
         <>
           <SectionLabel>Tags</SectionLabel>
-          <div className="flex flex-col items-start gap-1">
+          <div className="flex flex-col gap-0.5">
             {allTags.map((tag) => (
               <FilterChip
                 key={tag.id}

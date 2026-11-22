@@ -11,6 +11,8 @@ interface UrlFieldProps {
   inputRef?: Ref<HTMLInputElement>;
   className?: string;
   autoFocus?: boolean;
+  /** "lg" matches a size="lg" Button beside it. */
+  size?: "md" | "lg";
 }
 
 /**
@@ -27,6 +29,7 @@ export function UrlField({
   inputRef,
   className = "",
   autoFocus,
+  size = "md",
 }: UrlFieldProps) {
   const id = useId();
   const errId = `${id}-err`;
@@ -51,7 +54,7 @@ export function UrlField({
         aria-describedby={error ? errId : undefined}
         // biome-ignore lint/a11y/noAutofocus: opt-in for inputs that open on demand
         autoFocus={autoFocus}
-        className="field font-mono"
+        className={`field font-mono ${size === "lg" ? "field-lg" : ""}`}
       />
       {error && (
         <p id={errId} role="alert" className="m-0 text-ui-sm text-danger">

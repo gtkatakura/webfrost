@@ -10,15 +10,16 @@ const variantCls: Record<Variant, string> = {
   danger: "bg-danger text-danger-fg border-transparent hover:opacity-90",
 };
 
+// Fixed heights so a button and a field (2rem, or 2.25rem with field-lg) line up in a row.
 const sizeCls: Record<Size, string> = {
-  sm: "py-1 px-3 text-ui-xs",
-  md: "py-1.5 px-3.5 text-ui-sm",
-  lg: "py-2 px-5 text-ui-base",
+  sm: "h-7 px-2.5 text-ui-xs",
+  md: "h-8 px-3 text-ui-sm",
+  lg: "h-9 px-4 text-ui-base",
 };
 
 /** Class string for anything that should look like a button (a Link, for instance). */
 export function buttonClasses(variant: Variant = "primary", size: Size = "md"): string {
-  return `inline-flex items-center justify-center gap-1.5 font-medium rounded-md border no-underline transition-colors hover:no-underline disabled:opacity-50 disabled:cursor-not-allowed ${sizeCls[size]} ${variantCls[variant]}`;
+  return `inline-flex items-center justify-center gap-1.5 whitespace-nowrap font-medium rounded-md border no-underline transition-colors hover:no-underline disabled:opacity-50 disabled:cursor-not-allowed ${sizeCls[size]} ${variantCls[variant]}`;
 }
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

@@ -52,11 +52,7 @@ function itemCls(compact: boolean, extra = "text-mid hover:bg-subtle hover:text-
 /** A small, quiet heading over a group of links (hidden when the sidebar is icon-only). */
 function SectionLabel({ children, compact }: { children: string; compact: boolean }) {
   if (compact) return <div className="mx-3 my-2 h-px bg-border" />;
-  return (
-    <div className="px-3 pt-4 pb-1.5 text-ui-xs font-semibold uppercase tracking-wider text-low">
-      {children}
-    </div>
-  );
+  return <div className="label-caps px-3 pt-5 pb-1.5">{children}</div>;
 }
 
 /** Icon-only button in the account row; the label is its tooltip and accessible name. */
@@ -169,9 +165,9 @@ export function Sidebar(props: SidebarProps) {
             onClick={props.onToggleCompact}
             aria-label="Collapse sidebar"
             title="Collapse sidebar"
-            className="rounded border-0 bg-transparent p-1.5 text-low transition-colors hover:bg-subtle hover:text-high"
+            className="inline-flex size-8 items-center justify-center rounded-lg border-0 bg-transparent text-low transition-colors hover:bg-subtle hover:text-high"
           >
-            <ChevronLeft size={14} aria-hidden="true" />
+            <ChevronLeft size={16} aria-hidden="true" />
           </button>
         )}
       </div>
@@ -181,9 +177,9 @@ export function Sidebar(props: SidebarProps) {
           onClick={props.onToggleCompact}
           aria-label="Expand sidebar"
           title="Expand sidebar"
-          className="mx-auto mb-2 hidden rounded border-0 bg-transparent p-1.5 text-low transition-colors hover:bg-subtle hover:text-high lg:inline-flex"
+          className="mx-auto mb-2 hidden size-8 items-center justify-center rounded-lg border-0 bg-transparent text-low transition-colors hover:bg-subtle hover:text-high lg:inline-flex"
         >
-          <ChevronRight size={14} aria-hidden="true" />
+          <ChevronRight size={16} aria-hidden="true" />
         </button>
       )}
 

@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { ExtractorChip, StatusBadge } from "../../components/StatusBadge";
 import { shortDateTime } from "../../lib/format";
 
-export type Density = "comfortable" | "compact";
+export type Density = "comfortable" | "compact" | "grid";
 
 /** Extractors worth a chip in the list (screenshot and html are implied by the thumbnail/title). */
 const LIST_EXTRACTORS = ["warc", "pdf", "readability", "dom-snapshot", "singlefile", "media"];
@@ -14,12 +14,21 @@ interface SnapshotRowProps {
   selected: boolean;
   /** Omitted for read-only guests: no checkbox is rendered. */
   onToggle?: ((id: number) => void) | undefined;
-  density: Density;
-  /** Where the row opens the detail panel. */
+  density: Exclude<Density, "grid">;
+  /** Where the row opens the snapshot viewer. */
   to: string;
+  /** Router state for the viewer (where its Back returns). */
+  state?: unknown;
 }
 
-export function SnapshotRow({ snapshot, selected, onToggle, density, to }: SnapshotRowProps) {
+export function SnapshotRow({
+  snapshot,
+  selected,
+  onToggle,
+  density,
+  to,
+  state,
+}: SnapshotRowProps) {
   const extractors = new Set(snapshot.extractors);
   const comfortable = density === "comfortable";
   const captured = shortDateTime(snapshot.createdAt);
@@ -51,6 +60,7 @@ export function SnapshotRow({ snapshot, selected, onToggle, density, to }: Snaps
       {comfortable && (
         <Link
           to={to}
+          state={state}
           tabIndex={-1}
           aria-hidden="true"
           className="mr-3 hidden h-10 w-14 shrink-0 overflow-hidden rounded border border-border bg-overlay transition-colors hover:border-accent sm:block"
@@ -73,6 +83,7 @@ export function SnapshotRow({ snapshot, selected, onToggle, density, to }: Snaps
       {/* Main content: a real link so it works with middle-click, keyboard and screen readers. */}
       <Link
         to={to}
+        state={state}
         className="flex min-w-0 flex-1 flex-col justify-center self-stretch pr-3 text-left text-inherit no-underline hover:no-underline"
       >
         {comfortable && snapshot.title ? (
@@ -116,6 +127,75 @@ export function SnapshotRow({ snapshot, selected, onToggle, density, to }: Snaps
         <Clock size={10} aria-hidden="true" />
         <span className="truncate">{captured}</span>
       </div>
+    </li>
+  );
+}
+
+/** One snapshot as a card: a large screenshot first, for browsing an archive by sight. */
+export function SnapshotCard({
+  snapshot,
+  selected,
+  onToggle,
+  to,
+  state,
+}: Omit<SnapshotRowProps, "density">) {
+  const label = snapshot.title || snapshot.url;
+  return (
+    <li
+      className={`group relative flex list-none flex-col overflow-hidden rounded-xl border bg-surface transition-colors ${
+        selected ? "border-accent ring-1 ring-accent" : "border-border hover:border-border-strong"
+      }`}
+    >
+      <Link
+        to={to}
+        state={state}
+        className="flex flex-1 flex-col text-inherit no-underline hover:no-underline"
+      >
+        <div className="aspect-[16/10] overflow-hidden border-b border-border bg-overlay">
+          {snapshot.screenshotUrl ? (
+            <img
+              src={snapshot.screenshotUrl}
+              alt=""
+              loading="lazy"
+              className="size-full object-cover object-top transition-transform duration-300 group-hover:scale-[1.02]"
+            />
+          ) : (
+            <div className="flex size-full items-center justify-center text-low">
+              <Camera size={28} aria-hidden="true" />
+            </div>
+          )}
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col gap-1 p-3">
+          <span className="line-clamp-2 text-ui-sm font-medium leading-snug text-high">
+            {label}
+          </span>
+          {snapshot.title && (
+            <span className="truncate font-mono text-ui-xs text-mid">{snapshot.url}</span>
+          )}
+          <div className="mt-auto flex items-center justify-between gap-2 pt-2">
+            <StatusBadge status={snapshot.status} />
+            <span className="flex items-center gap-1 text-ui-xs text-low">
+              <Clock size={10} aria-hidden="true" />
+              {shortDateTime(snapshot.createdAt)}
+            </span>
+          </div>
+        </div>
+      </Link>
+      {onToggle && (
+        <label
+          className={`absolute left-2 top-2 flex size-7 items-center justify-center rounded-md bg-surface/90 shadow transition-opacity ${
+            selected ? "opacity-100" : "opacity-0 focus-within:opacity-100 group-hover:opacity-100"
+          }`}
+        >
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggle(snapshot.id)}
+            className="accent-accent"
+            aria-label={`Select ${snapshot.url}`}
+          />
+        </label>
+      )}
     </li>
   );
 }

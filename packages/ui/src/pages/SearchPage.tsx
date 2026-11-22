@@ -34,16 +34,31 @@ function ResultCard({ result }: { result: SearchResult }) {
   return (
     <Link
       to={`/snapshots/${result.id}`}
-      className="flex flex-col gap-1.5 rounded-lg border border-border bg-surface px-4 py-3 text-inherit no-underline transition-colors hover:border-accent hover:no-underline hover:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent)_15%,transparent)]"
+      className="group flex flex-col gap-1.5 rounded-lg border border-border bg-surface px-4 py-3 text-inherit no-underline transition-colors hover:border-border-strong hover:bg-subtle/40 hover:no-underline"
     >
-      <div className="flex items-center justify-between gap-3">
-        <span className="truncate text-ui-base font-medium text-accent">{result.url}</span>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          {result.title && (
+            <span className="truncate text-ui-base font-medium text-high group-hover:text-accent">
+              {result.title}
+            </span>
+          )}
+          <span
+            className={`truncate font-mono ${
+              result.title
+                ? "text-ui-xs text-mid"
+                : "text-ui-sm font-medium text-high group-hover:text-accent"
+            }`}
+          >
+            {result.url}
+          </span>
+        </div>
         <StatusBadge status={result.status} />
       </div>
       {result.snippet && (
-        <div className="text-ui-sm leading-relaxed text-mid">
+        <p className="m-0 line-clamp-3 max-w-[75ch] text-ui-sm leading-relaxed text-mid">
           <Snippet text={result.snippet} />
-        </div>
+        </p>
       )}
     </Link>
   );
@@ -163,7 +178,7 @@ export function SearchPage() {
           onClick={() => setFiltersOpen((v) => !v)}
           aria-expanded={filtersOpen}
           aria-controls="search-filters"
-          className="flex w-full items-center justify-between border-0 bg-transparent px-4 py-3 text-ui-base font-medium text-high lg:hidden"
+          className="flex h-11 w-full items-center justify-between border-0 bg-transparent px-4 text-ui-base font-medium text-high lg:hidden"
         >
           <span className="inline-flex items-center gap-2">
             <SlidersHorizontal size={14} aria-hidden="true" />
@@ -173,7 +188,7 @@ export function SearchPage() {
         </button>
         <div
           id="search-filters"
-          className={`${filtersOpen ? "block" : "hidden"} px-4 pb-4 lg:block lg:px-4 lg:py-6`}
+          className={`${filtersOpen ? "block" : "hidden"} px-2 pb-4 lg:block lg:px-2 lg:py-6`}
         >
           <FilterSidebar filters={filters} onChange={setFilters} allTags={allTags} />
         </div>
@@ -182,12 +197,13 @@ export function SearchPage() {
       <main className="min-w-0 flex-1 px-4 py-5 sm:px-7 sm:py-6">
         <h1 className="sr-only">Search</h1>
         <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 focus-within:border-accent">
+          <div className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg border border-border bg-surface px-3 focus-within:border-accent">
             <Search size={15} className="shrink-0 text-low" aria-hidden="true" />
             <input
               type="text"
               aria-label="Search snapshots"
               placeholder="Search…"
+              data-page-search
               value={inputVal}
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && setQ(inputVal, true)}
@@ -198,7 +214,7 @@ export function SearchPage() {
                 type="button"
                 onClick={() => setQ("", true)}
                 aria-label="Clear search"
-                className="flex border-0 bg-transparent p-0 text-low hover:text-high"
+                className="-mr-1.5 flex size-7 items-center justify-center rounded-md border-0 bg-transparent p-0 text-low hover:bg-subtle hover:text-high"
               >
                 <X size={14} aria-hidden="true" />
               </button>

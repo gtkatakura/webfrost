@@ -4,6 +4,7 @@ export const STORAGE_KEYS = {
   sidebarCollapsed: "webfrost-sidebar-collapsed",
   snapshotDensity: "webfrost-snapshot-density",
   savedSearches: "webfrost-saved-searches",
+  viewerDetails: "webfrost-viewer-details",
 } as const;
 
 /** localStorage can throw (private windows, blocked site data), so every access goes through here. */

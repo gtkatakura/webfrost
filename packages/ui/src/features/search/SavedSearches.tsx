@@ -47,8 +47,8 @@ export function SavedSearches({
           onClick={toggleSave}
           aria-pressed={isSaved}
           title={isSaved ? "Remove saved search" : "Save this search"}
-          className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-border px-3 py-2 text-ui-sm font-medium transition-colors hover:border-border-strong ${
-            isSaved ? "bg-accent/10 text-accent" : "bg-surface text-mid hover:text-high"
+          className={`flex h-10 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border px-3 text-ui-sm font-medium transition-colors hover:border-border-strong ${
+            isSaved ? "bg-accent/10 text-accent-text" : "bg-surface text-mid hover:text-high"
           }`}
         >
           {isSaved ? (
@@ -98,10 +98,10 @@ export function SavedSearches({
           {saved.map((s) => (
             <li
               key={s.q}
-              className={`inline-flex items-center gap-1 rounded-full border py-0.5 pl-2.5 pr-1.5 text-ui-sm font-medium ${
+              className={`inline-flex h-7 items-center gap-0.5 rounded-full border pl-2.5 pr-0.5 text-ui-sm font-medium ${
                 s.q === query
-                  ? "border-accent/40 bg-accent/10 text-accent"
-                  : "border-border bg-overlay text-mid"
+                  ? "border-accent/40 bg-accent/10 text-accent-text"
+                  : "border-border bg-surface text-mid"
               }`}
             >
               <button
@@ -115,9 +115,9 @@ export function SavedSearches({
                 type="button"
                 onClick={() => update(saved.filter((x) => x.q !== s.q))}
                 aria-label={`Remove saved search ${s.name}`}
-                className="ml-0.5 flex border-0 bg-transparent p-0 text-low hover:text-danger"
+                className="flex size-6 items-center justify-center rounded-full border-0 bg-transparent p-0 text-low hover:bg-danger/10 hover:text-danger"
               >
-                <X size={10} aria-hidden="true" />
+                <X size={12} aria-hidden="true" />
               </button>
             </li>
           ))}

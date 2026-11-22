@@ -45,10 +45,7 @@ export function ImportHistory() {
           <thead>
             <tr className="border-b border-border bg-overlay">
               {HEADERS.map((h) => (
-                <th
-                  key={h}
-                  className="whitespace-nowrap px-3 py-2 text-left text-ui-xs font-semibold tracking-wider text-mid uppercase"
-                >
+                <th key={h} className="label-caps whitespace-nowrap px-3 py-2 text-left">
                   {h}
                 </th>
               ))}

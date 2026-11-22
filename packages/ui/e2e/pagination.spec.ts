@@ -51,7 +51,7 @@ test("pagination: UI controls appear and navigate between pages", async ({ page,
 
   // Wait until real snapshot rows load. Skeleton rows render as <li> without
   // a child <a>, so "li a" only matches once actual data is in the DOM.
-  await expect(page.locator("li a").first()).toBeVisible({ timeout: 10000 });
+  await expect(page.locator("li a:not([aria-hidden])").first()).toBeVisible({ timeout: 10000 });
 
   // Pagination controls must appear since totalPages > 1.
   const nextBtn = page.getByRole("button", { name: /Next/i });
@@ -66,19 +66,19 @@ test("pagination: UI controls appear and navigate between pages", async ({ page,
   expect(totalPages).toBeGreaterThan(1);
 
   // Record the first item on page 1 so we can verify page 2 is different.
-  const firstItemPage1 = await page.locator("li a").first().textContent();
+  const firstItemPage1 = await page.locator("li a:not([aria-hidden])").first().textContent();
 
   // Navigate to page 2.
   await nextBtn.click();
   await expect(page.locator('[aria-label="Page 2"][aria-current="page"]')).toBeVisible();
 
   // At least one item is visible on page 2.
-  await expect(page.locator("li a").first()).toBeVisible();
-  const firstItemPage2 = await page.locator("li a").first().textContent();
+  await expect(page.locator("li a:not([aria-hidden])").first()).toBeVisible();
+  const firstItemPage2 = await page.locator("li a:not([aria-hidden])").first().textContent();
   expect(firstItemPage2).not.toBe(firstItemPage1);
 
   // Navigate back to page 1.
   await prevBtn.click();
   await expect(page.locator('[aria-label="Page 1"][aria-current="page"]')).toBeVisible();
-  await expect(page.locator("li a").first()).toBeVisible();
+  await expect(page.locator("li a:not([aria-hidden])").first()).toBeVisible();
 });

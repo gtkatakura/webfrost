@@ -41,15 +41,16 @@ export function AddScheduleForm() {
   return (
     <section
       aria-labelledby="new-schedule"
-      className="mb-6 rounded-xl border border-border bg-surface px-5 py-4"
+      className="mb-6 rounded-xl border border-border bg-surface p-4"
     >
-      <h2
-        id="new-schedule"
-        className="mb-3 mt-0 text-ui-sm font-semibold tracking-wider text-mid uppercase"
-      >
+      <h2 id="new-schedule" className="label-caps mb-3 mt-0">
         New schedule
       </h2>
-      <form onSubmit={handleCreate} noValidate className="flex flex-wrap items-start gap-3">
+      <form
+        onSubmit={handleCreate}
+        noValidate
+        className="grid grid-cols-2 items-start gap-3 md:grid-cols-[minmax(0,1fr)_auto_9rem_auto]"
+      >
         <UrlField
           label="URL"
           value={url}
@@ -58,12 +59,12 @@ export function AddScheduleForm() {
             setUrlError(null);
           }}
           error={urlError}
-          className="min-w-52 flex-1"
+          className="col-span-2 md:col-span-1"
         />
-        <label className="flex flex-col gap-1 text-ui-sm font-medium text-mid">
+        <label className="flex min-w-0 flex-col gap-1 text-ui-sm font-medium text-mid">
           Preset
           <select
-            className="field !w-auto"
+            className="field"
             value={PRESETS.find((p) => p.value === cron)?.value ?? ""}
             onChange={(e) => {
               if (e.target.value) setCron(e.target.value);
@@ -76,7 +77,7 @@ export function AddScheduleForm() {
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-ui-sm font-medium text-mid">
+        <label className="flex min-w-0 flex-col gap-1 text-ui-sm font-medium text-mid">
           Cron expression
           <input
             type="text"
@@ -84,10 +85,15 @@ export function AddScheduleForm() {
             value={cron}
             onChange={(e) => setCron(e.target.value)}
             required
-            className="field w-40 font-mono"
+            className="field font-mono"
           />
         </label>
-        <Button type="submit" size="lg" disabled={create.isPending} className="self-end">
+        <Button
+          type="submit"
+          size="md"
+          disabled={create.isPending}
+          className="col-span-2 md:col-span-1 md:mt-[1.375rem]"
+        >
           <Plus size={14} aria-hidden="true" />
           {create.isPending ? "Creating…" : "Add schedule"}
         </Button>

@@ -27,7 +27,7 @@ test("@smoke: dashboard loads and snapshot appears after POST", async ({ page, r
   await page.goto("/#/snapshots");
 
   // Wait for real snapshot rows to load (li > a structure).
-  await expect(page.locator("li a").first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator("li a:not([aria-hidden])").first()).toBeVisible({ timeout: 10_000 });
 
   // The snapshot row must be visible on the first page (most recent items first).
   await expect(page.getByText("https://example.com").first()).toBeVisible({ timeout: 5_000 });

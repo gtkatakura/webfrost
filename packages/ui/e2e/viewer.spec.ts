@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-/** The detail panel is the one detail UI: a dialog over the list, reachable at /snapshots/:id. */
+/** The snapshot viewer: one snapshot on the whole window, at /snapshots/:id. */
 
 const API = "http://localhost:3000";
 
@@ -22,46 +22,33 @@ test.beforeAll(async ({ request }) => {
 
 const seed = async (_request?: unknown) => seeded;
 
-test("detail panel: /snapshots/:id opens a labelled dialog over the list and Escape closes it", async ({
+test("viewer: /snapshots/:id fills the window and Escape goes back to the list", async ({
   page,
   request,
 }) => {
   const { id, url } = await seed(request);
   await page.goto(`/#/snapshots/${id}`);
 
-  const dialog = page.getByRole("dialog");
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toHaveAttribute("aria-modal", "true");
-  // The dialog is named by its heading.
-  await expect(dialog.getByRole("heading").first()).toBeVisible();
-  await expect(dialog).toHaveAccessibleName(/.+/);
-  await expect(dialog.getByRole("link", { name: url })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(page.getByRole("link", { name: url })).toBeVisible();
+  // No app sidebar: the snapshot has the window.
+  await expect(page.getByRole("navigation")).toHaveCount(0);
 
   await page.keyboard.press("Escape");
-  await expect(dialog).toBeHidden();
   await expect(page).toHaveURL(/#\/snapshots$/);
-  // The list is still there behind it.
   await expect(page.getByRole("heading", { name: "Snapshots", exact: true })).toBeVisible();
 });
 
-test("detail panel: opening a row keeps focus manageable and restores it on close", async ({
-  page,
-  request,
-}) => {
+test("viewer: opened from a list page, Back returns to that page", async ({ page, request }) => {
   const { url } = await seed(request);
   await page.goto("/#/snapshots");
-
-  const rowLink = page.getByRole("link", { name: url });
-  await rowLink.focus();
-  await page.keyboard.press("Enter");
-  await expect(page.getByRole("dialog")).toBeVisible();
-
-  await page.getByRole("button", { name: "Close panel" }).click();
-  await expect(page.getByRole("dialog")).toBeHidden();
-  await expect(rowLink).toBeFocused();
+  await page.getByRole("link", { name: url }).first().click();
+  await expect(page.getByRole("button", { name: "Back to snapshots" })).toBeVisible();
+  await page.getByRole("button", { name: "Back to snapshots" }).click();
+  await expect(page.getByRole("heading", { name: "Snapshots", exact: true })).toBeVisible();
 });
 
-test("detail panel: tabs follow the WAI-ARIA tabs pattern with arrow-key navigation", async ({
+test("viewer: the views follow the WAI-ARIA tabs pattern with arrow-key navigation", async ({
   page,
   request,
 }) => {
@@ -82,22 +69,29 @@ test("detail panel: tabs follow the WAI-ARIA tabs pattern with arrow-key navigat
   await expect(page.getByRole("tabpanel")).toBeVisible();
 
   await page.keyboard.press("End");
-  await expect(tablist.getByRole("tab", { name: "History" })).toHaveAttribute(
+  await expect(tablist.getByRole("tab", { name: "Details" })).toHaveAttribute(
     "aria-selected",
     "true",
   );
 });
 
-test("detail panel: a malformed ?detail= opens nothing instead of a broken panel", async ({
-  page,
-}) => {
-  await page.goto("/#/snapshots?detail=abc");
-  await expect(page.getByRole("heading", { name: "Snapshots", exact: true })).toBeVisible();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+test("viewer: I switches to the Details view", async ({ page, request }) => {
+  const { id } = await seed(request);
+  await page.goto(`/#/snapshots/${id}`);
+  await page.getByRole("button", { name: "Back to snapshots" }).focus();
+  await page.keyboard.press("i");
+  await expect(page.getByRole("tab", { name: "Details" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByText("Extractors")).toBeVisible();
 });
 
-test("detail panel: the legacy ?detail= link still opens the panel", async ({ page, request }) => {
+test("viewer: a malformed ?detail= opens nothing", async ({ page }) => {
+  await page.goto("/#/snapshots?detail=abc");
+  await expect(page.getByRole("heading", { name: "Snapshots", exact: true })).toBeVisible();
+});
+
+test("viewer: the legacy ?detail= link opens the viewer", async ({ page, request }) => {
   const { id } = await seed(request);
   await page.goto(`/#/snapshots?detail=${id}`);
-  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`#/snapshots/${id}$`));
+  await expect(page.getByRole("button", { name: "Back to snapshots" })).toBeVisible();
 });

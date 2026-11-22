@@ -107,20 +107,30 @@ export function LoadingRows({ rows = 3, rowClass = "h-14" }: { rows?: number; ro
   );
 }
 
+/** The one page title: h1, an optional line of description, and actions aligned to the right. */
 export function PageHeader({
-  icon,
   title,
+  description,
+  badge,
   children,
 }: {
-  icon?: ReactNode;
   title: string;
+  description?: ReactNode;
+  /** A small count or state next to the title. */
+  badge?: ReactNode;
+  /** Actions (buttons, links) on the right; they wrap under the title on narrow screens. */
   children?: ReactNode;
 }) {
   return (
-    <div className="mb-6 flex flex-wrap items-center gap-3">
-      {icon && <span className="text-accent">{icon}</span>}
-      <h1 className="m-0 text-ui-xl font-semibold text-high">{title}</h1>
-      {children}
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h1 className="m-0 text-ui-2xl font-semibold text-high">{title}</h1>
+          {badge}
+        </div>
+        {description && <p className="mb-0 mt-1 text-ui-base text-mid">{description}</p>}
+      </div>
+      {children && <div className="flex flex-wrap items-center gap-2">{children}</div>}
     </div>
   );
 }

@@ -36,7 +36,7 @@ export function BulkBar({
         <select
           disabled={busy}
           aria-label="Add a tag to the selected snapshots"
-          className="field !w-auto !px-2 !py-1 text-ui-xs"
+          className="field !w-auto !py-1 text-ui-sm"
           value=""
           onChange={(e) => {
             const id = Number(e.target.value);
@@ -54,7 +54,7 @@ export function BulkBar({
       <button
         type="button"
         onClick={onClear}
-        className="rounded border-0 bg-transparent p-1 text-mid transition-colors hover:bg-subtle hover:text-high"
+        className="inline-flex size-8 items-center justify-center rounded-md border-0 bg-transparent text-mid transition-colors hover:bg-subtle hover:text-high"
         aria-label="Clear selection"
       >
         <X size={14} aria-hidden="true" />

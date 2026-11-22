@@ -26,14 +26,14 @@ export function ImportPage() {
   }
 
   return (
-    <main className="mx-auto max-w-[720px] px-4 py-8 sm:px-5">
-      <PageHeader icon={<Upload size={20} />} title="Import URLs" />
+    <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
+      <PageHeader title="Import URLs" />
 
       <div
         role="tablist"
         aria-label="Import sections"
         onKeyDown={onTabKeyDown}
-        className="mb-6 flex gap-0.5 border-b border-border"
+        className="mb-6 flex gap-1 border-b border-border"
       >
         {TABS.map(({ id, label, icon }) => {
           const active = activeTab === id;
@@ -50,9 +50,9 @@ export function ImportPage() {
                 setActiveTab(id);
                 if (id === "import") setImportResult(null);
               }}
-              className={`-mb-px inline-flex items-center gap-1.5 border-0 border-b-2 bg-transparent px-3.5 py-2 text-ui-base transition-colors ${
+              className={`-mb-px inline-flex h-10 items-center gap-1.5 border-0 border-b-2 bg-transparent px-3 text-ui-base transition-colors ${
                 active
-                  ? "border-accent font-semibold text-accent"
+                  ? "border-accent font-medium text-high"
                   : "border-transparent text-mid hover:text-high"
               }`}
             >
@@ -72,7 +72,9 @@ export function ImportPage() {
           (importResult ? (
             <ImportResultCard result={importResult} onReset={() => setImportResult(null)} />
           ) : (
-            <ImportForm onSuccess={setImportResult} />
+            <div className="rounded-xl border border-border bg-surface p-4 sm:p-5">
+              <ImportForm onSuccess={setImportResult} />
+            </div>
           ))}
         {activeTab === "history" && <ImportHistory />}
       </div>

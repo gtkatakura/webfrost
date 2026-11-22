@@ -1,10 +1,11 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { ServerInfo } from "@webfrost/sdk";
-import { Moon, Sun } from "lucide-react";
+import { ChevronRight, Moon, Sun } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Button, buttonClasses } from "../components/ui/Button";
+import { PageHeader, Skeleton } from "../components/ui/StateViews";
 import { TextField } from "../components/ui/TextField";
 import { useClient } from "../context";
 import { useThemeContext } from "../context/theme";
@@ -16,12 +17,12 @@ function SettingCard({
   children,
 }: { title: string; description?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-border bg-surface p-6 shadow-sm">
-      <div className="mb-4">
-        <h2 className="m-0 text-base font-semibold text-high">{title}</h2>
-        {description && <p className="mb-0 mt-0.5 text-ui-base text-mid">{description}</p>}
+    <section className="grid gap-x-8 gap-y-4 border-b border-border py-6 last:border-b-0 md:grid-cols-[14rem_minmax(0,1fr)]">
+      <div>
+        <h2 className="m-0 text-ui-lg font-semibold text-high">{title}</h2>
+        {description && <p className="mb-0 mt-1 text-ui-sm text-mid">{description}</p>}
       </div>
-      {children}
+      <div className="min-w-0">{children}</div>
     </section>
   );
 }
@@ -61,16 +62,17 @@ export function SettingsPage() {
   }
 
   return (
-    <main className="mx-auto max-w-[760px] px-4 py-8">
-      <h1 className="mb-6 mt-0 text-2xl font-bold text-high">Settings</h1>
+    <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
+      <PageHeader title="Settings" />
 
-      <div className="flex flex-col gap-5">
+      <div className="rounded-xl border border-border bg-surface px-5 sm:px-6">
         <SettingCard
           title="API Keys"
           description="Manage API keys for programmatic access to WebFrost."
         >
-          <Link to="/settings/api-keys" className={buttonClasses("secondary", "lg")}>
-            Manage API Keys →
+          <Link to="/settings/api-keys" className={buttonClasses("secondary", "md")}>
+            Manage API Keys
+            <ChevronRight size={14} aria-hidden="true" />
           </Link>
         </SettingCard>
 
@@ -104,7 +106,7 @@ export function SettingsPage() {
               onChange={(e) => setConfirmPassword(e.target.value)}
             />
             <div>
-              <Button type="submit" size="lg" disabled={changePassword.isPending}>
+              <Button type="submit" disabled={changePassword.isPending}>
                 {changePassword.isPending ? "Saving…" : "Change password"}
               </Button>
             </div>
@@ -113,7 +115,7 @@ export function SettingsPage() {
 
         <SettingCard title="Appearance" description="Customize the look of WebFrost.">
           <div className="flex items-center gap-3">
-            <span className="text-ui-base text-mid">Theme</span>
+            <span className="text-ui-sm text-mid">Theme</span>
             <Button variant="secondary" onClick={toggle}>
               {theme === "dark" ? (
                 <>
@@ -130,16 +132,20 @@ export function SettingsPage() {
 
         <SettingCard title="Server Info" description="Information about this WebFrost instance.">
           {infoLoading ? (
-            <p className="m-0 text-ui-base text-mid">Loading…</p>
+            <div className="flex flex-col gap-3" role="status" aria-label="Loading server info">
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-4 w-72 max-w-full" />
+              <Skeleton className="h-4 w-24" />
+            </div>
           ) : serverInfo ? (
-            <dl className="m-0 flex flex-col gap-3">
+            <dl className="m-0 flex flex-col gap-2.5">
               {[
                 { label: "Version", value: serverInfo.version },
                 { label: "Storage path", value: serverInfo.storagePath },
                 { label: "Snapshots", value: String(serverInfo.snapshotCount) },
               ].map(({ label, value }) => (
-                <div key={label} className="flex gap-4 text-ui-base">
-                  <dt className="w-32 shrink-0 text-mid">{label}</dt>
+                <div key={label} className="flex flex-col gap-0.5 text-ui-sm sm:flex-row sm:gap-4">
+                  <dt className="shrink-0 text-mid sm:w-28">{label}</dt>
                   <dd className="m-0 break-all font-mono text-high">{value}</dd>
                 </div>
               ))}

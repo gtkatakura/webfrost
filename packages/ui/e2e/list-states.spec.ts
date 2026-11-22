@@ -98,7 +98,7 @@ test("selection: changing page drops the selection so bulk actions never reach h
 }) => {
   await mockTwoPages(page);
   await page.goto("/#/snapshots");
-  await expect(page.locator("li a").first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator("li a:not([aria-hidden])").first()).toBeVisible({ timeout: 10_000 });
 
   await page.getByLabel("Select all").check();
   await expect(page.getByText("20 selected")).toBeVisible();
@@ -139,6 +139,6 @@ test("list: the page number lives in the URL and a page past the end steps back"
     });
   });
   await page.goto("/#/snapshots?page=9999");
-  await expect(page.locator("li a").first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator("li a:not([aria-hidden])").first()).toBeVisible({ timeout: 10_000 });
   await expect(page).not.toHaveURL(/page=9999/);
 });

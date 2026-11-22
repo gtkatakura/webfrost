@@ -25,6 +25,7 @@ import { SearchPage } from "./pages/SearchPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SetupPage } from "./pages/SetupPage";
 import { SnapshotListPage } from "./pages/SnapshotListPage";
+import { SnapshotViewerPage } from "./pages/SnapshotViewerPage";
 import { TagsPage } from "./pages/TagsPage";
 
 /** Write-only pages: a guest is sent to /login and returns here after signing in. */
@@ -79,8 +80,7 @@ function AppRoutes() {
         <>
           <Route element={<Layout />}>
             <Route index element={<DashboardPage />} />
-            {/* One route for the list and the detail panel over it (/snapshots/:id). */}
-            <Route path="snapshots/:id?" element={<SnapshotListPage />} />
+            <Route path="snapshots" element={<SnapshotListPage />} />
             <Route path="search" element={<SearchPage />} />
             <Route path="tags" element={<TagsPage />} />
             <Route
@@ -116,6 +116,8 @@ function AppRoutes() {
               }
             />
           </Route>
+          {/* The viewer takes the whole window: no sidebar, the archived page gets the room. */}
+          <Route path="snapshots/:id" element={<SnapshotViewerPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </>
       ) : (

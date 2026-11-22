@@ -166,6 +166,13 @@ curl -X POST $API/snapshots -H "Authorization: Bearer $KEY" \
 # 202 { "id": 1, "url": "https://example.com", "status": "pending" }
 ```
 
+The body takes `url` and an optional `colorScheme`, `"light"` or `"dark"`: the theme the browser archives the page in (screenshot, PDF, Page view). Without it the server default `WEBFROST_COLOR_SCHEME` applies. The web UI sends its current theme.
+
+```bash
+curl -X POST $API/snapshots -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" -d '{"url": "https://example.com", "colorScheme": "dark"}'
+```
+
 The URL must be `http` or `https` and at most 8192 characters, otherwise `400 { "error": "invalid url", "code": "VALIDATION" }`; a body that fails validation in any other way gets the same response. The pipeline runs in the background; poll the snapshot until `status` leaves `pending`.
 
 ### List

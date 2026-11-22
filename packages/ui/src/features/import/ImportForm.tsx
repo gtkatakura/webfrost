@@ -24,7 +24,7 @@ const IMPORT_TYPES: { id: ImportType; icon: React.ReactNode; hint: string }[] = 
   { id: "text", icon: <FileText size={14} />, hint: "One URL per line" },
 ];
 
-const sectionLabel = "mb-2 text-ui-xs font-semibold tracking-wider text-mid uppercase";
+const sectionLabel = "label-caps mb-2";
 
 export function ImportForm({ onSuccess }: { onSuccess: (r: ImportResult) => void }) {
   const client = useClient();
@@ -101,9 +101,9 @@ export function ImportForm({ onSuccess }: { onSuccess: (r: ImportResult) => void
                   setError(null);
                   setUrlError(null);
                 }}
-                className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-ui-sm transition-colors ${
+                className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-ui-sm transition-colors ${
                   active
-                    ? "border-accent bg-accent/10 font-semibold text-accent"
+                    ? "border-accent bg-accent/10 font-medium text-accent-text"
                     : "border-border bg-surface text-mid hover:border-border-strong hover:text-high"
                 }`}
               >
@@ -161,7 +161,7 @@ export function ImportForm({ onSuccess }: { onSuccess: (r: ImportResult) => void
       {error && <ErrorBanner message={error} />}
 
       <div>
-        <Button type="submit" size="lg" disabled={submitting}>
+        <Button type="submit" disabled={submitting}>
           <Upload size={14} aria-hidden="true" />
           {submitting ? "Importing…" : "Import"}
         </Button>

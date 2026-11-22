@@ -64,8 +64,23 @@ export function getNextTimes(cron: string, count: number): Date[] {
   return results;
 }
 
+const TWO_DIGITS = /^\d{1,2}$/;
+
+/**
+ * A short label for a cron expression: the preset name, "Daily at 06:30" or "Hourly at :15" for
+ * the two common hand-written shapes, and the expression itself for anything else.
+ */
 export function describeCron(cron: string): string {
-  return CRON_LABELS[cron] ?? cron;
+  const expr = cron.trim().replace(/\s+/g, " ");
+  const preset = CRON_LABELS[expr];
+  if (preset) return preset;
+  const [minute = "", hour = "", ...rest] = expr.split(" ");
+  if (rest.length !== 3 || rest.some((f) => f !== "*") || !TWO_DIGITS.test(minute)) return cron;
+  const m = Number(minute);
+  if (m > 59) return cron;
+  if (hour === "*") return `Hourly at :${String(m).padStart(2, "0")}`;
+  if (!TWO_DIGITS.test(hour) || Number(hour) > 23) return cron;
+  return `Daily at ${hour.padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
 export function shortDate(date: Date): string {

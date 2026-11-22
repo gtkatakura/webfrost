@@ -90,7 +90,7 @@ The page being archived controls what the browser requests.
 |---|---|---|
 | Page embeds an internal URL (iframe, image, `fetch`, WebSocket) and it is captured in the screenshot/PDF/DOM | Every browser request is checked; blocked hosts are aborted | Mitigated |
 | Subresource or navigation **redirects** to an internal host | Detected; browser extractors are skipped for the snapshot so nothing is captured | Mitigated for disclosure; the request itself is still sent (**blind SSRF, open**) |
-| Script waits until after load, then loads an internal URL | All further requests are refused once the page has loaded, before capture | Mitigated |
+| Script waits until after load, then loads an internal URL | All requests are checked, and once the network settles (`WEBFROST_SETTLE_MS`) all further requests are refused, before capture | Mitigated |
 | Service worker making unchecked requests | Service workers blocked | Mitigated |
 | Page stalls or loops forever | 30 s navigation timeout; 60 s per extractor; browser closed afterwards | Mitigated |
 | Renderer exploit | Chromium runs without its own sandbox inside the container; the container is the boundary | **Open** — keep the image updated, do not add capabilities |

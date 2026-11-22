@@ -3,7 +3,7 @@ import type { ApiKey } from "@webfrost/sdk";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "../components/ui/Button";
-import { ErrorState, LoadingRows } from "../components/ui/StateViews";
+import { ErrorState, LoadingRows, PageHeader } from "../components/ui/StateViews";
 import { useClient } from "../context";
 import { useCopy } from "../lib/clipboard";
 import { collect } from "../lib/collect";
@@ -67,11 +67,11 @@ export function ApiKeysPage() {
   const th = "py-2 pr-4 text-left font-medium text-mid";
 
   return (
-    <main className="mx-auto max-w-[760px] px-4 py-8">
-      <h1 className="mb-2 mt-0 text-2xl font-bold text-high">API Keys</h1>
-      <p className="mb-8 mt-0 text-ui-base text-mid">
-        API keys grant programmatic access to WebFrost. Keys are shown only once at creation.
-      </p>
+    <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
+      <PageHeader
+        title="API Keys"
+        description="API keys grant programmatic access to WebFrost. Keys are shown only once at creation."
+      />
 
       {newRawKey && (
         <div className="mb-8 rounded-lg border border-success/40 bg-success/10 p-4">
@@ -103,7 +103,7 @@ export function ApiKeysPage() {
       )}
 
       <section className="mb-8">
-        <h2 className="mb-3 mt-0 text-base font-semibold text-high">Create new key</h2>
+        <h2 className="mb-3 mt-0 text-ui-lg font-semibold text-high">Create new key</h2>
         <form onSubmit={handleCreate} className="flex max-w-sm gap-2">
           <input
             type="text"
@@ -121,7 +121,7 @@ export function ApiKeysPage() {
       </section>
 
       <section>
-        <h2 className="mb-3 mt-0 text-base font-semibold text-high">Active keys</h2>
+        <h2 className="mb-3 mt-0 text-ui-lg font-semibold text-high">Active keys</h2>
         {loading ? (
           <LoadingRows rows={2} rowClass="h-10" />
         ) : isError ? (

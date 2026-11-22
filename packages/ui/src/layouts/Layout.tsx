@@ -55,6 +55,7 @@ export function Layout() {
   useKeyboardShortcuts({
     onToggleHelp: () => setShortcutsOpen((v) => !v),
     onOpenSearch: () => setPaletteOpen(true),
+    onToggleSidebar: () => (isDesktop ? toggleCollapsed() : setDrawerOpen((v) => !v)),
     canWrite,
   });
 
@@ -90,7 +91,7 @@ export function Layout() {
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
 
       {/* ── Mobile header ─────────────────────────────────────── */}
-      <header className="fixed inset-x-0 top-0 z-40 flex h-12 items-center justify-between border-b border-border bg-surface px-4 lg:hidden">
+      <header className="fixed inset-x-0 top-0 z-40 flex h-12 items-center justify-between border-b border-border bg-surface pl-4 pr-1.5 lg:hidden">
         <Link to="/" className="rounded no-underline hover:no-underline" aria-label="WebFrost home">
           <Logo size={22} className="text-base" />
         </Link>
@@ -100,12 +101,12 @@ export function Layout() {
             onClick={toggle}
             aria-pressed={theme === "dark"}
             aria-label="Dark mode"
-            className="rounded border-0 bg-transparent p-2 text-mid transition-colors hover:bg-subtle hover:text-high"
+            className="inline-flex size-10 items-center justify-center rounded-lg border-0 bg-transparent text-mid transition-colors hover:bg-subtle hover:text-high"
           >
             {theme === "dark" ? (
-              <Sun size={16} aria-hidden="true" />
+              <Sun size={18} aria-hidden="true" />
             ) : (
-              <Moon size={16} aria-hidden="true" />
+              <Moon size={18} aria-hidden="true" />
             )}
           </button>
           <button
@@ -115,7 +116,7 @@ export function Layout() {
             aria-label="Menu"
             aria-expanded={drawerOpen}
             aria-controls="app-sidebar"
-            className="rounded border-0 bg-transparent p-2 text-mid transition-colors hover:bg-subtle hover:text-high"
+            className="inline-flex size-10 items-center justify-center rounded-lg border-0 bg-transparent text-mid transition-colors hover:bg-subtle hover:text-high"
           >
             {drawerOpen ? (
               <X size={18} aria-hidden="true" />

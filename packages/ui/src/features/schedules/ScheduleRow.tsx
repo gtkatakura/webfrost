@@ -13,8 +13,8 @@ const HEALTH: Record<HealthState, { label: string; dot: string; text: string }> 
 function HealthBadge({ schedule }: { schedule: Schedule }) {
   const cfg = HEALTH[getHealth(schedule)];
   return (
-    <span className={`inline-flex items-center gap-1.5 text-ui-xs font-medium ${cfg.text}`}>
-      <span className={`size-1.5 shrink-0 rounded-full ${cfg.dot}`} aria-hidden="true" />
+    <span className={`inline-flex items-center gap-1.5 text-ui-sm font-medium ${cfg.text}`}>
+      <span className={`size-2 shrink-0 rounded-full ${cfg.dot}`} aria-hidden="true" />
       {cfg.label}
     </span>
   );
@@ -31,14 +31,14 @@ function CronPreview({ cron }: { cron: string }) {
         type="button"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
-        className="inline-flex items-center gap-1 border-0 bg-transparent p-0 text-ui-xs text-mid hover:text-high"
+        className="inline-flex items-center gap-1 rounded border-0 bg-transparent p-0 text-ui-xs text-mid hover:text-high"
       >
-        <Clock size={10} aria-hidden="true" />
+        <Clock size={12} aria-hidden="true" />
         Next: {shortDate(times[0])}
         {expanded ? (
-          <ChevronUp size={10} aria-hidden="true" />
+          <ChevronUp size={12} aria-hidden="true" />
         ) : (
-          <ChevronDown size={10} aria-hidden="true" />
+          <ChevronDown size={12} aria-hidden="true" />
         )}
       </button>
       {expanded && (
@@ -57,7 +57,10 @@ function CronPreview({ cron }: { cron: string }) {
   );
 }
 
-const td = "py-2.5 pr-3 align-top";
+// Below sm a row is a stacked card: the table cells become blocks and the run columns carry
+// their own labels (the header row is hidden there).
+const td = "block sm:table-cell sm:py-3 sm:pr-3 sm:align-top";
+const cellLabel = "label-caps mb-0.5 block sm:hidden";
 
 export function ScheduleRow({
   schedule,
@@ -70,8 +73,8 @@ export function ScheduleRow({
   const label = describeCron(schedule.cron);
 
   return (
-    <tr className="group border-b border-border last:border-b-0">
-      <td className={`${td} max-w-56 pl-4`}>
+    <tr className="group relative grid grid-cols-3 gap-x-3 gap-y-2.5 border-b border-border px-4 py-3.5 last:border-b-0 sm:table-row sm:p-0">
+      <td className={`${td} col-span-3 min-w-0 pr-20 sm:max-w-64 sm:pl-4`}>
         <a
           href={schedule.url}
           target="_blank"
@@ -81,8 +84,8 @@ export function ScheduleRow({
         >
           <span className="block truncate">{schedule.url.replace(/^https?:\/\//, "")}</span>
           <ExternalLink
-            size={11}
-            className="shrink-0 text-low opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+            size={12}
+            className="shrink-0 text-low sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100"
             aria-hidden="true"
           />
         </a>
@@ -91,7 +94,7 @@ export function ScheduleRow({
         </div>
       </td>
 
-      <td className={`${td} min-w-40`}>
+      <td className={`${td} col-span-3 sm:min-w-40`}>
         <div className="text-ui-base font-medium text-high">{label}</div>
         {schedule.cron !== label && (
           <div className="mt-px font-mono text-ui-xs text-low">{schedule.cron}</div>
@@ -100,29 +103,32 @@ export function ScheduleRow({
       </td>
 
       <td className={td}>
+        <span className={cellLabel}>Health</span>
         <HealthBadge schedule={schedule} />
       </td>
-      <td className={`${td} whitespace-nowrap text-ui-sm text-mid`}>
+      <td className={`${td} whitespace-nowrap text-ui-sm tabular-nums text-mid`}>
+        <span className={cellLabel}>Last run</span>
         {relativeTime(schedule.lastRunAt)}
       </td>
-      <td className={`${td} whitespace-nowrap text-ui-sm text-mid`}>
+      <td className={`${td} whitespace-nowrap text-ui-sm tabular-nums text-mid`}>
+        <span className={cellLabel}>Next run</span>
         {relativeTime(schedule.nextRunAt)}
       </td>
 
-      <td className={`${td} pr-4`}>
+      <td className={`${td} absolute right-3 top-3 sm:static sm:pr-4 sm:text-right`}>
         {confirmDelete ? (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center justify-end gap-1 bg-surface pl-2 sm:pl-0">
             <button
               type="button"
               onClick={() => onDelete(schedule.id)}
-              className="rounded border-0 bg-danger px-2 py-1 text-ui-xs font-medium text-danger-fg hover:opacity-90"
+              className="h-8 rounded-md border-0 bg-danger px-2.5 text-ui-xs font-medium text-danger-fg hover:opacity-90"
             >
               Confirm
             </button>
             <button
               type="button"
               onClick={() => setConfirmDelete(false)}
-              className="rounded border border-border bg-transparent px-2 py-1 text-ui-xs text-mid hover:bg-subtle hover:text-high"
+              className="h-8 rounded-md border border-border bg-surface px-2.5 text-ui-xs text-mid hover:bg-subtle hover:text-high"
             >
               Cancel
             </button>
@@ -133,9 +139,9 @@ export function ScheduleRow({
             onClick={() => setConfirmDelete(true)}
             title="Delete schedule"
             aria-label="Delete schedule"
-            className="flex rounded border-0 bg-transparent p-1 text-low transition-colors hover:text-danger focus-visible:opacity-100 group-hover:opacity-100 sm:opacity-0"
+            className="ml-auto inline-flex size-8 items-center justify-center rounded-md border-0 bg-transparent text-low transition-colors hover:bg-danger/10 hover:text-danger"
           >
-            <Trash2 size={14} aria-hidden="true" />
+            <Trash2 size={15} aria-hidden="true" />
           </button>
         )}
       </td>

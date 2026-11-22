@@ -31,8 +31,8 @@ test("tags: add and remove a tag on the snapshot detail panel", async ({ page, r
   expect(snapResp.status()).toBe(202);
   const { id } = await snapResp.json();
 
-  // The list page opens the detail panel from the ?detail= query parameter.
-  await page.goto(`/#/snapshots?detail=${id}`);
+  await page.goto(`/#/snapshots/${id}`);
+  await page.getByRole("tab", { name: "Details" }).click();
   await expect(page.getByText("No tags")).toBeVisible();
 
   // Add the tag through the picker.

@@ -31,7 +31,7 @@ export function ImportResultCard({
       <div className="grid grid-cols-3 gap-3">
         {stats.map(({ label, value, tone }) => (
           <div key={label} className="rounded-lg bg-overlay px-3 py-2.5 text-center">
-            <div className={`text-[22px] font-bold leading-none ${tone}`}>{value}</div>
+            <div className={`text-ui-2xl font-semibold tabular-nums ${tone}`}>{value}</div>
             <div className="mt-1 text-ui-xs text-mid">{label}</div>
           </div>
         ))}
