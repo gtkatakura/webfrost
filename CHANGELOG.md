@@ -5,7 +5,7 @@ follow [SemVer](https://semver.org/), and while WebFrost is `0.x` a minor versio
 the SDK or the on-disk layout (see [Releasing](apps/docs/content/docs/contributing/releasing.mdx)). Each
 package also has its own changelog, generated from the changesets in [`.changeset`](.changeset).
 
-## [Unreleased]: first public release (0.1.0)
+## [0.1.0] - 2026-11-22: first public release
 
 Everything up to the first published version. The details are in the changesets in
 [`.changeset`](.changeset), which become each package's changelog.
@@ -32,6 +32,12 @@ Everything up to the first published version. The details are in the changesets 
   audio through yt-dlp. One extractor failing never fails the snapshot; each one records why it did not run.
 - WARC records keep the body exactly as the server sent it, with digests, a record per redirect, and
   pass `warcio check`. Pages are decoded with their declared charset.
+- Real sites come out complete: the browser waits for single-page apps to finish loading
+  (`WEBFROST_SETTLE_MS`), SingleFile copies keep their stylesheets, CSS images and `<picture>` images,
+  PDFs print backgrounds, and readable text keeps its paragraphs.
+- Pages are archived in a light or dark color scheme: the web UI uses its own theme, the API and SDK take
+  `colorScheme`, everything else `WEBFROST_COLOR_SCHEME`.
+- Videos at up to 1080p in H.264 and AAC, which every browser plays (`WEBFROST_MEDIA_MAX_HEIGHT`).
 - Imports from plain URL lists, Netscape bookmarks, OPML and RSS/Atom feeds.
 - Cron schedules for URLs and feeds (names, ranges with steps, `@daily`-style aliases, correct across
   DST changes), run by the server itself or by `webfrost schedule worker`.
@@ -57,8 +63,9 @@ Everything up to the first published version. The details are in the changesets 
   (`{ items, total, page, limit }`), ISO 8601 timestamps, no storage paths in responses. The unversioned
   `/api` is a deprecated alias that answers with `Deprecation` and `Link` headers.
 - A TypeScript SDK, `@webfrost/sdk`, ready in the repository and published to npm after this release.
-- Web UI in the WebFrost "Ice Blue" look, light and dark: dashboard, a snapshot list with a detail panel
-  (`/#/snapshots/:id`) and sandboxed previews, search with highlights and saved searches, tags,
+- Web UI in the WebFrost "Ice Blue" look, light and dark: dashboard, a snapshot list as cards or rows, a
+  full-window viewer per snapshot (`/#/snapshots/:id`: the sandboxed page, reader, screenshot, video,
+  files and details, with full screen), search with highlights and saved searches, tags,
   schedules, imports, API keys, a command palette and keyboard shortcuts, clear error states,
   accessible dialogs and a phone layout.
 - Agent skills (`npx skills add gtkatakura/webfrost`) for using and self-hosting WebFrost.
