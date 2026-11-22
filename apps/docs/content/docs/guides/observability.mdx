@@ -44,7 +44,7 @@ One trace per piece of work. A snapshot queued by an API request is part of that
 
 | Span | Kind | Attributes |
 |---|---|---|
-| `GET /api/snapshots/:id` (method and route template) | server | `http.request.method`, `http.route`, `http.response.status_code`, `url.scheme`. An incoming W3C `traceparent` header is continued. |
+| `GET /api/v1/snapshots/:id` (method and route template) | server | `http.request.method`, `http.route`, `http.response.status_code`, `url.scheme`. An incoming W3C `traceparent` header is continued. |
 | `job_queue.enqueue` | producer | `webfrost.snapshot.id` |
 | `snapshot.archive`: one pipeline run | internal | `webfrost.snapshot.id`, `server.address` (host of the page), `webfrost.extractors` (the formats run), `webfrost.snapshot.status` (`done` or `failed`), `webfrost.browser.failure`, `error.type` when the run failed (`fetch_network`, `fetch_http_status`, `no_output`...) |
 | `page.fetch`: the one HTTP fetch | client | `http.request.method`, `server.address`, `http.response.status_code`, `http.response.body.size`, `webfrost.fetch.redirects`, `webfrost.fetch.text` |
@@ -85,7 +85,7 @@ With `OTEL_LOGS_EXPORTER=otlp` the log lines (server and CLI) are also sent over
 WebFrost exports to the endpoint you configure and nowhere else. What it records is chosen to be useful without leaking what you archive or who uses it:
 
 - **Recorded:** snapshot IDs, the **host** of archived pages, formats, outcomes, sizes, durations, HTTP methods, route templates and status codes, database operation and table names, short failure categories (`timeout`, `blocked`, `network`...).
-- **Not recorded:** full URLs and paths of archived pages (unless `WEBFROST_OTEL_FULL_URLS=true`), query strings, concrete request paths (`/api/snapshots/42` is recorded as `/api/snapshots/:id`), request and response headers (no `Authorization`, cookies or API keys), request bodies, page content, SQL statements and their parameters, client IP addresses, user agents, error messages (they can quote a URL; only the category is kept).
+- **Not recorded:** full URLs and paths of archived pages (unless `WEBFROST_OTEL_FULL_URLS=true`), query strings, concrete request paths (`/api/v1/snapshots/42` is recorded as `/api/v1/snapshots/:id`), request and response headers (no `Authorization`, cookies or API keys), request bodies, page content, SQL statements and their parameters, client IP addresses, user agents, error messages (they can quote a URL; only the category is kept).
 - **Logs** exported with `OTEL_LOGS_EXPORTER=otlp` are the same lines the server already writes to stdout. They can contain URLs of archived pages: leave log export off if your collector should not see them.
 
 ## Examples
