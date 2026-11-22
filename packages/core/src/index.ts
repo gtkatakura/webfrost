@@ -88,6 +88,27 @@ export {
 } from "./pipeline";
 export type { Logger, PipelineOptions } from "./pipeline";
 export { deleteSnapshot, getSnapshot } from "./snapshot";
+export {
+  BUNDLE_EXTRACTORS,
+  BUNDLE_FORMAT,
+  BUNDLE_VERSION,
+  BundleError,
+  BundleTooLargeError,
+  DEFAULT_BUNDLE_MAX_BYTES,
+  exportSnapshotBundle,
+  importSnapshotBundle,
+  parseManifest,
+  planSnapshotBundle,
+  snapshotBundleStream,
+  spoolToTempFile,
+} from "./bundle";
+export type {
+  BundleLimits,
+  BundleManifest,
+  BundlePlan,
+  BundleResult,
+  ImportedSnapshot,
+} from "./bundle";
 export type { SnapshotDetail } from "./snapshot";
 export {
   addRssFeedSchedule,

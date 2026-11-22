@@ -49,6 +49,9 @@ export interface StorageBackend {
   /** Read file bytes by DB ref. */
   getBytes(ref: string): Promise<Uint8Array>;
 
+  /** Stream file bytes by DB ref, for files too large to read at once (snapshot bundles). */
+  getStream(ref: string): ReadableStream<Uint8Array>;
+
   /** Return true if the DB ref resolves to an existing file. */
   fileExists(ref: string): Promise<boolean>;
 

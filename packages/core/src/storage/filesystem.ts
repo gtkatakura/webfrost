@@ -49,6 +49,10 @@ export class FilesystemBackend implements StorageBackend {
     return Bun.file(ref).bytes();
   }
 
+  getStream(ref: string): ReadableStream<Uint8Array> {
+    return Bun.file(ref).stream();
+  }
+
   async fileExists(ref: string): Promise<boolean> {
     return Bun.file(ref).exists();
   }

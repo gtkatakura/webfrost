@@ -157,6 +157,10 @@ export class S3Backend implements StorageBackend {
     return this.client.file(key).bytes();
   }
 
+  getStream(ref: string): ReadableStream<Uint8Array> {
+    return this.client.file(this.fromRef(ref)).stream();
+  }
+
   async fileExists(ref: string): Promise<boolean> {
     const key = this.fromRef(ref);
     return this.client.exists(key);
