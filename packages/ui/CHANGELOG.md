@@ -1,5 +1,14 @@
 # @webfrost/ui
 
+## 0.3.0
+
+### Patch Changes
+
+- ed767b6: An archived page keeps the theme it was archived in. Its stylesheets hold both themes behind `prefers-color-scheme`, which the browser answers with the viewer's system setting, so a page archived dark showed light on a light system. The SingleFile copy now fixes those conditions to the archived scheme.
+- f30bcd9: Loading placeholders now have the shape of what they stand in for, so nothing jumps when the data arrives: the viewer shows the open view (page, reader column, file list, details) and title lines instead of a few bars of text, search results and the dashboard feed have their real rows, the snapshot list rows keep their columns, and the app's frame shows while the session is checked instead of a blank screen. A view picked in the viewer before the snapshot finished loading is no longer switched back to the default one.
+- Updated dependencies [3fc46a1]
+  - @webfrost/sdk@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes
