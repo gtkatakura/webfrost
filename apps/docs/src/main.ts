@@ -5,8 +5,8 @@ import { redirectFor } from "./redirects";
 
 const root = join(import.meta.dir, "../build/client");
 
-// Sent with every response. The pages carry React Router's inline hydration scripts, so there is no
-// script-src policy yet; framing and content sniffing are shut off.
+// Sent with every response: framing and content sniffing are shut off. Pages also get a
+// Content-Security-Policy (pageHeaders).
 const securityHeaders = {
   "x-content-type-options": "nosniff",
   "x-frame-options": "DENY",
@@ -55,6 +55,26 @@ function securityTxt(): Response {
   });
 }
 
+// Each page's Content-Security-Policy, worked out at build time (scripts/csp.ts).
+const policies: Record<string, string> = await Bun.file(join(root, "../csp.json"))
+  .json()
+  .catch(() => {
+    throw new Error("build/csp.json is missing: run `bun run build`");
+  });
+
+function page(full: string, init: { status?: number; headers: Record<string, string> }): Response {
+  const policy = policies[full.slice(root.length)];
+  if (!policy) throw new Error(`no Content-Security-Policy for ${full}: run \`bun run build\``);
+  return new Response(Bun.file(full), {
+    status: init.status,
+    headers: {
+      ...init.headers,
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": policy,
+    },
+  });
+}
+
 async function file(path: string): Promise<Response | null> {
   // Never outside the build directory, whatever the address says.
   const full = normalize(join(root, path));
@@ -66,6 +86,7 @@ async function file(path: string): Promise<Response | null> {
     "cache-control": cacheControl(path),
   };
   if (installScripts.has(path)) headers["content-type"] = "text/plain; charset=utf-8";
+  if (full.endsWith(".html")) return page(full, { headers });
   return new Response(f, { headers });
 }
 
@@ -90,10 +111,7 @@ const server = Bun.serve({
     return (
       (await file(path)) ??
       (await file(`${clean}/index.html`)) ??
-      new Response(Bun.file(join(root, "__spa-fallback.html")), {
-        status: 404,
-        headers: { ...securityHeaders, "content-type": "text/html; charset=utf-8" },
-      })
+      page(join(root, "__spa-fallback.html"), { status: 404, headers: { ...securityHeaders } })
     );
   },
 });
