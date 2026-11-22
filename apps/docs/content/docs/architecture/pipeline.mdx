@@ -78,7 +78,7 @@ Fetching with `safeFetch` protects only the first request. Without more, a page 
 
 1. **Request routing.** Every request (navigation, subresources, iframes, `fetch`, XHR, WebSockets) is checked and aborted if its host is not public. Service workers are blocked.
 2. **Redirect detection.** Playwright cannot intercept redirect hops, so they are checked from the request events. A blocked hop cannot be stopped mid-flight, but it is reported, and the pipeline then refuses to capture the page: the four browser extractors are recorded as failed. The request itself may still have been sent (blind SSRF, an accepted risk).
-3. **Seal.** After the page has loaded and its network has gone quiet (up to `WEBFROST_SETTLE_MS`, so single-page apps can finish loading), every further request is refused before anything is captured. Requests made while waiting still go through the guard. A script cannot wait out the check and then pull an internal URL into a frame.
+3. **Seal.** After the page has loaded and its network has gone quiet (up to `WEBFROST_SETTLE_MS`, so single-page apps can finish loading), every further request is refused before anything is captured. Requests made while waiting still go through the guard. A script cannot wait out the check and then pull an internal URL into a frame. Then the browser scrolls through the page once (one screen at a time, up to 20000 px, a few seconds at most) and back to the top, and the network settles again: sections that sites reveal as they scroll into view, and images loaded only near the viewport, are archived visible.
 
 `WEBFROST_ALLOW_PRIVATE_URLS=true` turns the address check off everywhere. See [Security](/docs/architecture/security#ssrf-protection).
 

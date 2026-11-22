@@ -49,6 +49,19 @@ beforeAll(async () => {
           { headers: { "content-type": "text/html" } },
         );
       }
+      if (pathname === "/reveal") {
+        // Like a landing page: sections far below the first screen stay invisible until they scroll
+        // into view, and an image there only gets its src then.
+        return new Response(
+          `<!doctype html><html><head><title>Reveal</title><style>.r{opacity:0}.r.in{opacity:1}</style></head>
+<body><div style="height:3000px">top</div><section class="r" id="s">Six tools, one binary</section>
+<img id="lazy" data-src="/late.json" alt="">
+<script>new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) {
+  e.target.classList.add("in"); const i = document.getElementById("lazy"); i.src = i.dataset.src; } }))
+  .observe(document.getElementById("s"));</script></body></html>`,
+          { headers: { "content-type": "text/html" } },
+        );
+      }
       if (pathname === "/late.json") {
         return Response.json({ text: "arrived after load" });
       }
@@ -174,6 +187,18 @@ describe("runPipeline", () => {
     } finally {
       Reflect.deleteProperty(process.env, "WEBFROST_COLOR_SCHEME");
     }
+  }, 60_000);
+
+  test("scrolls through the page first, so sections revealed on scroll are archived visible", async () => {
+    const url = `${baseUrl}/reveal`;
+    const id = await createSnapshot(db, url);
+    await runPipeline(db, id, url, testDir);
+
+    const dom = (await results(id)).find((r) => r.extractor === "dom-snapshot");
+    if (dom?.error) return; // No Chromium on this machine: covered where there is one (CI).
+    const html = readFileSync(dom?.content ?? "", "utf8");
+    expect(html).toContain('class="r in"');
+    expect(html).toContain('src="/late.json"');
   }, 60_000);
 
   test("marks the snapshot failed when the page cannot be fetched", async () => {

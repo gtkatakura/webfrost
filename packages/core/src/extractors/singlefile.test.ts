@@ -353,6 +353,19 @@ describe("inlineAssets — real-world markup", () => {
     server.stop(true);
   });
 
+  test("inlines url() images in the page's own <style> blocks and style attributes", async () => {
+    const html =
+      "<style>.hero{background:url(img/a.png)}</style>" +
+      '<span class="logo-mask" style="--logo:url(/logos/x.png?w=1&amp;h=2);width:10px"></span>';
+    const out = await inlineAssets(html, `${base}/page/`);
+    expect(seen).toContain("/page/img/a.png");
+    expect(seen).toContain("/logos/x.png?w=1&h=2");
+    expect(out).toBe(
+      "<style>.hero{background:url(data:image/png;base64,iVBORw==)}</style>" +
+        '<span class="logo-mask" style="--logo:url(data:image/png;base64,iVBORw==);width:10px"></span>',
+    );
+  });
+
   test("decodes &amp; in a stylesheet href before fetching it", async () => {
     const html = `<link rel="stylesheet" href="/load.php?lang=en&amp;modules=skin&amp;only=styles">`;
     const out = await inlineAssets(html, `${base}/wiki/Page`);

@@ -152,9 +152,45 @@ export async function inlineAssets(
     signal,
   };
   // Inline external stylesheets: <link rel="stylesheet" href="...">
-  const afterCss = await inlineCssLinks(html, baseUrl, ctx);
+  // The page's own CSS first (<style> blocks, style="" attributes): its url() images are inlined too.
+  const afterInline = await inlineInlineCss(html, baseUrl, ctx);
+  const afterCss = await inlineCssLinks(afterInline, baseUrl, ctx);
   // Inline images: <img src="...">
   return inlineImages(afterCss, baseUrl, ctx);
+}
+
+/**
+ * url() references in the page's own CSS: <style> blocks and style="" attributes (sites put logos and
+ * backgrounds there, e.g. style="--logo:url(/logos/x.svg)" for a CSS mask). They resolve against the page.
+ */
+async function inlineInlineCss(
+  input: string,
+  baseUrl: string,
+  ctx: InlineContext,
+): Promise<string> {
+  const blocks = await Promise.all(
+    [...input.matchAll(/(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi)].map(
+      async (m): Promise<Edit | null> => {
+        const css = m[2] ?? "";
+        if (!/url\(/i.test(css)) return null;
+        const rebased = await rebaseCssUrls(css, baseUrl, ctx);
+        return { start: m.index, end: m.index + m[0].length, text: `${m[1]}${rebased}${m[3]}` };
+      },
+    ),
+  );
+  const afterBlocks = spliceAll(input, blocks);
+  const attrs = await Promise.all(
+    [...afterBlocks.matchAll(/\sstyle=(["'])([^"']*url\([^"']*)\1/gi)].map(
+      async (m): Promise<Edit | null> => {
+        // Attribute values are HTML: decode, rebase as CSS, then escape again for the attribute.
+        const css = decodeAttr(m[2] ?? "");
+        const rebased = await rebaseCssUrls(css, baseUrl, ctx);
+        const value = rebased.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+        return { start: m.index, end: m.index + m[0].length, text: ` style="${value}"` };
+      },
+    ),
+  );
+  return spliceAll(afterBlocks, attrs);
 }
 
 async function inlineCssLinks(input: string, baseUrl: string, ctx: InlineContext): Promise<string> {

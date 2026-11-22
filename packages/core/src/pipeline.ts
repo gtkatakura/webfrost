@@ -92,6 +92,35 @@ export function chromiumLaunchOptions(): { executablePath?: string } {
   return path ? { executablePath: path } : {};
 }
 
+/** How far down the page the scroll pass goes; past that, a page is endless (a feed) or huge. */
+const SCROLL_MAX_PX = 20_000;
+
+/**
+ * Scroll from top to bottom one screen at a time, so scroll-triggered reveals and lazy images happen,
+ * then back to the top for the captures. Bounded by SCROLL_MAX_PX and a few seconds; a page that fits in
+ * one screen is left alone. Resolves true when it scrolled.
+ */
+export async function scrollThrough(page: import("playwright").Page): Promise<boolean> {
+  return page
+    .evaluate(async (maxPx) => {
+      const step = Math.max(200, Math.floor(window.innerHeight * 0.8));
+      const bottom = () => Math.min(document.documentElement.scrollHeight, maxPx);
+      if (bottom() <= window.innerHeight) return false;
+      const started = Date.now();
+      for (let y = step; y < bottom() && Date.now() - started < 8_000; y += step) {
+        window.scrollTo(0, y);
+        await new Promise((r) => setTimeout(r, 120));
+      }
+      window.scrollTo(0, bottom());
+      await new Promise((r) => setTimeout(r, 300));
+      window.scrollTo(0, 0);
+      // Reveal transitions (opacity, transform) take a moment to finish.
+      await new Promise((r) => setTimeout(r, 600));
+      return true;
+    }, SCROLL_MAX_PX)
+    .catch(() => false);
+}
+
 /** Close the browser, giving up (and killing nothing else) if it does not confirm in time. */
 async function closeBrowser(browser: import("playwright").Browser | undefined): Promise<void> {
   if (!browser) return;
@@ -349,6 +378,14 @@ async function archive(
         const settleMs = envInt("WEBFROST_SETTLE_MS", DEFAULT_SETTLE_MS);
         if (settleMs > 0) {
           await page.waitForLoadState("networkidle", { timeout: settleMs }).catch(() => {});
+        }
+        // Sites reveal sections as they scroll into view (opacity 0 until an IntersectionObserver fires)
+        // and load images only near the viewport. Nobody scrolls the archiving browser, so those were
+        // archived invisible or missing. Scroll through the page once, then settle again.
+        if (await scrollThrough(page)) {
+          if (settleMs > 0) {
+            await page.waitForLoadState("networkidle", { timeout: settleMs }).catch(() => {});
+          }
         }
         // The capture is of the page as loaded. Refusing further requests here also means
         // a script cannot wait for the check below and then pull an internal URL into a frame.
