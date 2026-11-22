@@ -14,10 +14,11 @@ import {
 import { type ElementType, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { StatusBadge } from "../components/StatusBadge";
-import { ErrorState, Skeleton } from "../components/ui/StateViews";
+import { ErrorState } from "../components/ui/StateViews";
 import { useClient } from "../context";
 import { useAuth } from "../context/auth";
 import { MetadataSidebar } from "../features/snapshots/detail/MetadataSidebar";
+import { ViewerSkeleton, ViewerTitleSkeleton } from "../features/snapshots/detail/skeletons";
 import {
   HistoryTab,
   MediaTab,
@@ -106,15 +107,24 @@ export function SnapshotViewerPage() {
   const deleteSnapshot = useDeleteSnapshot({ onDeleted: () => navigate(back) });
   const retrySnapshot = useRetrySnapshot();
 
+  // A view the reader picked, for which snapshot. The skeleton has the tabs, so they can be clicked
+  // before the snapshot arrives; the default view must not then take the choice back.
+  const pickedFor = useRef<number | null>(null);
+  function pick(tab: TabId) {
+    pickedFor.current = snapshotId;
+    setActiveTab(tab);
+  }
+
   useEffect(() => {
     if (!detail || defaultedFor.current === detail.id) return;
     defaultedFor.current = detail.id;
+    if (pickedFor.current === detail.id) return;
     const tab = defaultTab(detail);
     if (tab) setActiveTab(tab);
   }, [detail]);
 
   function fullScreen() {
-    setActiveTab("page");
+    pick("page");
     // The frame exists once the Page view rendered; requestFullscreen needs the user's gesture,
     // which this click still is.
     requestAnimationFrame(() => frameRef.current?.requestFullscreen?.());
@@ -127,7 +137,7 @@ export function SnapshotViewerPage() {
       if (document.querySelector("dialog[open]") || document.fullscreenElement) return;
       if (e.key === "Escape") navigate(back);
       else if (e.key === "f" && page) fullScreen();
-      else if (e.key === "i") setActiveTab("details");
+      else if (e.key === "i") pick("details");
       else return;
       e.preventDefault();
     }
@@ -153,7 +163,7 @@ export function SnapshotViewerPage() {
     const target = next === null ? undefined : TABS[next];
     if (!target) return;
     e.preventDefault();
-    setActiveTab(target.id);
+    pick(target.id);
     tabRefs.current[target.id]?.focus();
   }
 
@@ -171,7 +181,10 @@ export function SnapshotViewerPage() {
         </button>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <h1 className="m-0 flex min-w-0 items-center gap-2 text-ui-sm font-semibold leading-tight">
+          {loading && <ViewerTitleSkeleton />}
+          <h1
+            className={`m-0 flex min-w-0 items-center gap-2 text-ui-sm font-semibold leading-tight ${loading ? "sr-only" : ""}`}
+          >
             <span className="truncate">
               {detail?.title ?? detail?.url ?? (loading ? "Loading…" : "Snapshot")}
             </span>
@@ -211,7 +224,7 @@ export function SnapshotViewerPage() {
                 aria-selected={active}
                 aria-controls="viewer-panel"
                 tabIndex={active ? 0 : -1}
-                onClick={() => setActiveTab(id)}
+                onClick={() => pick(id)}
                 className={`flex items-center gap-1.5 whitespace-nowrap rounded-md border-0 px-2.5 py-1.5 text-ui-xs transition-colors ${
                   active
                     ? "bg-surface font-medium text-high shadow-sm"
@@ -259,18 +272,7 @@ export function SnapshotViewerPage() {
           aria-labelledby={`tab-${activeTab}`}
           className="flex min-w-0 flex-1 flex-col overflow-hidden"
         >
-          {loading && (
-            <div className="flex flex-col gap-3 p-5" role="status" aria-label="Loading snapshot">
-              {[80, 60, 100, 40, 70].map((w, i) => (
-                <Skeleton
-                  // biome-ignore lint/suspicious/noArrayIndexKey: placeholders
-                  key={i}
-                  className={i === 0 ? "h-4" : "h-2.5"}
-                  style={{ width: `${w}%` }}
-                />
-              ))}
-            </div>
-          )}
+          {loading && <ViewerSkeleton tab={activeTab} />}
 
           {query.isError && (
             <ErrorState

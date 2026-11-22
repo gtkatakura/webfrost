@@ -97,11 +97,24 @@ export function Skeleton({ className = "", style }: { className?: string; style?
 
 /** Spinner-free loading placeholder: a few pulsing rows. */
 export function LoadingRows({ rows = 3, rowClass = "h-14" }: { rows?: number; rowClass?: string }) {
+  // The lists and tables it stands in for are one bordered panel with a line between rows, so the
+  // placeholder is too: rows of text-sized bars, not blocks that turn into something else.
+  const widths = [38, 52, 30, 46, 34];
   return (
-    <div className="flex flex-col gap-2" role="status" aria-label="Loading">
+    <div
+      className="overflow-hidden rounded-xl border border-border bg-surface"
+      role="status"
+      aria-label="Loading"
+    >
       {Array.from({ length: rows }, (_, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: static placeholders
-        <Skeleton key={i} className={`${rowClass} w-full rounded-lg`} />
+        <div
+          // biome-ignore lint/suspicious/noArrayIndexKey: static placeholders
+          key={i}
+          className={`${rowClass} flex items-center justify-between gap-4 border-b border-border px-4 last:border-b-0`}
+        >
+          <Skeleton className="h-3" style={{ width: `${widths[i % widths.length]}%` }} />
+          <Skeleton className="h-3 w-16 shrink-0" />
+        </div>
       ))}
     </div>
   );
