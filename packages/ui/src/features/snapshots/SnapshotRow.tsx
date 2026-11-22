@@ -132,6 +132,54 @@ export function SnapshotRow({
   );
 }
 
+/**
+ * A row while the list loads, column for column with SnapshotRow (checkbox, thumbnail, text, extractor
+ * chips, status, date), so nothing moves when the data arrives. Skeleton rows are <li> without a
+ * link, so they are never mistaken for data rows.
+ */
+export function SnapshotRowSkeleton({
+  density,
+  selectable,
+  index,
+}: {
+  density: "comfortable" | "compact" | "grid";
+  selectable: boolean;
+  index: number;
+}) {
+  const comfortable = density === "comfortable";
+  const width = [62, 48, 70, 55, 40][index % 5];
+  return (
+    <li
+      className={`flex list-none items-center border-b border-border ${comfortable ? "min-h-14 py-1.5" : "min-h-9 py-1"}`}
+    >
+      {selectable ? (
+        <span className="flex w-10 shrink-0 items-center justify-center">
+          <Skeleton className="size-3" />
+        </span>
+      ) : (
+        <div className="w-5 shrink-0" />
+      )}
+      {comfortable && <Skeleton className="mr-3 hidden h-10 w-14 shrink-0 sm:block" />}
+      <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5 pr-3">
+        <Skeleton className="h-3" style={{ width: `${width}%` }} />
+        {comfortable && <Skeleton className="h-2.5" style={{ width: `${(width ?? 50) * 0.7}%` }} />}
+      </div>
+      <div className="mr-3 hidden w-60 shrink-0 items-center gap-1 md:flex">
+        {LIST_EXTRACTORS.map((ext) => (
+          <Skeleton key={ext} className="h-[18px] w-9" />
+        ))}
+      </div>
+      <div className="mr-3 flex w-20 shrink-0 flex-col items-end gap-1 md:w-[4.5rem] md:items-start">
+        <Skeleton className="h-[18px] w-11 rounded-full" />
+        <Skeleton className="h-2.5 w-10 md:hidden" />
+      </div>
+      <div className="mr-3 hidden w-28 shrink-0 justify-end md:flex">
+        <Skeleton className="h-2.5 w-24" />
+      </div>
+    </li>
+  );
+}
+
 /** One snapshot as a card: a large screenshot first, for browsing an archive by sight. */
 export function SnapshotCard({
   snapshot,

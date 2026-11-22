@@ -198,9 +198,9 @@ export function DashboardPage() {
         />
       ) : (
         <>
-          {(pending.length > 0 || (snapshotsLoading && !isEmpty)) && (
-            <PipelineSection loading={snapshotsLoading} pending={pending} />
-          )}
+          {/* Most of the time nothing is in flight: a pipeline placeholder would only push the feed down
+              and then vanish. The section appears when there is work to show. */}
+          {!snapshotsLoading && pending.length > 0 && <PipelineSection pending={pending} />}
 
           {isEmpty ? (
             <EmptyState mascot title="No snapshots yet">

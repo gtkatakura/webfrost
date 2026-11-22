@@ -96,75 +96,52 @@ export function StatCard({
 const panel = "overflow-hidden rounded-xl border border-border bg-surface";
 const sectionHeading = "label-caps m-0";
 
-export function PipelineSection({
-  loading,
-  pending,
-}: {
-  loading: boolean;
-  pending: Snapshot[];
-}) {
+export function PipelineSection({ pending }: { pending: Snapshot[] }) {
   return (
     <section className="mb-8" aria-labelledby="pipeline-heading">
       <div className="mb-2.5 flex items-center gap-2">
         <h2 id="pipeline-heading" className={sectionHeading}>
           Pipeline
         </h2>
-        {!loading && (
-          <span className="rounded-full bg-warning/10 px-2 py-px text-ui-xs font-semibold tabular-nums text-warning">
-            {pending.length}
-          </span>
-        )}
+        <span className="rounded-full bg-warning/10 px-2 py-px text-ui-xs font-semibold tabular-nums text-warning">
+          {pending.length}
+        </span>
       </div>
       <div className={panel}>
-        {loading ? (
-          <div className="flex flex-col gap-4 p-4">
-            {[1, 2].map((i) => (
-              <div key={i} className="flex flex-col gap-2">
-                <Skeleton className="h-4 w-2/3" />
-                <Skeleton className="h-5 w-40" />
-              </div>
-            ))}
-          </div>
-        ) : (
-          pending.map((s) => (
-            <div key={s.id} className="border-b border-border px-4 py-3 last:border-0">
-              <div className="mb-2 flex items-center gap-2">
-                <Clock
-                  size={14}
-                  className="shrink-0 animate-pulse text-warning"
-                  aria-hidden="true"
-                />
-                <Link
-                  to={`/snapshots/${s.id}`}
-                  className="min-w-0 truncate text-ui-base font-medium text-high"
-                  title={s.url}
-                >
-                  {s.url}
-                </Link>
-              </div>
-              <div className="flex flex-wrap gap-1 pl-[22px]">
-                {s.extractors.length > 0 ? (
-                  <>
-                    {s.extractors.map((ext) => (
-                      <span
-                        key={ext}
-                        className="inline-flex items-center gap-1 rounded bg-success/10 px-1.5 py-0.5 font-mono text-ui-xs text-success"
-                      >
-                        <Check size={11} aria-hidden="true" />
-                        {ext}
-                      </span>
-                    ))}
-                    <span className="rounded bg-overlay px-1.5 py-0.5 text-ui-xs text-mid">
-                      processing…
-                    </span>
-                  </>
-                ) : (
-                  <span className="text-ui-sm text-mid">Extractors starting…</span>
-                )}
-              </div>
+        {pending.map((s) => (
+          <div key={s.id} className="border-b border-border px-4 py-3 last:border-0">
+            <div className="mb-2 flex items-center gap-2">
+              <Clock size={14} className="shrink-0 animate-pulse text-warning" aria-hidden="true" />
+              <Link
+                to={`/snapshots/${s.id}`}
+                className="min-w-0 truncate text-ui-base font-medium text-high"
+                title={s.url}
+              >
+                {s.url}
+              </Link>
             </div>
-          ))
-        )}
+            <div className="flex flex-wrap gap-1 pl-[22px]">
+              {s.extractors.length > 0 ? (
+                <>
+                  {s.extractors.map((ext) => (
+                    <span
+                      key={ext}
+                      className="inline-flex items-center gap-1 rounded bg-success/10 px-1.5 py-0.5 font-mono text-ui-xs text-success"
+                    >
+                      <Check size={11} aria-hidden="true" />
+                      {ext}
+                    </span>
+                  ))}
+                  <span className="rounded bg-overlay px-1.5 py-0.5 text-ui-xs text-mid">
+                    processing…
+                  </span>
+                </>
+              ) : (
+                <span className="text-ui-sm text-mid">Extractors starting…</span>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -221,14 +198,7 @@ export function ActivityFeed({
       </div>
 
       {loading ? (
-        <div className={`${panel} flex flex-col gap-4 p-4`}>
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="flex flex-col gap-2">
-              <Skeleton className="h-4 w-3/4" />
-              <Skeleton className="h-3 w-1/3" />
-            </div>
-          ))}
-        </div>
+        <ActivityFeedSkeleton />
       ) : groups.length === 0 ? (
         <div className={`${panel} p-8 text-center text-ui-base text-mid`}>
           No completed snapshots yet
@@ -250,5 +220,34 @@ export function ActivityFeed({
         </div>
       )}
     </section>
+  );
+}
+
+/** The feed while it loads: one day header and rows of the same height and columns as ActivityRow. */
+function ActivityFeedSkeleton() {
+  return (
+    <div className={panel} role="status" aria-label="Loading recent activity">
+      <div className="border-b border-border bg-overlay px-4 py-1.5">
+        <Skeleton className="my-[3px] h-2.5 w-12 bg-subtle" />
+      </div>
+      <ul className="m-0 list-none p-0">
+        {[72, 48, 64, 56, 40, 60].map((w) => (
+          <li
+            key={w}
+            className="flex items-center gap-3 border-b border-border px-4 py-2.5 last:border-0"
+          >
+            <span className="flex min-w-0 flex-1 flex-col gap-1.5 py-0.5">
+              <Skeleton className="h-3.5" style={{ width: `${w}%` }} />
+              <Skeleton className="h-2.5" style={{ width: `${w * 0.55}%` }} />
+            </span>
+            <Skeleton className="hidden h-2.5 w-16 sm:block" />
+            <span className="flex w-[4.75rem] shrink-0 flex-col items-end gap-1.5">
+              <Skeleton className="h-[18px] w-11 rounded-full" />
+              <Skeleton className="h-2.5 w-12" />
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

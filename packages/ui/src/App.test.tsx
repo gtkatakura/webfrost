@@ -356,6 +356,37 @@ describe("DetailPage — renders results", () => {
     await screen.findByRole("heading", { name: "Snapshots" });
   });
 
+  test("a view picked while the snapshot loads is kept when it arrives", async () => {
+    // media would make Media the default view; the reader asked for Details first.
+    const detail = makeDetail({
+      id: 15,
+      archiveResults: [
+        {
+          id: 50,
+          extractor: "media",
+          content: null,
+          downloadUrl: "/api/v1/snapshots/15/archives/media/download",
+          previewUrl: null,
+          createdAt: "2024-01-15T10:02:00Z",
+        },
+      ],
+    });
+    let arrive: (d: typeof detail) => void = () => {};
+    const client = mockClient({
+      getSnapshot: () =>
+        new Promise((resolve) => {
+          arrive = resolve;
+        }),
+    });
+    renderApp(client, "/snapshots/15");
+
+    fireEvent.click(await screen.findByRole("tab", { name: /Details/ }));
+    expect(screen.getByRole("status", { name: "Loading snapshot" })).toBeTruthy();
+    arrive(detail);
+    await screen.findByText("Extractors");
+    expect(screen.getByRole("tab", { name: /Details/ }).getAttribute("aria-selected")).toBe("true");
+  });
+
   test("the old ?detail= address opens the viewer", async () => {
     const detail = makeDetail({ id: 14, url: "https://legacy.example" });
     const client = mockClient({ getSnapshot: () => Promise.resolve(detail) });

@@ -132,10 +132,16 @@ export function SettingsPage() {
 
         <SettingCard title="Server Info" description="Information about this WebFrost instance.">
           {infoLoading ? (
-            <div className="flex flex-col gap-3" role="status" aria-label="Loading server info">
-              <Skeleton className="h-4 w-40" />
-              <Skeleton className="h-4 w-72 max-w-full" />
-              <Skeleton className="h-4 w-24" />
+            <div className="flex flex-col gap-2.5" role="status" aria-label="Loading server info">
+              {["w-16", "w-72", "w-10"].map((w) => (
+                <div
+                  key={w}
+                  className="flex flex-col gap-1.5 py-0.5 sm:flex-row sm:items-center sm:gap-4"
+                >
+                  <Skeleton className="h-3 w-20 shrink-0 sm:w-24" />
+                  <Skeleton className={`h-3 max-w-full ${w}`} />
+                </div>
+              ))}
             </div>
           ) : serverInfo ? (
             <dl className="m-0 flex flex-col gap-2.5">

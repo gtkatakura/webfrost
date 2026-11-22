@@ -64,6 +64,36 @@ function ResultCard({ result }: { result: SearchResult }) {
   );
 }
 
+/** Results while the search runs: the count line, then cards with ResultCard's lines and badge. */
+function ResultsSkeleton() {
+  return (
+    <div role="status" aria-label="Searching">
+      <Skeleton className="mb-3.5 h-3 w-20" />
+      <div className="flex flex-col gap-2">
+        {[58, 72, 46, 64].map((w) => (
+          <div
+            key={w}
+            className="flex flex-col gap-1.5 rounded-lg border border-border bg-surface px-4 py-3"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5 py-0.5">
+                <Skeleton className="h-3.5" style={{ width: `${w}%` }} />
+                <Skeleton className="h-2.5" style={{ width: `${w * 0.6}%` }} />
+              </div>
+              <Skeleton className="h-[18px] w-11 shrink-0 rounded-full" />
+            </div>
+            <div className="flex max-w-[75ch] flex-col gap-2 py-1">
+              <Skeleton className="h-2.5 w-full" />
+              <Skeleton className="h-2.5 w-11/12" />
+              <Skeleton className="h-2.5 w-2/3" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function SearchPage() {
   const client = useClient();
   const [params, setParams] = useSearchParams();
@@ -238,11 +268,7 @@ export function SearchPage() {
             <ErrorState title="Search failed" error={searchError} onRetry={() => refetch()} />
           ) : ftsQuery ? (
             loading ? (
-              <div className="flex flex-col gap-2" role="status" aria-label="Searching">
-                {[1, 2, 3].map((i) => (
-                  <Skeleton key={i} className="h-[4.5rem] rounded-lg" />
-                ))}
-              </div>
+              <ResultsSkeleton />
             ) : results.length === 0 ? (
               <div>
                 <EmptyState icon={<Search size={26} />} title={`No results for "${ftsQuery}"`}>

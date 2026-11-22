@@ -11,6 +11,7 @@ import {
   SnapshotCard,
   SnapshotCardSkeleton,
   SnapshotRow,
+  SnapshotRowSkeleton,
 } from "../features/snapshots/SnapshotRow";
 import { useBulkSnapshots } from "../hooks/useBulkSnapshots";
 import { useCreateSnapshot, useSnapshots } from "../hooks/useSnapshots";
@@ -236,20 +237,8 @@ export function SnapshotListPage() {
           // Skeleton rows are <li> without a link, so they are never mistaken for data rows.
           <ul className="m-0 list-none p-0" role="status" aria-label="Loading snapshots">
             {Array.from({ length: 10 }, (_, i) => (
-              <li
-                // biome-ignore lint/suspicious/noArrayIndexKey: placeholders
-                key={i}
-                className={`flex items-center gap-3 border-b border-border px-5 ${
-                  density === "comfortable" ? "h-14" : "h-9"
-                }`}
-              >
-                <Skeleton className="size-3" />
-                {density === "comfortable" && <Skeleton className="hidden h-10 w-14 sm:block" />}
-                <div className="flex flex-1 flex-col gap-1.5">
-                  <Skeleton className="h-2.5 w-3/5" />
-                  {density === "comfortable" && <Skeleton className="h-2 w-2/5" />}
-                </div>
-              </li>
+              // biome-ignore lint/suspicious/noArrayIndexKey: placeholders
+              <SnapshotRowSkeleton key={i} density={density} selectable={canWrite} index={i} />
             ))}
           </ul>
         ) : isError ? (

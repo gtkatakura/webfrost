@@ -14,6 +14,7 @@ import { ClientContext, defaultClient } from "./context";
 import { AuthProvider, useAuth } from "./context/auth";
 import { ThemeProvider } from "./context/theme";
 import { Layout } from "./layouts/Layout";
+import { ShellSkeleton } from "./layouts/ShellSkeleton";
 import { isStatus, shouldRetry } from "./lib/errors";
 import { returnToPath } from "./lib/returnTo";
 import { ApiKeysPage } from "./pages/ApiKeysPage";
@@ -53,12 +54,17 @@ function LoginRoute() {
 
 function AppRoutes() {
   const { ready, needsSetup, isAuthenticated, publicRead, bootError, retryBootstrap } = useAuth();
+  const location = useLocation();
 
   // The server could not be asked at all: a login form would be a lie.
   if (bootError) return <ServerUnreachable error={bootError} onRetry={retryBootstrap} />;
 
-  // Wait for session check before rendering routes to avoid flash
-  if (!ready) return null;
+  // Wait for the session check before rendering routes (no flash of the login page). Meanwhile show
+  // the app's frame, except on the pages that have none: login, setup, and the full-screen viewer.
+  if (!ready) {
+    const frameless = /^\/(login|setup)\b|^\/snapshots\/[^/]+/.test(location.pathname);
+    return frameless ? null : <ShellSkeleton />;
+  }
 
   if (needsSetup) {
     return (
