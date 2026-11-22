@@ -67,7 +67,7 @@ Every error response, from every route and including the `/api` alias, has the b
 | Code | Status | Meaning |
 |---|---|---|
 | `BAD_REQUEST` | 400 | Malformed request not covered by a more specific code: an unknown extractor on download, an extractor with no preview, an invalid cookie |
-| `VALIDATION` | 400 | The body or query failed validation: a bad URL (`invalid url`), a bad cron expression, a missing `url` or `content` on import, a password that is too short, `expiresAt` not ISO 8601 or in the past, any other schema failure (`invalid request`) |
+| `VALIDATION` | 400 | The body or query failed validation: a bad URL (`invalid url`), a snapshot bundle that breaks a rule (`invalid manifest: ...`, `invalid bundle: ...`), a bad cron expression, a missing `url` or `content` on import, a password that is too short, `expiresAt` not ISO 8601 or in the past, any other schema failure (`invalid request`) |
 | `INVALID_JSON` | 400 | The body is not valid JSON |
 | `FETCH_FAILED` | 400 | An import could not fetch the feed or file at the given `url` |
 | `UNAUTHORIZED` | 401 | No credentials, or an invalid session or API key |
@@ -77,12 +77,12 @@ Every error response, from every route and including the `/api` alias, has the b
 | `SETUP_TOKEN_INVALID` | 403 | `POST /setup` without the right `WEBFROST_SETUP_TOKEN` |
 | `NOT_FOUND` | 404 | No such resource or route |
 | `CONFLICT` | 409 | The tag already exists, or setup is already complete |
-| `PAYLOAD_TOO_LARGE` | 413 | An import over `WEBFROST_IMPORT_MAX_BYTES` or `WEBFROST_IMPORT_MAX_URLS` |
-| `UNSUPPORTED_MEDIA_TYPE` | 415 | The body is not `application/json` (or not `multipart/form-data` for `/import/file`) |
+| `PAYLOAD_TOO_LARGE` | 413 | An import over `WEBFROST_IMPORT_MAX_BYTES` or `WEBFROST_IMPORT_MAX_URLS`, a snapshot bundle over `WEBFROST_IMPORT_BUNDLE_MAX_BYTES`, or any other body over the request limit |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 | The body is not `application/json` (or not `multipart/form-data` for `/import/file`, or not `application/zip` for `/snapshots/import`) |
 | `RATE_LIMITED` | 429 | Too many requests; see `Retry-After` and [Rate limits](#rate-limits) |
 | `INTERNAL` | 500 | Unexpected server error |
 
-A request body above the server's absolute maximum size is refused by the HTTP runtime itself with `413` before it reaches the API, so that one response may not carry the JSON body.
+A request body above the server's absolute maximum size is refused by the HTTP runtime itself with `413` before it reaches the API, so that one response may not carry the JSON body. Outside `POST /snapshots/import`, a body sent with `Transfer-Encoding: chunked` and no `Content-Length` is refused with `411` (code `BAD_REQUEST`): only the bundle import streams a body of unknown length.
 
 ## Pagination
 
@@ -112,7 +112,7 @@ Limits are per client IP over a sliding one-minute window, held in memory, and s
 | Scope | Limit |
 |---|---|
 | `GET` and `HEAD` on `/api/v1/*` | 300 per minute |
-| `POST /snapshots`, `POST /snapshots/:id/retry`, `POST /import`, `POST /import/file` | 60 per minute |
+| `POST /snapshots`, `POST /snapshots/:id/retry`, `POST /snapshots/import`, `POST /import`, `POST /import/file` | 60 per minute |
 | `POST /auth/login`, `POST /auth/change-password`, `POST /setup` | 10 per minute |
 
 A limited request gets `429` with a `Retry-After` header (seconds). The client IP is the TCP peer address. `X-Forwarded-For` is used only when `WEBFROST_TRUST_PROXY=true`, which you should set only behind a reverse proxy. Proxies append the address they saw to the header, so the server takes the entry `WEBFROST_TRUSTED_PROXY_HOPS` (default `1`) places from the right, never the client-chosen left-most one. IPv6 clients share one limit per `/64`.
@@ -157,6 +157,7 @@ curl -X POST $API/setup -H "Content-Type: application/json" \
 | `GET` | `/snapshots` | List snapshots, or search with `?q=`. |
 | `GET` | `/snapshots/:id` | One snapshot with archive results and per-extractor metadata. |
 | `POST` | `/snapshots/:id/retry` | Archive a snapshot again, in place. `202`, `404`, or `409` while it is being archived. |
+| `POST` | `/snapshots/import` | Store a snapshot archived elsewhere, from a snapshot bundle (`application/zip`). `201`. |
 | `DELETE` | `/snapshots/:id` | Delete a snapshot and its files. `204`, or `404`. |
 
 ### Create
@@ -218,6 +219,61 @@ Browser extractors that could not run (Chromium missing, navigation failed, SSRF
 ### Retry
 
 `POST /snapshots/:id/retry` archives a snapshot again under the same id: same URL and color scheme, every result replaced by the new run. It answers `202` with `{ "id": 7, "status": "pending" }` and the snapshot is `pending` until the run ends (poll `GET /snapshots/:id`). An unknown or non-numeric id answers `404`; a snapshot that is still `pending` answers `409` with code `CONFLICT`. Use it for a page that changed or a video a site refused the first time. It needs credentials, also when public read is on.
+
+### Import a snapshot bundle
+
+`POST /snapshots/import` stores a snapshot that another WebFrost archived, usually [`webfrost push`](/docs/reference/cli#push) from your own machine (see [Archive on your machine, keep it on the server](/docs/guides/push)). The body is the bundle itself, a ZIP file made by `webfrost export` or `webfrost push`, sent as `Content-Type: application/zip` (not multipart). It may be chunked; the server streams it to a private file under `WEBFROST_DIR/tmp` and counts the bytes on the way.
+
+```bash
+webfrost export 12 -o snapshot-12.zip
+curl -X POST $API/snapshots/import -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/zip" --data-binary @snapshot-12.zip
+# 201 { "id": 57, "url": "https://www.youtube.com/watch?v=...", "status": "done" }
+```
+
+The import always creates a **new** snapshot with a new id. Its status (`done` or `failed`), creation time, color scheme, results (inline content, errors, durations) and files come from the bundle; tags are matched by name and created when missing; a `done` snapshot is added to the search index. Nothing is fetched and no pipeline runs. Importing the same bundle twice makes two snapshots.
+
+It needs credentials like every write (an API key, or a session with the [CSRF check](/docs/architecture/security#cross-site-requests-csrf)), also when public read is on, and counts against the 60-per-minute [rate limit](#rate-limits) of snapshot creation.
+
+| Status | When |
+|---|---|
+| `201` | Imported: `{ id, url, status }` |
+| `400` `VALIDATION` | The bundle is not a valid ZIP, its manifest breaks the format, or its entries break a rule below. Nothing is stored. |
+| `413` `PAYLOAD_TOO_LARGE` | The upload, or its content once decompressed, is over `WEBFROST_IMPORT_BUNDLE_MAX_BYTES` (default 2 GiB) |
+| `415` `UNSUPPORTED_MEDIA_TYPE` | The body is not `application/zip` |
+
+**Bundle format, version 1.** A ZIP (stored or deflate entries, no ZIP64, so under 4 GiB) holding `manifest.json` and one entry per file-backed result:
+
+```json
+{
+  "format": "webfrost-snapshot",
+  "version": 1,
+  "snapshot": {
+    "url": "https://www.youtube.com/watch?v=...",
+    "status": "done",
+    "createdAt": "2026-11-21T21:42:38Z",
+    "colorScheme": null,
+    "tags": ["talks"]
+  },
+  "results": [
+    { "extractor": "readability", "content": "{\"title\":\"...\"}", "error": null, "durationMs": 120, "sizeBytes": 5120, "createdAt": "2026-11-21T21:42:40Z" },
+    { "extractor": "media", "file": "media.mp4", "error": null, "durationMs": 48000, "sizeBytes": 73400320, "createdAt": "2026-11-21T21:43:28Z" },
+    { "extractor": "pdf", "error": "browser unavailable: ...", "durationMs": 30000, "sizeBytes": null, "createdAt": "2026-11-21T21:42:45Z" }
+  ]
+}
+```
+
+The server treats a bundle as untrusted input:
+
+- The manifest is checked strictly: unknown fields, an unknown `version`, a non-`http(s)` URL, a timestamp that is not ISO 8601 UTC (`YYYY-MM-DDTHH:MM:SSZ`) or an extractor outside the list below are refused.
+- Inline results (`html`, `readability`) carry `content` and no file. `readability` content must be the Readability JSON object.
+- A successful file-backed result names its entry in `file`, and each extractor has fixed names: `screenshot.png`, `thumbnail.webp`, `page.pdf`, `archive.warc`, `dom.html`, `singlefile.html`, `media.mp4` or `media.mp3`, `media-metadata.json`, `poster.jpg`. No other name, and so no path, is accepted. A failed result has no file.
+- Every entry must be referenced by the manifest exactly once. Duplicate names, unreferenced entries, encrypted, ZIP64 or overlapping entries are refused.
+- Sizes are checked from the ZIP directory before anything is written, and again while each entry is decompressed (it may not grow past its declared size; the CRC must match), so a zip bomb stops at the limit.
+- The server picks where each file is stored and serves it with the content type of its extractor, never one from the bundle. Archived HTML is still shown only through the sandboxed [preview](#archive-files).
+- `sizeBytes` is recomputed from what was stored.
+
+If something fails after the checks (a corrupt entry discovered while decompressing, storage unavailable), everything written for the import is removed again. While the files are copied the new snapshot already exists, as `failed` with no results.
 
 #### Archive results
 

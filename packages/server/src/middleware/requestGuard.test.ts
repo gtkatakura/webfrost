@@ -133,3 +133,27 @@ describe("checkApiRequest", () => {
     expect(big?.code).toBe("PAYLOAD_TOO_LARGE");
   });
 });
+
+describe("snapshot bundle import and body limits", () => {
+  const ZIP = { "content-type": "application/zip" };
+
+  test("the bundle import takes application/zip only, chunked or up to the bundle limit", () => {
+    expect(checkApiRequest(post("/api/v1/snapshots/import", ZIP))).toBeNull();
+    expect(
+      checkApiRequest(post("/api/v1/snapshots/import", { ...ZIP, "transfer-encoding": "chunked" })),
+    ).toBeNull();
+    expect(checkApiRequest(post("/api/v1/snapshots/import", JSON_HEADERS))?.status).toBe(415);
+    const huge = { ...ZIP, "content-length": String(5 * 1024 ** 3) };
+    expect(checkApiRequest(post("/api/v1/snapshots/import", huge))?.status).toBe(413);
+    // A 100 MB video bundle is within the default 2 GiB.
+    const video = { ...ZIP, "content-length": String(100 * 1024 ** 2) };
+    expect(checkApiRequest(post("/api/v1/snapshots/import", video))).toBeNull();
+  });
+
+  test("other routes keep the small body limit and must declare their length", () => {
+    const big = { ...JSON_HEADERS, "content-length": String(100 * 1024 ** 2) };
+    expect(checkApiRequest(post("/api/v1/auth/login", big))?.status).toBe(413);
+    const chunked = { ...JSON_HEADERS, "transfer-encoding": "chunked" };
+    expect(checkApiRequest(post("/api/v1/auth/login", chunked))?.status).toBe(411);
+  });
+});

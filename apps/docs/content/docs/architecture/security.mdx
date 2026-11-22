@@ -89,7 +89,7 @@ In-memory, sliding one-minute window, per client IP:
 | Scope | Limit |
 |---|---|
 | `POST /api/v1/auth/login`, `/api/v1/auth/change-password`, `/api/v1/setup` | 10 / min |
-| `POST /api/v1/snapshots`, `/api/v1/import`, `/api/v1/import/file` | 60 / min |
+| `POST /api/v1/snapshots`, `/api/v1/snapshots/:id/retry`, `/api/v1/snapshots/import`, `/api/v1/import`, `/api/v1/import/file` | 60 / min |
 | `GET` / `HEAD` on `/api/v1/*` | 300 / min |
 
 A limited request gets `429` with a `Retry-After` header.
@@ -129,6 +129,11 @@ Only `http:` and `https:` URLs are accepted.
 
 **Opt-out:** `WEBFROST_ALLOW_PRIVATE_URLS=true` disables the address check everywhere, for
 deployments that intentionally archive intranet pages. The `http(s)`-only rule still applies.
+
+**Not an archived URL:** `webfrost push` uploads to the server the user names with `--to`, usually
+their own server on a private address, so it uses a plain `fetch` rather than `safeFetch`. It sends
+the API key only there: redirects are not followed, and the key is read from `WEBFROST_API_KEY`,
+never from the command line. On the receiving side the import fetches nothing.
 
 **Not user-controlled:** the optional [OpenTelemetry export](/docs/guides/observability) sends to
 the `OTEL_EXPORTER_OTLP_*ENDPOINT` the operator set in the environment, usually a collector on a
@@ -219,9 +224,40 @@ inline from a route that carries the app's own policy.
 - `GET /api/v1/snapshots/:id/archives/:extractor/download`: `extractor` is checked against an
   allowlist, and the stored file reference is validated against the storage backend before any
   read (local path must be inside `snapshots/`; S3 keys must be under the configured prefix).
+- Snapshot bundles (`POST /api/v1/snapshots/import`): see [below](#snapshot-bundles).
 - All SQL uses bound parameters. Full-text queries are passed to FTS5 as a bound parameter; a
   syntactically invalid query returns no results.
 
+
+### Snapshot bundles
+
+`POST /api/v1/snapshots/import` takes a ZIP of files and metadata, which is the riskiest input the
+server accepts. Only authenticated admins can send one, and it is still treated as hostile:
+
+- The upload is streamed to a fresh `0700` directory under `WEBFROST_DIR/tmp`, counted, and cut off
+  past `WEBFROST_IMPORT_BUNDLE_MAX_BYTES`; it is removed when the request ends.
+- The ZIP is read from its central directory by a small dedicated reader that refuses encryption,
+  ZIP64, multi-disk archives, methods other than stored/deflate, local headers that disagree with the
+  directory, overlapping entries, duplicate names and more than 64 entries.
+- `manifest.json` is validated strictly (format version, no unknown fields, `http(s)` URL, ISO 8601
+  timestamps, tag names). Extractor names are checked against the known list.
+- File names are not taken from the bundle: each file-backed extractor has fixed entry names
+  (`screenshot.png`, `media.mp4`...), the server maps them to storage names itself, and every entry
+  must be referenced by the manifest. Paths, `..` and unreferenced files are refused.
+- Declared sizes are checked against the limit (per file and in total) before anything is written.
+  While an entry is decompressed its output is counted, so it cannot grow past its declared size,
+  and its CRC-32 is checked. A zip bomb stops at the limit.
+- Content types are derived by the server from the extractor, as for every snapshot. Imported HTML
+  (`dom-snapshot`, `singlefile`) is rendered only by the sandboxed preview, and downloads are
+  attachments.
+- Nothing is fetched during an import and no pipeline runs.
+
+A rejected bundle answers `400` and stores nothing; a failure after the checks removes what was
+written.
+
+The listener's body limit is raised to the bundle limit for this route; every other route is held
+to the usual limit by the request guard before its body is read, and must declare a
+`Content-Length` (a chunked body is refused with `411`).
 
 ## Resource limits
 
@@ -236,6 +272,7 @@ inline from a route that carries the app's own policy.
 | Browser shutdown | 5 s | — |
 | Import size (file, `content` or fetched `url`) | 10 MiB | `WEBFROST_IMPORT_MAX_BYTES` |
 | URLs per import | 10 000 | `WEBFROST_IMPORT_MAX_URLS` |
+| Snapshot bundle (uploaded and decompressed) | 2 GiB | `WEBFROST_IMPORT_BUNDLE_MAX_BYTES` |
 | List page size | 200 | — |
 | Password / username / tag and key name / URL length | 1024 / 128 / 100 / 8192 | — |
 | Graceful shutdown wait for running jobs | 20 s | `WEBFROST_SHUTDOWN_TIMEOUT_MS` |

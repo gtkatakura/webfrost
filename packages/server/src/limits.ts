@@ -32,9 +32,32 @@ export function importMaxUrls(): number {
 }
 
 /**
- * Largest request body the server reads at all. Imports are the only large bodies;
- * the slack covers JSON escaping and multipart framing around the import payload.
+ * Largest body an ordinary API request may have. URL imports are the only large JSON or
+ * multipart bodies; the slack covers JSON escaping and multipart framing around them.
  */
 export function maxRequestBodyBytes(): number {
   return importMaxBytes() * 2 + 1024 * 1024;
+}
+
+const DEFAULT_IMPORT_BUNDLE_MAX_BYTES = 2 * 1024 ** 3;
+/** Plain ZIP (no ZIP64) cannot describe more than 4 GiB. */
+const MAX_IMPORT_BUNDLE_BYTES = 4 * 1024 ** 3 - 1;
+
+/**
+ * WEBFROST_IMPORT_BUNDLE_MAX_BYTES: largest snapshot bundle POST /snapshots/import accepts,
+ * both as uploaded and once decompressed (default 2 GiB, at most 4 GiB - 1).
+ */
+export function importBundleMaxBytes(): number {
+  return Math.min(
+    positiveIntEnv("WEBFROST_IMPORT_BUNDLE_MAX_BYTES", DEFAULT_IMPORT_BUNDLE_MAX_BYTES),
+    MAX_IMPORT_BUNDLE_BYTES,
+  );
+}
+
+/**
+ * The listener's body limit. The bundle import is the one route that takes a larger body
+ * (streamed to disk); the request guard holds every other route to maxRequestBodyBytes().
+ */
+export function listenerMaxBodyBytes(): number {
+  return Math.max(maxRequestBodyBytes(), importBundleMaxBytes());
 }

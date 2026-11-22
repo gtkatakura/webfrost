@@ -10,7 +10,7 @@ import { Elysia } from "elysia";
 import { getDb, getRunner, getWebfrostDir } from "./context";
 import { appContentSecurityPolicy } from "./csp";
 import { apiErrorHandler, withErrorCode } from "./errors";
-import { maxRequestBodyBytes } from "./limits";
+import { listenerMaxBodyBytes } from "./limits";
 import { logger } from "./logger";
 import { rateLimiterPlugin } from "./middleware/rateLimiter";
 import { requestGuardPlugin } from "./middleware/requestGuard";
@@ -19,6 +19,7 @@ import { importRouter, importsRouter } from "./routes/import";
 import { schedulesRouter } from "./routes/schedules";
 import { settingsRouter } from "./routes/settings";
 import { setupRouter, setupToken } from "./routes/setup";
+import { snapshotImportRouter } from "./routes/snapshot-import";
 import { snapshotsRouter } from "./routes/snapshots";
 import { statsRouter } from "./routes/stats";
 import { snapshotTagsRouter, tagsRouter } from "./routes/tags";
@@ -94,6 +95,7 @@ const apiRoutes = () =>
     .use(authPlugin)
     .use(setupRouter)
     .use(authRouter)
+    .use(snapshotImportRouter)
     .use(snapshotsRouter)
     .use(snapshotTagsRouter)
     .use(schedulesRouter)
@@ -154,13 +156,13 @@ export const app = new Elysia()
       path: /^\/api\//,
     }),
   )
-  // 60 req/min for the endpoints that start archive pipelines.
+  // 60 req/min for the endpoints that create snapshots (archive pipelines, bundle imports).
   .use(
     rateLimiterPlugin({
       limit: 60,
       windowMs: 60_000,
       methods: ["POST"],
-      path: /^\/api(?:\/v1)?\/(snapshots(\/\d+\/retry)?|import(\/file)?)\/?$/,
+      path: /^\/api(?:\/v1)?\/(snapshots(\/\d+\/retry|\/import)?|import(\/file)?)\/?$/,
     }),
   )
   // 10 req/min for anything that checks a password — slows down brute force.
@@ -322,7 +324,7 @@ export function startServer(options: StartServerOptions = {}): RunningServer {
   );
   const hostname = listenHostname();
   const port = Number(process.env.PORT ?? "3000");
-  app.listen({ port, hostname, maxRequestBodySize: maxRequestBodyBytes() });
+  app.listen({ port, hostname, maxRequestBodySize: listenerMaxBodyBytes() });
   const boundPort = app.server?.port ?? port;
   logger.info({ hostname, port: boundPort }, "@webfrost/server listening");
   if (process.env.AUTH_DISABLED === "true" && hostname !== "127.0.0.1" && hostname !== "::1") {

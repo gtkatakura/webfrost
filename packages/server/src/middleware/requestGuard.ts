@@ -2,12 +2,15 @@
 // cross-origin (CSRF) protection and the accepted request content types.
 import { Elysia } from "elysia";
 import { type ApiErrorCode, jsonError } from "../errors";
-import { importMaxBytes } from "../limits";
+import { importBundleMaxBytes, importMaxBytes, maxRequestBodyBytes } from "../limits";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /** The one route that takes a multipart upload instead of JSON. */
 const MULTIPART_ROUTE = /^\/api(?:\/v1)?\/import\/file\/?$/;
+
+/** The one route that takes a ZIP body: a snapshot bundle, streamed to disk. */
+const BUNDLE_ROUTE = /^\/api(?:\/v1)?\/snapshots\/import\/?$/;
 
 /** Slack over the import limit for multipart framing and the other form fields. */
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
@@ -67,6 +70,29 @@ export function checkApiRequest(
   }
 
   const type = mediaType(request);
+  const declaredLength = request.headers.get("content-length");
+  if (BUNDLE_ROUTE.test(pathname)) {
+    if (type !== "application/zip") {
+      return {
+        status: 415,
+        code: "UNSUPPORTED_MEDIA_TYPE",
+        error: "content type must be application/zip",
+      };
+    }
+    // Chunked uploads are fine here: the route counts the bytes as it streams them to disk.
+    if (Number(declaredLength ?? "0") > importBundleMaxBytes()) {
+      return { status: 413, code: "PAYLOAD_TOO_LARGE", error: "bundle too large" };
+    }
+    return null;
+  }
+
+  // The listener accepts bodies as large as a bundle; every other route keeps the usual
+  // limit, checked here before anything reads the body. A chunked body has no length to
+  // check up front, so outside the bundle import it must declare one.
+  if (declaredLength === null && request.headers.has("transfer-encoding")) {
+    return { status: 411, code: "BAD_REQUEST", error: "request body needs a Content-Length" };
+  }
+
   if (MULTIPART_ROUTE.test(pathname)) {
     if (type !== "multipart/form-data") {
       return {
@@ -80,6 +106,10 @@ export function checkApiRequest(
       return { status: 413, code: "PAYLOAD_TOO_LARGE", error: "import file too large" };
     }
     return null;
+  }
+
+  if (Number(declaredLength ?? "0") > maxRequestBodyBytes()) {
+    return { status: 413, code: "PAYLOAD_TOO_LARGE", error: "request body too large" };
   }
 
   // Everything else takes JSON (or no body at all, e.g. DELETE and logout).
