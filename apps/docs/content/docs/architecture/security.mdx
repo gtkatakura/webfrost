@@ -127,6 +127,11 @@ Only `http:` and `https:` URLs are accepted.
 **Opt-out:** `WEBFROST_ALLOW_PRIVATE_URLS=true` disables the address check everywhere, for
 deployments that intentionally archive intranet pages. The `http(s)`-only rule still applies.
 
+**Not user-controlled:** the optional [OpenTelemetry export](/docs/guides/observability) sends to
+the `OTEL_EXPORTER_OTLP_*ENDPOINT` the operator set in the environment, usually a collector on a
+private address, so it does not go through the guard. No request, page or user input can change
+where it sends, and WebFrost never adds trace headers to the pages it archives.
+
 ### Residual risks
 
 - **DNS rebinding.** The guard resolves a hostname and the HTTP client then resolves it again. An

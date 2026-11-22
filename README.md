@@ -125,7 +125,8 @@ archive, delete or change settings. See [Public read](https://webfrost.dev/docs/
 
 **Does it phone home?** No. WebFrost collects no telemetry and sends nothing anywhere except the pages
 you ask it to archive. If you run an OpenTelemetry collector, you can point WebFrost at it and get
-traces, metrics and logs in your own tools; it is off unless you configure it.
+traces, metrics and logs in your own tools; it is off unless you configure it. See
+[Observability](https://webfrost.dev/docs/guides/observability).
 
 **How much does it need?** One process, plus a headless Chromium while a page is being archived. A small
 VPS or a home server is enough for personal use; `WEBFROST_CONCURRENCY` limits parallel archives.

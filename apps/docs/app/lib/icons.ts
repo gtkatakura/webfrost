@@ -1,5 +1,6 @@
 import type { LoaderPlugin } from "fumadocs-core/source";
 import {
+  Activity,
   Archive,
   BookBookmark,
   BookOpen,
@@ -39,6 +40,7 @@ import { type ComponentType, createElement } from "react";
  * A name missing here fails the build, so add new icons when a page uses them.
  */
 const icons: Record<string, ComponentType> = {
+  Activity,
   Archive,
   BookBookmark,
   BookOpen,

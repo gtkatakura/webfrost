@@ -18,9 +18,6 @@ Every breaking change is called out in the [changelog](CHANGELOG.md).
   and an optional Compose service for continuous backups with Litestream. PostgreSQL and MySQL are
   supported through `DATABASE_URL`, with full-text search on each, for teams and for running several
   WebFrost servers against one database.
-- **Observability, on your terms.** OpenTelemetry traces (every request, and every archive down to
-  each format), metrics (queue, durations, failures) and trace ids in the logs, exported only when the
-  standard `OTEL_*` variables point at your collector. No telemetry otherwise.
 
 ## Next
 
@@ -50,7 +47,8 @@ lists; cron and feed schedules run by the server; a job queue with crash recover
 filesystem or S3-compatible storage; API keys, revocable sessions and rate limits; read-only public mode;
 an SSRF guard for fetches and the headless browser; CLI, a versioned HTTP API (`/api/v1`, one error format,
 one pagination format) with a TypeScript SDK, and a web UI with the
-WebFrost look in light and dark, clear error states, accessible dialogs and a phone layout.
+WebFrost look in light and dark, clear error states, accessible dialogs and a phone layout; optional
+OpenTelemetry traces, metrics and logs, sent only to a collector you configure.
 
 ## Contributing
 

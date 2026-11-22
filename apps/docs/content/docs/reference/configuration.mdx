@@ -80,6 +80,25 @@ Fixed limits that are not configurable: browser navigation 30 seconds, response 
 
 Setup and provider endpoints: [Storage](/docs/guides/storage).
 
+## OpenTelemetry
+
+Off unless an OTLP endpoint is set; without one the OpenTelemetry SDK is not loaded at all. These are the standard OpenTelemetry variables; what is exported and what is never recorded: [Observability](/docs/guides/observability).
+
+| Variable | Default | Description |
+|---|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | none | OTLP/HTTP receiver, e.g. `http://otel-collector:4318`. Turns export on. |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `..._METRICS_ENDPOINT`, `..._LOGS_ENDPOINT` | none | Full URL for one signal; a signal without an endpoint is not exported. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | none | `key=value,key2=value2` headers for the export requests (collector authentication). |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` | The only protocol supported; `grpc` and `http/json` turn the signal off with a warning. |
+| `OTEL_SERVICE_NAME` | `webfrost` | `service.name` of the exported data |
+| `OTEL_RESOURCE_ATTRIBUTES` | none | Extra resource attributes, `key=value,...` |
+| `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG` | `parentbased_always_on`, `1` | Trace sampling; `parentbased_traceidratio` with `0.1` keeps one trace in ten. |
+| `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER` | `otlp` | `none` stops exporting that signal |
+| `OTEL_LOGS_EXPORTER` | none | `otlp` also exports log lines |
+| `OTEL_METRIC_EXPORT_INTERVAL` | `60000` | Metric export interval in ms |
+| `OTEL_SDK_DISABLED` | `false` | `true` turns export off even with an endpoint set |
+| `WEBFROST_OTEL_FULL_URLS` | `false` | `true` records full URLs of archived pages on spans (default: the host only) |
+
 ## Docker Compose only
 
 | Variable | Default | Description |

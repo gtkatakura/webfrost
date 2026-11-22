@@ -1,0 +1,166 @@
+---
+title: Observability
+description: Send traces, metrics and logs to your own OpenTelemetry collector, Jaeger or Grafana stack. Off by default; nothing leaves the process unless you configure it.
+icon: Activity
+---
+
+WebFrost collects no telemetry. It can, if you ask it to, export **traces, metrics and logs** over OTLP to a collector you run: an [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/), Jaeger, Grafana Tempo/Mimir/Loki, or any OTLP-compatible backend. Export is configured with the standard `OTEL_*` variables and works the same in the Docker image, `bun run start`, `webfrost serve`, the other CLI commands and the standalone binary.
+
+Without an OTLP endpoint in the environment, the OpenTelemetry SDK is not even loaded: no extra memory, no background timers, nothing recorded and nothing sent. The instrumentation points are calls into an empty function.
+
+## Turn it on
+
+Set an OTLP/HTTP endpoint. Everything else is optional.
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+OTEL_SERVICE_NAME=webfrost              # default: webfrost
+```
+
+With the endpoint above, traces go to `/v1/traces` and metrics to `/v1/metrics`. Logs are exported only when you also set `OTEL_LOGS_EXPORTER=otlp`. On shutdown (`SIGTERM`, `Ctrl+C`, the end of a CLI command) whatever is still buffered is sent, for at most 5 seconds.
+
+| Variable | Default | Description |
+|---|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | none | Base URL of an OTLP/HTTP receiver, usually port `4318`. Setting it (or one of the per-signal endpoints) is what turns export on. |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | none | Full URL for one signal (including `/v1/traces` etc.). A signal with no endpoint of its own and no shared endpoint is not exported. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | none | Headers for every export request, `key=value` pairs separated by commas, e.g. `authorization=Bearer%20<token>`. Per-signal `OTEL_EXPORTER_OTLP_TRACES_HEADERS` etc. also work. |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` | Only `http/protobuf` is supported. `grpc` and `http/json` turn the signal off with a warning: point WebFrost at the collector's HTTP port (4318) instead. |
+| `OTEL_EXPORTER_OTLP_TIMEOUT`, `OTEL_EXPORTER_OTLP_COMPRESSION` | `10000`, none | Export timeout in ms; `gzip` to compress. `OTEL_EXPORTER_OTLP_CERTIFICATE` and the client certificate variables work too. |
+| `OTEL_SERVICE_NAME` | `webfrost` | `service.name` of everything WebFrost exports. Run several instances? Give each its own name or a `service.instance.id`. |
+| `OTEL_RESOURCE_ATTRIBUTES` | none | Extra resource attributes, e.g. `deployment.environment.name=home,service.instance.id=nas`. |
+| `OTEL_TRACES_SAMPLER` | `parentbased_always_on` | `always_on`, `always_off`, `traceidratio`, `parentbased_always_on`, `parentbased_always_off` or `parentbased_traceidratio`. |
+| `OTEL_TRACES_SAMPLER_ARG` | `1` | The ratio for the `traceidratio` samplers, between `0` and `1`. |
+| `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER` | `otlp` | `none` stops exporting that signal. |
+| `OTEL_LOGS_EXPORTER` | none | `otlp` exports log lines as well. |
+| `OTEL_METRIC_EXPORT_INTERVAL` | `60000` | How often metrics are sent, in ms. |
+| `OTEL_SDK_DISABLED` | `false` | `true` turns export off even with an endpoint set. |
+| `WEBFROST_OTEL_FULL_URLS` | `false` | `true` records the full URL of archived pages (`url.full`) on spans. See [Privacy](#privacy). |
+
+## What is exported
+
+### Traces
+
+One trace per piece of work. A snapshot queued by an API request is part of that request's trace, even though it runs later in the background; the same goes for a schedule tick and the recovery sweep.
+
+| Span | Kind | Attributes |
+|---|---|---|
+| `GET /api/snapshots/:id` (method and route template) | server | `http.request.method`, `http.route`, `http.response.status_code`, `url.scheme`. An incoming W3C `traceparent` header is continued. |
+| `job_queue.enqueue` | producer | `webfrost.snapshot.id` |
+| `snapshot.archive`: one pipeline run | internal | `webfrost.snapshot.id`, `server.address` (host of the page), `webfrost.extractors` (the formats run), `webfrost.snapshot.status` (`done` or `failed`), `webfrost.browser.failure`, `error.type` when the run failed (`fetch_network`, `fetch_http_status`, `no_output`...) |
+| `page.fetch`: the one HTTP fetch | client | `http.request.method`, `server.address`, `http.response.status_code`, `http.response.body.size`, `webfrost.fetch.redirects`, `webfrost.fetch.text` |
+| `browser.navigate`: Chromium launch and the one navigation | internal | `server.address`, `error.type` on failure (`timeout`, `blocked`, `network`...) |
+| `extractor.<format>` (`extractor.pdf`, `extractor.warc`...) | internal | `webfrost.extractor.format`, `webfrost.extractor.outcome` (`ok`, `failed`, `timeout`), `webfrost.extractor.bytes`, `webfrost.extractor.failure` (a short category, not the message) |
+| `media.yt-dlp`: each yt-dlp run | internal | `webfrost.media.step` (`metadata` or `download`), `process.exit.code` |
+| `throttle.wait`: waiting for the per-host politeness slot | internal | `server.address`, `webfrost.throttle.wait_ms` |
+| `job_queue.recover`: the sweep for jobs left behind by a crash or restart | internal | `webfrost.jobs.adopted`, `webfrost.jobs.leases_recovered`, `webfrost.jobs.abandoned` |
+| `scheduler.tick` | internal | `webfrost.schedules.claimed` |
+| `SELECT snapshots`, `INSERT archive_results`...: database statements | client | `db.system.name` (`sqlite`, `postgresql`, `mysql`), `db.operation.name`, `db.collection.name` |
+
+Database statements are traced only inside another span, so lease heartbeats do not each start a trace of their own. WebFrost does not add trace headers to the pages it archives: a site never learns your trace IDs.
+
+### Metrics
+
+| Metric | Type | Unit | Attributes |
+|---|---|---|---|
+| `webfrost.snapshots.finished` | counter | `{snapshot}` | `webfrost.snapshot.status` (`done`, `failed`) |
+| `webfrost.extractor.duration` | histogram | `s` | `webfrost.extractor.format`, `webfrost.extractor.outcome` (`ok`, `failed`, `timeout`, `skipped`) |
+| `webfrost.archived.bytes` | counter | `By` | `webfrost.extractor.format` |
+| `webfrost.jobs` | gauge | `{job}` | `webfrost.job.state` (`pending`: queued in this process; `running`) |
+| `webfrost.jobs.retries` | counter | `{job}` | Jobs run again after an interrupted attempt |
+| `webfrost.jobs.leases_recovered` | counter | `{job}` | Jobs adopted from a stale lease (another process crashed or stalled) |
+| `webfrost.jobs.abandoned` | counter | `{job}` | Jobs given up on after three interrupted attempts |
+| `webfrost.throttle.wait.duration` | histogram | `s` | Time a run waited for its host's politeness slot ([`WEBFROST_DOMAIN_DELAY_MS`](/docs/reference/configuration#pipeline)) |
+| `webfrost.db.transaction.retries` | counter | `{retry}` | `db.system.name`: transactions retried after a deadlock or a busy SQLite file |
+| `http.server.request.duration` | histogram | `s` | `http.request.method`, `http.route`, `http.response.status_code`, `url.scheme` |
+| `db.client.operation.duration` | histogram | `s` | `db.system.name`, `db.operation.name`, `db.collection.name` |
+
+### Logs
+
+When a span is active, every JSON log line of the server carries `trace_id`, `span_id` and `trace_flags`, so a log search leads straight to the trace. This needs only the endpoint, not log export.
+
+With `OTEL_LOGS_EXPORTER=otlp` the log lines (server and CLI) are also sent over OTLP, with their level, message and scalar fields, linked to the active span. They still go to stdout as before.
+
+## Privacy
+
+WebFrost exports to the endpoint you configure and nowhere else. What it records is chosen to be useful without leaking what you archive or who uses it:
+
+- **Recorded:** snapshot IDs, the **host** of archived pages, formats, outcomes, sizes, durations, HTTP methods, route templates and status codes, database operation and table names, short failure categories (`timeout`, `blocked`, `network`...).
+- **Not recorded:** full URLs and paths of archived pages (unless `WEBFROST_OTEL_FULL_URLS=true`), query strings, concrete request paths (`/api/snapshots/42` is recorded as `/api/snapshots/:id`), request and response headers (no `Authorization`, cookies or API keys), request bodies, page content, SQL statements and their parameters, client IP addresses, user agents, error messages (they can quote a URL; only the category is kept).
+- **Logs** exported with `OTEL_LOGS_EXPORTER=otlp` are the same lines the server already writes to stdout. They can contain URLs of archived pages: leave log export off if your collector should not see them.
+
+## Examples
+
+### OpenTelemetry Collector
+
+Send everything to a collector, which forwards it wherever you like. A minimal `otel-collector.yaml`:
+
+```yaml
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+processors:
+  batch: {}
+exporters:
+  debug: {}          # replace with otlphttp, prometheusremotewrite, loki...
+service:
+  pipelines:
+    traces: { receivers: [otlp], processors: [batch], exporters: [debug] }
+    metrics: { receivers: [otlp], processors: [batch], exporters: [debug] }
+    logs: { receivers: [otlp], processors: [batch], exporters: [debug] }
+```
+
+Next to WebFrost in Compose (`.env` holds the `OTEL_*` values; `docker-compose.prod.yml` passes them through):
+
+```yaml
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.164.0   # pin a digest in production
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+```
+
+```bash
+# .env
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+OTEL_LOGS_EXPORTER=otlp
+```
+
+### Jaeger
+
+Jaeger accepts OTLP directly and is the quickest way to look at traces:
+
+```bash
+docker run -d --name jaeger -p 16686:16686 -p 4318:4318 jaegertracing/jaeger:2.23.0
+OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces webfrost serve
+```
+
+Archive a page and open `http://localhost:16686`: service `webfrost`, operation `snapshot.archive`. Jaeger stores traces only, which is why the example sets the traces endpoint rather than the shared one.
+
+### Grafana (Tempo, Mimir or Prometheus, Loki)
+
+Grafana's stack takes OTLP through [Grafana Alloy](https://grafana.com/docs/alloy/) or an OpenTelemetry Collector, or directly with Grafana Cloud's OTLP gateway:
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-<region>.grafana.net/otlp
+OTEL_EXPORTER_OTLP_HEADERS=authorization=Basic%20<base64 of instance-id:token>
+OTEL_LOGS_EXPORTER=otlp
+```
+
+Useful panels: `rate(webfrost_snapshots_finished_total[5m])` by status, the p95 of `webfrost_extractor_duration_seconds` by format, `webfrost_jobs` by state, and `http_server_request_duration_seconds` by route. (Prometheus-style names; the exact spelling depends on how your backend translates OTLP metric names.)
+
+## Troubleshooting
+
+- **Nothing arrives.** Check that the endpoint is the HTTP port (4318), not gRPC (4317), and that the WebFrost container can resolve the collector's hostname. `OTEL_SDK_DISABLED=true` overrides everything.
+- **`OTEL_EXPORTER_OTLP_PROTOCOL=grpc is not supported`** in the log: remove the variable or set it to `http/protobuf`, and use port 4318.
+- **Too many traces.** Sample them: `OTEL_TRACES_SAMPLER=parentbased_traceidratio` with `OTEL_TRACES_SAMPLER_ARG=0.1` keeps one in ten. Metrics are not sampled.
+
+<Cards>
+  <Card title="Configuration" href="/docs/reference/configuration#opentelemetry">
+    Every environment variable.
+  </Card>
+  <Card title="Deploy" href="/docs/guides/deploy">
+    Running WebFrost in production.
+  </Card>
+</Cards>

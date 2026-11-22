@@ -63,6 +63,15 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
       S3_REGION: ${S3_REGION:-us-east-1}
       S3_PATH_PREFIX: ${S3_PATH_PREFIX:-snapshots}
+      # Optional OpenTelemetry export to your own collector (off unless an endpoint is set).
+      # Uncomment what you use. See apps/docs/content/docs/guides/observability.mdx.
+      # OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      # OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-webfrost}
+      # OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-}
+      # OTEL_TRACES_SAMPLER: ${OTEL_TRACES_SAMPLER:-parentbased_always_on}
+      # OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLER_ARG:-1}
+      # OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-}
     # The container runs as UID 1000. A named volume gets that ownership on first use; a bind
     # mount (./data:/data) must be owned by UID 1000: sudo chown -R 1000:1000 ./data
     # The image has its own HEALTHCHECK against /health.

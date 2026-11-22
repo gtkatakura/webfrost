@@ -9,6 +9,7 @@
     "storage",
     "deploy",
     "backups",
+    "observability",
     "troubleshooting",
     "authenticated-pages"
   ]

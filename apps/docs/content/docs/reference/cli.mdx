@@ -233,6 +233,7 @@ Every command that opens a browser (`add`, `import`, `schedule worker`, `serve`)
 | `WEBFROST_DOMAIN_DELAY_MS` | `1000` | Spacing of archives of the same host, in milliseconds |
 | `WEBFROST_CHROMIUM_PATH` | none | Use an existing Chromium or Chrome binary |
 | `WEBFROST_PASSWORD` | none | Password for `admin create` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | none | Send traces and metrics of every command to your OpenTelemetry collector; flushed when the command ends. See [Observability](/docs/guides/observability). |
 
 Timeouts, storage and the server variables `serve` reads are in [Configuration](/docs/reference/configuration).
 
