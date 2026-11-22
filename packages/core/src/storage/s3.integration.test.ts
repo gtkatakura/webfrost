@@ -47,6 +47,7 @@ afterAll(async () => {
   if (!RUN) return;
   // Clean up all test objects written during this run
   await storage.deleteAll(snapshotId);
+  await storage.cleanup();
 });
 
 describeIntegration("S3Backend — integration (real MinIO)", () => {

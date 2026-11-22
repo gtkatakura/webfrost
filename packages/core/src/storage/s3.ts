@@ -1,4 +1,5 @@
-import { mkdir, rm, unlink } from "node:fs/promises";
+import { rmSync } from "node:fs";
+import { mkdir, mkdtemp, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { S3Client } from "bun";
@@ -22,6 +23,25 @@ export interface S3Config {
 // S3Backend
 // ─────────────────────────────────────────────────────────────
 
+/** Temp roots of every live backend, removed when the process exits. */
+const liveTempRoots = new Set<string>();
+let exitHookInstalled = false;
+
+function trackTempRoot(root: string): void {
+  liveTempRoots.add(root);
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  process.on("exit", () => {
+    for (const r of liveTempRoots) {
+      try {
+        rmSync(r, { recursive: true, force: true });
+      } catch {
+        // best-effort
+      }
+    }
+  });
+}
+
 const S3_REF_PREFIX = "s3:";
 
 /**
@@ -33,14 +53,15 @@ const S3_REF_PREFIX = "s3:";
  * DB refs have the form `s3:{key}` where `key` is the full S3 object key.
  *
  * For Playwright/yt-dlp extractors that must write to a local file first,
- * `localPath()` returns a path under the system's temp dir. After the external
- * process writes the file, `finalize()` uploads it to S3 and deletes the temp
- * file.
+ * `localPath()` returns a path under a private per-instance temp directory
+ * (created with mkdtemp, mode 0700). After the external process writes the
+ * file, `finalize()` streams it from disk to S3 and deletes it. The directory
+ * is removed by `cleanup()` and when the process exits.
  */
 export class S3Backend implements StorageBackend {
   private readonly client: S3Client;
   private readonly config: Required<S3Config>;
-  private readonly tempBase: string;
+  private tempRoot: string | null = null;
 
   constructor(config: S3Config) {
     this.config = {
@@ -55,7 +76,6 @@ export class S3Backend implements StorageBackend {
       secretAccessKey: this.config.secretKey,
       region: this.config.region,
     });
-    this.tempBase = join(tmpdir(), "webfrost-s3-tmp");
   }
 
   /** Build the S3 object key for a snapshot file. */
@@ -75,30 +95,46 @@ export class S3Backend implements StorageBackend {
   }
 
   /** Local temp path for external-process writes (Playwright, yt-dlp). */
-  private tempPath(snapshotId: number, filename: string): string {
-    return join(this.tempBase, String(snapshotId), filename);
+  private async tempPath(snapshotId: number, filename: string): Promise<string> {
+    if (!this.tempRoot) {
+      // mkdtemp creates a fresh directory with mode 0700, so no other user can
+      // pre-create it or plant symlinks in it.
+      this.tempRoot = await mkdtemp(join(tmpdir(), "webfrost-s3-"));
+      trackTempRoot(this.tempRoot);
+    }
+    return join(this.tempRoot, String(snapshotId), filename);
+  }
+
+  /** Remove the private temp directory and anything left in it. */
+  async cleanup(): Promise<void> {
+    const root = this.tempRoot;
+    if (!root) return;
+    this.tempRoot = null;
+    liveTempRoots.delete(root);
+    await rm(root, { recursive: true, force: true });
   }
 
   // ── StorageBackend implementation ──────────────────────────
 
   async localPath(snapshotId: number, filename: string): Promise<string> {
-    const p = this.tempPath(snapshotId, filename);
+    const p = await this.tempPath(snapshotId, filename);
     await mkdir(dirname(p), { recursive: true });
     return p;
   }
 
   async finalize(snapshotId: number, filename: string): Promise<string> {
-    const p = this.tempPath(snapshotId, filename);
+    const p = await this.tempPath(snapshotId, filename);
     const key = this.key(snapshotId, filename);
 
-    const bytes = await Bun.file(p).bytes();
-    await this.client.write(key, bytes);
-
-    // Remove temp file (best-effort)
     try {
-      await unlink(p);
-    } catch {
-      // ignore
+      // Bun.file is lazy: the upload streams from disk instead of buffering it.
+      await this.client.write(key, Bun.file(p));
+    } finally {
+      try {
+        await unlink(p);
+      } catch {
+        // ignore
+      }
     }
 
     return this.toRef(key);
@@ -188,7 +224,9 @@ export class S3Backend implements StorageBackend {
 
     // Also clean up any leftover temp files
     try {
-      await rm(join(this.tempBase, String(snapshotId)), { recursive: true, force: true });
+      if (this.tempRoot) {
+        await rm(join(this.tempRoot, String(snapshotId)), { recursive: true, force: true });
+      }
     } catch {
       // best-effort
     }

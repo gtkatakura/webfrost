@@ -68,16 +68,28 @@ A URL schedule creates a new snapshot on every run, even when the page has not c
 
 ## Cron syntax
 
-Five fields: `minute hour day-of-month month day-of-week`, with day-of-week from 0 to 6. Each field supports `*`, a number, a range (`1-5`), a list (`1,15`) and a step over everything (`*/15`). Names such as `mon` and steps over a range are not supported.
+Five fields: `minute hour day-of-month month day-of-week`.
+
+| Field | Values |
+|---|---|
+| minute | 0-59 |
+| hour | 0-23 |
+| day-of-month | 1-31 |
+| month | 1-12 or `jan`-`dec` |
+| day-of-week | 0-7 (0 and 7 are Sunday) or `sun`-`sat` |
+
+Each field supports `*`, a number or name, a range (`1-5`, `mon-fri`), a list (`1,15`) and steps over `*` or a range (`*/15`, `1-10/2`). The aliases `@hourly`, `@daily`, `@weekly`, `@monthly` and `@yearly` also work. A value out of range, such as `60 * * * *`, is rejected when you create the schedule (the API answers `400`, the CLI prints the error) and the message names the field.
+
+When both day-of-month and day-of-week are restricted (neither starts with `*`), a day matches if either one does, as in Vixie cron: `0 0 15 * 1` runs on the 15th and on every Monday. If one of them is `*`, only the other applies.
 
 | Expression | Meaning |
 |---|---|
 | `*/15 * * * *` | Every 15 minutes |
 | `0 * * * *` | Every hour |
-| `0 0 * * *` | Every day at midnight |
-| `0 9 * * 1` | Every Monday at 9:00 |
+| `@daily` | Every day at midnight |
+| `0 9 * * mon-fri` | Weekdays at 9:00 |
 
-Cron is evaluated in the time zone of the process that runs the schedule: `TZ`, or the system time zone, which is UTC in the Docker image. Set `TZ=America/Sao_Paulo` to change it.
+Cron is evaluated in the time zone of the process that runs the schedule: `TZ`, or the system time zone, which is UTC in the Docker image. Set `TZ=America/Sao_Paulo` to change it. In a zone with daylight saving time, a time that does not exist on the day the clocks jump forward (for example `30 2 * * *` in Europe/Berlin on the last Sunday of March) is skipped for that day, and a time that happens twice when the clocks go back runs once, the first time. Hourly and more frequent schedules are not affected. Use UTC if every run must happen.
 
 ## Who runs the schedules
 

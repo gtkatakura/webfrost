@@ -6,9 +6,9 @@
  * returns pre-canned responses. This avoids any external network dependency.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { S3Backend, validateS3Ref } from "./s3";
 
 const BUCKET = "webfrost";
@@ -119,8 +119,9 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => {
+afterEach(async () => {
   mock.stop();
+  await storage.cleanup();
   try {
     rmSync(tmpDir, { recursive: true, force: true });
   } catch {
@@ -164,6 +165,55 @@ describe("S3Backend", () => {
       const req = mock.lastRequest();
       expect(req?.method).toBe("PUT");
       expect(req?.path).toBe(`/${BUCKET}/snapshots/1/page.pdf`);
+    });
+  });
+
+  describe("temp directory", () => {
+    test("is private (0700), unique per backend, outside the old shared path", async () => {
+      const other = new S3Backend({
+        endpoint: `http://127.0.0.1:${mock.port}`,
+        bucket: BUCKET,
+        accessKey: ACCESS_KEY,
+        secretKey: SECRET_KEY,
+      });
+      const a = await storage.localPath(1, "a.bin");
+      const b = await other.localPath(1, "a.bin");
+      expect(a).not.toBe(b);
+      expect(a.startsWith(join(tmpdir(), "webfrost-s3-tmp"))).toBe(false);
+      const root = dirname(dirname(a));
+      expect(statSync(root).mode & 0o777).toBe(0o700);
+      await storage.cleanup();
+      await other.cleanup();
+    });
+
+    test("finalize uploads the file content and removes the temp file", async () => {
+      const p = await storage.localPath(5, "big.bin");
+      await Bun.write(p, "x".repeat(100_000));
+      await storage.finalize(5, "big.bin");
+      expect(existsSync(p)).toBe(false);
+      expect(mock.lastRequest()?.body.length).toBe(100_000);
+      await storage.cleanup();
+    });
+
+    test("cleanup and deleteAll remove leftovers", async () => {
+      const p = await storage.localPath(7, "x.bin");
+      await Bun.write(p, "data");
+      const root = dirname(dirname(p));
+      await storage.deleteAll(7);
+      expect(existsSync(dirname(p))).toBe(false);
+      const q = await storage.localPath(8, "y.bin");
+      await Bun.write(q, "data");
+      await storage.cleanup();
+      expect(existsSync(root)).toBe(false);
+    });
+
+    test("finalize removes the temp file even when the upload fails", async () => {
+      mock.setHandler(() => new Response("boom", { status: 500 }));
+      const p = await storage.localPath(9, "z.bin");
+      await Bun.write(p, "data");
+      await expect(storage.finalize(9, "z.bin")).rejects.toThrow();
+      expect(existsSync(p)).toBe(false);
+      await storage.cleanup();
     });
   });
 

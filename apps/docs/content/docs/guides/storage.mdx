@@ -41,7 +41,7 @@ S3_PATH_PREFIX=snapshots
 
 If the backend is `s3` and any of the four required variables is missing, archiving fails with an error naming them. With Docker Compose, put the same variables in `.env`; `docker-compose.prod.yml` passes them through.
 
-For files that Chromium or yt-dlp write, WebFrost writes to a temporary directory first, uploads the result, and deletes the temporary file.
+For files that Chromium or yt-dlp write, WebFrost writes to a private temporary directory (created per process with owner-only permissions), streams the result from disk to the bucket without loading it into memory, and deletes the temporary file. The directory is removed when the process exits.
 
 ### Providers
 

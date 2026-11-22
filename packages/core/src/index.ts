@@ -98,7 +98,7 @@ export {
   dbTimestamp,
 } from "./schedules";
 export type { Schedule } from "./schedules";
-export { nextCronDate, parseCron } from "./cron";
+export { CronError, nextCronDate, parseCron } from "./cron";
 export {
   addTagToSnapshot,
   createTag,
