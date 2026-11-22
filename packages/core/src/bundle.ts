@@ -607,13 +607,20 @@ async function storeEntry(
   const writer = Bun.file(local).writer();
   let size = 0;
   try {
-    for await (const chunk of readZipEntry(path, entry)) {
-      writer.write(chunk);
-      size += chunk.length;
-      await writer.flush();
+    try {
+      for await (const chunk of readZipEntry(path, entry)) {
+        writer.write(chunk);
+        size += chunk.length;
+        await writer.flush();
+      }
+    } finally {
+      await writer.end();
     }
-  } finally {
-    await writer.end();
+  } catch (err) {
+    // On S3 the local file is a temp file only finalize() would remove, outside the
+    // snapshot's storage that deleteAll() cleans: remove it here.
+    await rm(local, { force: true }).catch(() => {});
+    throw err;
   }
   return { ref: await storage.finalize(snapshotId, filename), size };
 }

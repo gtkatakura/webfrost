@@ -458,6 +458,37 @@ describe("hostile bundles are rejected and store nothing", () => {
     writeFileSync(path, bytes);
     await expectRejected(path, /CRC mismatch/);
   });
+
+  test("a backend that writes through temp files (S3) is left with no temp file", async () => {
+    // Like S3Backend: localPath() is a temp path only finalize() removes.
+    const tempDir = join(root, "s3-temp");
+    class TempFileBackend extends FilesystemBackend {
+      override async localPath(snapshotId: number, filename: string): Promise<string> {
+        const p = join(tempDir, String(snapshotId), filename);
+        mkdirSync(join(p, ".."), { recursive: true });
+        return p;
+      }
+      override async finalize(snapshotId: number, filename: string): Promise<string> {
+        const p = join(tempDir, String(snapshotId), filename);
+        const ref = await this.putBytes(snapshotId, filename, await Bun.file(p).bytes());
+        rmSync(p);
+        return ref;
+      }
+    }
+    const path = writeBundle(
+      { "manifest.json": JSON.stringify(manifest()), "screenshot.png": png },
+      0,
+    );
+    const bytes = require("node:fs").readFileSync(path) as Buffer;
+    bytes[bytes.indexOf(Buffer.from(png)) + 1] = 0x00;
+    writeFileSync(path, bytes);
+    const storage = new TempFileBackend(join(targetDir, "snapshots"));
+    await expect(importSnapshotBundle(target, storage, path)).rejects.toThrow(/CRC mismatch/);
+    const left = existsSync(tempDir)
+      ? readdirSync(tempDir, { recursive: true, withFileTypes: true }).filter((e) => e.isFile())
+      : [];
+    expect(left).toEqual([]);
+  });
 });
 
 describe("parseManifest", () => {
