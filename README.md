@@ -2,11 +2,17 @@
   <a href="https://webfrost.dev"><img src=".github/assets/banner.webp" width="720" alt="WebFrost: an arctic fox asleep on a frozen archive box, with the formats it keeps around it"></a>
 </p>
 
+<h3 align="center">
+  <a href="https://demo.webfrost.dev/#/snapshots">▶ Try the live demo</a> · <a href="https://webfrost.dev">Read the docs</a>
+</h3>
+<p align="center">A read-only WebFrost with real pages and a video archived: browse, search, open any format. Nothing to install.</p>
+
 # WebFrost
 
 [![CI](https://github.com/gtkatakura/webfrost/actions/workflows/ci.yml/badge.svg)](https://github.com/gtkatakura/webfrost/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-1d64d8)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-webfrost.dev-7cc4ff)](https://webfrost.dev)
+[![Live demo](https://img.shields.io/badge/live%20demo-demo.webfrost.dev-22c55e)](https://demo.webfrost.dev/#/snapshots)
 
 **Keep the web pages you care about, on your own machine.** WebFrost archives a URL to every format worth
 keeping and lets you search what you saved. Run it from a terminal, a script or a browser.
@@ -27,7 +33,7 @@ keeping and lets you search what you saved. Run it from a terminal, a script or 
   <img src=".github/assets/screenshot-light.webp" width="1280" alt="The WebFrost web UI: the snapshot list as cards, each with a screenshot, title, address, status and capture time">
 </picture>
 
-📖 **Documentation: [webfrost.dev](https://webfrost.dev)** · 🧊 **Live demo: [demo.webfrost.dev](https://demo.webfrost.dev)**, a read-only archive of a few pages and videos
+📖 **Documentation: [webfrost.dev](https://webfrost.dev)**
 
 > WebFrost is young (`0.x`). It works, and it is tested, but the HTTP API can still change before 1.0
 > (it is versioned: `/api/v1`). See the [roadmap](ROADMAP.md).

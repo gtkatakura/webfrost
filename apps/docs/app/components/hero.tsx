@@ -336,6 +336,7 @@ export function SplitDeveloperHero({
   description,
   primaryAction,
   secondaryAction,
+  tertiaryAction,
   note,
   codeTabs,
   art,
@@ -345,6 +346,7 @@ export function SplitDeveloperHero({
   description: string;
   primaryAction: HeroAction;
   secondaryAction?: HeroAction;
+  tertiaryAction?: HeroAction;
   /** A line under the buttons, for a lighter third way in (the demo). */
   note?: React.ReactNode;
   codeTabs?: CodeTab[];
@@ -389,6 +391,7 @@ export function SplitDeveloperHero({
           >
             <ActionButton action={primaryAction} variant="primary" />
             {secondaryAction && <ActionButton action={secondaryAction} variant="secondary" />}
+            {tertiaryAction && <ActionButton action={tertiaryAction} variant="secondary" />}
           </div>
           {note && (
             <p
