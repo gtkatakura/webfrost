@@ -313,10 +313,37 @@ function PromoVideo({
  * when it starts. The tap on play still counts as the user's gesture. A desktop window made narrow also
  * shows the vertical cut, but it has a mouse, so the video stays in the page there. An iPhone has no
  * requestFullscreen on a video; it goes full screen by itself (no playsInline).
+ *
+ * Leaving full screen pauses the video: the phone's back button (Android) or closing the player (iPhone)
+ * means the reader is done watching, so it should not go on playing, with sound, inside the page. And
+ * when the film ends, full screen closes by itself, back to the page.
  */
 function enterFullscreen(event: React.SyntheticEvent<HTMLVideoElement>) {
   const video = event.currentTarget;
   if (!matchMedia("(hover: none) and (pointer: coarse)").matches) return;
+  // iPhone: its own player fires webkitendfullscreen when it closes, and closes with webkitExitFullscreen.
+  video.addEventListener("webkitendfullscreen", () => video.pause(), { once: true });
+  video.addEventListener(
+    "ended",
+    () => {
+      if (document.fullscreenElement === video) document.exitFullscreen().catch(() => {});
+      else
+        (
+          video as HTMLVideoElement & { webkitExitFullscreen?: () => void }
+        ).webkitExitFullscreen?.();
+    },
+    { once: true },
+  );
   if (document.fullscreenElement || !video.requestFullscreen) return;
-  video.requestFullscreen().catch(() => {});
+  video
+    .requestFullscreen()
+    .then(() => {
+      const onChange = () => {
+        if (document.fullscreenElement === video) return;
+        document.removeEventListener("fullscreenchange", onChange);
+        video.pause();
+      };
+      document.addEventListener("fullscreenchange", onChange);
+    })
+    .catch(() => {});
 }
