@@ -136,7 +136,8 @@ export async function mediaExtractor(
 
   // Step 2: the video, merged to mp4. "Best" on YouTube is 4K AV1 (hundreds of MB for a few
   // minutes, and AV1 does not play everywhere): prefer up to WEBFROST_MEDIA_MAX_HEIGHT
-  // (1080 by default), H.264 and AAC, which every browser plays, and take what exists.
+  // (1080 by default), H.264 and AAC, which every browser plays, and take what exists. The mp4 container comes
+  // first: some sites (archive.org) do not name their codecs, and an AVI or OGV does not play in a browser.
   const maxHeight = envInt("WEBFROST_MEDIA_MAX_HEIGHT", DEFAULT_MEDIA_MAX_HEIGHT);
   const videoLocalPath = await storage.localPath(snapshotId, "media/media.mp4");
   let videoResult: SpawnResult;
@@ -147,7 +148,7 @@ export async function mediaExtractor(
           "-f",
           "bestvideo+bestaudio/best",
           "-S",
-          `${maxHeight > 0 ? `res:${maxHeight},` : ""}vcodec:h264,acodec:aac`,
+          `ext:mp4:m4a,${maxHeight > 0 ? `res:${maxHeight},` : ""}vcodec:h264,acodec:aac`,
           "--merge-output-format",
           "mp4",
           "--max-filesize",
@@ -206,5 +207,9 @@ export async function mediaExtractor(
     const sizeBytes = Bun.file(audioLocalPath).size;
     const audioRef = await storage.finalize(snapshotId, "media/media.mp3");
     await recordResult(db, snapshotId, { extractor: "media", content: audioRef, sizeBytes }, lease);
+    return;
   }
+  // The site is a media page (the metadata came back) but neither the video nor the audio did: say why.
+  const reason = ytDlpError(videoResult.stderr) ?? ytDlpError(audioResult.stderr);
+  throw new Error(`yt-dlp: ${reason ?? "the video and the audio could not be downloaded"}`);
 }

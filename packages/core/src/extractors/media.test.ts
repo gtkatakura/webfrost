@@ -150,16 +150,23 @@ describe("mediaExtractor", () => {
     expect(mediaRow?.content).toContain("media.mp3");
   });
 
-  test("stores only metadata row when both video and audio downloads fail", async () => {
+  test("keeps the metadata and fails with yt-dlp's reason when both video and audio downloads fail", async () => {
+    const refused: SpawnResult = {
+      exitCode: 1,
+      stdout: "",
+      stderr: "ERROR: [youtube] test: Video unavailable\n",
+    };
     const spawner = makeSpawner([
       META_OK, // metadata
-      FAIL, // video fails
+      refused, // video fails
       FAIL, // audio fails
     ]);
 
-    await mediaExtractor(db, 1, makeStorage(), "https://youtube.com/watch?v=test", {
-      _spawner: spawner,
-    });
+    await expect(
+      mediaExtractor(db, 1, makeStorage(), "https://youtube.com/watch?v=test", {
+        _spawner: spawner,
+      }),
+    ).rejects.toThrow("yt-dlp: test: Video unavailable");
 
     const rows = await archiveRows();
     expect(rows.filter((r) => r.extractor === "media")).toHaveLength(0);
@@ -241,7 +248,8 @@ describe("mediaExtractor", () => {
       return calls.length === 2 ? FAIL : OK; // video fails → audio fallback runs too
     };
     const url = "-oops-looks-like-an-option";
-    await mediaExtractor(db, 1, makeStorage(), url, { _spawner: spawner });
+    // Video and audio both fail here, so the extractor ends with an error; the arguments are what matter.
+    await mediaExtractor(db, 1, makeStorage(), url, { _spawner: spawner }).catch(() => {});
     expect(calls).toHaveLength(3);
     for (const args of calls) {
       expect(args.slice(0, YT_DLP_BASE_ARGS.length)).toEqual([...YT_DLP_BASE_ARGS]);
@@ -297,16 +305,16 @@ describe("mediaExtractor: format selection", () => {
 
   test("prefers up to 1080p, H.264 and AAC by default", async () => {
     Reflect.deleteProperty(process.env, "WEBFROST_MEDIA_MAX_HEIGHT");
-    expect(await sortArg()).toBe("res:1080,vcodec:h264,acodec:aac");
+    expect(await sortArg()).toBe("ext:mp4:m4a,res:1080,vcodec:h264,acodec:aac");
   });
 
   test("honours WEBFROST_MEDIA_MAX_HEIGHT", async () => {
     process.env.WEBFROST_MEDIA_MAX_HEIGHT = "720";
-    expect(await sortArg()).toBe("res:720,vcodec:h264,acodec:aac");
+    expect(await sortArg()).toBe("ext:mp4:m4a,res:720,vcodec:h264,acodec:aac");
   });
 
   test("WEBFROST_MEDIA_MAX_HEIGHT=0 removes the height limit", async () => {
     process.env.WEBFROST_MEDIA_MAX_HEIGHT = "0";
-    expect(await sortArg()).toBe("vcodec:h264,acodec:aac");
+    expect(await sortArg()).toBe("ext:mp4:m4a,vcodec:h264,acodec:aac");
   });
 });

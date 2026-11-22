@@ -19,7 +19,7 @@ A snapshot is **`done`** when at least one extractor produced output and **`fail
 | `screenshot` | `screenshot.png` | Chromium | Full-page PNG. |
 | `dom-snapshot` | `dom.html` | Chromium | The serialized DOM after the page loaded, which includes content built by JavaScript. |
 | `singlefile` | `singlefile.html` | Chromium | The rendered page as one HTML file, with external stylesheets, their fonts, `img` images and images referenced from CSS inlined as data URIs. Stylesheet media queries are kept, HTML entities in URLs are decoded, and `srcset` and `<picture>` sources are dropped so the inlined image is the one shown. Assets that cannot be downloaded, or that no longer fit in the 100 MB budget (`WEBFROST_SINGLEFILE_MAX_BYTES`), stay as external links. |
-| `media` | `media/media.mp4` or `media/media.mp3` | yt-dlp | The video (up to `WEBFROST_MEDIA_MAX_HEIGHT`, 1080p by default, preferring H.264 video and AAC audio merged to mp4), or an audio-only mp3 when no video can be downloaded. Skipped over 500 MB. For a playlist or channel URL, only the first item. |
+| `media` | `media/media.mp4` or `media/media.mp3` | yt-dlp | The video, as an mp4 a browser plays: an mp4 the site offers comes first (some sites, like archive.org, also offer AVI or OGV), up to `WEBFROST_MEDIA_MAX_HEIGHT` (1080p by default), preferring H.264 video and AAC audio, or an audio-only mp3 when no video can be downloaded. Skipped over 500 MB. For a playlist or channel URL, only the first item. |
 | `media-metadata` | `media/media-metadata.json` | yt-dlp | The yt-dlp metadata (title, uploader, duration, formats). |
 
 The PDF, screenshot, DOM snapshot and SingleFile files come from the browser; the WARC, Readability and HTML results come from the HTTP fetch. When the URL is not text (a PDF or an image linked directly), `html` and `readability` do not run and the file is kept, byte for byte, in the WARC. The `html` and `readability` results are stored in the database, not as files. File names are the same on the filesystem and in S3. See [Disk layout](/docs/reference/disk-layout).
@@ -35,7 +35,7 @@ The PDF, screenshot, DOM snapshot and SingleFile files come from the browser; th
 | A yt-dlp call exceeds `WEBFROST_MEDIA_TIMEOUT_MS` (10 min) | yt-dlp is killed together with the processes it started (ffmpeg). |
 | `yt-dlp` is not installed, or the URL is not on a site yt-dlp supports | `media` and `media-metadata` are skipped silently. No entry, no failure. |
 | The site is one yt-dlp supports but it refuses the video (private, removed, or "Sign in to confirm you're not a bot", which video sites often answer to server addresses) | `media` fails with yt-dlp's reason, shown in the snapshot's Details. |
-| The media download fails or exceeds the size cap | `media-metadata` may exist without `media`. |
+| The media download fails or exceeds the size cap | `media-metadata` is kept, and `media` fails with yt-dlp's reason. |
 | Readability finds no article | The `readability` result exists with `null` fields. |
 
 Failures show up as `status: "failed"` with an `error` in `extractorMeta` of `GET /api/v1/snapshots/:id`, and in the snapshot detail view. Fixes are in [Troubleshooting](/docs/guides/troubleshooting).
