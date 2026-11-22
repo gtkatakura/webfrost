@@ -3,6 +3,8 @@
 
 [tools]
 bun = "1.4.4"
+# .deb and .rpm packages of the binary (packages/cli/scripts/package-release.ts)
+nfpm = "2.48.0"
 
 [settings]
 # Tools resolve to versions published at least 7 days ago (supply-chain safety). For an urgent

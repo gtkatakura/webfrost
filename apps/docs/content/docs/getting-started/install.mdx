@@ -12,7 +12,7 @@ WebFrost is one file, `webfrost`: the CLI, the server, the web UI and the schedu
 There is no Windows binary yet. Run WebFrost with Docker Desktop and the [Docker quickstart](/docs/getting-started/quickstart).
 </Callout>
 
-<Tabs items={["Script", "Homebrew", "Manual"]}>
+<Tabs items={["Script", "Homebrew", "Debian / Ubuntu", "Fedora", "Manual"]}>
 <Tab value="Script">
 
 macOS and Linux, x64 and arm64:
@@ -45,6 +45,31 @@ brew install gtkatakura/tap/webfrost
 ```
 
 Upgrade with `brew upgrade webfrost`.
+
+</Tab>
+<Tab value="Debian / Ubuntu">
+
+The `.deb` from the [latest release](https://github.com/gtkatakura/webfrost/releases/latest) installs the binary in `/usr/bin` and, as dependencies, every library the browser needs:
+
+```bash
+curl -fsSLO https://github.com/gtkatakura/webfrost/releases/latest/download/webfrost_VERSION_amd64.deb
+sudo apt install ./webfrost_VERSION_amd64.deb   # arm64: webfrost_VERSION_arm64.deb
+webfrost setup
+```
+
+Replace `VERSION` with the release's version (for example `0.2.0`). `yt-dlp` and `ffmpeg`, for video, are recommended, so apt installs them unless told not to. Upgrade by installing the newer `.deb` the same way.
+
+</Tab>
+<Tab value="Fedora">
+
+The `.rpm` from the [latest release](https://github.com/gtkatakura/webfrost/releases/latest) brings the browser's libraries as dependencies:
+
+```bash
+sudo dnf install https://github.com/gtkatakura/webfrost/releases/latest/download/webfrost-VERSION-1.x86_64.rpm
+webfrost setup
+```
+
+Replace `VERSION` with the release's version (for example `0.2.0`; arm64: `aarch64.rpm`). `yt-dlp` and `ffmpeg` come from RPM Fusion.
 
 </Tab>
 <Tab value="Manual">
