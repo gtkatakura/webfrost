@@ -4,13 +4,13 @@ description: What WebFrost is, what it saves for every page, and where to start.
 icon: BookOpen
 ---
 
-WebFrost is a self-hosted web archiver. Give it a URL and it saves the page in several formats at once, then makes the text searchable. Everything lives in one directory you control: a SQLite database plus plain files.
+WebFrost is a self-hosted web archiver. Give it a URL and it saves the page in several formats at once, then makes the text searchable. By default everything lives in one directory you control: a SQLite database plus plain files.
 
-You can drive it from four surfaces over the same archive: a **CLI**, a **web UI**, a **REST API** and a **TypeScript SDK**.
+You can drive it from three surfaces over the same archive: a **CLI**, a **web UI** and a **REST API**.
 
 Coding agents can learn to use and run WebFrost: `npx skills add gtkatakura/webfrost` installs the `webfrost` and `webfrost-self-host` [skills](https://skills.sh).
 
-WebFrost is inspired by [ArchiveBox](https://archivebox.io) and was built for performance: instead of fetching and rendering a page once per format, it fetches the page once and opens it in the browser once, and every format comes from those two visits. See [Pipeline](/docs/architecture/pipeline) for how.
+WebFrost is inspired by [ArchiveBox](https://archivebox.io) and was built for performance: instead of fetching and rendering a page once per format, it fetches the page once and opens it in the browser once, and every format comes from those two visits. See [Why WebFrost](/docs/architecture/why-webfrost) for the reasoning and [Pipeline](/docs/architecture/pipeline) for how.
 
 ## What you get for every URL
 
@@ -31,7 +31,7 @@ See [Extractors](/docs/reference/extractors) for what each format contains and w
 
 - **One browser navigation per snapshot.** All browser formats come from the same page load, and the text formats share one HTTP fetch.
 - **Open formats.** WARC, PDF, PNG, HTML and SQLite need no WebFrost to read. If the project disappears, your archive does not.
-- **One directory.** Back it up with `rsync`. No database server is required. S3-compatible storage is optional.
+- **One directory.** Back it up with `rsync`. No database server is required; PostgreSQL, MySQL and S3-compatible storage are options.
 - **Self-hosted.** No account, no cloud service. Your data stays on your machine.
 - **Safe by default.** Requests to private networks are blocked, archived content is sandboxed in the UI, and the API is rate limited. See [Security](/docs/architecture/security).
 

@@ -24,8 +24,8 @@ detail this skill does not cover.
    them; never invent one. Keys are created in the web UI (Settings → API keys) or with
    `webfrost admin key create`.
 2. **No server, just this machine:** use the `webfrost` CLI against an archive folder
-   (`WEBFROST_DIR`, default the current directory for the CLI).
-3. **Writing code:** use `@webfrost/sdk` (TypeScript, ESM, Node 18+, Bun, browsers).
+   (`WEBFROST_DIR`, default `~/.webfrost`).
+3. **Writing code:** call the HTTP API, or use `@webfrost/sdk` (TypeScript, ESM, Node 18+, Bun, browsers) once it is on npm.
 
 Check what is available first: `webfrost --version` and `webfrost doctor` for the CLI, or
 `GET <base>/health` (returns `{"status":"ok"}`) for a server.
@@ -78,6 +78,9 @@ curl -OJ "$API/snapshots/1/archives/pdf/download" -H "Authorization: Bearer $KEY
 
 ## SDK
 
+`@webfrost/sdk` is not on npm yet: it will be published after the first release. Until then,
+use the HTTP API. Once it is installable:
+
 ```ts
 import { WebFrostClient } from "@webfrost/sdk";
 
@@ -94,7 +97,7 @@ for await (const s of client.iterateSnapshots({ status: "done" })) console.log(s
 ```
 
 Errors are `WebFrostError` with `status` and `code` (`NOT_FOUND`, `TIMEOUT`, `NETWORK_ERROR`, ...).
-Every method takes an optional `{ signal }`. Reference: https://webfrost.dev/docs/reference/sdk
+Every method takes an optional `{ signal }`. Reference (once published): https://webfrost.dev/docs/reference/sdk
 
 ## Things to tell the user
 

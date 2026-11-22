@@ -123,6 +123,7 @@ Deploy the previous image tag, and restore a backup first if the release changed
 | Lint | `bun run lint` (Biome) |
 | Typecheck | `bun run typecheck`, then `bun run build` to keep the quickstart working |
 | Unit Tests | `bun run test`, with Playwright Chromium and a MinIO container for the S3 integration tests |
+| Unit Tests (PostgreSQL), Unit Tests (MySQL) | The core and server tests, and the server API end-to-end tests, again against a PostgreSQL 17 and a MySQL 8.4 container, through `WEBFROST_TEST_DATABASE_URL` |
 | Server API E2E | `bun run test:e2e` in `packages/server` |
 | E2E | Playwright tests in `packages/ui`, with Chromium and yt-dlp, `AUTH_DISABLED=true`. Traces upload on failure. |
 | Docker build | Builds `packages/server/Dockerfile` and `apps/docs/Dockerfile` without pushing, so a broken Dockerfile fails the pull request |
@@ -151,7 +152,14 @@ If **Visual verify** fails, open the `deploy-screenshot-<sha>` artifact: a blank
 
 ### Enabling npm publishing
 
-Packages are `"private": true` today (except `@webfrost/sdk`, which is not), so `changeset publish` publishes at most that one. To publish, set `"private": false` in each package to release and register the repository as a trusted publisher for each package on npmjs.com (package settings, Trusted Publisher, workflow `release.yml`). No `NPM_TOKEN` secret is needed: the job has `id-token: write` and `NPM_CONFIG_PROVENANCE=true`.
+Every package is `"private": true` today, `@webfrost/sdk` included, so `changeset publish` publishes nothing yet. The SDK is the first one meant for npm: its `package.json` already carries `publishConfig` (public, with provenance) and a `check:package` script (publint and Are the Types Wrong). To publish it:
+
+1. Set `"private": false` in `packages/sdk/package.json`.
+2. Register the repository as a trusted publisher for `@webfrost/sdk` on npmjs.com (package settings, Trusted Publisher, workflow `release.yml`). No `NPM_TOKEN` secret is needed: the job has `id-token: write` and `NPM_CONFIG_PROVENANCE=true`.
+3. Merge the Version Packages pull request. With no changesets left pending, the **Changesets** job runs `changeset publish`.
+4. Set `sdkPublished = true` in `apps/docs/app/lib/unpublished.ts`, so the SDK reference page appears on this site. Until then the page is left out of the navigation, the search and the prerendered pages.
+
+To publish another package, repeat steps 1 and 2 for it.
 
 ### Secrets and permissions
 

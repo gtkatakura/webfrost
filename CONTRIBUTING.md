@@ -31,6 +31,7 @@ bun run lint        # Biome
 bun run typecheck   # tsc --noEmit
 bun run test        # unit + integration tests for every package
 cd packages/server && bun run test:e2e   # HTTP API end to end
+mise run test:e2e   # the web UI in a real browser (Playwright; needs Chromium and yt-dlp)
 ```
 
 Lefthook runs lint and typecheck on every commit. Fix what it reports — do not skip the hooks.

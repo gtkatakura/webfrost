@@ -20,7 +20,6 @@ Reliability and security hardening pass.
 - Tags added after archiving are now searchable.
 - The archived-page preview (DOM tab) was blocked by the server's own CSP and never rendered. It is now served by a dedicated sandboxed endpoint (`GET /api/snapshots/:id/archives/:extractor/preview`).
 - The Reader tab showed no article text; search results had no pagination; lists did not refresh while a snapshot was pending; bulk actions hid partial failures; an expired session left the UI showing raw errors.
-- SDK docs pointed `baseUrl` at the server root; it must include `/api`.
 
 **Security**
 

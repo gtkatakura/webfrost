@@ -67,7 +67,7 @@ The CLI and the server use the same archive, so what `add` saves shows up in the
 </Tab>
 <Tab value="Docker Compose">
 
-The production Compose file from the repository runs the server, web UI and scheduler.
+One Compose file runs the server, web UI and scheduler. You need Docker with the Compose plugin.
 
 <Steps>
 <Step>
@@ -75,9 +75,11 @@ The production Compose file from the repository runs the server, web UI and sche
 ### Get the Compose file
 
 ```bash
-git clone https://github.com/gtkatakura/webfrost.git
-cd webfrost
+mkdir webfrost && cd webfrost
+curl -fsSLO https://webfrost.dev/compose.yml
 ```
+
+`compose.yml` is the repository's `docker-compose.prod.yml`.
 
 </Step>
 <Step>
@@ -142,7 +144,7 @@ The Docker image does not contain the `webfrost` CLI, so `webfrost admin create`
 </Callout>
 
 <Callout type="warn" title="Image tags">
-Compose pulls `ghcr.io/gtkatakura/webfrost/server:latest` by default (set `IMAGE_TAG` to pin another tag). If that tag is not published yet, build the image locally: uncomment the `build:` block in `compose.yml`, comment out `image:`, and run `docker compose up -d --build`.
+Compose pulls `ghcr.io/gtkatakura/webfrost/server:latest` by default. Set `IMAGE_TAG` in `.env` to pin a version, for example `IMAGE_TAG=0.1.0`. To build the image yourself, see [Deploy](/docs/guides/deploy#the-image).
 </Callout>
 
 </Tab>
@@ -177,7 +179,7 @@ Every variable is listed in [Configuration](/docs/reference/configuration).
   <Card title="Production deployment" href="/docs/guides/deploy">
     Reverse proxy, TLS, backups.
   </Card>
-  <Card title="Web UI" href="/docs/guides/web-ui">
-    A tour of the pages and shortcuts.
+  <Card title="Web UI" href="/docs/reference/web-ui">
+    The pages and keyboard shortcuts.
   </Card>
 </Cards>

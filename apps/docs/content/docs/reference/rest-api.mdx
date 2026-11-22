@@ -37,19 +37,19 @@ curl -H "Authorization: Bearer $KEY" $API/snapshots
 
 Create keys in the UI (**Settings, API keys**), with `webfrost admin key create`, or with `POST /settings/keys`. Keys are stored as SHA-256 hashes and shown once.
 
-**Session cookie.** Browsers use the cookie set by `POST /auth/login` or `POST /setup`. It is `HttpOnly`, `SameSite=Strict` and `Secure`, valid for 7 days, and backed by a server-side session: logging out revokes it, logging in again revokes the session in the cookie it replaces, and changing the password revokes every session of the user.
+**Session cookie.** Browsers use the cookie set by `POST /auth/login` or `POST /setup`. It is named `session`, `HttpOnly`, `SameSite=Strict` and `Secure` (unless `WEBFROST_INSECURE_COOKIES=true`), valid for 7 days, and backed by a server-side session: logging out revokes it, logging in again revokes the session in the cookie it replaces, and changing the password revokes every session of the user.
 
-**Cross-origin protection.** A state-changing request (`POST`, `PUT`, `PATCH`, `DELETE`) without a bearer token must come from the app's own origin: its `Sec-Fetch-Site` header must be `same-origin` or `none`. A browser that sends no `Sec-Fetch-Site` must send an `Origin` that matches the `Host`. Anything else gets `403 { "code": "CROSS_ORIGIN_REQUEST" }`. `same-site` is refused too, so a sibling subdomain cannot act with the session cookie. Clients that are not browsers send neither header and are not affected; bearer-token requests are never checked.
+**Cross-origin protection.** A state-changing request (`POST`, `PUT`, `PATCH`, `DELETE`) without a bearer token must come from the app's own origin: its `Sec-Fetch-Site` header must be `same-origin` or `none`. Without `Sec-Fetch-Site`, an `Origin` header, when present, must match the `Host`. Anything else gets `403 { "code": "CROSS_ORIGIN_REQUEST" }`. `same-site` is refused too, so a sibling subdomain cannot act with the session cookie. Clients that are not browsers send neither header and are not affected; bearer-token requests are never checked.
 
 **Public read.** With `WEBFROST_PUBLIC_READ=true`, a fixed set of `GET` routes also works without credentials. See [Public read](/docs/guides/public-read) for the list.
 
-`AUTH_DISABLED=true` turns authentication off. For development only.
+`AUTH_DISABLED=true` turns authentication off (`GET /setup/status` then reports `needsSetup: false` and `GET /auth/me` returns `{ "username": "admin" }`). For development only.
 
 ## Conventions
 
 - Bodies and responses are JSON, except downloads and `POST /import/file` (multipart). A request body with any other `Content-Type` gets `415`. Requests without a body (`DELETE`, logout) need no `Content-Type`.
 - Errors are `{ "error": "message", "code": "CODE" }`; see [Errors](#errors).
-- Length limits: passwords 1024 characters, usernames 128, API key and tag names 100, URLs 8192.
+- Length limits: passwords 1024 characters, usernames 128, API key and tag names 100, tag colors 32, cron expressions 256, URLs 8192.
 - Timestamps are ISO 8601; see [Timestamps](#timestamps).
 - Lists are paginated; see [Pagination](#pagination). Lists of snapshots and imports are newest first.
 - Snapshot `status` is exactly one of `pending`, `done` or `failed`.
@@ -97,9 +97,9 @@ Every list endpoint returns the same envelope:
 | Query | Default | Description |
 |---|---|---|
 | `page` | `1` | 1-based page |
-| `limit` | `20` | Page size, capped at `200`. Non-integers are truncated. |
+| `limit` | `20` | Page size, capped at `200`. Non-integers are truncated; a value that is not a number falls back to the default. |
 
-The lists are `GET /snapshots` (also with `q` and `status`), `GET /tags`, `GET /snapshots/:id/tags`, `GET /schedules`, `GET /imports` (newest first) and `GET /settings/keys`.
+The lists are `GET /snapshots` (also with `q` and `status`; newest first), `GET /tags` (by name), `GET /snapshots/:id/tags` (by name), `GET /schedules` (oldest first), `GET /imports` (newest first) and `GET /settings/keys` (oldest first).
 
 ## Timestamps
 
@@ -166,7 +166,7 @@ curl -X POST $API/snapshots -H "Authorization: Bearer $KEY" \
 # 202 { "id": 1, "url": "https://example.com", "status": "pending" }
 ```
 
-The URL must be `http` or `https`, otherwise `400 { "error": "invalid url", "code": "VALIDATION" }`. The pipeline runs in the background; poll the snapshot until `status` leaves `pending`.
+The URL must be `http` or `https` and at most 8192 characters, otherwise `400 { "error": "invalid url", "code": "VALIDATION" }`; a body that fails validation in any other way gets the same response. The pipeline runs in the background; poll the snapshot until `status` leaves `pending`.
 
 ### List
 
@@ -233,7 +233,7 @@ Guests (see [Public read](/docs/guides/public-read)) get the same shape.
 | `GET` | `/snapshots/:id/archives/:extractor/download` | Download one format |
 | `GET` | `/snapshots/:id/archives/:extractor/preview` | Render archived HTML inline in a sandbox |
 
-`:extractor` is one of `warc`, `pdf`, `screenshot`, `readability`, `dom-snapshot`, `singlefile`, `html`, `media`, `media-metadata`. An unknown name answers `400` `BAD_REQUEST`, a snapshot or result that does not exist `404`.
+`:extractor` is one of `warc`, `pdf`, `screenshot`, `readability`, `dom-snapshot`, `singlefile`, `html`, `media`, `media-metadata`. An unknown name answers `400` `BAD_REQUEST`, a snapshot or result that does not exist (or has no content) `404`.
 
 ```bash
 curl -OJ $API/snapshots/1/archives/screenshot/download -H "Authorization: Bearer $KEY"
@@ -258,12 +258,12 @@ Downloads carry `Content-Disposition: attachment`. With the S3 backend every fil
 
 | Method | Route | Description |
 |---|---|---|
-| `GET` | `/tags` | List tags, paginated: items are `{ id, name, slug, color, createdAt }` |
-| `POST` | `/tags` | `{ name, color? }`. `201`. `409` `CONFLICT` if the name exists. |
+| `GET` | `/tags` | List tags by name, paginated: items are `{ id, name, slug, color, createdAt }`; `color` is `null` when none was set |
+| `POST` | `/tags` | `{ name, color? }`. `201` with the tag. `409` `CONFLICT` if a tag with that name (or slug) exists. |
 | `DELETE` | `/tags/:id` | Delete a tag and remove it from all snapshots. `204`, or `404`. |
 | `GET` | `/snapshots/:id/tags` | Tags on a snapshot, paginated |
-| `POST` | `/snapshots/:id/tags` | `{ tagId }`. `201`. `404` for an unknown snapshot or tag. |
-| `DELETE` | `/snapshots/:id/tags/:tagId` | Remove a tag from a snapshot. `204`, or `404`. |
+| `POST` | `/snapshots/:id/tags` | `{ tagId }`. `201` with the tag, also when it was already attached. `404` for an unknown snapshot or tag. |
+| `DELETE` | `/snapshots/:id/tags/:tagId` | Remove a tag from a snapshot. `204`, or `404` when the snapshot does not exist or the tag is not on it. |
 
 Tag names are part of the search index and stay in sync when you add or remove tags after archiving.
 
@@ -271,10 +271,10 @@ Tag names are part of the search index and stay in sync when you add or remove t
 
 | Method | Route | Description |
 |---|---|---|
-| `POST` | `/schedules` | `{ url, cron }`. `201`. `400` `VALIDATION` for an invalid URL or cron expression. |
-| `GET` | `/schedules` | List schedules, paginated |
+| `POST` | `/schedules` | `{ url, cron }`. `201` with the schedule. `400` `VALIDATION` for an invalid URL or cron expression. |
+| `GET` | `/schedules` | List schedules, oldest first, paginated |
 | `GET` | `/schedules/:id` | One schedule, or `404` |
-| `PATCH` | `/schedules/:id` | `{ "paused": true }` or `{ "paused": false }` |
+| `PATCH` | `/schedules/:id` | `{ "paused": true }` or `{ "paused": false }` (required). Returns the updated schedule, or `404`. |
 | `DELETE` | `/schedules/:id` | `204`, or `404` |
 
 A schedule is `{ id, url, cron, createdAt, lastRunAt, nextRunAt, paused, lastStatus, consecutiveFailures }`. `lastStatus` is `success`, `failed` or `null`. The API creates URL schedules only; add an RSS feed schedule with `webfrost schedule add --rss`. See [Scheduled archiving](/docs/guides/scheduled-archiving).
@@ -287,7 +287,7 @@ A schedule is `{ id, url, cron, createdAt, lastRunAt, nextRunAt, paused, lastSta
 | `POST` | `/import/file` | Import an uploaded file (`multipart/form-data`). `202`. |
 | `GET` | `/imports` | Import history, newest first, paginated |
 
-`POST /import` takes JSON `{ url?, content?, format? }`. Send `url` (a feed or file to fetch) or `content` (raw text), otherwise `400` `VALIDATION`. A `url` that cannot be fetched answers `400` `FETCH_FAILED`. `format` is `rss`, `opml`, `netscape` or `text`; it is detected when omitted. A `url` without a format is tried as an RSS feed first. `POST /import/file` takes a `file` field and an optional `format` field.
+`POST /import` takes JSON `{ url?, content?, format? }`. Send `url` (a feed or file to fetch) or `content` (raw text), otherwise `400` `VALIDATION`. A `url` that cannot be fetched answers `400` `FETCH_FAILED`. `format` is `rss`, `opml`, `netscape` or `text`; it is detected when omitted, and any other value is ignored. A `url` without a format is tried as an RSS feed first. Only RSS imports skip URLs that are already archived. `POST /import/file` takes a `file` field and an optional `format` field, and answers with the same `{ queued, skipped, total, format }`; `total` is the number of URLs found.
 
 An import larger than `WEBFROST_IMPORT_MAX_BYTES` (default 10 MiB: the file, the `content` field or the fetched `url`) or with more URLs than `WEBFROST_IMPORT_MAX_URLS` (default 10000) is refused with `413 { "code": "PAYLOAD_TOO_LARGE" }` and queues nothing.
 
@@ -309,13 +309,13 @@ curl -X POST $API/import/file -H "Authorization: Bearer $KEY" \
 |---|---|---|
 | `GET` | `/stats` | `{ snapshotCount, storageBytes, storageByExtractor, successRate, activeScheduleCount, failedToday }`. Cached for 60 seconds. |
 | `GET` | `/settings/info` | `{ version, storagePath, snapshotCount }` |
-| `GET` | `/settings/keys` | List active API keys, paginated: items are `{ id, name, expiresAt, lastUsedAt, createdAt }` |
-| `POST` | `/settings/keys` | `{ name, expiresAt? }`. `201` with the key and `rawKey`, shown once. |
+| `GET` | `/settings/keys` | List active API keys, oldest first, paginated: items are `{ id, name, expiresAt, lastUsedAt, createdAt }` |
+| `POST` | `/settings/keys` | `{ name, expiresAt? }`. `201` with `{ id, name, expiresAt, lastUsedAt, createdAt, rawKey }`; `rawKey` is shown once. |
 | `DELETE` | `/settings/keys/:id` | Revoke a key. `204`, or `404`. |
 
 `expiresAt` is optional and ISO 8601, such as `2027-01-01T00:00:00Z`. A value without an offset is read as UTC. It must be in the future, otherwise `400` `VALIDATION`. Omit it or send `null` for a key that never expires.
 
-`successRate` is the percentage of `done` snapshots among those finished in the last 30 days. `failedToday` counts snapshots that failed since 00:00 UTC.
+`storageByExtractor` maps each extractor name to its bytes on disk. `successRate` is the percentage (0 to 100, two decimals) of `done` snapshots among those that are not `pending`, created in the last 30 days. `failedToday` counts snapshots that failed since 00:00 UTC.
 
 ## Status codes at a glance
 

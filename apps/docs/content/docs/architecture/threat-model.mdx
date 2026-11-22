@@ -14,7 +14,7 @@ which risks remain open. Configuration details for each control are in [Security
 
 WebFrost is single-tenant and self-hosted. One operator runs the server; one admin account (plus
 API keys) uses it. Users submit URLs; the server fetches them with an HTTP client and a headless
-Chromium, and stores the results as files plus a SQLite database.
+Chromium, and stores the results as files plus a database (SQLite by default).
 
 <ArchDiagram
   name="threat-dataflow"
@@ -141,8 +141,7 @@ by definition. It still refuses non-HTTP(S) URLs and applies the same SSRF guard
 | 2 | Blind SSRF through browser redirect hops and yt-dlp | Medium | Same as above |
 | 3 | Chromium without its own sandbox | Medium | Keep the image current; treat the container as the sandbox |
 | 4 | First-run setup race | Low | Set `WEBFROST_SETUP_TOKEN`, or complete setup before exposing the port |
-| 5 | Container process runs as root | Low | No extra capabilities, no host mounts beyond the data volume |
-| 6 | Rate-limit state is per process and in memory | Low | Single-instance deployments only; limits reset on restart |
+| 5 | Rate-limit state is per process and in memory | Low | Single-instance deployments only; limits reset on restart |
 
 Items 1–2 would be closed by routing all outbound traffic through a filtering egress proxy that
 pins the validated IP; that is tracked in the [roadmap](https://github.com/gtkatakura/webfrost/blob/main/ROADMAP.md).

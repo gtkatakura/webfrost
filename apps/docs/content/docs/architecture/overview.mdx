@@ -52,7 +52,7 @@ Key relationships:
 | Throttle (`throttle.ts`) | Spaces archives of the same host. |
 | Database (`db.ts`) | One async data-access layer for SQLite, PostgreSQL and MySQL, and their migrations. SQL through the Kysely query builder, no ORM. |
 | Storage (`storage/`) | Filesystem or S3 backend behind one interface. |
-| Auth, search, tags, import | Admin users, API keys and sessions; FTS5 queries; tag management; text, OPML, Netscape and RSS parsing. |
+| Auth, search, tags, import | Admin users, API keys and sessions; full-text search (FTS5, `tsvector` or `FULLTEXT` by engine); tag management; text, OPML, Netscape and RSS parsing. |
 
 ## Design principles
 
@@ -62,11 +62,11 @@ Key relationships:
 
 **Open formats.** WARC, PDF, PNG, HTML and SQLite. No proprietary binary format.
 
-**One directory.** The database and the files live together. Back up with `rsync`. S3 is optional.
+**One directory.** With the default SQLite database and filesystem storage, everything lives in one directory and `rsync` backs it up. PostgreSQL, MySQL and S3 are optional.
 
 **Small and replaceable layers.** The CLI, server and SDK add no archive logic. A new interface implements against `core` without touching the pipeline.
 
-**In-process queue, durable state.** The job runner is in memory, but job state and heartbeats are in SQLite, so a restart or crash does not strand snapshots. A distributed queue is not needed for self-hosted use.
+**In-process queue, durable state.** The job runner is in memory, but job state and heartbeats are in the database, so a restart or crash does not strand snapshots. A distributed queue is not needed for self-hosted use.
 
 <Cards>
   <Card title="Pipeline" href="/docs/architecture/pipeline">

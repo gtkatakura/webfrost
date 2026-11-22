@@ -8,7 +8,7 @@ A schedule archives a URL, or the new items of a feed, whenever its cron express
 
 ## Create a schedule
 
-<Tabs items={["CLI", "Web UI", "API", "SDK"]}>
+<Tabs items={["CLI", "Web UI", "API"]}>
 <Tab value="CLI">
 
 ```bash
@@ -25,7 +25,7 @@ webfrost schedule remove 1
 </Tab>
 <Tab value="Web UI">
 
-Open **Schedules**, enter a URL and a cron expression or preset. Rows show a health badge, last status and a preview of the next 5 runs. You can pause, resume and delete.
+Open **Schedules**, enter a URL and a cron expression or preset. Rows show a health badge, last status and a preview of the next 5 runs. You can delete a schedule there; pausing and resuming is done through the API.
 
 </Tab>
 <Tab value="API">
@@ -49,20 +49,11 @@ curl -X DELETE http://localhost:3000/api/v1/schedules/1 \
 An invalid cron expression or a non-http(s) URL answers `400`.
 
 </Tab>
-<Tab value="SDK">
-
-```ts
-const schedule = await client.createSchedule("https://example.com/news", "0 0 * * *");
-await client.updateSchedule(schedule.id, { paused: true });
-await client.deleteSchedule(schedule.id);
-```
-
-</Tab>
 </Tabs>
 
 ## RSS feeds
 
-`schedule add --rss` creates a feed schedule. On each run WebFrost fetches the feed, skips items that already have a snapshot, and archives the rest. The API, SDK and web UI create URL schedules only; use the CLI to add a feed schedule. It then runs in the server like any other.
+`schedule add --rss` creates a feed schedule. On each run WebFrost fetches the feed, skips items that already have a snapshot, and archives the rest. The API and web UI create URL schedules only; use the CLI to add a feed schedule. It then runs in the server like any other.
 
 A URL schedule creates a new snapshot on every run, even when the page has not changed.
 
@@ -78,7 +69,7 @@ Five fields: `minute hour day-of-month month day-of-week`.
 | month | 1-12 or `jan`-`dec` |
 | day-of-week | 0-7 (0 and 7 are Sunday) or `sun`-`sat` |
 
-Each field supports `*`, a number or name, a range (`1-5`, `mon-fri`), a list (`1,15`) and steps over `*` or a range (`*/15`, `1-10/2`). The aliases `@hourly`, `@daily`, `@weekly`, `@monthly` and `@yearly` also work. A value out of range, such as `60 * * * *`, is rejected when you create the schedule (the API answers `400`, the CLI prints the error) and the message names the field.
+Each field supports `*`, a number or name, a range (`1-5`, `mon-fri`), a list (`1,15`) and steps (`*/15`, `1-10/2`, `5/10`). The aliases `@hourly`, `@daily` (`@midnight`), `@weekly`, `@monthly` and `@yearly` (`@annually`) also work. A value out of range, such as `60 * * * *`, is rejected when you create the schedule (the API answers `400`, the CLI prints the error) and the message names the field.
 
 When both day-of-month and day-of-week are restricted (neither starts with `*`), a day matches if either one does, as in Vixie cron: `0 0 15 * 1` runs on the 15th and on every Monday. If one of them is `*`, only the other applies.
 

@@ -45,8 +45,8 @@ the fresh instance.
 
 | Variable | Why |
 |---|---|
-| `SESSION_SECRET` | Required by the server; 32+ random characters. Changing it signs everyone out. |
-| `WEBFROST_DIR` | Archive folder (`/data` in Docker). Back this up. |
+| `SESSION_SECRET` | Required by the Docker server; 32+ random characters. Changing it signs everyone out. `webfrost serve` generates one in `<WEBFROST_DIR>/session-secret` when unset. |
+| `WEBFROST_DIR` | Archive folder (`~/.webfrost` for the binary, `/data` in Docker). Back this up. |
 | `DATABASE_URL` | `postgres://…` or `mysql://…`; unset means SQLite in `WEBFROST_DIR`. |
 | `WEBFROST_STORAGE_BACKEND` | `filesystem` (default) or `s3` with the `S3_*` variables. |
 | `WEBFROST_TRUST_PROXY` | `true` only behind a reverse proxy; `WEBFROST_TRUSTED_PROXY_HOPS` if more than one. |
@@ -62,7 +62,7 @@ Never set `AUTH_DISABLED=true` on anything reachable from a network.
   continuously with Litestream: `docker compose --profile backup up -d`
   after setting the `LITESTREAM_*` variables (see the Backups guide). WebFrost keeps SQLite in WAL mode
   and never checkpoints by hand, which is what Litestream needs.
-- **PostgreSQL** or **MySQL 8+**: when a database server already exists, for managed backups, or to run
+- **PostgreSQL** or **MySQL 8.0.13+**: when a database server already exists, for managed backups, or to run
   several WebFrost servers against one database. Set `DATABASE_URL`; migrations run at startup.
 
 ## Reverse proxy and TLS
@@ -72,6 +72,8 @@ the `Host` header (the server compares `Origin` with `Host` to reject cross-site
 cookies are `Secure`; on plain HTTP over a LAN address set `WEBFROST_INSECURE_COOKIES=true`.
 
 ## Security checklist
+
+Full operator checklist: https://webfrost.dev/docs/guides/harden-a-deployment
 
 1. Strong `SESSION_SECRET`, `WEBFROST_SETUP_TOKEN` until the admin exists.
 2. Leave `WEBFROST_ALLOW_PRIVATE_URLS` off unless archiving an intranet on purpose.

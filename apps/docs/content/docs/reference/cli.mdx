@@ -4,7 +4,7 @@ description: Every webfrost command, flag, exit code and environment variable, w
 icon: Terminal
 ---
 
-`webfrost` is one binary: the command-line tools and the server. The archive commands (`add`, `list`, `search`...) work directly on the archive directory and do not talk to a server; `serve` runs the server. [Install it](/docs/getting-started/install) first. From a source checkout, `bun run webfrost <command>` runs the same code (see [Development](/docs/contributing/development)).
+`webfrost` is one binary: the command-line tools and the server. The archive commands (`add`, `list`, `search`...) work directly on the archive directory and do not talk to a server; `serve` runs the server. [Install it](/docs/getting-started/install) first.
 
 ```bash
 webfrost add https://example.com
@@ -19,7 +19,7 @@ The server image does not contain the CLI. Create the admin user in the browser 
 ```bash
 webfrost --help               # every command
 webfrost help schedule add    # one command, same as: webfrost schedule add --help
-webfrost --version
+webfrost --version            # also -v
 ```
 
 Flags are parsed per command, and every command accepts both `--flag value` and `--flag=value`. Unknown flags and missing arguments are usage errors, not silently ignored.
@@ -104,7 +104,7 @@ List snapshots, newest first, as `id`, `status`, `url` separated by tabs.
 
 | Flag | Effect |
 |---|---|
-| `--status <status>` | Only `pending`, `running`, `done` or `failed` snapshots |
+| `--status <status>` | Only `pending`, `done` or `failed` snapshots |
 | `--limit <n>` | How many to show (default 50, at most 1000) |
 | `--page <n>` | Page of results, from 1 |
 | `--json` | Print `{ items, total, page, limit }` |
@@ -204,7 +204,7 @@ webfrost schedule add --rss https://example.com/feed.xml --cron "0 * * * *"
 3. The `WEBFROST_PASSWORD` environment variable.
 4. A prompt on the terminal, asked twice, without echo.
 
-With none of these and no terminal, the command is a usage error (exit 2).
+Passing both `--password-stdin` and `--password` is a usage error. With none of the sources and no terminal, the command is a usage error (exit 2).
 
 ```bash
 webfrost admin create --username admin
@@ -227,7 +227,7 @@ Every command that opens a browser (`add`, `import`, `schedule worker`, `serve`)
 | Variable | Default | Description |
 |---|---|---|
 | `WEBFROST_DIR` | `~/.webfrost` | Directory with `archive.db` and `snapshots/`. The CLI and the server share it. |
-| `WEBFROST_CACHE_DIR` | `~/.cache/webfrost` (Linux), `~/Library/Caches/webfrost` (macOS), `%LOCALAPPDATA%\webfrost` (Windows) | Where `setup` installs Chromium |
+| `WEBFROST_CACHE_DIR` | `$XDG_CACHE_HOME/webfrost` or `~/.cache/webfrost` (Linux), `~/Library/Caches/webfrost` (macOS), `%LOCALAPPDATA%\webfrost` (Windows) | Where `setup` installs Chromium |
 | `WEBFROST_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. `--verbose` and `--quiet` override it. |
 | `WEBFROST_CONCURRENCY` | `3` | Pipelines in parallel for `import` and `schedule worker` |
 | `WEBFROST_DOMAIN_DELAY_MS` | `1000` | Spacing of archives of the same host, in milliseconds |

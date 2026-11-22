@@ -4,7 +4,7 @@ description: Send traces, metrics and logs to your own OpenTelemetry collector, 
 icon: Activity
 ---
 
-WebFrost collects no telemetry. It can, if you ask it to, export **traces, metrics and logs** over OTLP to a collector you run: an [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/), Jaeger, Grafana Tempo/Mimir/Loki, or any OTLP-compatible backend. Export is configured with the standard `OTEL_*` variables and works the same in the Docker image, `bun run start`, `webfrost serve`, the other CLI commands and the standalone binary.
+WebFrost collects no telemetry. It can, if you ask it to, export **traces, metrics and logs** over OTLP to a collector you run: an [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/), Jaeger, Grafana Tempo/Mimir/Loki, or any OTLP-compatible backend. Export is configured with the standard `OTEL_*` variables and works the same in the Docker image, `webfrost serve` and the other CLI commands.
 
 Without an OTLP endpoint in the environment, the OpenTelemetry SDK is not even loaded: no extra memory, no background timers, nothing recorded and nothing sent. The instrumentation points are calls into an empty function.
 
@@ -111,7 +111,7 @@ service:
     logs: { receivers: [otlp], processors: [batch], exporters: [debug] }
 ```
 
-Next to WebFrost in Compose (`.env` holds the `OTEL_*` values; `docker-compose.prod.yml` passes them through):
+Next to WebFrost in Compose. `compose.yml` carries the main `OTEL_*` variables as commented-out lines under `environment`: uncomment the ones you use and put their values in `.env`. Add any other variable from the table above to the same block.
 
 ```yaml
 services:

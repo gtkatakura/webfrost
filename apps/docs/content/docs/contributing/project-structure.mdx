@@ -52,7 +52,8 @@ packages/core/src/
 ├── import-history.ts    import history
 ├── rss.ts               RSS and Atom fetching, URL deduplication
 ├── auth.ts              admin users, API keys, sessions
-├── search.ts            FTS5 indexing and search
+├── search.ts            full-text indexing and search (FTS5, tsvector or FULLTEXT)
+├── telemetry.ts         optional OpenTelemetry export (telemetry-otel.ts holds the SDK side)
 ├── tags.ts              tags, kept in sync with the FTS index
 ├── list.ts, snapshot.ts, stats.ts   queries
 ├── storage/             filesystem and S3 backends
@@ -88,7 +89,7 @@ This documentation site in `apps/docs`. See [Development](/docs/contributing/dev
   caption="Solid arrows are workspace imports; the dashed arrow is HTTP at runtime."
 />
 
-The CLI and server depend on core, and the CLI also depends on the server, which `webfrost serve` starts in its own process. The UI uses the SDK, and at runtime both reach the server only over HTTP. The docs site stands alone.
+The CLI and server depend on core, and the CLI also depends on the server, which `webfrost serve` runs inside the CLI's own process. The UI uses the SDK, and at runtime both reach the server only over HTTP. The docs site stands alone.
 
 ## Add an extractor
 

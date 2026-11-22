@@ -9,6 +9,7 @@ to 90 days for a fix before public disclosure.
 
 ## How WebFrost is secured
 
-Authentication, rate limits, the SSRF guard, public read mode and a deployment checklist are
-described in [Security](apps/docs/content/docs/architecture/security.mdx); the attack surface and
-open risks in the [threat model](apps/docs/content/docs/architecture/threat-model.mdx).
+Authentication, rate limits, the SSRF guard and public read mode are described in
+[Security](https://webfrost.dev/docs/architecture/security); the attack surface and open risks in the
+[threat model](https://webfrost.dev/docs/architecture/threat-model). Before exposing a server, work
+through [Harden a deployment](https://webfrost.dev/docs/guides/harden-a-deployment).

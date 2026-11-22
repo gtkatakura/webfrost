@@ -21,12 +21,12 @@ The script downloads the archive for your machine from the latest [GitHub releas
 
 | Variable | Default | Effect |
 |---|---|---|
-| `WEBFROST_VERSION` | latest release | Install this version, for example `1.2.3` |
+| `WEBFROST_VERSION` | latest release | Install this version, for example `0.1.0` |
 | `WEBFROST_INSTALL_DIR` | `~/.local/bin` | Where to put the binary |
 | `WEBFROST_DOWNLOAD_BASE` | the GitHub release | URL that holds the archives and `checksums.txt`. For testing and mirrors. |
 
 ```bash
-curl -fsSL https://webfrost.dev/install.sh | WEBFROST_VERSION=1.2.3 WEBFROST_INSTALL_DIR=/usr/local/bin sh
+curl -fsSL https://webfrost.dev/install.sh | WEBFROST_VERSION=0.1.0 WEBFROST_INSTALL_DIR=/usr/local/bin sh
 ```
 
 The Linux binaries need glibc. On Alpine and other musl systems use the Docker image.
@@ -92,7 +92,7 @@ WebFrost needs a Chromium or Chrome for four extractors: PDF, screenshot, DOM sn
 webfrost setup
 ```
 
-`setup` looks for a browser first and installs nothing if it finds a working one. Otherwise it downloads Playwright's headless Chromium (about 100 MB) into WebFrost's own cache directory: `~/.cache/webfrost` on Linux, `~/Library/Caches/webfrost` on macOS, `%LOCALAPPDATA%\webfrost` on Windows (`WEBFROST_CACHE_DIR` overrides it). Nothing is installed system-wide.
+`setup` looks for a browser first and installs nothing if it finds a working one. Otherwise it downloads Playwright's headless Chromium (about 100 MB) into WebFrost's own cache directory: `~/.cache/webfrost` on Linux (`$XDG_CACHE_HOME/webfrost` when that is set), `~/Library/Caches/webfrost` on macOS, `%LOCALAPPDATA%\webfrost` on Windows (`WEBFROST_CACHE_DIR` overrides it). Nothing is installed system-wide.
 
 Every command looks for the browser in this order, and uses the first match:
 
@@ -132,7 +132,7 @@ webfrost doctor
 ```
 
 ```text
-[ok  ] WebFrost: v1.0.0 (compiled binary, Bun 1.4.4, linux/x64)
+[ok  ] WebFrost: v0.1.0 (compiled binary, Bun 1.4.4, linux/x64)
 [ok  ] Data directory: /home/you/.webfrost (writable, will be created on first use)
 [ok  ] Database: no archive.db yet (created on first use)
 [ok  ] Chromium: /home/you/.cache/webfrost/browsers/... (Google Chrome for Testing 147.0.7727.15; cache)

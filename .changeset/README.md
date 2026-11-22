@@ -22,4 +22,4 @@ Follow the prompts to select the bump type and describe the change. A new markdo
    git push origin HEAD --tags
    ```
 
-See `docs/RELEASE.md` for the full release checklist.
+See [Releasing](../apps/docs/content/docs/contributing/releasing.mdx) for the full release checklist.

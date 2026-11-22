@@ -12,7 +12,7 @@ icon: Braces
 npm install @webfrost/sdk
 ```
 
-Available from `0.1.0`.
+It is not on npm yet: the package will be published with the first release, `0.1.0`.
 
 ## Create a client
 
@@ -182,7 +182,7 @@ client.archiveUrl(1, "singlefile", "preview");
 
 ### `downloadArchive(id, extractor, options?): Promise<Response>`
 
-Fetches an archived result with the client's auth, timeout and signal, and returns the `Response`: read it with `.blob()`, `.arrayBuffer()` or `.body`. `options` is `{ kind?, signal? }`. The timeout ends when the headers arrive, so a large body is not cut off. Throws `NOT_FOUND` when there is no such result.
+Fetches an archived result with the client's auth, timeout and signal, and returns the `Response`: read it with `.blob()`, `.arrayBuffer()` or `.body`. `options` is `{ kind?, signal? }`. The timeout ends when the headers arrive, so a large body is not cut off. Throws `NOT_FOUND` when there is no such result, and `BAD_REQUEST` for an extractor name the server does not know.
 
 ```ts
 const res = await client.downloadArchive(1, "warc");
@@ -193,11 +193,11 @@ const blob = await res.blob();
 
 | Method | Returns | Notes |
 |---|---|---|
-| `listTags(options?, request?)` | `Page<Tag>` | |
-| `createTag(name, color?)` | `Tag` | `color` is a hex string such as `"#4f46e5"`. Throws on a duplicate name (`409`). |
+| `listTags(options?, request?)` | `Page<Tag>` | Ordered by name |
+| `createTag(name, color?)` | `Tag` | `color` is any string up to 32 characters, such as `"#4f46e5"`; it is `null` on the tag when omitted. Throws `CONFLICT` (`409`) on a duplicate name. |
 | `deleteTag(id)` | `boolean` | `false` when it did not exist |
 | `listSnapshotTags(snapshotId, options?, request?)` | `Page<Tag>` | An empty page when the snapshot does not exist |
-| `addTagToSnapshot(snapshotId, tagId)` | `Tag` | |
+| `addTagToSnapshot(snapshotId, tagId)` | `Tag` | Throws `NOT_FOUND` for an unknown snapshot or tag; adding a tag that is already there succeeds |
 | `removeTagFromSnapshot(snapshotId, tagId)` | `boolean` | `false` when it did not exist |
 
 ```ts
@@ -209,10 +209,10 @@ await client.addTagToSnapshot(1, tag.id);
 
 | Method | Returns | Notes |
 |---|---|---|
-| `listSchedules(options?, request?)` | `Page<Schedule>` | |
-| `createSchedule(url, cron)` | `Schedule` | URL schedules only |
-| `updateSchedule(id, { paused })` | `Schedule` | Pause or resume |
-| `deleteSchedule(id)` | `boolean` | |
+| `listSchedules(options?, request?)` | `Page<Schedule>` | Oldest first |
+| `createSchedule(url, cron)` | `Schedule` | URL schedules only. Throws `VALIDATION` for a bad URL or cron expression |
+| `updateSchedule(id, { paused })` | `Schedule` | Pause or resume. Throws `NOT_FOUND` for an unknown id |
+| `deleteSchedule(id)` | `boolean` | `false` when it did not exist |
 
 ```ts
 const schedule = await client.createSchedule("https://example.com", "0 9 * * *");
@@ -231,7 +231,7 @@ const result = await client.importUrls({
 // { queued: 12, skipped: 3, total: 15, format: "rss" }
 ```
 
-`options` is `{ url?, content?, format? }`: pass a `url` to fetch or raw `content` to parse. `format` is detected when omitted. `listImports(options?, request?)` returns the history as a `Page<ImportRecord>`, newest first.
+`options` is `{ url?, content?, format? }`: pass a `url` to fetch or raw `content` to parse. `format` is detected when omitted. `listImports(options?, request?)` returns the history as a `Page<ImportRecord>`, newest first. Throws `PAYLOAD_TOO_LARGE` for an import over the server's size or URL-count limits, and `FETCH_FAILED` when the `url` cannot be fetched.
 
 ### `importFile(file, format?, options?): Promise<ImportResult>`
 
@@ -249,18 +249,18 @@ await client.importFile(fileInput.files[0]); // a File keeps its own name
 | `getSetupStatus()` | `{ needsSetup, publicRead, setupTokenRequired }` |
 | `completeSetup(username, password, setupToken?)` | `{ apiKey }`. The password needs at least 8 characters. Pass `setupToken` when the server sets `WEBFROST_SETUP_TOKEN` (`setupTokenRequired`). |
 | `login(username, password)` | `{ ok }`. Sets a session cookie, so it is for browsers; elsewhere use an API key. |
-| `logout()` | `void` |
+| `logout()` | `void`. Not being logged in is not an error. |
 | `getMe()` | `{ username }`, with `null` for API-key auth |
-| `changePassword(currentPassword, newPassword)` | `void`. Throws `WebFrostError` with status `403` when the current password is wrong, `400` for a short new password. |
+| `changePassword(currentPassword, newPassword)` | `void`. Throws `WebFrostError` with status `403` and code `INVALID_CREDENTIALS` when the current password is wrong, `400` `VALIDATION` for a new password under 8 characters. |
 | `getStats()` | `DashboardStats` |
-| `getServerInfo()` | `{ version, storagePath, snapshotCount }` |
-| `listApiKeys(options?, request?)` | `Page<ApiKey>` |
+| `getServerInfo()` | `{ version, storagePath, snapshotCount }` (`GET /settings/info`) |
+| `listApiKeys(options?, request?)` | `Page<ApiKey>`, active keys only, oldest first |
 | `createApiKey(name, { expiresAt?, signal? })` | `ApiKeyCreated`, which includes `rawKey`, shown once. `expiresAt` is an ISO 8601 string or a `Date` in the future; omit it for a key that never expires. |
-| `revokeApiKey(id)` | `boolean` |
+| `revokeApiKey(id: string)` | `boolean`. `false` when the key did not exist. |
 
 ## Types
 
-Every type is exported from the package root, for example `import type { Snapshot, SnapshotStatus, SetupResult, ExtractorMeta, RequestOptions } from "@webfrost/sdk"`.
+Every type is exported from the package root, for example `import type { Snapshot, SnapshotStatus, SetupResult, ExtractorMeta, RequestOptions } from "@webfrost/sdk"`, as are the error code unions `ApiErrorCode`, `ClientErrorCode` and `WebFrostErrorCode`.
 
 ```ts
 type SnapshotStatus = "pending" | "done" | "failed";

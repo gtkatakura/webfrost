@@ -25,7 +25,7 @@ URLs that are not `http` or `https` are dropped, and duplicates inside one file 
 
 ## Import
 
-<Tabs items={["CLI", "Web UI", "API", "SDK"]}>
+<Tabs items={["CLI", "Web UI", "API"]}>
 <Tab value="CLI">
 
 ```bash
@@ -53,7 +53,7 @@ Import complete: total=15, done=11, skipped=3, failed=1 (84.2s)
 </Tab>
 <Tab value="Web UI">
 
-Open **Import**, choose a format card (RSS feed, OPML, Netscape bookmarks, plain text), then enter a URL or upload a file. The result shows how many URLs were found and queued. The import history is in a tab next to the form.
+Open **Import**, choose a format (**RSS / Atom**, **OPML File**, **Bookmarks HTML**, **Plain Text URLs**), then enter a feed URL, upload a file or paste the URLs. The result shows how many URLs were found, queued and skipped. The **History** tab lists past imports.
 
 </Tab>
 <Tab value="API">
@@ -81,19 +81,6 @@ curl -X POST http://localhost:3000/api/v1/import/file \
 ```
 
 `GET /api/v1/imports` returns the import history. Details are in the [REST API reference](/docs/reference/rest-api#import).
-
-</Tab>
-<Tab value="SDK">
-
-```ts
-const result = await client.importUrls({
-  url: "https://example.com/feed.xml",
-  format: "rss",
-});
-// { queued: 12, skipped: 3, total: 15, format: "rss" }
-
-const history = await client.listImports(); // { items, total, page, limit }
-```
 
 </Tab>
 </Tabs>

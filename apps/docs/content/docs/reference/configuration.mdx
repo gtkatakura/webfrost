@@ -28,8 +28,6 @@ Precedence: `DATABASE_URL` when set, otherwise SQLite at `$WEBFROST_DIR/archive.
 
 PostgreSQL connection options go in the URL as usual, for example `?sslmode=require`, or `?options=-c%20search_path%3Dwebfrost` to use a schema other than `public`. For MySQL, start the server with `--innodb-ft-min-token-size=1` (or `2`) if searches for one- and two-letter words matter: MySQL's default (`3`) leaves them out of the full-text index.
 
-`WEBFROST_TEST_DATABASE_URL` is for the test suites only: it gives every temporary archive directory its own schema or database on that server. Never set it in production.
-
 ## Server
 
 | Variable | Required | Default | Description |
@@ -61,7 +59,7 @@ PostgreSQL connection options go in the URL as usual, for example `?sslmode=requ
 | `WEBFROST_SINGLEFILE_CONCURRENCY` | `8` | Images, stylesheets and fonts the self-contained HTML downloads at the same time. |
 | `WEBFROST_SINGLEFILE_MAX_BYTES` | `104857600` | Total bytes the self-contained HTML may inline (100 MB). Assets past the budget stay as links to the live site. |
 | `WEBFROST_CHROMIUM_PATH` | none | Use this Chromium or Chrome binary. Checked first; without it WebFrost uses the Chromium `webfrost setup` installed, then a system Chrome or Chromium, then Playwright's own. See [the lookup order](/docs/reference/cli#chromium-lookup-order). |
-| `WEBFROST_CACHE_DIR` | `~/.cache/webfrost` (Linux), `~/Library/Caches/webfrost` (macOS), `%LOCALAPPDATA%\webfrost` (Windows) | Where `webfrost setup` installs Chromium. |
+| `WEBFROST_CACHE_DIR` | `$XDG_CACHE_HOME/webfrost` or `~/.cache/webfrost` (Linux), `~/Library/Caches/webfrost` (macOS), `%LOCALAPPDATA%\webfrost` (Windows) | Where `webfrost setup` installs Chromium. |
 | `WEBFROST_ALLOW_PRIVATE_URLS` | `false` | `true` allows archiving loopback, private and link-local addresses (intranet archiving). Leave it off when people you do not fully trust can submit URLs. See [Security](/docs/architecture/security#ssrf-protection). |
 
 Fixed limits that are not configurable: browser navigation 30 seconds, response body 50 MB, media file 500 MB, browser shutdown 5 seconds, 5 redirects per fetch.
@@ -104,7 +102,6 @@ Off unless an OTLP endpoint is set; without one the OpenTelemetry SDK is not loa
 | Variable | Default | Description |
 |---|---|---|
 | `IMAGE_TAG` | `latest` | Image tag that `compose.yml` pulls |
-| `GITHUB_REPOSITORY` | `gtkatakura/webfrost` | Builds the image name `ghcr.io/$GITHUB_REPOSITORY/server` |
 | `LITESTREAM_S3_BUCKET` | none | Bucket the optional `litestream` service (profile `backup`) replicates `archive.db` to. See [Backups](/docs/guides/backups). |
 | `LITESTREAM_S3_PATH` | `webfrost/archive.db` | Path of the replica inside the bucket |
 | `LITESTREAM_S3_ENDPOINT` | none (AWS) | Endpoint of an S3-compatible store (MinIO, R2, B2) |
@@ -146,7 +143,7 @@ docker run -d -p 3000:3000 \
 </Tab>
 <Tab value="Compose">
 
-`compose.yml` substitutes `${VAR}` from `.env`. `SESSION_SECRET` is required; the other variables above, including the storage ones, are optional and passed through.
+`compose.yml` substitutes `${VAR}` from `.env`. `SESSION_SECRET` is required. It passes through only these optional variables: `PORT` (host port), `IMAGE_TAG`, `WEBFROST_SETUP_TOKEN`, `WEBFROST_TRUST_PROXY`, `WEBFROST_CONCURRENCY`, `TZ`, `WEBFROST_PUBLIC_READ`, `WEBFROST_INSECURE_COOKIES`, `WEBFROST_ALLOW_PRIVATE_URLS`, `WEBFROST_DOMAIN_DELAY_MS`, `WEBFROST_SCHEDULER`, `WEBFROST_LOG_LEVEL`, `DATABASE_URL`, the storage variables (`WEBFROST_STORAGE_BACKEND`, `S3_*`) and the `LITESTREAM_*` ones; the `OTEL_*` lines are commented out in the file until you enable them. Any other variable (timeouts, `WEBFROST_TRUSTED_PROXY_HOPS`, `WEBFROST_SHUTDOWN_TIMEOUT_MS`, import limits, the database pool) needs an `environment:` entry added to the file.
 
 ```bash
 echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env
