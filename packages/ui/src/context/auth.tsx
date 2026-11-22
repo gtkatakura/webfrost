@@ -82,6 +82,12 @@ export function AuthProvider({
     const settle = (next: AuthState) => {
       if (!cancelled) setState(next);
     };
+    // Both questions at once: asked one after the other they cost two round trips before the first page
+    // can even start loading. The session check never rejects here; its outcome is read below.
+    const me = client.getMe().then(
+      ({ username }) => ({ ok: true as const, username }),
+      (err: unknown) => ({ ok: false as const, err }),
+    );
     client
       .getSetupStatus()
       .then(async ({ needsSetup, publicRead }) => {
@@ -96,17 +102,17 @@ export function AuthProvider({
           });
           return;
         }
-        try {
-          const { username } = await client.getMe();
+        const session = await me;
+        if (session.ok) {
           settle({
             ready: true,
             needsSetup: false,
             isAuthenticated: true,
-            username,
+            username: session.username,
             publicRead: pub,
           });
-        } catch (err) {
-          if (!isStatus(err, 401)) throw err;
+        } else {
+          if (!isStatus(session.err, 401)) throw session.err;
           settle({
             ready: true,
             needsSetup: false,

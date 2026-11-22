@@ -34,6 +34,8 @@ export interface SnapshotWithExtractors extends Snapshot {
   hasScreenshot: boolean;
   /** A small JPEG of the first screen; snapshots archived before it existed have none. */
   hasThumbnail: boolean;
+  /** A still from the archived video (`media-poster`), which shows a video page better than its screenshot. */
+  hasPoster: boolean;
 }
 
 export interface PaginatedResult<T> {
@@ -52,6 +54,7 @@ interface SnapshotRow {
   readability_content: string | null;
   has_screenshot: number | null;
   has_thumbnail: number | null;
+  has_poster: number | null;
 }
 
 // Failed extractors leave a row with `error` set and no content; joining only the
@@ -65,7 +68,8 @@ function snapshotSelect(db: Db): RawBuilder<SnapshotRow> {
      ${names} AS extractor_names,
      MAX(CASE WHEN ar.extractor = 'readability' THEN ar.content END) AS readability_content,
      MAX(CASE WHEN ar.extractor = 'screenshot' THEN 1 END) AS has_screenshot,
-     MAX(CASE WHEN ar.extractor = 'thumbnail' THEN 1 END) AS has_thumbnail
+     MAX(CASE WHEN ar.extractor = 'thumbnail' THEN 1 END) AS has_thumbnail,
+     MAX(CASE WHEN ar.extractor = 'media-poster' THEN 1 END) AS has_poster
    FROM snapshots s
    LEFT JOIN archive_results ar ON ar.snapshot_id = s.id AND ar.error IS NULL`;
 }
@@ -124,6 +128,7 @@ function toSnapshot(r: SnapshotRow, tags: Map<number, Tag[]>): SnapshotWithExtra
     excerpt,
     hasScreenshot: Number(r.has_screenshot) === 1,
     hasThumbnail: Number(r.has_thumbnail) === 1,
+    hasPoster: Number(r.has_poster) === 1,
   };
 }
 

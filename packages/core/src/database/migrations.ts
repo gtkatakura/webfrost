@@ -31,6 +31,7 @@ export const FILE_BACKED_EXTRACTORS = [
   "singlefile",
   "media",
   "media-metadata",
+  "media-poster",
 ] as const;
 
 const FILE_BACKED_SQL_LIST = FILE_BACKED_EXTRACTORS.map((e) => `'${e}'`).join(", ");

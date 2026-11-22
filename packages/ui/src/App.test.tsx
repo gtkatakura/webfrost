@@ -449,6 +449,27 @@ describe("Reader tab", () => {
   });
 });
 
+describe("Auth bootstrap", () => {
+  test("asks for the setup status and the session at once, not one after the other", async () => {
+    let releaseStatus: (v: { needsSetup: boolean }) => void = () => {};
+    let meCalled = false;
+    const client = mockClient({});
+    (client as unknown as { getSetupStatus: () => Promise<unknown> }).getSetupStatus = () =>
+      new Promise((r) => {
+        releaseStatus = r;
+      });
+    (client as unknown as { getMe: () => Promise<unknown> }).getMe = () => {
+      meCalled = true;
+      return Promise.resolve({ username: "admin" });
+    };
+    renderApp(client, "/");
+    // The status has not answered yet, and the session check is already out.
+    await waitFor(() => expect(meCalled).toBe(true));
+    releaseStatus({ needsSetup: false });
+    await screen.findByRole("heading", { name: "Dashboard" });
+  });
+});
+
 describe("Auth bootstrap failures", () => {
   test("a failing status check shows the unreachable screen, not the login form", async () => {
     let calls = 0;
@@ -593,6 +614,47 @@ describe("Archiving in the app's theme and video snapshots", () => {
 
     const media = await screen.findByRole("tab", { name: /Media/ });
     await waitFor(() => expect(media.getAttribute("aria-selected")).toBe("true"));
+  });
+
+  test("the video player shows the poster still when there is one", async () => {
+    const result = (id: number, extractor: string, path: string) => ({
+      id,
+      extractor,
+      content: null,
+      downloadUrl: `/api/v1/snapshots/22/archives/${path}/download`,
+      previewUrl: null,
+      createdAt: "2024-01-15T10:02:00Z",
+    });
+    const withPoster = makeDetail({
+      id: 22,
+      archiveResults: [result(60, "media", "media"), result(61, "media-poster", "media-poster")],
+    });
+    const client = mockClient({ getSnapshot: () => Promise.resolve(withPoster) });
+    const { container } = renderApp(client, "/snapshots/22");
+    await waitFor(() => expect(container.querySelector("video")).not.toBeNull());
+    expect(container.querySelector("video")?.getAttribute("poster")).toBe(
+      "/api/v1/snapshots/22/archives/media-poster/download",
+    );
+  });
+
+  test("the video has no poster attribute without a media-poster result", async () => {
+    const detail = makeDetail({
+      id: 23,
+      archiveResults: [
+        {
+          id: 70,
+          extractor: "media",
+          content: null,
+          downloadUrl: "/api/v1/snapshots/23/archives/media/download",
+          previewUrl: null,
+          createdAt: "2024-01-15T10:02:00Z",
+        },
+      ],
+    });
+    const client = mockClient({ getSnapshot: () => Promise.resolve(detail) });
+    const { container } = renderApp(client, "/snapshots/23");
+    await waitFor(() => expect(container.querySelector("video")).not.toBeNull());
+    expect(container.querySelector("video")?.hasAttribute("poster")).toBe(false);
   });
 });
 

@@ -10,10 +10,13 @@ import { MAX_SCREENSHOT_HEIGHT, screenshotExtractor } from "./screenshot";
 
 /** Minimal Page stub whose screenshot() always throws (simulates Playwright unavailable). */
 function makeFailingPage(): Page {
+  const fail = async () => {
+    throw new Error("Playwright unavailable (stub)");
+  };
   return {
-    screenshot: async () => {
-      throw new Error("Playwright unavailable (stub)");
-    },
+    screenshot: fail,
+    viewportSize: () => ({ width: 1000, height: 800 }),
+    context: () => ({ newCDPSession: fail }),
   } as unknown as Page;
 }
 
@@ -23,12 +26,22 @@ type ShotOptions = {
   quality?: number;
   fullPage?: boolean;
   clip?: unknown;
+  timeout?: number;
 };
 
 /** A page stub that writes a file per screenshot, records the options and reports `scrollHeight`. */
 function makeRecordingPage(scrollHeight: number) {
   const shots: ShotOptions[] = [];
+  // The thumbnail is taken through the DevTools protocol (WebP, scaled); recorded here as a shot too.
+  const cdp = {
+    send: async (method: string, params: Record<string, unknown>) => {
+      shots.push({ method, ...params } as ShotOptions);
+      return { data: Buffer.from([1, 2, 3]).toString("base64") };
+    },
+    detach: async () => {},
+  };
   const page = {
+    context: () => ({ newCDPSession: async () => cdp }),
     screenshot: async (opts: ShotOptions) => {
       shots.push(opts);
       await Bun.write(opts.path as string, new Uint8Array([1, 2, 3]));
@@ -84,14 +97,16 @@ describe("screenshotExtractor", () => {
     expect(screenshotRow).toBeUndefined();
   });
 
-  test("records the thumbnail (viewport JPEG, quality 60) and then the full-page PNG", async () => {
+  test("records the thumbnail (first screen as WebP at half size) and then the full-page PNG", async () => {
     const { page, shots } = makeRecordingPage(3000);
     await screenshotExtractor(db, 1, makeStorage(), page);
 
     expect(shots).toHaveLength(2);
-    expect(shots[0]).toMatchObject({ type: "jpeg", quality: 60 });
-    expect(shots[0]?.fullPage).toBeUndefined();
-    expect(shots[0]?.path).toEndWith("thumbnail.jpg");
+    expect(shots[0]).toMatchObject({
+      method: "Page.captureScreenshot",
+      format: "webp",
+      clip: { x: 0, y: 0, width: 1000, height: 800, scale: 0.5 },
+    });
     expect(shots[1]).toMatchObject({ fullPage: true });
     expect(shots[1]?.path).toEndWith("screenshot.png");
 
@@ -102,12 +117,36 @@ describe("screenshotExtractor", () => {
     expect(rows.every((r) => r.error === null && r.size_bytes === 3)).toBe(true);
   });
 
+  test("gives the full-page shot the extractor's time budget minus 5 s", async () => {
+    const saved = process.env.WEBFROST_EXTRACTOR_TIMEOUT_MS;
+    try {
+      // biome-ignore lint/performance/noDelete: an unset variable, not the string "undefined"
+      delete process.env.WEBFROST_EXTRACTOR_TIMEOUT_MS;
+      const a = makeRecordingPage(3000);
+      await screenshotExtractor(db, 1, makeStorage(), a.page);
+      expect(a.shots[1]).toMatchObject({ fullPage: true, timeout: 55_000 });
+
+      process.env.WEBFROST_EXTRACTOR_TIMEOUT_MS = "20000";
+      const b = makeRecordingPage(20_000);
+      await screenshotExtractor(db, 1, makeStorage(), b.page);
+      expect(b.shots[1]).toMatchObject({
+        timeout: 15_000,
+        clip: { height: MAX_SCREENSHOT_HEIGHT },
+      });
+    } finally {
+      // biome-ignore lint/performance/noDelete: restoring an unset variable
+      if (saved === undefined) delete process.env.WEBFROST_EXTRACTOR_TIMEOUT_MS;
+      else process.env.WEBFROST_EXTRACTOR_TIMEOUT_MS = saved;
+    }
+  });
+
   test("keeps the thumbnail when the full-page shot fails", async () => {
     const { page } = makeRecordingPage(3000);
     let calls = 0;
     const original = page.screenshot.bind(page);
     (page as unknown as { screenshot: unknown }).screenshot = async (o: ShotOptions) => {
-      if (++calls === 2) throw new Error("too tall");
+      // The thumbnail goes through the DevTools protocol; the first screenshot() is the full page.
+      if (++calls === 1) throw new Error("too tall");
       return original(o as never);
     };
     await expect(screenshotExtractor(db, 1, makeStorage(), page)).rejects.toThrow("too tall");

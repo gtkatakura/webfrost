@@ -318,6 +318,27 @@ describe("GET /snapshots", () => {
     expect(url(only)).toBe(`/api/v1/snapshots/${only}/archives/screenshot/download`);
   });
 
+  test("screenshotUrl prefers the video poster, then the thumbnail, then the screenshot", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const db = await openDb(testDir);
+    const video = await createSnapshot(db, "https://example.com/video");
+    for (const extractor of ["screenshot", "thumbnail", "media-poster"]) {
+      await db.run(
+        sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${video}, ${extractor}, ${`ref-${video}-${extractor}`})`,
+      );
+    }
+    await db.close();
+
+    const app = await getApp();
+    const res = await app.handle(new Request("http://localhost/snapshots"));
+    const body = (await res.json()) as {
+      items: Array<{ id: number; screenshotUrl: string | null }>;
+    };
+    expect(body.items.find((i) => i.id === video)?.screenshotUrl).toBe(
+      `/api/v1/snapshots/${video}/archives/media-poster/download`,
+    );
+  });
+
   test("returns null title, excerpt, screenshotUrl when extractors did not run", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
     const db = await openDb(testDir);
@@ -617,7 +638,7 @@ describe("GET /snapshots/:id/archives/:extractor/download — file extractors", 
     expect(res.headers.get("content-disposition")).toContain("screenshot.png");
   });
 
-  test("returns the thumbnail as a JPEG", async () => {
+  test("returns the thumbnail as WebP", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
     const { mkdirSync, writeFileSync } = await import("node:fs");
     const { join } = await import("node:path");
@@ -625,7 +646,7 @@ describe("GET /snapshots/:id/archives/:extractor/download — file extractors", 
     const id = await createSnapshot(db, "https://example.com/thumb");
     const snapshotsDir = join(testDir, "snapshots");
     mkdirSync(snapshotsDir, { recursive: true });
-    const filePath = join(snapshotsDir, `${id}-thumbnail.jpg`);
+    const filePath = join(snapshotsDir, `${id}-thumbnail.webp`);
     writeFileSync(filePath, new Uint8Array([0xff, 0xd8, 0xff]));
     await db.run(
       sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${"thumbnail"}, ${filePath})`,
@@ -637,8 +658,33 @@ describe("GET /snapshots/:id/archives/:extractor/download — file extractors", 
       new Request(`http://localhost/snapshots/${id}/archives/thumbnail/download`),
     );
     expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("image/webp");
+    expect(res.headers.get("content-disposition")).toContain("thumbnail.webp");
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(new Uint8Array([0xff, 0xd8, 0xff]));
+  });
+
+  test("returns the video poster as a JPEG", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/poster");
+    const snapshotsDir = join(testDir, "snapshots");
+    mkdirSync(snapshotsDir, { recursive: true });
+    const filePath = join(snapshotsDir, `${id}-poster.jpg`);
+    writeFileSync(filePath, new Uint8Array([0xff, 0xd8, 0xff]));
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${"media-poster"}, ${filePath})`,
+    );
+    await db.close();
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request(`http://localhost/snapshots/${id}/archives/media-poster/download`),
+    );
+    expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("image/jpeg");
-    expect(res.headers.get("content-disposition")).toContain("thumbnail.jpg");
+    expect(res.headers.get("content-disposition")).toContain("poster.jpg");
     expect(new Uint8Array(await res.arrayBuffer())).toEqual(new Uint8Array([0xff, 0xd8, 0xff]));
   });
 

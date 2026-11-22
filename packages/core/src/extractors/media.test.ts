@@ -5,7 +5,14 @@ import { join } from "node:path";
 import { sql } from "kysely";
 import { type Db, openDb } from "../db";
 import { FilesystemBackend } from "../storage";
-import { YT_DLP_BASE_ARGS, type YtDlpSpawner, mediaExtractor, ytDlpError } from "./media";
+import {
+  type FrameGrabber,
+  YT_DLP_BASE_ARGS,
+  type YtDlpSpawner,
+  mediaExtractor,
+  posterSeconds,
+  ytDlpError,
+} from "./media";
 
 type SpawnResult = { exitCode: number | null; stdout: string; stderr: string };
 
@@ -87,6 +94,23 @@ describe("mediaExtractor", () => {
     expect(await archiveRows()).toHaveLength(0);
   });
 
+  test("stays silent on a page no extractor handles (the generic one is switched off)", async () => {
+    const spawner = makeSpawner([
+      {
+        exitCode: 1,
+        stdout: "",
+        stderr:
+          "ERROR: No suitable extractor found for URL https://en.wikipedia.org/wiki/Internet_Archive\n",
+      },
+    ]);
+    await expect(
+      mediaExtractor(db, 1, makeStorage(), "https://en.wikipedia.org/wiki/Internet_Archive", {
+        _spawner: spawner,
+      }),
+    ).resolves.toBeUndefined();
+    expect(await archiveRows()).toHaveLength(0);
+  });
+
   test("fails with yt-dlp's reason when a media site refuses the video", async () => {
     const spawner = makeSpawner([
       {
@@ -112,6 +136,80 @@ describe("mediaExtractor", () => {
     expect(ytDlpError("WARNING: only a warning")).toBeNull();
     expect(ytDlpError(`ERROR: ${"x".repeat(500)}`)?.length).toBe(200);
   });
+
+  test("records a poster taken from a tenth of the way into the video", async () => {
+    const calls: Array<{ video: string; out: string; seconds: number }> = [];
+    const grabber: FrameGrabber = async (video, out, seconds) => {
+      calls.push({ video, out, seconds });
+      await Bun.write(out, new Uint8Array([0xff, 0xd8, 0xff, 0xd9]));
+      return true;
+    };
+    await mediaExtractor(db, 1, makeStorage(), "https://youtube.com/watch?v=test", {
+      _spawner: makeSpawner([META_OK, OK]),
+      _frameGrabber: grabber,
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.seconds).toBe(12); // duration 120 s
+    expect(calls[0]?.video).toEndWith("media.mp4");
+    expect(calls[0]?.out).toEndWith("poster.jpg");
+    const rows = await archiveRows();
+    const poster = rows.find((r) => r.extractor === "media-poster");
+    expect(poster?.content).toContain("poster.jpg");
+    expect(Bun.file(poster?.content as string).size).toBe(4);
+    expect(rows.find((r) => r.extractor === "media")).toBeDefined();
+  });
+
+  test("keeps the video when no poster frame can be taken", async () => {
+    await mediaExtractor(db, 1, makeStorage(), "https://youtube.com/watch?v=test", {
+      _spawner: makeSpawner([META_OK, OK]),
+      _frameGrabber: async () => false,
+    });
+    const rows = await archiveRows();
+    expect(rows.find((r) => r.extractor === "media-poster")).toBeUndefined();
+    expect(rows.find((r) => r.extractor === "media")).toBeDefined();
+  });
+
+  test("posterSeconds: a tenth of the duration, at most 30 s, 3 s when unknown", () => {
+    expect(posterSeconds(120)).toBe(12);
+    expect(posterSeconds(10_000)).toBe(30);
+    expect(posterSeconds(undefined)).toBe(3);
+    expect(posterSeconds(0)).toBe(3);
+    expect(posterSeconds("12")).toBe(3);
+  });
+
+  test.skipIf(!Bun.which("ffmpeg"))(
+    "the default grabber writes a JPEG from a real video",
+    async () => {
+      const video = join(testDir, "tiny.mp4");
+      const gen = Bun.spawnSync([
+        "ffmpeg",
+        "-nostdin",
+        "-y",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=duration=2:size=320x240:rate=10",
+        "-pix_fmt",
+        "yuv420p",
+        video,
+      ]);
+      expect(gen.exitCode).toBe(0);
+      // yt-dlp is faked; the "downloaded" video is the generated one.
+      const storage = makeStorage();
+      const target = await storage.localPath(1, "media/media.mp4");
+      await Bun.write(target, Bun.file(video));
+      await mediaExtractor(db, 1, storage, "https://youtube.com/watch?v=test", {
+        _spawner: makeSpawner([{ ...META_OK, stdout: '{"duration":2}' }, OK]),
+      });
+      const poster = (await archiveRows()).find((r) => r.extractor === "media-poster");
+      expect(poster).toBeDefined();
+      const bytes = new Uint8Array(await Bun.file(poster?.content as string).arrayBuffer());
+      expect([bytes[0], bytes[1]]).toEqual([0xff, 0xd8]);
+    },
+  );
 
   test("stores metadata and video path on successful video download", async () => {
     const spawner = makeSpawner([

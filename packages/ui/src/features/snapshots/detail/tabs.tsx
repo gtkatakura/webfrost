@@ -169,6 +169,7 @@ export function MediaTab({
 }: { snapshotId: number; results: ArchiveResult[] }) {
   const client = useClient();
   const media = findResult(results, "media");
+  const poster = findResult(results, "media-poster");
   const meta = findResult(results, "media-metadata");
 
   // The metadata is a file-backed result, so the JSON itself comes from its download.
@@ -191,6 +192,7 @@ export function MediaTab({
         controls
         preload="metadata"
         src={media.downloadUrl}
+        poster={poster?.downloadUrl}
         // The whole video fits under the viewer bar, whatever its shape.
         className="mx-auto max-h-[calc(100dvh-10rem)] w-full rounded-lg bg-black object-contain"
       >

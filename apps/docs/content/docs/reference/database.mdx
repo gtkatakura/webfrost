@@ -56,7 +56,7 @@ One row per extractor per run. A failed extractor has `error` set and no `conten
 |---|---|---|
 | `id` | INTEGER | Primary key |
 | `snapshot_id` | INTEGER | References `snapshots.id` |
-| `extractor` | TEXT | `warc`, `readability`, `html`, `pdf`, `screenshot`, `thumbnail`, `dom-snapshot`, `singlefile`, `media` or `media-metadata` |
+| `extractor` | TEXT | `warc`, `readability`, `html`, `pdf`, `screenshot`, `thumbnail`, `dom-snapshot`, `singlefile`, `media`, `media-poster` or `media-metadata` |
 | `content` | TEXT | Inline content (`html`, `readability`) or a storage reference to the file |
 | `size_bytes` | INTEGER | Size of the stored file, or of the inline content, in bytes. Recorded when the result is written. Nullable. |
 | `duration_ms` | INTEGER | How long the extractor ran. Nullable. |

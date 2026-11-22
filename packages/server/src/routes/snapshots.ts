@@ -35,11 +35,14 @@ function snapshotSummary(s: SnapshotWithExtractors) {
     title: s.title,
     excerpt: s.excerpt,
     // Lists show this as a thumbnail: the small JPEG when there is one, not a full page of several MB.
-    screenshotUrl: s.hasThumbnail
-      ? archiveDownloadPath(s.id, "thumbnail")
-      : s.hasScreenshot
-        ? archiveDownloadPath(s.id, "screenshot")
-        : null,
+    // A video page is shown by a still of its video, then by the small thumbnail, then the full screenshot.
+    screenshotUrl: s.hasPoster
+      ? archiveDownloadPath(s.id, "media-poster")
+      : s.hasThumbnail
+        ? archiveDownloadPath(s.id, "thumbnail")
+        : s.hasScreenshot
+          ? archiveDownloadPath(s.id, "screenshot")
+          : null,
     tags: s.tags.map(serializeTag),
   };
 }
@@ -53,6 +56,7 @@ const FILE_BASED_EXTRACTORS = new Set([
   "dom-snapshot",
   "singlefile",
   "media",
+  "media-poster",
 ]);
 
 // Every extractor whose `content` column holds a storage reference rather than the data itself.
@@ -84,6 +88,7 @@ const ALLOWED_EXTRACTORS = new Set([
   "singlefile",
   "media",
   "media-metadata",
+  "media-poster",
 ]);
 
 /** What anonymous visitors see instead of an extractor's error message. */
@@ -110,7 +115,8 @@ const FILE_EXTRACTORS: Record<string, { contentType: string; filename: string }>
   warc: { contentType: "application/warc", filename: "archive.warc" },
   pdf: { contentType: "application/pdf", filename: "page.pdf" },
   screenshot: { contentType: "image/png", filename: "screenshot.png" },
-  thumbnail: { contentType: "image/jpeg", filename: "thumbnail.jpg" },
+  thumbnail: { contentType: "image/webp", filename: "thumbnail.webp" },
+  "media-poster": { contentType: "image/jpeg", filename: "poster.jpg" },
   "dom-snapshot": { contentType: "text/html", filename: "dom.html" },
   singlefile: { contentType: "text/html", filename: "singlefile.html" },
   "media-metadata": { contentType: "application/json", filename: "media-metadata.json" },

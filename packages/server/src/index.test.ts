@@ -1,9 +1,9 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApiKey, openDb } from "@webfrost/core";
-import { app } from "./index";
+import { app, setUiAssets, withDefaultTheme } from "./index";
 
 // Routes that touch the archive must use a throwaway directory, never ~/.webfrost.
 // Whether auth is on is decided once, when the server module first loads (another test file
@@ -205,5 +205,41 @@ describe("listenHostname", () => {
     const { listenHostname } = await import("./index");
     expect(listenHostname({ AUTH_DISABLED: "true", HOST: "0.0.0.0" })).toBe("0.0.0.0");
     expect(listenHostname({ HOST: "10.0.0.2" })).toBe("10.0.0.2");
+  });
+});
+
+describe("WEBFROST_DEFAULT_THEME", () => {
+  const html = "<html><head><title>x</title></head><body></body></html>";
+  const saved = process.env.WEBFROST_DEFAULT_THEME;
+  afterEach(() => {
+    if (saved === undefined) Reflect.deleteProperty(process.env, "WEBFROST_DEFAULT_THEME");
+    else process.env.WEBFROST_DEFAULT_THEME = saved;
+    setUiAssets(undefined);
+  });
+
+  test("withDefaultTheme writes the meta tag for light and dark", () => {
+    for (const theme of ["light", "dark"]) {
+      process.env.WEBFROST_DEFAULT_THEME = theme;
+      expect(withDefaultTheme(html)).toContain(
+        `<meta name="webfrost-default-theme" content="${theme}" />\n</head>`,
+      );
+    }
+  });
+
+  test("withDefaultTheme leaves the page alone when unset or invalid", () => {
+    Reflect.deleteProperty(process.env, "WEBFROST_DEFAULT_THEME");
+    expect(withDefaultTheme(html)).toBe(html);
+    process.env.WEBFROST_DEFAULT_THEME = '"><script>';
+    expect(withDefaultTheme(html)).toBe(html);
+  });
+
+  test("the page served at / carries the meta tag", async () => {
+    setUiAssets({ find: async (p) => (p === "/index.html" ? new Blob([html]) : null) });
+    process.env.WEBFROST_DEFAULT_THEME = "dark";
+    for (const path of ["/some/spa/route", "/", "/index.html"]) {
+      const res = await app.handle(new Request(`http://localhost${path}`));
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain('<meta name="webfrost-default-theme" content="dark" />');
+    }
   });
 });

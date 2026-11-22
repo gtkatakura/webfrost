@@ -190,7 +190,7 @@ curl "$API/snapshots?page=1&limit=20&status=done" -H "Authorization: Bearer $KEY
 | `status` | none | Filter by `pending`, `done` or `failed` |
 | `q` | none | Full-text search term |
 
-Each item is `{ id, url, status, createdAt, extractors, title, excerpt, screenshotUrl, tags }`. `extractors` lists only extractors that succeeded. `title` and `excerpt` come from Readability. `screenshotUrl` is the path of the [download route](#archive-files) for the small `thumbnail` JPEG (`/api/v1/snapshots/:id/archives/thumbnail/download`) when the snapshot has one, else for the full `screenshot` (`/api/v1/snapshots/:id/archives/screenshot/download`), or `null` when there is neither.
+Each item is `{ id, url, status, createdAt, extractors, title, excerpt, screenshotUrl, tags }`. `extractors` lists only extractors that succeeded. `title` and `excerpt` come from Readability. `screenshotUrl` is the path of the [download route](#archive-files) for the video `media-poster` still when the snapshot has one, else for the small `thumbnail` WebP (`/api/v1/snapshots/:id/archives/thumbnail/download`), else for the full `screenshot` (`/api/v1/snapshots/:id/archives/screenshot/download`), or `null` when there is neither.
 
 ### Search
 
@@ -232,7 +232,7 @@ Browser extractors that could not run (Chromium missing, navigation failed, SSRF
 }
 ```
 
-- `content` holds the data only for inline extractors (`readability` and `html`, as a JSON string). It is `null` for file-backed ones: `warc`, `pdf`, `screenshot`, `thumbnail`, `dom-snapshot`, `singlefile`, `media` and `media-metadata`. Storage paths and S3 keys never appear in API output, for admins or guests.
+- `content` holds the data only for inline extractors (`readability` and `html`, as a JSON string). It is `null` for file-backed ones: `warc`, `pdf`, `screenshot`, `thumbnail`, `dom-snapshot`, `singlefile`, `media`, `media-poster` and `media-metadata`. Storage paths and S3 keys never appear in API output, for admins or guests.
 - `downloadUrl` is always the relative path of the v1 [download route](#archive-files).
 - `previewUrl` is the relative path of the v1 preview route for `dom-snapshot` and `singlefile`, and `null` for every other extractor.
 
@@ -245,7 +245,7 @@ Guests (see [Public read](/docs/guides/public-read)) get the same shape.
 | `GET` | `/snapshots/:id/archives/:extractor/download` | Download one format |
 | `GET` | `/snapshots/:id/archives/:extractor/preview` | Render archived HTML inline in a sandbox |
 
-`:extractor` is one of `warc`, `pdf`, `screenshot`, `thumbnail`, `readability`, `dom-snapshot`, `singlefile`, `html`, `media`, `media-metadata`. An unknown name answers `400` `BAD_REQUEST`, a snapshot or result that does not exist (or has no content) `404`.
+`:extractor` is one of `warc`, `pdf`, `screenshot`, `thumbnail`, `readability`, `dom-snapshot`, `singlefile`, `html`, `media`, `media-poster`, `media-metadata`. An unknown name answers `400` `BAD_REQUEST`, a snapshot or result that does not exist (or has no content) `404`.
 
 ```bash
 curl -OJ $API/snapshots/1/archives/screenshot/download -H "Authorization: Bearer $KEY"
@@ -256,10 +256,11 @@ curl -OJ $API/snapshots/1/archives/screenshot/download -H "Authorization: Bearer
 | `warc` | `application/warc` | `archive.warc` |
 | `pdf` | `application/pdf` | `page.pdf` |
 | `screenshot` | `image/png` | `screenshot.png` |
-| `thumbnail` | `image/jpeg` | `thumbnail.jpg` |
+| `thumbnail` | `image/webp` | `thumbnail.webp` |
 | `dom-snapshot` | `text/html` | `dom.html` |
 | `singlefile` | `text/html` | `singlefile.html` |
 | `media` | `video/mp4` or `audio/mpeg` | `media.mp4` or `media.mp3` |
+| `media-poster` | `image/jpeg` | `poster.jpg` |
 | `media-metadata` | `application/json` | `media-metadata.json` |
 | `readability`, `html` | `application/json` | `readability.json`, `html.json` (the stored value as is) |
 

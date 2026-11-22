@@ -184,6 +184,11 @@ export const app = new Elysia()
     }
     // Try to serve the exact static file first (e.g. /assets/index-xxx.js)
     const staticResp = await serveStaticFile(url.pathname);
+    if (staticResp?.headers.get("content-type")?.startsWith("text/html")) {
+      set.headers["content-type"] = "text/html";
+      set.headers["cache-control"] = "no-cache";
+      return withDefaultTheme(await staticResp.text());
+    }
     if (staticResp) {
       set.headers["content-type"] =
         staticResp.headers.get("content-type") ?? "application/octet-stream";
@@ -194,11 +199,25 @@ export const app = new Elysia()
     const indexFile = await currentUiAssets()?.find("/index.html");
     if (indexFile) {
       set.headers["content-type"] = "text/html";
-      return indexFile;
+      return withDefaultTheme(await indexFile.text());
     }
     set.status = 404;
     return "Not Found";
   });
+
+/**
+ * The page's theme before the visitor picks one: WEBFROST_DEFAULT_THEME ("light" or "dark") is written into
+ * index.html as a meta tag the web UI reads as it starts, so there is no flash of the other theme. Unset, the
+ * UI follows the visitor's system setting.
+ */
+export function withDefaultTheme(html: string): string {
+  const theme = process.env.WEBFROST_DEFAULT_THEME;
+  if (theme !== "light" && theme !== "dark") return html;
+  return html.replace(
+    "</head>",
+    `<meta name="webfrost-default-theme" content="${theme}" />\n</head>`,
+  );
+}
 
 /**
  * Start the background work the HTTP API depends on:

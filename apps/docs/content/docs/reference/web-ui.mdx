@@ -60,7 +60,7 @@ If the server cannot be reached at all, the UI says so and offers **Retry** inst
 
 <Screenshot light={snapshotsLight} dark={snapshotsDark} alt="The snapshot list as cards: a screenshot, title, address, status and capture time per snapshot" />
 
-All snapshots, newest first, 20 per page, as cards (a thumbnail of the first screen, the title, URL, status and capture time) or as rows. Each row shows the URL (with the title and a thumbnail in comfortable rows), a badge per extractor (green when it produced output, dashed and grey when it did not), tags, status and capture time.
+All snapshots, newest first, 20 per page, as cards (a thumbnail of the first screen, or a frame of the video for a video page, the title, URL, status and capture time) or as rows. Each row shows the URL (with the title and a thumbnail in comfortable rows), a badge per extractor (green when it produced output, dashed and grey when it did not), tags, status and capture time.
 
 - **Filter by URL or title…** narrows the rows of the current page.
 - The three buttons next to it switch between **Cards** (the default), **Comfortable rows** and **Compact rows**; the choice is remembered per browser.
@@ -146,7 +146,7 @@ In the search palette, type to search, move with `↑` and `↓`, press `Enter` 
 
 ## Theme
 
-On the first visit the UI follows the system's light or dark setting. **Dark mode** in the sidebar (or **Appearance** in Settings) switches it, and the choice is saved in the browser. A page archived from the UI is captured in the theme the UI has at that moment (screenshot, PDF and Page view); the CLI, schedules and imports use `WEBFROST_COLOR_SCHEME`.
+On the first visit the UI uses the instance's default theme (`WEBFROST_DEFAULT_THEME`, `light` or `dark`) and, when that is not set, follows the system's light or dark setting. **Dark mode** in the sidebar (or **Appearance** in Settings) switches it, and the choice is saved in the browser. A page archived from the UI is captured in the theme the UI has at that moment (screenshot, PDF and Page view); the CLI, schedules and imports use `WEBFROST_COLOR_SCHEME`.
 
 ## What the browser remembers
 

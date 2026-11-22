@@ -54,6 +54,48 @@ function defaultSpawner(args: string[], signal?: AbortSignal): Promise<SpawnResu
   );
 }
 
+/** Writes one still of `videoPath` to `outPath` (JPEG), from `seconds` in; resolves false when it cannot. */
+export type FrameGrabber = (
+  videoPath: string,
+  outPath: string,
+  seconds: number,
+  signal?: AbortSignal,
+) => Promise<boolean>;
+
+/**
+ * ffmpeg's `thumbnail` filter looks at a run of frames from `seconds` on and keeps the most typical one, so
+ * the poster is a picture of the video, not a black fade-in or a title card.
+ */
+const ffmpegFrameGrabber: FrameGrabber = async (videoPath, outPath, seconds, signal) => {
+  const result = await runProcess(
+    [
+      "ffmpeg",
+      "-nostdin",
+      "-y",
+      "-loglevel",
+      "error",
+      "-ss",
+      seconds.toFixed(2),
+      "-i",
+      videoPath,
+      "-vf",
+      "thumbnail=60,scale=640:-2",
+      "-frames:v",
+      "1",
+      "-q:v",
+      "4",
+      outPath,
+    ],
+    { timeoutMs: 60_000, ...(signal ? { signal } : {}) },
+  ).catch(() => null);
+  return result?.exitCode === 0 && Bun.file(outPath).size > 0;
+};
+
+/** Where the poster is taken from: a tenth of the way in (past intros), at most 30 s, 3 s when unknown. */
+export function posterSeconds(duration: unknown): number {
+  return typeof duration === "number" && duration > 0 ? Math.min(duration * 0.1, 30) : 3;
+}
+
 function ytDlpArgs(options: string[], url: string): string[] {
   return [...YT_DLP_BASE_ARGS, ...options, "--", url];
 }
@@ -91,6 +133,7 @@ export async function mediaExtractor(
     signal?: AbortSignal;
     /** Job lease the results are written under (see results.ts). */
     lease?: string;
+    _frameGrabber?: FrameGrabber;
   },
 ): Promise<void> {
   const maxFileSize = options?.maxFileSize ?? "500m";
@@ -116,7 +159,8 @@ export async function mediaExtractor(
     // A site yt-dlp does not know is simply not a media page. Anything else (a video the site refuses to
     // hand out, "Sign in to confirm you're not a bot", a removed video) is a failure worth showing.
     const reason = ytDlpError(metaResult.stderr);
-    if (!reason || /unsupported url/i.test(reason)) return;
+    // yt-dlp says "Unsupported URL", or "No suitable extractor" when the generic one is switched off (as here).
+    if (!reason || /unsupported url|no suitable extractor/i.test(reason)) return;
     throw new Error(`yt-dlp: ${reason}`);
   }
   const metadataJson = metaResult.stdout.trim() || "{}";
@@ -171,6 +215,31 @@ export async function mediaExtractor(
 
   signal?.throwIfAborted();
   if (videoResult.exitCode === 0) {
+    // The poster (`media-poster`) is taken while the video is still on local disk: an S3 backend uploads and
+    // removes it on finalize. Lists show it instead of the page's thumbnail; the player shows it before play.
+    // A poster that cannot be made costs nothing but the poster.
+    const posterPath = await storage.localPath(snapshotId, "media/poster.jpg");
+    let duration: unknown;
+    try {
+      duration = (JSON.parse(metadataJson) as { duration?: unknown }).duration;
+    } catch {
+      duration = undefined;
+    }
+    const grab = options?._frameGrabber ?? ffmpegFrameGrabber;
+    if (await grab(videoLocalPath, posterPath, posterSeconds(duration), signal)) {
+      signal?.throwIfAborted();
+      const posterSize = Bun.file(posterPath).size;
+      const posterRef = await storage.finalize(snapshotId, "media/poster.jpg");
+      await recordResult(
+        db,
+        snapshotId,
+        { extractor: "media-poster", content: posterRef, sizeBytes: posterSize },
+        lease,
+      );
+    } else {
+      logger?.info("[media] no poster frame could be taken");
+    }
+    signal?.throwIfAborted();
     const sizeBytes = Bun.file(videoLocalPath).size;
     const videoRef = await storage.finalize(snapshotId, "media/media.mp4");
     await recordResult(db, snapshotId, { extractor: "media", content: videoRef, sizeBytes }, lease);

@@ -55,6 +55,7 @@ PostgreSQL connection options go in the URL as usual, for example `?sslmode=requ
 | `WEBFROST_FETCH_TIMEOUT_MS` | `30000` | Timeout for the page fetch, redirects included. Also applies to feed and import fetches. `0` disables it. |
 | `WEBFROST_EXTRACTOR_TIMEOUT_MS` | `60000` | Timeout for each extractor. One that exceeds it is recorded as failed. `0` disables it. |
 | `WEBFROST_MEDIA_TIMEOUT_MS` | `600000` | Timeout for each `yt-dlp` run. A media archive can run it up to three times, and the media extractor as a whole is allowed three times this value. |
+| `WEBFROST_DEFAULT_THEME` | unset | `light` or `dark`. The web UI's theme for visitors who have not chosen one; unset, it follows the visitor's system setting. A choice made in the UI is saved in the browser and wins. Does not affect archiving; see `WEBFROST_COLOR_SCHEME`. |
 | `WEBFROST_COLOR_SCHEME` | `light` | `light` or `dark`. The theme the browser archives pages in (screenshot, PDF, Page view) when the request does not choose one: the CLI, schedules and imports. The web UI archives in its own current theme. |
 | `WEBFROST_SETTLE_MS` | `5000` | After the page's load event, wait up to this long for the network to go quiet before capturing, so single-page apps finish loading. Requests still go through the SSRF guard. `0` disables the wait. |
 | `WEBFROST_MEDIA_MAX_HEIGHT` | `1080` | Video is downloaded at up to this height, preferring VP9 or AV1 with Opus, which Chromium plays even without the patented codecs. `0` means no limit: the best quality, for example 4K AV1. |
