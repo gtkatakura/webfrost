@@ -33,6 +33,28 @@ function cacheControl(path: string): string {
   return "public, max-age=86400";
 }
 
+// RFC 9116: where to report a vulnerability. Reports go to GitHub's private vulnerability reporting,
+// as SECURITY.md says, or to security@webfrost.dev. Built per request so Expires (required) always lies a year ahead.
+function securityTxt(): Response {
+  const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+  const body = [
+    "Contact: https://github.com/gtkatakura/webfrost/security/advisories/new",
+    "Contact: mailto:security@webfrost.dev",
+    `Expires: ${expires}`,
+    "Policy: https://github.com/gtkatakura/webfrost/blob/main/SECURITY.md",
+    "Preferred-Languages: en, pt",
+    "Canonical: https://webfrost.dev/.well-known/security.txt",
+    "",
+  ].join("\n");
+  return new Response(body, {
+    headers: {
+      ...securityHeaders,
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "public, max-age=86400",
+    },
+  });
+}
+
 async function file(path: string): Promise<Response | null> {
   // Never outside the build directory, whatever the address says.
   const full = normalize(join(root, path));
@@ -53,6 +75,7 @@ const server = Bun.serve({
     const path = decodeURIComponent(new URL(req.url).pathname);
     // Health check for a reverse proxy or the container runtime.
     if (path === "/up") return new Response("ok");
+    if (path === "/.well-known/security.txt") return securityTxt();
     if (req.method !== "GET" && req.method !== "HEAD")
       return new Response("Method not allowed", { status: 405 });
     // Pages that moved: a permanent redirect, so links and search engines follow.

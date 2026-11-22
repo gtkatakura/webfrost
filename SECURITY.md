@@ -3,7 +3,8 @@
 ## Reporting a vulnerability
 
 Please report vulnerabilities privately, not in a public issue: use **Security → Report a
-vulnerability** on the [GitHub repository](https://github.com/gtkatakura/webfrost/security).
+vulnerability** on the [GitHub repository](https://github.com/gtkatakura/webfrost/security), or
+email security@webfrost.dev.
 Include the affected version or commit, steps to reproduce, and the impact you observed. Allow up
 to 90 days for a fix before public disclosure.
 
