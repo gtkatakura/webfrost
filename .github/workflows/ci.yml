@@ -309,6 +309,32 @@ jobs:
           path: packages/ui/test-results/
           retention-days: 7
 
+  binary-build:
+    name: Binary build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: jdx/mise-action@v5.2.8
+        with:
+          install_args: bun
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+      - run: bun install --frozen-lockfile
+      # Compile the single-file binary and start it: a dependency update can break what only the
+      # compiled binary uses (bundling, embedded files, the Chromium installer), which tests miss.
+      - name: Compile the linux-x64 binary
+        run: bun run build:binary
+      - name: Run it
+        run: |
+          bin=packages/cli/dist-binary/linux-x64/webfrost
+          "$bin" --version
+          "$bin" help > /dev/null
+          WEBFROST_DIR="$(mktemp -d)" "$bin" doctor || true
+
   docker-build:
     name: Docker build
     runs-on: ubuntu-24.04

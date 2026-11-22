@@ -15,6 +15,7 @@
   "dependencies": {
     "@webfrost/core": "workspace:*",
     "@webfrost/server": "workspace:*",
+    "fflate": "0.8.3",
     "playwright-core": "1.65.1"
   }
 }

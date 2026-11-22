@@ -109,6 +109,7 @@ const ruleset = {
           "Server API E2E Tests",
           "E2E Tests",
           "Docker build",
+          "Binary build",
         ].map((context) => ({ context })),
       },
     },

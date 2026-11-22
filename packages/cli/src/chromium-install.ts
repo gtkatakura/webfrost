@@ -1,27 +1,26 @@
 import {
   chmodSync,
   createWriteStream,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { chromiumPointerFile, webfrostBrowsersDir, webfrostCacheDir } from "@webfrost/core";
+import { unzipSync } from "fflate";
+import { headlessShellVersion } from "./chromium-build" with { type: "macro" };
 
-/** The slice of Playwright's browser registry that installing needs. */
-interface RegistryExecutable {
-  directory?: string;
-  downloadURLs?: string[];
-  title?: string;
-  browserVersion?: string;
-  executablePath(): string | undefined;
-}
-
-interface Registry {
-  findExecutable(name: string): RegistryExecutable | undefined;
-}
+/** Chrome for Testing's name for each platform, and the headless shell's executable in its zip. */
+const PLATFORMS: Record<string, { cft: string; exe: string }> = {
+  "linux-x64": { cft: "linux64", exe: "chrome-headless-shell" },
+  "linux-arm64": { cft: "linux-arm64", exe: "chrome-headless-shell" },
+  "darwin-x64": { cft: "mac-x64", exe: "chrome-headless-shell" },
+  "darwin-arm64": { cft: "mac-arm64", exe: "chrome-headless-shell" },
+  "win32-x64": { cft: "win64", exe: "chrome-headless-shell.exe" },
+};
 
 /** Run `<browser> --version`; the version text when the browser starts, null when it does not. */
 export async function chromiumVersion(
@@ -97,36 +96,35 @@ export async function installChromium(options: {
   log: (message: string) => void;
   progress: (done: number, total: number) => void;
 }): Promise<string> {
-  // Playwright reads its browsers directory once, when the registry module loads.
-  process.env.PLAYWRIGHT_BROWSERS_PATH = webfrostBrowsersDir();
-  const { registry } = (await import("playwright-core/lib/server/registry/index")) as unknown as {
-    registry: Registry;
-  };
-  const { extract } = (await import("playwright-core/lib/zipBundle")) as unknown as {
-    extract: (zip: string, opts: { dir: string }) => Promise<void>;
-  };
-
-  const executable = registry.findExecutable("chromium-headless-shell");
-  const directory = executable?.directory;
-  const executablePath = executable?.executablePath();
-  if (!executable || !directory || !executablePath || !executable.downloadURLs?.length) {
+  const platform = PLATFORMS[`${process.platform}-${process.arch}`];
+  if (!platform) {
     throw new Error(
-      `Playwright has no headless Chromium build for ${process.platform}/${process.arch}. Install Chrome or Chromium and point WEBFROST_CHROMIUM_PATH at it.`,
+      `No headless Chromium build for ${process.platform}/${process.arch}. Install Chrome or Chromium and point WEBFROST_CHROMIUM_PATH at it.`,
     );
   }
+  // The version the bundled Playwright drives (read from playwright-core when this file is bundled).
+  const version = headlessShellVersion();
+  const zipName = `chrome-headless-shell-${platform.cft}.zip`;
+  // Playwright's CDN mirrors Chrome for Testing; Google's bucket is the source.
+  const urls = [
+    `https://cdn.playwright.dev/builds/cft/${version}/${platform.cft}/${zipName}`,
+    `https://storage.googleapis.com/chrome-for-testing-public/${version}/${platform.cft}/${zipName}`,
+  ];
+  const directory = join(webfrostBrowsersDir(), `chromium_headless_shell-${version}`);
+  const executablePath = join(directory, `chrome-headless-shell-${platform.cft}`, platform.exe);
 
   const tempDir = mkdtempSync(join(tmpdir(), "webfrost-chromium-"));
-  const zipPath = join(tempDir, "chromium-headless-shell.zip");
+  const zipPath = join(tempDir, zipName);
   try {
-    options.log(
-      `Downloading ${executable.title ?? "Chromium headless shell"} ${executable.browserVersion ?? ""}`.trim(),
-    );
-    await download(executable.downloadURLs, zipPath, options.progress);
+    options.log(`Downloading Chrome Headless Shell ${version}`);
+    await download(urls, zipPath, options.progress);
     options.log(`Unpacking to ${directory}`);
     rmSync(directory, { recursive: true, force: true });
     mkdirSync(directory, { recursive: true });
-    await extract(zipPath, { dir: directory });
-    chmodSync(executablePath, 0o755);
+    unpack(new Uint8Array(await Bun.file(zipPath).arrayBuffer()), directory);
+    if (!existsSync(executablePath)) {
+      throw new Error(`the download did not contain ${platform.exe} where expected`);
+    }
     writeFileSync(join(directory, "INSTALLATION_COMPLETE"), "");
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
@@ -135,7 +133,29 @@ export async function installChromium(options: {
   mkdirSync(webfrostCacheDir(), { recursive: true });
   writeFileSync(
     chromiumPointerFile(),
-    `${JSON.stringify({ executablePath, version: executable.browserVersion, installedAt: new Date().toISOString() }, null, 2)}\n`,
+    `${JSON.stringify({ executablePath, version, installedAt: new Date().toISOString() }, null, 2)}\n`,
   );
   return executablePath;
+}
+
+/**
+ * Extract a zip into `dir`. Entries are kept inside `dir` (no `..` or absolute paths). Zip
+ * permissions are not carried over, so every file is made executable: this is a private browser
+ * folder whose binaries and helpers must run, and nothing else lives there.
+ */
+export function unpack(zip: Uint8Array, dir: string): void {
+  const files = unzipSync(zip);
+  for (const [name, data] of Object.entries(files)) {
+    const target = resolve(dir, name);
+    if (target !== dir && !target.startsWith(dir + sep)) {
+      throw new Error(`refusing to unpack ${name} outside ${dir}`);
+    }
+    if (name.endsWith("/")) {
+      mkdirSync(target, { recursive: true });
+      continue;
+    }
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, data);
+    chmodSync(target, 0o755);
+  }
 }
