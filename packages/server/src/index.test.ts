@@ -2,13 +2,25 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createApiKey, openDb } from "@webfrost/core";
 import { app } from "./index";
 
 // Routes that touch the archive must use a throwaway directory, never ~/.webfrost.
+// Whether auth is on is decided once, when the server module first loads (another test file
+// may load it first), so requests that must reach a route send a real API key: they work
+// either way.
 let testDir: string;
-beforeAll(() => {
+let authHeader: Record<string, string> = {};
+beforeAll(async () => {
   testDir = mkdtempSync(join(tmpdir(), "webfrost-index-test-"));
   process.env.WEBFROST_DIR = testDir;
+  const db = await openDb(testDir);
+  try {
+    const { rawKey } = await createApiKey(db, "index-test");
+    authHeader = { authorization: `Bearer ${rawKey}` };
+  } finally {
+    await db.close();
+  }
 });
 afterAll(() => {
   Reflect.deleteProperty(process.env, "WEBFROST_DIR");
@@ -104,7 +116,9 @@ describe("API errors", () => {
   });
 
   test("route errors gain a code derived from the status", async () => {
-    const res = await app.handle(new Request("http://localhost/api/snapshots/999999"));
+    const res = await app.handle(
+      new Request("http://localhost/api/snapshots/999999", { headers: authHeader }),
+    );
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "not found", code: "NOT_FOUND" });
   });
@@ -140,7 +154,9 @@ describe("cross-origin and content-type protection", () => {
       }),
     );
     expect(res.status).toBe(415);
-    const tags = await app.handle(new Request("http://localhost/api/tags"));
+    const tags = await app.handle(
+      new Request("http://localhost/api/tags", { headers: authHeader }),
+    );
     expect(((await tags.json()) as { name: string }[]).some((t) => t.name === "pwned")).toBe(false);
   });
 });
