@@ -1,5 +1,5 @@
 import { sql } from "kysely";
-import { guardBrowserContext } from "./browser-guard";
+import { newGuardedContext } from "./browser-guard";
 import { resolveChromium } from "./chromium";
 import type { Db } from "./db";
 import { domSnapshotExtractor } from "./extractors/dom-snapshot";
@@ -86,39 +86,51 @@ export function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promis
  * Launch options for the headless browser. The executable comes from `resolveChromium`:
  * WEBFROST_CHROMIUM_PATH, then the Chromium `webfrost setup` installed, then a system
  * Chrome/Chromium, then Playwright's own default (no path).
+ *
+ * WebRTC may only use the proxy, so a page cannot reach an internal address over UDP
+ * (STUN/TURN) around the SSRF egress proxy.
  */
-export function chromiumLaunchOptions(): { executablePath?: string } {
+export function chromiumLaunchOptions(): { executablePath?: string; args: string[] } {
   const { path } = resolveChromium();
-  return path ? { executablePath: path } : {};
+  const args = ["--force-webrtc-ip-handling-policy=disable_non_proxied_udp"];
+  return path ? { executablePath: path, args } : { args };
 }
 
 /** How far down the page the scroll pass goes; past that, a page is endless (a feed) or huge. */
 const SCROLL_MAX_PX = 20_000;
 
 /**
+ * Cap on the scroll pass, enforced here rather than in the page: its own bound uses the page's
+ * timers and clock, which a page can replace or starve (a busy loop), and evaluate has no timeout.
+ */
+const SCROLL_TIMEOUT_MS = 15_000;
+
+/**
  * Scroll from top to bottom one screen at a time, so scroll-triggered reveals and lazy images happen,
  * then back to the top for the captures. Bounded by SCROLL_MAX_PX and a few seconds; a page that fits in
- * one screen is left alone. Resolves true when it scrolled.
+ * one screen is left alone. Resolves true when it scrolled, false when it did not or ran out of time.
  */
-export async function scrollThrough(page: import("playwright").Page): Promise<boolean> {
-  return page
-    .evaluate(async (maxPx) => {
-      const step = Math.max(200, Math.floor(window.innerHeight * 0.8));
-      const bottom = () => Math.min(document.documentElement.scrollHeight, maxPx);
-      if (bottom() <= window.innerHeight) return false;
-      const started = Date.now();
-      for (let y = step; y < bottom() && Date.now() - started < 8_000; y += step) {
-        window.scrollTo(0, y);
-        await new Promise((r) => setTimeout(r, 120));
-      }
-      window.scrollTo(0, bottom());
-      await new Promise((r) => setTimeout(r, 300));
-      window.scrollTo(0, 0);
-      // Reveal transitions (opacity, transform) take a moment to finish.
-      await new Promise((r) => setTimeout(r, 600));
-      return true;
-    }, SCROLL_MAX_PX)
-    .catch(() => false);
+export async function scrollThrough(
+  page: import("playwright").Page,
+  timeoutMs = SCROLL_TIMEOUT_MS,
+): Promise<boolean> {
+  const scroll = page.evaluate(async (maxPx) => {
+    const step = Math.max(200, Math.floor(window.innerHeight * 0.8));
+    const bottom = () => Math.min(document.documentElement.scrollHeight, maxPx);
+    if (bottom() <= window.innerHeight) return false;
+    const started = Date.now();
+    for (let y = step; y < bottom() && Date.now() - started < 8_000; y += step) {
+      window.scrollTo(0, y);
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    window.scrollTo(0, bottom());
+    await new Promise((r) => setTimeout(r, 300));
+    window.scrollTo(0, 0);
+    // Reveal transitions (opacity, transform) take a moment to finish.
+    await new Promise((r) => setTimeout(r, 600));
+    return true;
+  }, SCROLL_MAX_PX);
+  return withTimeout(scroll, timeoutMs, "scroll pass").catch(() => false);
 }
 
 /** Close the browser, giving up (and killing nothing else) if it does not confirm in time. */
@@ -364,12 +376,11 @@ async function archive(
         const stored = await db.get<{ color_scheme: string | null }>(
           sql`SELECT color_scheme FROM snapshots WHERE id = ${snapshotId}`,
         );
-        // Service workers could issue requests that bypass route(); the archive does not need them.
-        const context = await browser.newContext({
-          serviceWorkers: "block",
+        // Every connection of this context goes through the SSRF egress proxy (workers and
+        // redirect hops included), on top of the route checks; service workers are blocked.
+        const { context, guard } = await newGuardedContext(browser, {
           colorScheme: parseColorScheme(stored?.color_scheme) ?? defaultColorScheme(),
         });
-        const guard = await guardBrowserContext(context);
         const page = await context.newPage();
         await page.goto(url, { timeout: NAVIGATION_TIMEOUT_MS, waitUntil: "load" });
         // Single-page apps keep loading after "load" (route modules, data): give the network a
