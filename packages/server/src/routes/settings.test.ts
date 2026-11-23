@@ -75,7 +75,7 @@ describe("POST /settings/keys with an API key", () => {
       );
     const after = await openDb(testDir);
     try {
-      return { res, names: (await listApiKeys(after)).map((k) => k.name) };
+      return { res, names: (await listApiKeys(after)).map((k) => k.name).sort() };
     } finally {
       await after.close();
     }
