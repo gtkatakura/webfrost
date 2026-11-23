@@ -186,8 +186,8 @@ curl "$API/snapshots?page=1&limit=20&status=done" -H "Authorization: Bearer $KEY
 
 | Query | Default | Description |
 |---|---|---|
-| `page` | `1` | 1-based page |
-| `limit` | `20` | Page size, capped at 200 |
+| `page` | `1` | 1-based page. Plain numbers only: `Infinity` or `1e400` answer `400` `VALIDATION` |
+| `limit` | `20` | Page size, capped at 200. Same rule as `page` |
 | `status` | none | Filter by `pending`, `done` or `failed` |
 | `q` | none | Full-text search term |
 
@@ -379,7 +379,7 @@ curl -X POST $API/import/file -H "Authorization: Bearer $KEY" \
 
 | Method | Route | Description |
 |---|---|---|
-| `GET` | `/stats` | `{ snapshotCount, storageBytes, storageByExtractor, successRate, activeScheduleCount, failedToday }`. Cached for 60 seconds. |
+| `GET` | `/stats` | `{ snapshotCount, storageBytes, storageByExtractor, successRate, activeScheduleCount, failedToday }`. Cached for 60 seconds. Sizes of files archived before sizes were recorded are measured on first use, 16 at a time; a lookup that fails is retried on the next call instead of being stored as 0 bytes. |
 | `GET` | `/settings/info` | `{ version, storagePath, snapshotCount }` |
 | `GET` | `/settings/keys` | List active API keys, oldest first, paginated: items are `{ id, name, expiresAt, lastUsedAt, createdAt }` |
 | `POST` | `/settings/keys` | `{ name, expiresAt? }`. `201` with `{ id, name, expiresAt, lastUsedAt, createdAt, rawKey }`; `rawKey` is shown once. |

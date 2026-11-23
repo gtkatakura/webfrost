@@ -1,9 +1,10 @@
 import { sql } from "kysely";
 import type { Db } from "./db";
-import type { PaginatedResult } from "./list";
+import { type PaginatedResult, pageWindow } from "./list";
 import {
   MARK_CLOSE,
   MARK_OPEN,
+  MAX_SNIPPET_SOURCE,
   buildSnippet,
   capForTsvector,
   parseSearchQuery,
@@ -160,6 +161,12 @@ interface HitRow {
   score: number;
 }
 
+/** SQLite rejects a malformed MATCH expression with one of these messages. */
+function isFts5QueryError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /fts5|syntax error|unterminated string|no such column|malformed MATCH/i.test(message);
+}
+
 /**
  * Full-text search across URL, title, extracted text, and tags.
  * Returns paginated results ranked by relevance, with an HTML-safe snippet
@@ -176,12 +183,10 @@ export async function searchSnapshots(
   requestedPage = 1,
   status?: string,
 ): Promise<PaginatedResult<SearchResult>> {
-  // LIMIT/OFFSET must be integers; a fractional value makes SQLite raise.
-  const limit = Math.max(1, Math.trunc(requestedLimit) || 20);
-  const page = Math.max(1, Math.trunc(requestedPage) || 1);
+  // LIMIT/OFFSET must be integers the database can hold (not Infinity, not a fraction).
+  const { page, limit, offset } = pageWindow(requestedPage, requestedLimit);
   const empty = { items: [], total: 0, page, limit };
   if (!query.trim()) return empty;
-  const offset = (page - 1) * limit;
   const statusFilter = status ? sql`AND s.status = ${status}` : sql``;
 
   if (db.dialect === "sqlite") {
@@ -217,9 +222,11 @@ export async function searchSnapshots(
         page,
         limit,
       };
-    } catch {
-      // Invalid FTS5 query expression — return no results instead of throwing
-      return empty;
+    } catch (err) {
+      // An invalid FTS5 query expression is "no results"; a busy, corrupt or
+      // missing database is a real error and must not look like an empty search.
+      if (isFts5QueryError(err)) return empty;
+      throw err;
     }
   }
 
@@ -247,7 +254,7 @@ export async function searchSnapshots(
   }
 
   const rows = await db.all<{ id: number; url: string; text_content: string; score: number }>(
-    sql`SELECT si.snapshot_id AS id, si.url AS url, si.text_content AS text_content, ${score} AS score
+    sql`SELECT si.snapshot_id AS id, si.url AS url, left(si.text_content, ${sql.lit(MAX_SNIPPET_SOURCE)}) AS text_content, ${score} AS score
         FROM ${from}
         WHERE ${match} ${statusFilter}
         ORDER BY score DESC, si.snapshot_id

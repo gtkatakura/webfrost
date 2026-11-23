@@ -14,15 +14,20 @@ export const MARK_CLOSE = "\u0002";
 
 const TOKEN = /[\p{L}\p{N}]+/gu;
 
-export function normalizeToken(token: string): string {
-  return token
+/**
+ * Case-fold and strip diacritics. This runs before the text is split into tokens:
+ * NFKD turns some characters into text that is not a letter or digit ("⑴" into
+ * "(1)"), and those must end up as separators, never inside a token.
+ */
+function fold(text: string): string {
+  return text
+    .toLowerCase()
     .normalize("NFKD")
-    .replace(/\p{M}+/gu, "")
-    .toLowerCase();
+    .replace(/\p{M}+/gu, "");
 }
 
 export function tokenize(text: string): string[] {
-  return (text.match(TOKEN) ?? []).map(normalizeToken).filter((t) => t.length > 0);
+  return fold(text).match(TOKEN) ?? [];
 }
 
 /** The text a PostgreSQL tsvector / MySQL FULLTEXT index is built from. */
@@ -72,6 +77,10 @@ export interface QueryClause {
   alternatives: QueryTerm[];
 }
 
+/** Longest query read, and most terms kept: a longer query only costs time. */
+export const MAX_QUERY_LENGTH = 512;
+export const MAX_QUERY_TERMS = 32;
+
 const COLUMN_PREFIX = /^(url|title|text_content|tags):/i;
 
 /**
@@ -84,7 +93,8 @@ export function parseSearchQuery(query: string): QueryClause[] {
   const clauses: QueryClause[] = [];
   let pendingOr = false;
   let pendingNot = false;
-  for (const match of query.matchAll(/"([^"]*)"?|(\S+)/g)) {
+  let terms = 0;
+  for (const match of query.slice(0, MAX_QUERY_LENGTH).matchAll(/"([^"]*)"?|(\S+)/g)) {
     const quoted = match[1];
     let raw = match[2];
     if (raw === "OR") {
@@ -118,6 +128,7 @@ export function parseSearchQuery(query: string): QueryClause[] {
       pendingOr = false;
       continue;
     }
+    if (++terms > MAX_QUERY_TERMS) break;
 
     const last = clauses[clauses.length - 1];
     if (pendingOr && last && !last.negate && !negate) {
@@ -166,6 +177,9 @@ export function toMysqlBoolean(clauses: QueryClause[]): string {
 // Snippets
 // ---------------------------------------------------------------------------
 
+/** Characters of a document a snippet is built from; text past it is not searched for a window. */
+export const MAX_SNIPPET_SOURCE = 100_000;
+
 /**
  * Build a highlighted excerpt the way FTS5's `snippet(…, '…', 32)` does: the
  * window of at most `maxTokens` tokens with the most distinct query terms, hits
@@ -173,22 +187,44 @@ export function toMysqlBoolean(clauses: QueryClause[]): string {
  * yields its opening tokens.
  */
 export function buildSnippet(text: string, clauses: QueryClause[], maxTokens = 32): string {
-  const clean = text.replaceAll(MARK_OPEN, "").replaceAll(MARK_CLOSE, "");
+  const clean = text
+    .slice(0, MAX_SNIPPET_SOURCE)
+    .replaceAll(MARK_OPEN, "")
+    .replaceAll(MARK_CLOSE, "");
   const tokens = [...clean.matchAll(TOKEN)].map((m) => ({
     start: m.index ?? 0,
     end: (m.index ?? 0) + m[0].length,
-    norm: normalizeToken(m[0]),
+    // Usually one word; a few characters fold into several ("½" into "1", "2").
+    norm: tokenize(m[0]),
   }));
   if (tokens.length === 0) return "";
 
-  const wanted = clauses
-    .filter((c) => !c.negate)
-    .flatMap((c) => c.alternatives)
-    .flatMap((t) =>
-      t.words.map((w, i) => ({ word: w, prefix: t.prefix && i === t.words.length - 1 })),
-    );
-  const hitOf = (norm: string): number =>
-    wanted.findIndex((w) => (w.prefix ? norm.startsWith(w.word) : norm === w.word));
+  // Exact words go in a map, prefixes in a short list; both deduplicated and
+  // numbered by first appearance, so a token's hit is the first term it matches.
+  const exact = new Map<string, number>();
+  const prefixes = new Map<string, number>();
+  let n = 0;
+  for (const clause of clauses) {
+    if (clause.negate) continue;
+    for (const t of clause.alternatives) {
+      t.words.forEach((word, i) => {
+        const target = t.prefix && i === t.words.length - 1 ? prefixes : exact;
+        if (!target.has(word)) target.set(word, n);
+        n++;
+      });
+    }
+  }
+  const hitOf = (words: string[]): number => {
+    let best = -1;
+    for (const w of words) {
+      const e = exact.get(w);
+      if (e !== undefined && (best < 0 || e < best)) best = e;
+      for (const [p, idx] of prefixes) {
+        if ((best < 0 || idx < best) && w.startsWith(p)) best = idx;
+      }
+    }
+    return best;
+  };
   const hits = tokens.map((t) => hitOf(t.norm));
 
   // Best window: most distinct terms, then most hits, then earliest.

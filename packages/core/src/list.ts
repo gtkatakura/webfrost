@@ -19,6 +19,25 @@ function parseReadability(content: string | null): {
   }
 }
 
+/**
+ * A page and limit the database accepts as LIMIT and OFFSET: whole numbers the
+ * engine can hold (never Infinity, NaN or a fraction), with the offset kept
+ * within JavaScript's exact integers. A bad value falls back to the default.
+ */
+export function pageWindow(
+  requestedPage: number,
+  requestedLimit: number,
+  defaultLimit = 20,
+): { page: number; limit: number; offset: number } {
+  const whole = (n: number, fallback: number): number => {
+    const t = Math.trunc(n);
+    return Number.isSafeInteger(t) && t >= 1 ? t : fallback;
+  };
+  const limit = whole(requestedLimit, defaultLimit);
+  const page = Math.min(whole(requestedPage, 1), Math.floor(Number.MAX_SAFE_INTEGER / limit));
+  return { page, limit, offset: (page - 1) * limit };
+}
+
 export interface Snapshot {
   id: number;
   url: string;
@@ -172,11 +191,11 @@ export async function getSnapshotsByIds(
  */
 export async function listSnapshotsWithExtractorsPaginated(
   db: Db,
-  page: number,
-  limit: number,
+  requestedPage: number,
+  requestedLimit: number,
   status?: string,
 ): Promise<PaginatedResult<SnapshotWithExtractors>> {
-  const offset = (page - 1) * limit;
+  const { page, limit, offset } = pageWindow(requestedPage, requestedLimit);
   // Snapshots still being imported are not shown until their files are in place.
   const where = status
     ? sql`WHERE s.status = ${status} AND s.status <> ${IMPORTING_STATUS}`

@@ -14,11 +14,17 @@ export interface Stats {
   failedToday: number;
 }
 
+/** Storage lookups in flight at once while measuring legacy rows. */
+const BACKFILL_CONCURRENCY = 16;
+
 /**
  * Measure results whose size is not stored yet — rows written before sizes were
  * recorded (archives from before schema version 3) — and store it, so storage is
  * asked about each artifact at most once. Inline results were measured by the
- * migration; a missing file counts as 0 bytes.
+ * migration; a file the backend reports as missing counts as 0 bytes. A lookup
+ * that fails leaves the row unmeasured, so a later call tries it again instead of
+ * recording a transient error as 0 bytes for good. Lookups run a few at a time:
+ * an archive can hold thousands of artifacts, and a storage service throttles.
  */
 async function backfillSizes(db: Db, storage: StorageBackend): Promise<void> {
   const missing = await db.all<{ id: number; extractor: string; content: string }>(
@@ -26,14 +32,23 @@ async function backfillSizes(db: Db, storage: StorageBackend): Promise<void> {
         WHERE size_bytes IS NULL AND error IS NULL AND content IS NOT NULL AND content <> ''`,
   );
   if (missing.length === 0) return;
-  const sizes = await Promise.all(
-    missing.map(async (row) => ({
-      id: row.id,
-      bytes: FILE_BACKED.has(row.extractor)
-        ? await storage.fileSize(row.content).catch(() => 0)
-        : Buffer.byteLength(row.content, "utf8"),
-    })),
-  );
+  const sizes: { id: number; bytes: number }[] = [];
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < missing.length) {
+      const row = missing[next++] as (typeof missing)[number];
+      try {
+        const bytes = FILE_BACKED.has(row.extractor)
+          ? await storage.fileSize(row.content)
+          : Buffer.byteLength(row.content, "utf8");
+        sizes.push({ id: row.id, bytes });
+      } catch {
+        // Not measured now; size_bytes stays NULL and the next call retries.
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(BACKFILL_CONCURRENCY, missing.length) }, worker));
+  if (sizes.length === 0) return;
   await db.transaction(async (tx) => {
     for (const { id, bytes } of sizes) {
       await tx.run(sql`UPDATE archive_results SET size_bytes = ${bytes} WHERE id = ${id}`);
