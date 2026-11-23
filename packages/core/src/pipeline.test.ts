@@ -1,11 +1,17 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sql } from "kysely";
 import { type Db, openDb } from "./db";
 import { JobRunner } from "./jobs";
-import { createSnapshot, runPipeline, withTimeout } from "./pipeline";
+import {
+  chromiumLaunchOptions,
+  createSnapshot,
+  runPipeline,
+  scrollThrough,
+  withTimeout,
+} from "./pipeline";
 import { searchSnapshots } from "./search";
 
 const ARTICLE = `<!doctype html><html><head><title>Frost Report</title></head><body>
@@ -517,5 +523,32 @@ describe("withTimeout", () => {
         "uncapped",
       ),
     ).resolves.toBe("ok");
+  });
+});
+
+const { chromium } = await import("playwright");
+const chromiumInstalled = (() => {
+  try {
+    return existsSync(chromiumLaunchOptions().executablePath ?? chromium.executablePath());
+  } catch {
+    return false;
+  }
+})();
+
+describe.skipIf(!chromiumInstalled)("scrollThrough", () => {
+  test("gives up when the page replaces its own timers", async () => {
+    const browser = await chromium.launch(chromiumLaunchOptions());
+    try {
+      const page = await browser.newPage();
+      // The in-page loop waits on setTimeout and checks Date.now(); both are the page's to replace.
+      await page.setContent(
+        `<body style="height:5000px"><script>window.setTimeout = () => 0;</script></body>`,
+      );
+      const started = Date.now();
+      expect(await scrollThrough(page, 500)).toBe(false);
+      expect(Date.now() - started).toBeLessThan(3000);
+    } finally {
+      await browser.close();
+    }
   });
 });

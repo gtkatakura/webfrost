@@ -89,10 +89,11 @@ The page being archived controls what the browser requests.
 | Threat | Control | Status |
 |---|---|---|
 | Page embeds an internal URL (iframe, image, `fetch`, WebSocket) and it is captured in the screenshot/PDF/DOM | Every browser request is checked; blocked hosts are aborted | Mitigated |
-| Subresource or navigation **redirects** to an internal host | Detected; browser extractors are skipped for the snapshot so nothing is captured | Mitigated for disclosure; the request itself is still sent (**blind SSRF, open**) |
+| Subresource or navigation **redirects** to an internal host | The egress proxy refuses the hop's connection; the hop is also detected and the browser extractors are skipped for the snapshot | Mitigated |
+| Shared or dedicated **worker** reaching an internal host (`fetch`, WebSocket), out of Playwright's sight | Every connection of the browser goes through the egress proxy, which checks the address it connects to | Mitigated |
 | Script waits until after load, then loads an internal URL | All requests are checked, and once the network settles (`WEBFROST_SETTLE_MS`) all further requests are refused, before capture | Mitigated |
 | Service worker making unchecked requests | Service workers blocked | Mitigated |
-| Page stalls or loops forever | 30 s navigation timeout; 60 s per extractor; browser closed afterwards | Mitigated |
+| Page stalls or loops forever | 30 s navigation timeout; 15 s scroll pass; 60 s per extractor; browser closed afterwards | Mitigated |
 | Renderer exploit | Chromium runs without its own sandbox inside the container; the container is the boundary | **Open** — keep the image updated, do not add capabilities |
 
 ### 4. Media extraction (yt-dlp)
@@ -137,8 +138,8 @@ by definition. It still refuses non-HTTP(S) URLs and applies the same SSRF guard
 
 | # | Risk | Severity | What to do today |
 |---|---|---|---|
-| 1 | DNS rebinding past the SSRF guard | Medium | Block egress to internal ranges at the network layer |
-| 2 | Blind SSRF through browser redirect hops and yt-dlp | Medium | Same as above |
+| 1 | DNS rebinding past `safeFetch` | Medium | Block egress to internal ranges at the network layer |
+| 2 | Blind SSRF through yt-dlp redirects | Medium | Same as above |
 | 3 | Chromium without its own sandbox | Medium | Keep the image current; treat the container as the sandbox |
 | 4 | First-run setup race | Low | Set `WEBFROST_SETUP_TOKEN`, or complete setup before exposing the port |
 | 5 | Rate-limit state is per process and in memory | Low | Single-instance deployments only; limits reset on restart |
