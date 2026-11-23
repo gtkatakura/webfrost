@@ -141,7 +141,7 @@ Rebuild the search index from existing data. Use it after index corruption or a 
 
 ### `webfrost import [--format <fmt>] <url-or-file>`
 
-Archive every URL found in a file or at an `http(s)` address. `--format` is one of `text`, `opml`, `netscape` or `rss`; without it the format is detected from the file name and content. The command runs all pipelines and ends with `Import complete: total=…, done=…, skipped=…, failed=… (…s)`. It exits 1 if any URL could not be queued or ended `failed`, 0 otherwise.
+Archive every URL found in a file or at an `http(s)` address. `--format` is one of `text`, `opml`, `netscape` or `rss`; without it the format is detected from the file name and content. The command runs all pipelines and ends with `Import complete: total=…, done=…, skipped=…, failed=… (…s)`. It exits 1 if any URL could not be queued or ended `failed`, 0 otherwise, and refuses (exit 1, nothing queued) an import over `WEBFROST_IMPORT_MAX_BYTES` or `WEBFROST_IMPORT_MAX_URLS`. Relative links in a feed resolve against the URL the feed was finally served from, after redirects.
 
 ```bash
 webfrost import urls.txt
@@ -224,7 +224,7 @@ webfrost schedule add https://example.com --cron "0 0 * * *"
 webfrost schedule add --rss https://example.com/feed.xml --cron "0 * * * *"
 ```
 
-`schedule worker` polls every 30 seconds, runs due schedules through the same scheduler the server embeds, runs pipelines at `WEBFROST_CONCURRENCY`, and re-queues snapshots left `pending` by an interrupted run. You do not need it when `webfrost serve` or the Docker server runs; it is for CLI-only setups. It is safe next to a server on one archive, because due schedules are claimed atomically. Set `WEBFROST_SCHEDULER=false` on the server to make the worker the only one. Ctrl+C lets running archives finish (up to 20 seconds). Cron is evaluated in the process time zone (`TZ`); it accepts names (`mon-fri`, `jan`), steps over ranges and `@daily`-style aliases, and `schedule add` rejects out-of-range values. See [Scheduled archiving](/docs/guides/scheduled-archiving).
+An RSS schedule holds its feed to `WEBFROST_IMPORT_MAX_BYTES` and `WEBFROST_IMPORT_MAX_URLS` too: a feed over either limit fails that run and queues nothing. `schedule worker` polls every 30 seconds, runs due schedules through the same scheduler the server embeds, runs pipelines at `WEBFROST_CONCURRENCY`, and re-queues snapshots left `pending` by an interrupted run. You do not need it when `webfrost serve` or the Docker server runs; it is for CLI-only setups. It is safe next to a server on one archive, because due schedules are claimed atomically. Set `WEBFROST_SCHEDULER=false` on the server to make the worker the only one. Ctrl+C lets running archives finish (up to 20 seconds). Cron is evaluated in the process time zone (`TZ`); it accepts names (`mon-fri`, `jan`), steps over ranges and `@daily`-style aliases, and `schedule add` rejects out-of-range values. See [Scheduled archiving](/docs/guides/scheduled-archiving).
 
 ## Admin
 

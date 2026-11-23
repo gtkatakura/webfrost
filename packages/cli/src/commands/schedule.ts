@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import {
+  CronError,
   JobRunner,
   SCHEDULER_INTERVAL_MS,
   addRssFeedSchedule,
@@ -49,10 +50,11 @@ const scheduleAdd: Command = {
             ? await addRssFeedSchedule(db, target, cron)
             : await addSchedule(db, target, cron);
       } catch (err) {
-        throw new UsageError(
-          `Invalid cron expression "${cron}": ${err instanceof Error ? err.message : String(err)}`,
-          path,
-        );
+        // Only a bad cron expression is a usage error; a database failure is not.
+        if (err instanceof CronError) {
+          throw new UsageError(`Invalid cron expression "${cron}": ${err.message}`, path);
+        }
+        throw err;
       }
       const label = rss !== undefined ? "RSS feed schedule" : "Schedule";
       ctx.logger.info(`${label} ${id} created: ${target} @ ${cron}`);

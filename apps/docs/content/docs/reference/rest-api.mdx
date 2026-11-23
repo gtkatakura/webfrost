@@ -361,7 +361,7 @@ A schedule is `{ id, url, cron, createdAt, lastRunAt, nextRunAt, paused, lastSta
 
 `POST /import` takes JSON `{ url?, content?, format? }`. Send `url` (a feed or file to fetch) or `content` (raw text), otherwise `400` `VALIDATION`. A `url` that cannot be fetched answers `400` `FETCH_FAILED`. `format` is `rss`, `opml`, `netscape` or `text`; it is detected when omitted, and any other value is ignored. A `url` without a format is tried as an RSS feed first. Only RSS imports skip URLs that are already archived. `POST /import/file` takes a `file` field and an optional `format` field, and answers with the same `{ queued, skipped, total, format }`; `total` is the number of URLs found.
 
-An import larger than `WEBFROST_IMPORT_MAX_BYTES` (default 10 MiB: the file, the `content` field or the fetched `url`) or with more URLs than `WEBFROST_IMPORT_MAX_URLS` (default 10000) is refused with `413 { "code": "PAYLOAD_TOO_LARGE" }` and queues nothing.
+An import larger than `WEBFROST_IMPORT_MAX_BYTES` (default 10 MiB: the file, the `content` field or the fetched `url`, including a feed tried as RSS) or with more URLs than `WEBFROST_IMPORT_MAX_URLS` (default 10000) is refused with `413 { "code": "PAYLOAD_TOO_LARGE" }` and queues nothing.
 
 ```bash
 curl -X POST $API/import -H "Authorization: Bearer $KEY" \

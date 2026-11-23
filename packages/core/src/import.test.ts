@@ -262,3 +262,56 @@ describe("parseUrls — entities and relative links", () => {
     expect(parseUrls(opml, "opml")).toEqual(["https://example.com/feed?a=1&b=2"]);
   });
 });
+
+describe("parsing cost and caps", () => {
+  const BUDGET_MS = 2000;
+  function timed(fn: () => unknown): number {
+    const start = performance.now();
+    fn();
+    return performance.now() - start;
+  }
+
+  test("a feed of unclosed <item> tags parses in linear time", () => {
+    const body = `<rss>${"<item><link>https://x.example/a</link>".repeat(100_000)}`;
+    expect(timed(() => parseUrls(body, "rss"))).toBeLessThan(BUDGET_MS);
+  });
+
+  test("unclosed <entry> and <link ...> openers parse in linear time", () => {
+    expect(timed(() => parseUrls(`<feed>${"<entry>".repeat(300_000)}`, "rss"))).toBeLessThan(
+      BUDGET_MS,
+    );
+    expect(timed(() => parseUrls(`<feed>${"<link ".repeat(300_000)}`, "rss"))).toBeLessThan(
+      BUDGET_MS,
+    );
+  });
+
+  test("OPML and bookmark openers that never close parse in linear time", () => {
+    expect(timed(() => parseUrls("<outline ".repeat(300_000), "opml"))).toBeLessThan(BUDGET_MS);
+    expect(timed(() => parseUrls("<a ".repeat(300_000), "netscape"))).toBeLessThan(BUDGET_MS);
+  });
+
+  test("a hundred thousand distinct links are de-duplicated quickly", () => {
+    const items = Array.from(
+      { length: 100_000 },
+      (_, i) => `<item><link>https://x.example/${i}</link></item>`,
+    ).join("");
+    let urls: string[] = [];
+    const ms = timed(() => {
+      urls = parseUrls(`<rss>${items}${items}</rss>`, "rss");
+    });
+    expect(ms).toBeLessThan(BUDGET_MS);
+    expect(urls).toHaveLength(100_000);
+  });
+
+  test("maxUrls stops parsing one URL past the cap, in every format", () => {
+    const rss = `<rss>${[1, 2, 3, 4, 5].map((i) => `<item><link>https://x.example/${i}</link></item>`).join("")}</rss>`;
+    expect(parseUrls(rss, "rss", undefined, { maxUrls: 2 })).toHaveLength(3);
+    const opml = [1, 2, 3, 4].map((i) => `<outline xmlUrl="https://x.example/${i}"/>`).join("");
+    expect(parseUrls(opml, "opml", undefined, { maxUrls: 2 })).toHaveLength(3);
+    const html = [1, 2, 3, 4].map((i) => `<a href="https://x.example/${i}">x</a>`).join("");
+    expect(parseUrls(html, "netscape", undefined, { maxUrls: 2 })).toHaveLength(3);
+    const text = "https://a.example\nhttps://b.example\nhttps://c.example";
+    expect(parseUrls(text, "text", undefined, { maxUrls: 2 })).toHaveLength(3);
+    expect(parseUrls(rss, "rss", undefined, { maxUrls: 5 })).toHaveLength(5);
+  });
+});

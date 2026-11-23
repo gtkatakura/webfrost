@@ -7,6 +7,45 @@
 
 export type ImportFormat = "text" | "opml" | "netscape" | "rss";
 
+const DEFAULT_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
+const DEFAULT_IMPORT_MAX_URLS = 10_000;
+
+function positiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+/** WEBFROST_IMPORT_MAX_BYTES: largest import (file, `content`, fetched URL or feed) in bytes (default 10 MiB). */
+export function importMaxBytes(): number {
+  return positiveIntEnv("WEBFROST_IMPORT_MAX_BYTES", DEFAULT_IMPORT_MAX_BYTES);
+}
+
+/** WEBFROST_IMPORT_MAX_URLS: most URLs one import or one feed run may queue (default 10000). */
+export function importMaxUrls(): number {
+  return positiveIntEnv("WEBFROST_IMPORT_MAX_URLS", DEFAULT_IMPORT_MAX_URLS);
+}
+
+/** An import or feed over WEBFROST_IMPORT_MAX_BYTES or WEBFROST_IMPORT_MAX_URLS. */
+export class ImportLimitError extends Error {
+  constructor(
+    readonly limit: "bytes" | "urls",
+    message: string,
+  ) {
+    super(message);
+    this.name = "ImportLimitError";
+  }
+}
+
+export function importTooLargeMessage(): string {
+  return `import is larger than ${importMaxBytes()} bytes (WEBFROST_IMPORT_MAX_BYTES)`;
+}
+
+export function importTooManyUrlsMessage(count: number): string {
+  return `import has ${count} URLs; the limit is ${importMaxUrls()} (WEBFROST_IMPORT_MAX_URLS)`;
+}
+
 /** Returns true if `content` looks like an RSS 2.0 or Atom feed. */
 function isRssContent(content: string): boolean {
   const trimmed = content.trimStart();
@@ -86,41 +125,102 @@ function isHttpUrl(raw: string): boolean {
   }
 }
 
-/** Extract URLs from plain text (one URL per line, blank lines ignored). */
-function parseTextUrls(content: string): string[] {
-  return content
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !line.startsWith("#"))
-    .filter((line) => isHttpUrl(line));
+/**
+ * A de-duplicating URL list that refuses to grow past `max + 1` entries: one more than
+ * the cap is enough for a caller to see that the import is over it, and parsing stops there.
+ */
+function collector(max: number) {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  return {
+    urls,
+    /** Add `url` unless already present; false once the list is over the cap (stop parsing). */
+    add(url: string | null, dedupe = true): boolean {
+      if (url && !(dedupe && seen.has(url))) {
+        seen.add(url);
+        urls.push(url);
+      }
+      return urls.length <= max;
+    },
+  };
 }
 
-/** Extract URLs from OPML — reads xmlUrl attributes on all <outline> elements. */
-function parseOpmlUrls(content: string): string[] {
-  const urls: string[] = [];
-
-  for (const match of content.matchAll(/<outline\b[^>]*\bxmlUrl\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
-    const url = decodeEntities(match[1] ?? "").trim();
-    if (url && isHttpUrl(url) && !urls.includes(url)) urls.push(url);
+/**
+ * The attribute lists of every `<name ...>` start tag, in document order. Linear: each
+ * start tag looks for its `>` once, and scanning resumes after it. A tag with no `>` ends
+ * the scan, since nothing after it can have one either.
+ */
+function* startTags(content: string, name: string): Generator<string> {
+  const opener = new RegExp(`<${name}\\b`, "gi");
+  let pos = 0;
+  while (true) {
+    opener.lastIndex = pos;
+    const m = opener.exec(content);
+    if (!m) return;
+    const attrsStart = m.index + m[0].length;
+    const end = content.indexOf(">", attrsStart);
+    if (end === -1) return;
+    yield content.slice(attrsStart, end);
+    pos = end + 1;
   }
+}
 
-  // Also pick up htmlUrl if not already added via xmlUrl
-  for (const match of content.matchAll(/<outline\b[^>]*\bhtmlUrl\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
-    const url = decodeEntities(match[1] ?? "").trim();
-    if (url && isHttpUrl(url) && !urls.includes(url)) urls.push(url);
+/**
+ * The `<name ...>inner</name>` elements of `content`: [attributes, inner]. Linear for the
+ * same reason as startTags; an element that never closes ends the scan, and nested
+ * same-name elements are not supported (as before).
+ */
+function* elements(content: string, name: string): Generator<[string, string]> {
+  const opener = new RegExp(`<${name}\\b`, "gi");
+  const closer = new RegExp(`</${name}\\s*>`, "gi");
+  let pos = 0;
+  while (true) {
+    opener.lastIndex = pos;
+    const m = opener.exec(content);
+    if (!m) return;
+    const attrsStart = m.index + m[0].length;
+    const tagEnd = content.indexOf(">", attrsStart);
+    if (tagEnd === -1) return;
+    closer.lastIndex = tagEnd + 1;
+    const c = closer.exec(content);
+    if (!c) return;
+    yield [content.slice(attrsStart, tagEnd), content.slice(tagEnd + 1, c.index)];
+    pos = c.index + c[0].length;
   }
+}
 
-  return urls;
+/** Extract URLs from plain text (one URL per line, blank lines ignored). */
+function parseTextUrls(content: string, max: number): string[] {
+  const out = collector(max);
+  for (const raw of content.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.length > 0 && !line.startsWith("#") && isHttpUrl(line) && !out.add(line, false)) break;
+  }
+  return out.urls;
+}
+
+/** Extract URLs from OPML: reads xmlUrl, then htmlUrl, attributes on all <outline> elements. */
+function parseOpmlUrls(content: string, max: number): string[] {
+  const out = collector(max);
+  const outlines = [...startTags(content, "outline")];
+  for (const name of ["xmlUrl", "htmlUrl"]) {
+    // htmlUrl is only picked up when not already added via xmlUrl (the collector dedupes).
+    for (const attrs of outlines) {
+      const url = attr(attrs, name);
+      if (url && isHttpUrl(url) && !out.add(url)) return out.urls;
+    }
+  }
+  return out.urls;
 }
 
 /** Extract URLs from a Netscape bookmark HTML file (<a href=...>). */
-function parseNetscapeUrls(content: string): string[] {
-  const urls: string[] = [];
-  for (const match of content.matchAll(/<a\b[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
-    const url = decodeEntities(match[1] ?? "").trim();
-    if (url && isHttpUrl(url) && !urls.includes(url)) urls.push(url);
+function parseNetscapeUrls(content: string, max: number): string[] {
+  const out = collector(max);
+  for (const attrs of startTags(content, "a")) {
+    const url = attr(attrs, "href");
+    if (url && isHttpUrl(url) && !out.add(url)) break;
   }
-  return urls;
+  return out.urls;
 }
 
 /** The text of an element, without a CDATA wrapper (whose content is literal) and with entities decoded. */
@@ -141,39 +241,40 @@ function attr(attrs: string, name: string): string | undefined {
  * are resolved against `xml:base`, then the feed's own URL (`baseUrl`), then its
  * `rel="self"` link.
  */
-function parseRssUrls(content: string, baseUrl?: string): string[] {
-  const urls: string[] = [];
-  const add = (url: string | null) => {
-    if (url && !urls.includes(url)) urls.push(url);
-  };
+function parseRssUrls(content: string, max: number, baseUrl?: string): string[] {
+  const out = collector(max);
 
-  const feedTag = /<feed\b([^>]*)>/i.exec(content)?.[1] ?? "";
-  const selfLink = [...content.matchAll(/<link\b([^>]*)>/gi)]
-    .map((m) => m[1] ?? "")
-    .find((a) => attr(a, "rel")?.toLowerCase() === "self");
-  let base = baseUrl ?? toHttpUrl(selfLink ? (attr(selfLink, "href") ?? "") : "") ?? undefined;
+  const feedTag = startTags(content, "feed").next().value ?? "";
+  let base = baseUrl;
+  if (base === undefined) {
+    for (const attrs of startTags(content, "link")) {
+      if (attr(attrs, "rel")?.toLowerCase() === "self") {
+        base = toHttpUrl(attr(attrs, "href") ?? "") ?? undefined;
+        break;
+      }
+    }
+  }
   const xmlBase = attr(feedTag, "xml:base");
   if (xmlBase) base = toHttpUrl(xmlBase, base) ?? base;
 
   // RSS 2.0: <item> ... <link>url</link> ... </item>
   // The <link> element in RSS may contain a CDATA section or plain text.
-  for (const itemMatch of content.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)) {
-    const itemContent = itemMatch[1] ?? "";
+  for (const [, itemContent] of elements(content, "item")) {
     const linkMatch = /<link>([\s\S]*?)<\/link>/i.exec(itemContent);
-    if (linkMatch?.[1] !== undefined) add(toHttpUrl(elementText(linkMatch[1]), base));
+    if (linkMatch?.[1] !== undefined && !out.add(toHttpUrl(elementText(linkMatch[1]), base))) {
+      return out.urls;
+    }
   }
 
   // Atom: <entry> ... <link href="url" .../> ... </entry>
   // Prefer rel="alternate" links (the default rel); fall back to any <link> with href.
-  for (const entryMatch of content.matchAll(/<entry\b([^>]*)>([\s\S]*?)<\/entry>/gi)) {
-    const entryBase = attr(entryMatch[1] ?? "", "xml:base");
+  for (const [entryAttrs, entryContent] of elements(content, "entry")) {
+    const entryBase = attr(entryAttrs, "xml:base");
     const entryBaseUrl = entryBase ? (toHttpUrl(entryBase, base) ?? base) : base;
-    const entryContent = entryMatch[2] ?? "";
 
     let alternateUrl: string | null = null;
     let firstUrl: string | null = null;
-    for (const linkMatch of entryContent.matchAll(/<link\b([^>]*)>/gi)) {
-      const attrs = linkMatch[1] ?? "";
+    for (const attrs of startTags(entryContent, "link")) {
       const href = attr(attrs, "href");
       const url = href ? toHttpUrl(href, entryBaseUrl) : null;
       if (!url) continue;
@@ -184,25 +285,41 @@ function parseRssUrls(content: string, baseUrl?: string): string[] {
       }
       firstUrl ??= url;
     }
-    add(alternateUrl ?? firstUrl);
+    if (!out.add(alternateUrl ?? firstUrl)) return out.urls;
   }
 
-  return urls;
+  return out.urls;
+}
+
+export interface ParseOptions {
+  /**
+   * Stop once more than this many URLs were found, returning `maxUrls + 1` of them, so
+   * the caller can tell the input is over the limit without parsing all of it.
+   * Default: no limit.
+   */
+  maxUrls?: number;
 }
 
 /**
  * Parse URLs from `content` using the given format. `baseUrl` is the URL the content
- * was downloaded from, if any: relative links in a feed are resolved against it.
+ * was downloaded from (after redirects), if any: relative links in a feed are resolved
+ * against it. Parsing is linear in the size of `content`.
  */
-export function parseUrls(content: string, format: ImportFormat, baseUrl?: string): string[] {
+export function parseUrls(
+  content: string,
+  format: ImportFormat,
+  baseUrl?: string,
+  options: ParseOptions = {},
+): string[] {
+  const max = options.maxUrls ?? Number.POSITIVE_INFINITY;
   switch (format) {
     case "opml":
-      return parseOpmlUrls(content);
+      return parseOpmlUrls(content, max);
     case "netscape":
-      return parseNetscapeUrls(content);
+      return parseNetscapeUrls(content, max);
     case "rss":
-      return parseRssUrls(content, baseUrl);
+      return parseRssUrls(content, max, baseUrl);
     case "text":
-      return parseTextUrls(content);
+      return parseTextUrls(content, max);
   }
 }
