@@ -167,7 +167,7 @@ A snapshot is indexed when it finishes `done`, from its Readability output: URL,
 CREATE VIRTUAL TABLE snapshots_fts USING fts5(url, title, text_content, tags);
 ```
 
-**PostgreSQL and MySQL** use the table `search_index` (`snapshot_id`, `url`, `title`, `text_content`, `tags`, `search_text`). `search_text` is the token stream of the four fields, built by WebFrost the way FTS5's default tokenizer splits text: runs of letters and digits, lowercased, accents removed. `https://example.com/a-b` is indexed as `https example com a b` on every engine, so the same query finds the same snapshots. PostgreSQL indexes it as a generated `tsvector` column (`to_tsvector('simple', search_text)`) with a GIN index; MySQL with a `FULLTEXT` index. A pathological page whose vocabulary would exceed PostgreSQL's 1 MB `tsvector` limit is indexed on its first ~900 KB of vector.
+**PostgreSQL and MySQL** use the table `search_index` (`snapshot_id`, `url`, `title`, `text_content`, `tags`, `search_text`). `search_text` is the token stream of the four fields, built by WebFrost the way FTS5's default tokenizer splits text: runs of letters and digits, lowercased, accents removed (the text is normalised first, so a character such as `⑴` or `½` splits into its digits instead of carrying punctuation into a token). `https://example.com/a-b` is indexed as `https example com a b` on every engine, so the same query finds the same snapshots. PostgreSQL indexes it as a generated `tsvector` column (`to_tsvector('simple', search_text)`) with a GIN index; MySQL with a `FULLTEXT` index. A pathological page whose vocabulary would exceed PostgreSQL's 1 MB `tsvector` limit is indexed on its first ~900 KB of vector.
 
 | | SQLite | PostgreSQL | MySQL |
 |---|---|---|---|
@@ -177,7 +177,7 @@ CREATE VIRTUAL TABLE snapshots_fts USING fts5(url, title, text_content, tags);
 | Snippet | FTS5 `snippet()`, 32 tokens of the text | built by WebFrost: the 32-token window of the text with the most query terms | same as PostgreSQL |
 | Words shorter than | indexed | indexed | `innodb_ft_min_token_size` (default 3) are not indexed |
 
-Results are sorted best first and the API's `rank` is "lower is better" on every engine (FTS5's bm25 is negative; the PostgreSQL and MySQL scores are negated). The numbers are not comparable across engines. Snippets follow one contract everywhere: the archived text is HTML-escaped and the only markup is `<mark>…</mark>` around matched words, with `…` where the text was cut. An invalid FTS5 expression returns no results on SQLite; the other engines read unbalanced quotes leniently.
+Results are sorted best first and the API's `rank` is "lower is better" on every engine (FTS5's bm25 is negative; the PostgreSQL and MySQL scores are negated). The numbers are not comparable across engines. Snippets follow one contract everywhere: the archived text is HTML-escaped and the only markup is `<mark>…</mark>` around matched words, with `…` where the text was cut. An invalid FTS5 expression returns no results on SQLite (any other database error, such as a locked or damaged file, is an error, not an empty result); the other engines read unbalanced quotes leniently. On PostgreSQL and MySQL a query is read up to its first 512 characters and 32 terms, and a snippet is built from the first 100,000 characters of the text, so a long document costs no more than a short one.
 
 ## Indexes
 

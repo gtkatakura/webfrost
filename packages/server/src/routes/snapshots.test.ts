@@ -1296,6 +1296,26 @@ describe("GET /snapshots — limit cap", () => {
   });
 });
 
+describe("GET /snapshots — page and limit", () => {
+  test("values that are not plain numbers answer 400, with and without a query", async () => {
+    const app = await getApp();
+    for (const qs of [
+      "page=Infinity",
+      "page=1e400",
+      "limit=NaN",
+      "q=x&page=Infinity",
+      "q=x&page=1e400",
+    ]) {
+      const res = await app.handle(new Request(`http://localhost/snapshots?${qs}`));
+      expect(res.status).toBe(400);
+    }
+    const huge = await app.handle(
+      new Request("http://localhost/snapshots?page=999999999999999&limit=200"),
+    );
+    expect(huge.status).toBe(200);
+  });
+});
+
 describe("GET /snapshots/:id — guests", () => {
   test("anonymous visitors never see raw extractor errors", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
