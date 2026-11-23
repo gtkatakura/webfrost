@@ -61,6 +61,44 @@ const FILE_BASED_EXTRACTORS = new Set([
 ]);
 
 // Every extractor whose `content` column holds a storage reference rather than the data itself.
+/** Fields of yt-dlp's info JSON that the metadata download exposes; everything else stays on disk. */
+const PUBLIC_MEDIA_METADATA_FIELDS = [
+  "id",
+  "title",
+  "fulltitle",
+  "description",
+  "uploader",
+  "channel",
+  "duration",
+  "view_count",
+  "like_count",
+  "upload_date",
+  "timestamp",
+  "webpage_url",
+  "extractor",
+  "extractor_key",
+  "categories",
+  "tags",
+  "language",
+  "ext",
+  "width",
+  "height",
+] as const;
+
+function publicMediaMetadata(raw: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+  const source = parsed as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of PUBLIC_MEDIA_METADATA_FIELDS) if (key in source) out[key] = source[key];
+  return out;
+}
+
 const FILE_BACKED_EXTRACTORS = new Set([...FILE_BASED_EXTRACTORS, "media-metadata"]);
 
 async function getFileSizeBytes(
@@ -313,7 +351,14 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
           deleted = await deleteSnapshot(db, id, storage);
         } catch (err) {
           if (err instanceof SnapshotBusyError) {
-            return apiError(set, 409, "CONFLICT", "snapshot is being imported");
+            return apiError(
+              set,
+              409,
+              "CONFLICT",
+              err.reason === "archiving"
+                ? "snapshot is being archived"
+                : "snapshot is being imported",
+            );
           }
           throw err;
         }
@@ -376,14 +421,14 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       const storage = getStorage();
       if (!storage.validateRef(ref)) return fail(403, "forbidden");
       if (!(await storage.fileExists(ref))) return fail(404, "file not found");
-      const bytes = await storage.getBytes(ref);
 
       set.headers["content-type"] = "text/html; charset=utf-8";
       set.headers["content-security-policy"] = PREVIEW_CSP;
       set.headers["x-frame-options"] = "SAMEORIGIN";
       set.headers["referrer-policy"] = "no-referrer";
       set.headers["cache-control"] = "private, no-store";
-      return new Response(bytes as unknown as BodyInit);
+      // Streamed, never read whole into memory: SingleFile pages can be large.
+      return new Response(storage.getStream(ref) as unknown as BodyInit);
     },
     {
       params: t.Object({ id: t.String(), extractor: t.String() }),
@@ -459,10 +504,20 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       if (presignedUrl) {
         return new Response(null, { status: 302, headers: { Location: presignedUrl } });
       }
-      const bytes = await storage.getBytes(content);
-      return new Response(bytes as unknown as BodyInit, {
-        headers: { "Content-Type": file.contentType, "Content-Disposition": disposition },
-      });
+      const headers: Record<string, string> = {
+        "Content-Type": file.contentType,
+        "Content-Disposition": disposition,
+      };
+      if (extractor === "media-metadata") {
+        // yt-dlp's raw info JSON carries signed media URLs (with the server's egress IP),
+        // request headers and more: only the display fields leave the server.
+        const raw = new TextDecoder().decode(await storage.getBytes(content));
+        return new Response(JSON.stringify(publicMediaMetadata(raw)), { headers });
+      }
+      // Streamed, never read whole into memory: media files run to hundreds of MB.
+      const size = await storage.fileSize(content);
+      if (size > 0) headers["Content-Length"] = String(size);
+      return new Response(storage.getStream(content) as unknown as BodyInit, { headers });
     },
     {
       params: t.Object({ id: t.String(), extractor: t.String() }),

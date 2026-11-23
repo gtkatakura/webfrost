@@ -29,10 +29,16 @@ export interface SnapshotDetail {
  */
 export const IMPORTING_STATUS = "importing";
 
-/** The snapshot cannot be changed right now (a bundle import is still writing it). */
+/**
+ * The snapshot cannot be changed right now: a bundle import is still writing it, or its
+ * pipeline is still running (`pending`).
+ */
 export class SnapshotBusyError extends Error {
-  constructor(id: number) {
-    super(`snapshot ${id} is being imported`);
+  constructor(
+    id: number,
+    readonly reason: "importing" | "archiving" = "importing",
+  ) {
+    super(`snapshot ${id} is being ${reason === "importing" ? "imported" : "archived"}`);
     this.name = "SnapshotBusyError";
   }
 }
@@ -55,7 +61,8 @@ export async function getSnapshot(db: Db, id: number): Promise<SnapshotDetail | 
 /**
  * Delete a snapshot and all related data (archive results, job queue entries,
  * snapshot-tag associations, search index entry) in one transaction, then its
- * artifact files on disk/S3.
+ * artifact files on disk/S3. A snapshot still `pending` (being archived) or `importing`
+ * throws SnapshotBusyError.
  * Returns true if the snapshot was found and deleted, false if not found.
  */
 export async function deleteSnapshot(
@@ -86,6 +93,9 @@ export async function removeSnapshot(
     );
     if (!exists) return false;
     if (exists.status === IMPORTING_STATUS && !force) throw new SnapshotBusyError(id);
+    // A pending snapshot has a pipeline writing files for it; deleting now would leave
+    // whatever it writes next in storage with no row pointing at it. Same rule as retry.
+    if (exists.status === "pending" && !force) throw new SnapshotBusyError(id, "archiving");
 
     // archive_results and job_queue lack ON DELETE CASCADE — delete manually
     await tx.run(sql`DELETE FROM archive_results WHERE snapshot_id = ${id}`);

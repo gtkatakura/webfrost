@@ -612,6 +612,96 @@ describe("GET /snapshots/:id/archives/:extractor/download — security", () => {
 // GET /snapshots/:id/archives/:extractor/download — file-based extractors
 // ---------------------------------------------------------------------------
 
+describe("GET /snapshots/:id/archives/:extractor/download — streaming and metadata", () => {
+  async function seed(extractor: string, name: string, content: string | Uint8Array) {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const { writeFileSync } = await import("node:fs");
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/stream");
+    const dir = join(testDir, "snapshots");
+    mkdirSync(dir, { recursive: true });
+    const filePath = join(dir, `${id}-${name}`);
+    writeFileSync(filePath, content);
+    await db.run(
+      sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, ${extractor}, ${filePath})`,
+    );
+    await db.close();
+    return id;
+  }
+
+  test("serves a media file from a stream, with its length and attachment headers", async () => {
+    const { FilesystemBackend } = await import("@webfrost/core");
+    const bytes = new Uint8Array(4096).fill(7);
+    const id = await seed("media", "media.mp4", bytes);
+    let bufferedWhole = false;
+    const orig = FilesystemBackend.prototype.getBytes;
+    FilesystemBackend.prototype.getBytes = async function (...a: [string]) {
+      bufferedWhole = true;
+      return orig.apply(this, a);
+    };
+    try {
+      const app = await getApp();
+      const res = await app.handle(
+        new Request(`http://localhost/snapshots/${id}/archives/media/download`),
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("video/mp4");
+      expect(res.headers.get("content-disposition")).toBe('attachment; filename="media.mp4"');
+      expect(res.headers.get("content-length")).toBe("4096");
+      expect(new Uint8Array(await res.arrayBuffer())).toEqual(bytes);
+      expect(bufferedWhole).toBe(false);
+    } finally {
+      FilesystemBackend.prototype.getBytes = orig;
+    }
+  });
+
+  test("the preview is streamed too and keeps its CSP", async () => {
+    const { FilesystemBackend } = await import("@webfrost/core");
+    const id = await seed("singlefile", "singlefile.html", "<p>hello</p>");
+    let bufferedWhole = false;
+    const orig = FilesystemBackend.prototype.getBytes;
+    FilesystemBackend.prototype.getBytes = async function (...a: [string]) {
+      bufferedWhole = true;
+      return orig.apply(this, a);
+    };
+    try {
+      const app = await getApp();
+      const res = await app.handle(
+        new Request(`http://localhost/snapshots/${id}/archives/singlefile/preview`),
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-security-policy")).toContain("default-src");
+      expect(await res.text()).toBe("<p>hello</p>");
+      expect(bufferedWhole).toBe(false);
+    } finally {
+      FilesystemBackend.prototype.getBytes = orig;
+    }
+  });
+
+  test("media-metadata leaves out formats, signed URLs and headers", async () => {
+    const info = {
+      id: "abc",
+      title: "A video",
+      uploader: "Someone",
+      duration: 61,
+      formats: [{ url: "https://r1.example/videoplayback?ip=203.0.113.9&sig=s" }],
+      requested_formats: [{ url: "https://r1.example/videoplayback?ip=203.0.113.9" }],
+      url: "https://r1.example/videoplayback?ip=203.0.113.9",
+      http_headers: { "User-Agent": "x" },
+      _version: { version: "2026.1.1" },
+    };
+    const id = await seed("media-metadata", "media-metadata.json", JSON.stringify(info));
+    const app = await getApp();
+    const res = await app.handle(
+      new Request(`http://localhost/snapshots/${id}/archives/media-metadata/download`),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toEqual({ id: "abc", title: "A video", uploader: "Someone", duration: 61 });
+    expect(JSON.stringify(body)).not.toContain("203.0.113.9");
+  });
+});
+
 describe("GET /snapshots/:id/archives/:extractor/download — file extractors", () => {
   test("returns screenshot PNG binary with correct headers", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
@@ -879,6 +969,7 @@ describe("DELETE /snapshots/:id", () => {
     const { openDb, createSnapshot, getSnapshot } = await import("@webfrost/core");
     const db = await openDb(testDir);
     const id = await createSnapshot(db, "https://example.com/del");
+    await db.run(sql`UPDATE snapshots SET status = 'done' WHERE id = ${id}`);
     await db.close();
 
     const app = await getApp();
@@ -898,6 +989,7 @@ describe("DELETE /snapshots/:id", () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");
     const db = await openDb(testDir);
     const id = await createSnapshot(db, "https://example.com/cascade");
+    await db.run(sql`UPDATE snapshots SET status = 'done' WHERE id = ${id}`);
     await db.run(
       sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${id}, 'html', '<p>hi</p>')`,
     );
@@ -920,6 +1012,7 @@ describe("DELETE /snapshots/:id", () => {
     );
     const db = await openDb(testDir);
     const id = await createSnapshot(db, "https://example.com/fts-del");
+    await db.run(sql`UPDATE snapshots SET status = 'done' WHERE id = ${id}`);
     await indexSnapshot(
       db,
       id,
@@ -937,6 +1030,48 @@ describe("DELETE /snapshots/:id", () => {
     const results = await searchSnapshots(db2, "ZZZ");
     await db2.close();
     expect(results.items).toHaveLength(0);
+  });
+
+  test("refuses with 409 while the snapshot is pending, and keeps its files", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const { existsSync, writeFileSync } = await import("node:fs");
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/running");
+    await db.close();
+    const dir = join(testDir, "snapshots", String(id));
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "page.pdf"), "x");
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request(`http://localhost/snapshots/${id}`, { method: "DELETE" }),
+    );
+    expect(res.status).toBe(409);
+
+    const db2 = await openDb(testDir);
+    const row = await db2.get<{ id: number }>(sql`SELECT id FROM snapshots WHERE id = ${id}`);
+    await db2.close();
+    expect(row?.id).toBe(id);
+    expect(existsSync(join(dir, "page.pdf"))).toBe(true);
+  });
+
+  test("removes the files of a finished snapshot", async () => {
+    const { openDb, createSnapshot } = await import("@webfrost/core");
+    const { existsSync, writeFileSync } = await import("node:fs");
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/finished");
+    await db.run(sql`UPDATE snapshots SET status = 'failed' WHERE id = ${id}`);
+    await db.close();
+    const dir = join(testDir, "snapshots", String(id));
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "page.pdf"), "x");
+
+    const app = await getApp();
+    const res = await app.handle(
+      new Request(`http://localhost/snapshots/${id}`, { method: "DELETE" }),
+    );
+    expect(res.status).toBe(204);
+    expect(existsSync(dir)).toBe(false);
   });
 });
 

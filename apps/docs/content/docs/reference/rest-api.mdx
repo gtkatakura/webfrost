@@ -158,7 +158,7 @@ curl -X POST $API/setup -H "Content-Type: application/json" \
 | `GET` | `/snapshots/:id` | One snapshot with archive results and per-extractor metadata. |
 | `POST` | `/snapshots/:id/retry` | Archive a snapshot again, in place. `202`, `404`, or `409` while it is being archived. |
 | `POST` | `/snapshots/import` | Store a snapshot archived elsewhere, from a snapshot bundle (`application/zip`). `201`. |
-| `DELETE` | `/snapshots/:id` | Delete a snapshot and its files. `204`, or `404`. |
+| `DELETE` | `/snapshots/:id` | Delete a snapshot and its files. `204`, `404`, or `409` `CONFLICT` while the snapshot is still `pending` (its pipeline is running) or being imported; wait for it to finish, then delete. |
 
 ### Create
 
@@ -319,10 +319,10 @@ curl -OJ $API/snapshots/1/archives/screenshot/download -H "Authorization: Bearer
 | `singlefile` | `text/html` | `singlefile.html` |
 | `media` | `video/mp4` or `audio/mpeg` | `media.mp4` or `media.mp3` |
 | `media-poster` | `image/jpeg` | `poster.jpg` |
-| `media-metadata` | `application/json` | `media-metadata.json` |
+| `media-metadata` | `application/json` | `media-metadata.json` (only the display fields of yt-dlp's output: id, title, description, uploader, channel, duration, counts, dates, page URL, tags, size; never stream URLs or request headers) |
 | `readability`, `html` | `application/json` | `readability.json`, `html.json` (the stored value as is) |
 
-Downloads carry `Content-Disposition: attachment`. With the S3 backend every file format except `media-metadata` answers `302` to a presigned URL valid for one hour; the URL signs the content type and an `attachment` disposition (`response-content-type`, `response-content-disposition`), so archived HTML downloads instead of rendering on the bucket's origin. See [Storage](/docs/guides/storage#downloads-with-s3).
+Downloads carry `Content-Disposition: attachment`. Files are streamed from storage, never held whole in memory. With the S3 backend every file format except `media-metadata` answers `302` to a presigned URL valid for one hour; the URL signs the content type and an `attachment` disposition (`response-content-type`, `response-content-disposition`), so archived HTML downloads instead of rendering on the bucket's origin. See [Storage](/docs/guides/storage#downloads-with-s3).
 
 `preview` works only for `dom-snapshot` and `singlefile` (`400` `BAD_REQUEST` otherwise). It serves the page with `Content-Security-Policy: sandbox; default-src 'none'; ...`, so scripts, forms and network requests are disabled even if the URL is opened directly. The UI frames it in `<iframe sandbox="">`.
 
