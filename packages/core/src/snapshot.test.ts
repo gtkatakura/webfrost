@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sql } from "kysely";
 import { type Db, openDb } from "./db";
-import { deleteSnapshot, getSnapshot } from "./snapshot";
+import { SnapshotBusyError, deleteSnapshot, getSnapshot } from "./snapshot";
 import { FilesystemBackend } from "./storage";
 
 let testDir: string;
@@ -42,6 +42,17 @@ describe("deleteSnapshot", () => {
 
     const snap = await getSnapshot(db, 1);
     expect(snap).toBeNull();
+  });
+
+  test("refuses a pending snapshot: row and files stay", async () => {
+    await db.run(sql`UPDATE snapshots SET status = 'pending' WHERE id = 1`);
+    const storage = makeStorage();
+    const ref = await storage.putText(1, "page.html", "x");
+
+    await expect(deleteSnapshot(db, 1, storage)).rejects.toBeInstanceOf(SnapshotBusyError);
+
+    expect(await getSnapshot(db, 1)).not.toBeNull();
+    expect(await storage.fileExists(ref)).toBe(true);
   });
 
   test("cascades to archive_results", async () => {
