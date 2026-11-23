@@ -9,6 +9,7 @@ import {
 } from "@webfrost/core";
 import { type Command, parseHttpUrl, parseId } from "../cli";
 import { CliError } from "../errors";
+import { safeText } from "../sanitize";
 import { hint, printJson, withDb } from "./shared";
 
 export const initCommand: Command = {
@@ -76,7 +77,7 @@ Exit codes:
     const reasons = [...new Set(snapshot.archiveResults.map((r) => r.error).filter(Boolean))];
     ctx.logger.error(
       `Snapshot ${snapshot.id} finished with status: ${snapshot.status}${
-        reasons.length ? ` (${reasons.slice(0, 3).join("; ")})` : ""
+        reasons.length ? ` (${safeText(reasons.slice(0, 3).join("; "))})` : ""
       }`,
     );
     return 1;
@@ -110,7 +111,7 @@ export const listCommand: Command = {
       printJson(result);
       return 0;
     }
-    for (const s of result.items) console.log(`${s.id}\t${s.status}\t${s.url}`);
+    for (const s of result.items) console.log(`${s.id}\t${s.status}\t${safeText(s.url)}`);
     const shown = (page - 1) * limit + result.items.length;
     if (shown < result.total) {
       hint(ctx, `Showing ${shown} of ${result.total}. Use --page ${page + 1} for more.`);
@@ -178,8 +179,8 @@ export const searchCommand: Command = {
     }
     if (results.items.length === 0) console.log("No results.");
     for (const r of results.items) {
-      console.log(`${r.id}\t${r.url}`);
-      if (r.snippet) console.log(`  ${plainSnippet(r.snippet)}`);
+      console.log(`${r.id}\t${safeText(r.url)}`);
+      if (r.snippet) console.log(`  ${safeText(plainSnippet(r.snippet))}`);
     }
     const shown = (results.page - 1) * results.limit + results.items.length;
     if (shown < results.total) {

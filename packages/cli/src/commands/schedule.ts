@@ -10,6 +10,7 @@ import {
 } from "@webfrost/core";
 import { type Command, type Group, parseHttpUrl, parseId } from "../cli";
 import { CliError, UsageError } from "../errors";
+import { safeText } from "../sanitize";
 import { withDb } from "./shared";
 
 const scheduleAdd: Command = {
@@ -72,7 +73,7 @@ const scheduleList: Command = {
       for (const s of schedules) {
         const kind = s.kind === "rss_feed" ? "[rss]" : "[url]";
         console.log(
-          `${s.id}\t${kind}\t${s.cron}\t${s.url}\tlast:${s.last_run_at ?? "never"}\tnext:${s.next_run_at}`,
+          `${s.id}\t${kind}\t${s.cron}\t${safeText(s.url)}\tlast:${s.last_run_at ?? "never"}\tnext:${s.next_run_at}`,
         );
       }
     });

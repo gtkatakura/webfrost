@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, rmdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { resolveChromium, sql } from "@webfrost/core";
 import {
   browserPackagesHint,
@@ -76,15 +76,33 @@ function portFree(port: number, host: string): Promise<boolean> {
   });
 }
 
-function writable(dir: string): { ok: boolean; reason?: string } {
+function writable(dir: string): { ok: boolean; reason?: string; created?: string | undefined } {
   const probe = join(dir, `.webfrost-doctor-${process.pid}`);
+  let created: string | undefined;
   try {
-    mkdirSync(dir, { recursive: true });
+    // The first directory this call had to create, undefined when `dir` already existed.
+    created = mkdirSync(dir, { recursive: true });
     writeFileSync(probe, "");
     rmSync(probe);
-    return { ok: true };
+    return { ok: true, created };
   } catch (err) {
-    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+    return { ok: false, reason: err instanceof Error ? err.message : String(err), created };
+  }
+}
+
+/** Undo what `writable` created, deepest first, with rmdir only: existing data can never go. */
+function removeCreated(dir: string, created: string | undefined): void {
+  if (!created) return;
+  let current = resolve(dir);
+  const stop = resolve(created);
+  while (current === stop || current.startsWith(`${stop}${sep}`)) {
+    try {
+      rmdirSync(current);
+    } catch {
+      return;
+    }
+    if (current === stop) return;
+    current = dirname(current);
   }
 }
 
@@ -100,9 +118,9 @@ export async function runChecks(ctx: Pick<Context, "dir">): Promise<Check[]> {
   });
 
   // Data directory and database.
-  const dirExisted = existsSync(ctx.dir);
   const w = writable(ctx.dir);
-  if (!dirExisted) rmSync(ctx.dir, { recursive: true, force: true });
+  const dirExisted = !w.created;
+  removeCreated(ctx.dir, w.created);
   add({
     name: "Data directory",
     level: w.ok ? "ok" : "fail",
