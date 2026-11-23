@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { BROWSER_REQUEST_HEADERS, BROWSER_USER_AGENT } from "./request-headers";
 import {
   ResponseTooLargeError,
   assertPublicUrl,
@@ -238,7 +239,10 @@ describe("fetchGuarded address pinning (DNS rebinding)", () => {
     expect(lookups).toBe(1);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toBe("https://203.0.113.7:8443/page?q=1");
-    expect(calls[0]?.init.headers).toEqual({ host: "rebind.example:8443" });
+    expect(calls[0]?.init.headers).toEqual({
+      ...BROWSER_REQUEST_HEADERS,
+      host: "rebind.example:8443",
+    });
     expect(calls[0]?.init.tls).toEqual({ serverName: "rebind.example" });
   });
 
@@ -264,6 +268,48 @@ describe("fetchGuarded address pinning (DNS rebinding)", () => {
     expect(message).toContain("(rebind.example:8443)");
     expect(message).not.toContain("2606:4700");
     expect(message).not.toContain("203.0.113.7");
+  });
+});
+
+describe("fetchGuarded request headers", () => {
+  beforeEach(() => {
+    process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
+  });
+  afterEach(() => {
+    Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
+  });
+
+  test("a server that refuses clients that are not browsers answers, on every hop", async () => {
+    const seen: { path: string; host: string | null; accept: string | null }[] = [];
+    const server = Bun.serve({
+      port: 0,
+      fetch: (req) => {
+        const url = new URL(req.url);
+        if (req.headers.get("user-agent") !== BROWSER_USER_AGENT) {
+          return new Response("no bots", { status: 403 });
+        }
+        seen.push({
+          path: url.pathname,
+          host: req.headers.get("host"),
+          accept: req.headers.get("accept"),
+        });
+        if (url.pathname === "/old") {
+          return new Response(null, { status: 302, headers: { location: "/new" } });
+        }
+        return new Response(req.headers.get("accept-language"));
+      },
+    });
+    try {
+      const res = await fetchGuarded(`http://localhost:${server.port}/old`);
+      expect(res.status).toBe(200);
+      expect(new TextDecoder().decode(res.body)).toBe("en-US,en;q=0.9");
+      expect(seen.map((s) => s.path)).toEqual(["/old", "/new"]);
+      // The pinned connection still names the host that was asked for.
+      expect(seen.every((s) => s.host === `localhost:${server.port}`)).toBe(true);
+      expect(seen.every((s) => s.accept?.startsWith("text/html,"))).toBe(true);
+    } finally {
+      server.stop(true);
+    }
   });
 });
 

@@ -35,14 +35,60 @@ A snapshot is `pending` while it waits in the job runner or runs. The runner exe
 
 A snapshot ends `failed` when:
 
-- the page could not be fetched: a timeout (`WEBFROST_FETCH_TIMEOUT_MS`, default 30 s), a network error, or an SSRF block;
-- the server answered with an HTTP status of 400 or higher;
+- the page could not be fetched: a timeout (`WEBFROST_FETCH_TIMEOUT_MS`, default 30 s), a network error, a certificate the runtime does not trust, or an SSRF block;
+- the server answered with an HTTP status of 400 or higher (the browser is not tried after that);
 - no extractor produced output;
 - it was interrupted three times and given up on.
 
 After a crash or restart, snapshots left `pending` are re-queued automatically: a snapshot is adopted once its lease (45 seconds) has expired, at the next recovery sweep, which runs at startup and every minute. Give it a minute or two.
 
-**Fix:** raise `WEBFROST_CONCURRENCY` if the machine can take it, check the debug log for the failure reason, and set `WEBFROST_ALLOW_PRIVATE_URLS=true` only if you really intend to archive intranet addresses.
+**Fix:** raise `WEBFROST_CONCURRENCY` if the machine can take it, check the log for the failure reason ([the next section](#a-page-opens-in-my-browser-but-its-snapshot-fails) explains the common ones), and set `WEBFROST_ALLOW_PRIVATE_URLS=true` only if you really intend to archive intranet addresses.
+
+## A page opens in my browser, but its snapshot fails
+
+WebFrost fetches the page over plain HTTP before it opens the browser, and a failed fetch ends the snapshot (see [the pipeline](/docs/architecture/pipeline)). The log names the reason: `fetch failed snapshot=<id>: <reason>` when no answer came, `fetch error snapshot=<id> status=<code>` when the server answered with an error. Three reasons account for nearly all of them.
+
+### The page is gone
+
+**Log:** `getaddrinfo ENOTFOUND` (the domain no longer exists), `status=404` or `status=410`, a timeout on a host that never answers.
+
+Expected when you import years of bookmarks: a large share of old links are dead, and a browser that seems to open one is often showing a cached copy or a parked domain. Nothing to fix. `webfrost list --status failed` shows them.
+
+### `unable to get local issuer certificate`
+
+**Cause:** the site's certificate comes from a certificate authority that browsers already trust and the runtime does not yet. The fetch checks certificates against the list of roots built into the Bun that WebFrost runs on; Chromium brings its own, newer list. When an authority starts issuing under a new root, there is a period in which the browser opens the page and the fetch refuses it. At the time of writing this is the case for the roots Let's Encrypt created in 2025 (Root YE and Root YR): a growing number of sites use them.
+
+**Fix:** give the fetch the missing link of the chain with `NODE_EXTRA_CA_CERTS`, a file of PEM certificates that are added to the built-in roots. It works for the binary and for the Docker image. Let's Encrypt publishes both new roots signed by its older ones, which every list has, so nothing new has to be trusted on faith:
+
+```bash
+curl -fsSO https://letsencrypt.org/certs/gen-y/root-ye-by-x2.pem
+curl -fsSO https://letsencrypt.org/certs/gen-y/root-yr-by-x1.pem
+
+# Both must print "OK": each one chains to a root your system already trusts.
+openssl verify root-ye-by-x2.pem root-yr-by-x1.pem
+
+cat root-ye-by-x2.pem root-yr-by-x1.pem > extra-ca.pem
+```
+
+Then start WebFrost with the variable set, and archive the failed pages again:
+
+```bash
+NODE_EXTRA_CA_CERTS=$PWD/extra-ca.pem webfrost serve
+
+# Docker: mount the folder that holds the file, read-only
+docker run -v $PWD:/etc/webfrost-ca:ro -e NODE_EXTRA_CA_CERTS=/etc/webfrost-ca/extra-ca.pem ...
+```
+
+The file is read once, at start. If it is missing, a warning is printed and WebFrost runs without it. For another authority the steps are the same with its certificates; prefer, as here, a certificate signed by a root you already trust over a new self-signed root. Do not turn certificate checking off instead: the archive would then record whatever anyone on the path chose to send. The variable can go once a WebFrost release ships a runtime that has the roots.
+
+### The site refuses the visit: `status=403`, `status=429`, a reset connection
+
+**Cause:** the site, or the protection service in front of it, turns away visitors it takes for automated ones. There are two kinds of refusal, and only one is about how WebFrost presents itself:
+
+- **By what the client looks like.** Some servers drop any client that does not send a browser's headers. WebFrost sends the headers of a Chrome navigation on every fetch, so these sites answer.
+- **By where the visit comes from.** Many large sites and most protection services judge the address: connections from the ranges of hosting providers and data centres get `403`, `429` or a "checking your browser" page, whatever the client. A browser on your own computer opens the same page because it arrives from a home or office connection. Changing headers does nothing here, and the headless browser is turned away the same way.
+
+**What to do:** WebFrost has no setting for the second kind. The page archives from a machine on a home or office connection (WebFrost on your own computer, or a home server), or from a public address of the same content that is not behind the protection. A `429` can also be plain rate limiting: archive that site's pages again later, and raise `WEBFROST_DOMAIN_DELAY_MS` to space them out.
 
 ## Login bounces back to the login page
 

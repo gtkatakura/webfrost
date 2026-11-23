@@ -138,6 +138,12 @@ you ask it to archive. If you run an OpenTelemetry collector, you can point WebF
 traces, metrics and logs in your own tools; it is off unless you configure it. See
 [Observability](https://webfrost.dev/docs/guides/observability).
 
+**A page opens in my browser. Why did its snapshot fail?** Usually one of three things: the page is gone
+(common in old bookmark files), the site's certificate comes from an authority newer than the runtime's
+list of roots, or the site turns away visits from the addresses of hosting providers. The second has a
+fix, the third does not depend on WebFrost. See
+[Troubleshooting](https://webfrost.dev/docs/guides/troubleshooting#a-page-opens-in-my-browser-but-its-snapshot-fails).
+
 **How much does it need?** One process, plus a headless Chromium while a page is being archived. A small
 VPS or a home server is enough for personal use; `WEBFROST_CONCURRENCY` limits parallel archives.
 
