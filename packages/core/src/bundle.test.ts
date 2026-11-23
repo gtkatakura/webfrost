@@ -31,7 +31,7 @@ import { searchSnapshots } from "./search";
 import { IMPORTING_STATUS, SnapshotBusyError, deleteSnapshot, getSnapshot } from "./snapshot";
 import { getStats } from "./stats";
 import { FilesystemBackend } from "./storage";
-import { addTagToSnapshot, createTag, listSnapshotTags } from "./tags";
+import { addTagToSnapshot, createTag, listSnapshotTags, listTags } from "./tags";
 
 let root: string;
 let sourceDir: string;
@@ -656,6 +656,40 @@ describe("the importing status", () => {
     expect(stale).not.toBe(fresh);
   });
 
+  test("sweepStaleImports keeps an old import whose heartbeat is recent", async () => {
+    const id = await target.insert(
+      sql`INSERT INTO snapshots (url, status) VALUES ('https://x.example', 'importing')`,
+    );
+    await target.run(
+      sql`INSERT INTO job_queue (snapshot_id, status, heartbeat_at, created_at) VALUES (${id}, 'importing', ${target.now()}, ${target.ago(3 * 3600)})`,
+    );
+    expect(await sweepStaleImports(target, targetStorage)).toBe(0);
+    await target.run(
+      sql`UPDATE job_queue SET heartbeat_at = ${target.ago(3600)} WHERE snapshot_id = ${id}`,
+    );
+    expect(await sweepStaleImports(target, targetStorage)).toBe(1);
+  });
+
+  test("a failed import leaves no files behind even when a sweep removed its row", async () => {
+    const sourceId = await seedSnapshot();
+    const bundlePath = join(root, "bundle.zip");
+    await exportSnapshotBundle(source, sourceStorage, sourceId, bundlePath);
+    // While the first file is written, a sweep deletes the import's rows.
+    const original = targetStorage.finalize.bind(targetStorage);
+    let swept = false;
+    targetStorage.finalize = async (id: number, filename: string) => {
+      const ref = await original(id, filename);
+      if (!swept) {
+        swept = true;
+        await target.run(sql`DELETE FROM job_queue WHERE snapshot_id = ${id}`);
+        await target.run(sql`DELETE FROM snapshots WHERE id = ${id}`);
+      }
+      return ref;
+    };
+    await expect(importSnapshotBundle(target, targetStorage, bundlePath)).rejects.toThrow();
+    expect(storedSnapshotDirs()).toEqual([]);
+  });
+
   test("sweepStaleBundleUploads removes only old bundle-<uuid> spool folders", async () => {
     const tmp = join(root, "tmp");
     const old = join(tmp, `bundle-${crypto.randomUUID()}`);
@@ -667,6 +701,44 @@ describe("the importing status", () => {
     utimesSync(other, twoHoursAgo, twoHoursAgo);
     expect(await sweepStaleBundleUploads(root)).toBe(1);
     expect(readdirSync(tmp).sort()).toEqual([basename(recent), "something-else"].sort());
+  });
+});
+
+describe("tag names in bundles", () => {
+  test("export writes only names the importer accepts; import reuses tags by name or slug", async () => {
+    const id = await seedSnapshot();
+    // Tags that predate the name rules: untrimmed, symbols only.
+    for (const [name, slug] of [
+      [" 日本語", "x1"],
+      ["!!!", ""],
+      ["Koala ", "x2"],
+    ] as const) {
+      await source.run(
+        sql`INSERT INTO tags (name, slug, color, created_at) VALUES (${name}, ${slug}, ${null}, ${source.now()})`,
+      );
+      const tag = await source.get<{ id: number }>(sql`SELECT id FROM tags WHERE name = ${name}`);
+      await addTagToSnapshot(source, id, Number(tag?.id));
+    }
+    const bundlePath = join(root, "bundle.zip");
+    await exportSnapshotBundle(source, sourceStorage, id, bundlePath);
+
+    const existing = await createTag(target, "wildlife");
+    const imported = await importSnapshotBundle(target, targetStorage, bundlePath);
+    const names = (await listSnapshotTags(target, imported.id)).map((t) => t.name).sort();
+    expect(names).toEqual(["Australia", "Koala", "wildlife", "日本語"].sort());
+    expect((await listTags(target)).filter((t) => t.id === existing.id)).toHaveLength(1);
+  });
+
+  test("two imports of a bundle with the same new tags at once both succeed", async () => {
+    const id = await seedSnapshot();
+    const bundlePath = join(root, "bundle.zip");
+    await exportSnapshotBundle(source, sourceStorage, id, bundlePath);
+    const results = await Promise.all([
+      importSnapshotBundle(target, targetStorage, bundlePath),
+      importSnapshotBundle(target, targetStorage, bundlePath),
+    ]);
+    expect(results).toHaveLength(2);
+    expect(await listTags(target)).toHaveLength(2);
   });
 });
 

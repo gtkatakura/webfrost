@@ -22,7 +22,7 @@ import type { Db } from "./db";
 import { extractIndexFields, indexSnapshot } from "./search";
 import { IMPORTING_STATUS, removeSnapshot } from "./snapshot";
 import type { StorageBackend } from "./storage";
-import { slugify } from "./tags";
+import { MAX_TAG_NAME_LENGTH, getOrCreateTag, slugify, tagNameProblem } from "./tags";
 import {
   type ZipEntry,
   ZipFormatError,
@@ -112,7 +112,6 @@ const MAX_MANIFEST_BYTES = 64 * 1024 * 1024;
 const MAX_ENTRIES = 64;
 const MAX_RESULTS = 64;
 const MAX_TAGS = 100;
-const MAX_TAG_NAME_LENGTH = 100;
 const MAX_URL_LENGTH = 8192;
 const MAX_ERROR_LENGTH = 10_000;
 /**
@@ -235,15 +234,7 @@ export function parseManifest(raw: unknown): BundleManifest {
   if (!Array.isArray(tags) || tags.length > MAX_TAGS)
     fail(`snapshot.tags must be an array of at most ${MAX_TAGS} names`);
   for (const tag of tags) {
-    if (
-      typeof tag !== "string" ||
-      tag.trim() !== tag ||
-      tag.length === 0 ||
-      tag.length > MAX_TAG_NAME_LENGTH ||
-      slugify(tag) === ""
-    ) {
-      fail(`invalid tag name ${JSON.stringify(tag)}`);
-    }
+    if (tagNameProblem(tag) !== null) fail(`invalid tag name ${JSON.stringify(tag)}`);
   }
 
   if (!Array.isArray(raw.results) || raw.results.length > MAX_RESULTS) {
@@ -376,10 +367,18 @@ export async function planSnapshotBundle(
     sql`SELECT id, extractor, content, error, duration_ms, size_bytes, created_at
         FROM archive_results WHERE snapshot_id = ${snapshotId} ORDER BY id`,
   );
-  const tags = await db.all<{ name: string }>(
+  const allTags = await db.all<{ name: string }>(
     sql`SELECT t.name FROM tags t JOIN snapshot_tags st ON st.tag_id = t.id
         WHERE st.snapshot_id = ${snapshotId} ORDER BY t.name`,
   );
+  // Tags created before the name rules (untrimmed, or with nothing but symbols) would make
+  // the importer reject the whole bundle: write the names it accepts, trimmed when that is
+  // enough, each tag once.
+  const tagNames: string[] = [];
+  for (const { name } of allTags) {
+    const clean = name.trim();
+    if (tagNameProblem(clean) === null && !tagNames.includes(clean)) tagNames.push(clean);
+  }
 
   // A file name appears once per bundle: if an extractor somehow has two stored files, the latest wins.
   const latestFile = new Map<string, number>();
@@ -432,7 +431,7 @@ export async function planSnapshotBundle(
           snapshot.color_scheme === "light" || snapshot.color_scheme === "dark"
             ? snapshot.color_scheme
             : null,
-        tags: tags.map((t) => t.name),
+        tags: tagNames,
       },
       results,
     },
@@ -625,14 +624,9 @@ async function storeEntry(
   return { ref: await storage.finalize(snapshotId, filename), size };
 }
 
-/** The id of the tag named `name` (matched by slug), created when there is none. */
+/** The id of the tag named `name` (see getOrCreateTag), created when there is none. */
 async function tagIdFor(tx: Db, name: string): Promise<number> {
-  const slug = slugify(name);
-  const existing = await tx.get<{ id: number }>(sql`SELECT id FROM tags WHERE slug = ${slug}`);
-  if (existing) return Number(existing.id);
-  return tx.insert(
-    sql`INSERT INTO tags (name, slug, color, created_at) VALUES (${name}, ${slug}, ${null}, ${tx.now()})`,
-  );
+  return Number((await getOrCreateTag(tx, name)).id);
 }
 
 /**
@@ -678,6 +672,12 @@ export async function importSnapshotBundle(
     return id;
   });
 
+  // Proves the import is alive: sweepStaleImports only removes one whose heartbeat stopped.
+  const beat = setInterval(() => {
+    db.run(
+      sql`UPDATE job_queue SET heartbeat_at = ${db.now()} WHERE snapshot_id = ${snapshotId}`,
+    ).catch(() => {});
+  }, IMPORT_HEARTBEAT_MS);
   try {
     const stored = new Map<string, { ref: string; size: number }>();
     for (const result of manifest.results) {
@@ -729,21 +729,32 @@ export async function importSnapshotBundle(
     });
   } catch (err) {
     await removeSnapshot(db, snapshotId, storage, true).catch(() => {});
+    // The id belongs to this import alone. When a sweep already removed the row,
+    // removeSnapshot left the files this import wrote since then.
+    await storage.deleteAll(snapshotId).catch(() => {});
     if (err instanceof ZipFormatError) throw new BundleError(`invalid bundle: ${err.message}`);
     throw err;
+  } finally {
+    clearInterval(beat);
   }
 
   return { id: snapshotId, url: snap.url, status: snap.status };
 }
 
-/** An import that has been `importing` this long was interrupted (a crash or a restart). */
-export const STALE_IMPORT_SECONDS = 60 * 60;
+/** How often a running import refreshes its job_queue heartbeat. */
+const IMPORT_HEARTBEAT_MS = 30_000;
+
+/** An import whose heartbeat is this old was interrupted (a crash or a restart). */
+export const STALE_IMPORT_SECONDS = 5 * 60;
+
+/** A spool folder untouched for this long belongs to an upload that died. */
+export const STALE_UPLOAD_SECONDS = 60 * 60;
 
 /**
  * Remove snapshots left `importing` by an import that never finished (the process died while
  * copying files), together with their files: they have no results, so there is nothing to
- * keep. Only imports that started more than `olderThanSeconds` ago are touched, so one that
- * another process is running right now is left alone. Resolves to the number removed.
+ * keep. Only imports whose heartbeat (the start time when it never beat) is more than
+ * `olderThanSeconds` old are touched, so one that another process is running is left alone. Resolves to the number removed.
  */
 export async function sweepStaleImports(
   db: Db,
@@ -755,7 +766,7 @@ export async function sweepStaleImports(
         WHERE s.status = ${IMPORTING_STATUS}
           AND NOT EXISTS (
             SELECT 1 FROM job_queue j
-            WHERE j.snapshot_id = s.id AND j.created_at >= ${db.ago(olderThanSeconds)}
+            WHERE j.snapshot_id = s.id AND COALESCE(j.heartbeat_at, j.created_at) >= ${db.ago(olderThanSeconds)}
           )`,
   );
   let removed = 0;
@@ -775,7 +786,7 @@ const SPOOL_FOLDER = /^bundle-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0
  */
 export async function sweepStaleBundleUploads(
   dir: string,
-  olderThanMs = STALE_IMPORT_SECONDS * 1000,
+  olderThanMs = STALE_UPLOAD_SECONDS * 1000,
 ): Promise<number> {
   const tmpRoot = join(dir, "tmp");
   let names: string[];

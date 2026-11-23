@@ -130,11 +130,17 @@ export {
   addTagToSnapshot,
   createTag,
   deleteTag,
+  findTagByName,
+  getOrCreateTag,
   getTag,
+  InvalidTagNameError,
   listSnapshotTags,
   listTags,
+  MAX_TAG_NAME_LENGTH,
+  normalizeTagName,
   removeTagFromSnapshot,
   slugify,
+  tagNameProblem,
 } from "./tags";
 export type { Tag } from "./tags";
 export { indexSnapshot, rebuildIndex, removeFromIndex, searchSnapshots } from "./search";

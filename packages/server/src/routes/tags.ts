@@ -1,4 +1,5 @@
 import {
+  InvalidTagNameError,
   type Tag,
   addTagToSnapshot,
   createTag,
@@ -53,6 +54,9 @@ export const tagsRouter = new Elysia({ prefix: "/tags" })
         set.status = 201;
         return serializeTag(tag);
       } catch (err) {
+        if (err instanceof InvalidTagNameError) {
+          return apiError(set, 400, "VALIDATION", err.message);
+        }
         const msg = err instanceof Error ? err.message : "unknown error";
         if (msg.includes("UNIQUE") || msg.includes("unique")) {
           return apiError(set, 409, "CONFLICT", "tag already exists");

@@ -370,6 +370,47 @@ describe("tag", () => {
     }
   });
 
+  test("tag add reuses a tag whose slug matches and refuses a name without letters", async () => {
+    await runCli(["init"], testDir);
+    const server = startMockServer(
+      () =>
+        new Response("<html><body>t</body></html>", { headers: { "content-type": "text/html" } }),
+    );
+    try {
+      const url = `http://localhost:${server.port}/slug`;
+      await runCli(["add", url], testDir);
+      const db = openDb(testDir);
+      const id = db
+        .query<{ id: number }, [string]>("SELECT id FROM snapshots WHERE url = ? LIMIT 1")
+        .get(url)?.id;
+      db.close();
+
+      await runCli(["tag", "create", "News"], testDir);
+      const add = await runCli(["tag", "add", String(id), "NEWS!"], testDir);
+      expect(add.exitCode).toBe(0);
+      const bad = await runCli(["tag", "add", String(id), "!!!"], testDir);
+      expect(bad.exitCode).not.toBe(0);
+      const jp = await runCli(["tag", "add", String(id), "日本語"], testDir);
+      expect(jp.exitCode).toBe(0);
+
+      const check = openDb(testDir);
+      const tags = check
+        .query<{ name: string }, []>("SELECT name FROM tags ORDER BY name")
+        .all()
+        .map((t) => t.name);
+      const attached = check
+        .query<{ n: number }, [number]>(
+          "SELECT COUNT(*) AS n FROM snapshot_tags WHERE snapshot_id = ?",
+        )
+        .get(id ?? 0);
+      check.close();
+      expect(tags).toEqual(["News", "日本語"]);
+      expect(attached?.n).toBe(2);
+    } finally {
+      server.stop(true);
+    }
+  });
+
   test("tag remove deletes a tag globally", async () => {
     await runCli(["init"], testDir);
 

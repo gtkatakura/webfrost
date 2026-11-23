@@ -231,7 +231,7 @@ curl -X POST $API/snapshots/import -H "Authorization: Bearer $KEY" \
 # 201 { "id": 57, "url": "https://www.youtube.com/watch?v=...", "status": "done" }
 ```
 
-The import always creates a **new** snapshot with a new id. Its status (`done` or `failed`), creation time, color scheme, results (inline content, errors, durations) and files come from the bundle; tags are matched by name and created when missing; a `done` snapshot is added to the search index. Nothing is fetched and no pipeline runs. Importing the same bundle twice makes two snapshots.
+The import always creates a **new** snapshot with a new id. Its status (`done` or `failed`), creation time, color scheme, results (inline content, errors, durations) and files come from the bundle; tags are matched by name or slug and created when missing (also when two imports bring the same new tag at once); a `done` snapshot is added to the search index. Nothing is fetched and no pipeline runs. Importing the same bundle twice makes two snapshots.
 
 It needs credentials like every write (an API key, or a session with the [CSRF check](/docs/architecture/security#cross-site-requests-csrf)), also when public read is on, and counts against the 60-per-minute [rate limit](#rate-limits) of snapshot creation. At most two imports run at once per server process; a third gets `429` `RATE_LIMITED` with `Retry-After: 30` before its body is read. While the upload streams in, the connection may go up to 255 seconds without data before it is closed; once the body is complete there is no idle timeout while the server copies it into storage.
 
@@ -275,7 +275,7 @@ The server treats a bundle as untrusted input:
 - The server picks where each file is stored and serves it with the content type of its extractor, never one from the bundle. Archived HTML is still shown only through the sandboxed [preview](#archive-files).
 - `sizeBytes` is recomputed from what was stored.
 
-If something fails after the checks (a corrupt entry discovered while decompressing, storage unavailable), everything written for the import is removed again. While the files are copied the new snapshot exists with the internal status `importing`: it is left out of lists, search, stats and `GET /snapshots/:id` (`404`), and `DELETE` or `POST /snapshots/:id/retry` on it answer `409` `CONFLICT`. If the server dies during an import, the next start removes that snapshot and its files, and the upload left in `WEBFROST_DIR/tmp`, once they are over an hour old.
+If something fails after the checks (a corrupt entry discovered while decompressing, storage unavailable), everything written for the import is removed again. While the files are copied the new snapshot exists with the internal status `importing`: it is left out of lists, search, stats and `GET /snapshots/:id` (`404`), and `DELETE` or `POST /snapshots/:id/retry` on it answer `409` `CONFLICT`. If the server dies during an import, the next start removes that snapshot and its files once the import has shown no sign of life (a heartbeat, written every 30 seconds while it runs) for 5 minutes, and the upload left in `WEBFROST_DIR/tmp` once it is over an hour old.
 
 #### Archive results
 
@@ -331,11 +331,13 @@ Downloads carry `Content-Disposition: attachment`. With the S3 backend every fil
 | Method | Route | Description |
 |---|---|---|
 | `GET` | `/tags` | List tags by name, paginated: items are `{ id, name, slug, color, createdAt }`; `color` is `null` when none was set |
-| `POST` | `/tags` | `{ name, color? }`. `201` with the tag. `409` `CONFLICT` if a tag with that name (or slug) exists. |
+| `POST` | `/tags` | `{ name, color? }`. `201` with the tag. The name is trimmed. `400` `VALIDATION` for a name that is empty, over 100 characters or has no letter or digit in any script (`!!!`). `409` `CONFLICT` if a tag with that name or the same slug exists. |
 | `DELETE` | `/tags/:id` | Delete a tag and remove it from all snapshots. `204`, or `404`. |
 | `GET` | `/snapshots/:id/tags` | Tags on a snapshot, paginated |
 | `POST` | `/snapshots/:id/tags` | `{ tagId }`. `201` with the tag, also when it was already attached. `404` for an unknown snapshot or tag. |
 | `DELETE` | `/snapshots/:id/tags/:tagId` | Remove a tag from a snapshot. `204`, or `404` when the snapshot does not exist or the tag is not on it. |
+
+A tag is identified by its slug: the name lowercased (Unicode NFKC), with each run of characters that are not letters, digits or combining marks turned into one hyphen. Letters of every script are kept (`日本語`, `ação`), so `ação` and `aço` are two tags, while `News` and `news!` are one. Bundle export, bundle import, `POST /tags` and `webfrost tag` all use this rule.
 
 Tag names are part of the search index and stay in sync when you add or remove tags after archiving.
 
