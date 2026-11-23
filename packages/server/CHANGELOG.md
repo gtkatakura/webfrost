@@ -1,5 +1,26 @@
 # @webfrost/server
 
+## 0.3.2
+
+### Patch Changes
+
+- bbe007a: An API key that expires can no longer create a key that never expires or outlives it (`POST /settings/keys` answers `403`), so a leaked short-lived key cannot buy permanent access. A write that carries both a bearer token and the session cookie now gets the cross-origin check too, since auth falls back to the cookie when the token is not a valid key.
+- bbe007a: The archiving browser now sends every connection through an SSRF egress proxy that checks the address it connects to. Shared and dedicated workers (including their WebSockets) and redirect hops can no longer reach internal hosts, and the browser is no longer open to DNS rebinding. The scroll pass is also capped at 15 seconds, so a page that replaces its own timers can no longer hang a snapshot.
+- bbe007a: URL imports, feed imports and RSS schedules stop downloading at `WEBFROST_IMPORT_MAX_BYTES` (a larger `Content-Length` is refused before the body is read) instead of buffering up to 50 MB first. Fetch errors name the host you asked for, not the address the request was pinned to. The size backfill no longer records 0 bytes when storage fails for a reason other than a missing file; it retries later. `GET /imports` rejects malformed `page` and `limit` with `400`, as `GET /snapshots` does. Interrupted bundle imports are swept every five minutes, not only at startup, and an upload or import in progress is never swept.
+- bbe007a: Search and listing are harder to abuse or break. `page` and `limit` that are not plain numbers (`Infinity`, `1e400`) answer 400 instead of a 500, and core clamps them to values the database accepts. On PostgreSQL and MySQL, a query is limited to 512 characters and 32 terms, snippets are built from the first 100,000 characters of a document, and characters such as `⑴` or `½` no longer put punctuation inside search tokens. On SQLite a database error is no longer reported as "no results". The size backfill behind `GET /stats` measures 16 files at a time and retries a failed lookup instead of storing 0 bytes.
+- bbe007a: Downloads and previews are streamed instead of read whole into memory, and the `media-metadata` download only carries display fields (no yt-dlp stream URLs or headers). Deleting a snapshot that is still being archived answers `409` instead of leaving the files its pipeline writes afterwards in storage.
+- bbe007a: Tags: one name rule everywhere. Names in any script keep their letters in the slug (`日本語`, `ação` and `aço` are separate tags instead of colliding on an empty or lossy slug), names are trimmed, and a name without a letter or digit is refused with 400. Bundle export only writes tag names the importer accepts. `webfrost tag add` finds an existing tag by slug instead of failing on a UNIQUE error. Concurrent bundle imports with the same new tag no longer fail, tag changes on a snapshot are serialised so the search index keeps up, and an interrupted bundle import is detected by its heartbeat and always leaves no files behind.
+- Updated dependencies [bbe007a]
+- Updated dependencies [bbe007a]
+- Updated dependencies [bbe007a]
+- Updated dependencies [bbe007a]
+- Updated dependencies [bbe007a]
+- Updated dependencies [bbe007a]
+- Updated dependencies [bbe007a]
+- Updated dependencies [bbe007a]
+- Updated dependencies [bbe007a]
+  - @webfrost/core@0.3.2
+
 ## 0.3.1
 
 ### Patch Changes

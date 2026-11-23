@@ -1,5 +1,25 @@
 # @webfrost/cli
 
+## 0.3.2
+
+### Patch Changes
+
+- bbe007a: The archiving browser now sends every connection through an SSRF egress proxy that checks the address it connects to. Shared and dedicated workers (including their WebSockets) and redirect hops can no longer reach internal hosts, and the browser is no longer open to DNS rebinding. The scroll pass is also capped at 15 seconds, so a page that replaces its own timers can no longer hang a snapshot.
+- bbe007a: The CLI strips control characters (escape sequences included) from archived text, URLs and tag names before printing them. `webfrost doctor` no longer deletes a data directory it did not create (a symlink to an unmounted drive, for example). The concurrency limiter hands a freed slot straight to the next waiter, so the limit cannot be exceeded.
+- bbe007a: URL imports, feed imports and RSS schedules stop downloading at `WEBFROST_IMPORT_MAX_BYTES` (a larger `Content-Length` is refused before the body is read) instead of buffering up to 50 MB first. Fetch errors name the host you asked for, not the address the request was pinned to. The size backfill no longer records 0 bytes when storage fails for a reason other than a missing file; it retries later. `GET /imports` rejects malformed `page` and `limit` with `400`, as `GET /snapshots` does. Interrupted bundle imports are swept every five minutes, not only at startup, and an upload or import in progress is never swept.
+- bbe007a: Tags: one name rule everywhere. Names in any script keep their letters in the slug (`日本語`, `ação` and `aço` are separate tags instead of colliding on an empty or lossy slug), names are trimmed, and a name without a letter or digit is refused with 400. Bundle export only writes tag names the importer accepts. `webfrost tag add` finds an existing tag by slug instead of failing on a UNIQUE error. Concurrent bundle imports with the same new tag no longer fail, tag changes on a snapshot are serialised so the search index keeps up, and an interrupted bundle import is detected by its heartbeat and always leaves no files behind.
+- Updated dependencies [bbe007a]
+- Updated dependencies [bbe007a]
+- Updated dependencies [bbe007a]
+- Updated dependencies [bbe007a]
+- Updated dependencies [bbe007a]
+- Updated dependencies [bbe007a]
+- Updated dependencies [bbe007a]
+- Updated dependencies [bbe007a]
+- Updated dependencies [bbe007a]
+  - @webfrost/server@0.3.2
+  - @webfrost/core@0.3.2
+
 ## 0.3.1
 
 ### Patch Changes
