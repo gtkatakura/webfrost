@@ -97,7 +97,7 @@ Every list endpoint returns the same envelope:
 | Query | Default | Description |
 |---|---|---|
 | `page` | `1` | 1-based page |
-| `limit` | `20` | Page size, capped at `200`. Non-integers are truncated; a value that is not a number falls back to the default. |
+| `limit` | `20` | Page size, capped at `200`. Non-integers are truncated; a value that is not a number falls back to the default. Plain numbers only: `Infinity` or `1e400` answer `400` `VALIDATION` (also on `GET /imports`) |
 
 The lists are `GET /snapshots` (also with `q` and `status`; newest first), `GET /tags` (by name), `GET /snapshots/:id/tags` (by name), `GET /schedules` (oldest first), `GET /imports` (newest first) and `GET /settings/keys` (oldest first).
 

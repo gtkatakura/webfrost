@@ -60,8 +60,10 @@ export class FilesystemBackend implements StorageBackend {
   async fileSize(ref: string): Promise<number> {
     try {
       return statSync(ref).size;
-    } catch {
-      return 0;
+    } catch (err) {
+      // Only a missing file measures 0; anything else (EACCES, EIO) must not read as empty.
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return 0;
+      throw err;
     }
   }
 

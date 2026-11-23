@@ -480,6 +480,21 @@ describe("POST /import/file — multipart upload", () => {
 // GET /imports
 // ---------------------------------------------------------------------------
 
+describe("GET /imports paging", () => {
+  test("a malformed page or limit is a 400; odd but numeric values are clamped", async () => {
+    const { openDb } = await import("@webfrost/core");
+    await (await openDb(testDir)).close();
+    const app = await getApp();
+    for (const q of ["page=abc", "limit=1e9", "page=Infinity", "limit=%20"]) {
+      const res = await app.handle(new Request(`http://localhost/imports?${q}`));
+      expect(res.status).toBe(400);
+    }
+    const res = await app.handle(new Request("http://localhost/imports?page=-3&limit=2.9"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ items: [], total: 0, page: 1, limit: 2 });
+  });
+});
+
 describe("GET /imports", () => {
   test("returns empty array when no imports have been run", async () => {
     const { openDb } = await import("@webfrost/core");

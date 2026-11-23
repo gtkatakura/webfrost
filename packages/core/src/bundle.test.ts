@@ -19,6 +19,7 @@ import {
   exportSnapshotBundle,
   importSnapshotBundle,
   parseManifest,
+  setSpoolKeepAliveMs,
   spoolToTempFile,
   sweepStaleBundleUploads,
   sweepStaleImports,
@@ -570,6 +571,28 @@ describe("spoolToTempFile", () => {
     expect(await Bun.file(spooled.path).text()).toBe("hello");
     await spooled.remove();
     expect(existsSync(spooled.path)).toBe(false);
+  });
+});
+
+describe("a spool folder in use", () => {
+  test("is kept fresh, so the sweep leaves it and still removes an abandoned one", async () => {
+    setSpoolKeepAliveMs(20);
+    try {
+      const spooled = await spoolToTempFile(new Blob(["x"]).stream(), root, 1024);
+      const folder = join(spooled.path, "..");
+      const abandoned = join(root, "tmp", `bundle-${crypto.randomUUID()}`);
+      mkdirSync(abandoned);
+      const old = new Date(Date.now() - 2 * 3600 * 1000);
+      utimesSync(folder, old, old);
+      utimesSync(abandoned, old, old);
+      await Bun.sleep(150);
+      expect(await sweepStaleBundleUploads(root)).toBe(1);
+      expect(existsSync(spooled.path)).toBe(true);
+      expect(existsSync(abandoned)).toBe(false);
+      await spooled.remove();
+    } finally {
+      setSpoolKeepAliveMs(60_000);
+    }
   });
 });
 

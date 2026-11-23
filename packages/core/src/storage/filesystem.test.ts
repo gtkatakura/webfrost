@@ -138,3 +138,13 @@ describe("FilesystemBackend.validateRef — path normalisation", () => {
     expect(backend.validateRef("/data/snapshots-old/1/page.pdf")).toBe(false);
   });
 });
+
+describe("FilesystemBackend.fileSize", () => {
+  test("measures a file, reads a missing one as 0 and throws on any other error", async () => {
+    const ref = await storage.putText(1, "page.txt", "hello");
+    expect(await storage.fileSize(ref)).toBe(5);
+    expect(await storage.fileSize(join(testDir, "1", "gone.txt"))).toBe(0);
+    // A path through a regular file fails with ENOTDIR, not ENOENT: not "missing".
+    await expect(storage.fileSize(join(ref, "child"))).rejects.toThrow();
+  });
+});

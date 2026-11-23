@@ -4,6 +4,7 @@ import {
   BundleError,
   type ImportFormat,
   JobRunner,
+  ResponseTooLargeError,
   createStorageBackend,
   detectFormat,
   fetchGuarded,
@@ -101,8 +102,9 @@ Exit codes:
     if (isSourceUrl) {
       let response: Awaited<ReturnType<typeof fetchGuarded>>;
       try {
-        response = await fetchGuarded(source);
+        response = await fetchGuarded(source, { maxBytes: importMaxBytes() });
       } catch (err) {
+        if (err instanceof ResponseTooLargeError) throw new CliError(importTooLargeMessage());
         throw new CliError(
           `Cannot fetch ${source}: ${err instanceof Error ? err.message : String(err)}`,
         );

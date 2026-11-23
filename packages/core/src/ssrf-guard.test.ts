@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import {
+  ResponseTooLargeError,
   assertPublicUrl,
   fetchGuarded,
   isPrivateIPv4,
@@ -251,6 +252,65 @@ describe("fetchGuarded address pinning (DNS rebinding)", () => {
     ]);
     expect(calls[1]?.init.tls).toBeUndefined();
     expect(lookups).toBe(1);
+  });
+
+  test("an error from the pinned connection names the hostname, not the address", async () => {
+    spyOn(globalThis, "fetch").mockImplementation((async (url: string) => {
+      throw new Error(`ERR_TLS_CERT_ALTNAME_INVALID fetching "${url}" (${new URL(url).host})`);
+    }) as unknown as typeof fetch);
+    const err = await fetchGuarded("https://rebind.example:8443/page").catch((e: unknown) => e);
+    const message = (err as Error).message;
+    expect(message).toContain('fetching "https://rebind.example:8443/page"');
+    expect(message).toContain("(rebind.example:8443)");
+    expect(message).not.toContain("2606:4700");
+    expect(message).not.toContain("203.0.113.7");
+  });
+});
+
+describe("fetchGuarded maxBytes", () => {
+  beforeEach(() => {
+    process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
+  });
+  afterEach(() => {
+    Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
+  });
+
+  test("refuses a larger Content-Length before reading the body", async () => {
+    const server = Bun.serve({ port: 0, fetch: () => new Response(new Uint8Array(5000)) });
+    try {
+      const err = await fetchGuarded(`http://localhost:${server.port}/`, { maxBytes: 100 }).catch(
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(ResponseTooLargeError);
+      expect((err as Error).message).toContain("content-length=5000, max=100");
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("stops a chunked body that outgrows the cap, and accepts one within it", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: (req) => {
+        const size = new URL(req.url).pathname === "/big" ? 5000 : 50;
+        return new Response(
+          new ReadableStream({
+            start(c) {
+              c.enqueue(new Uint8Array(size));
+              c.close();
+            },
+          }),
+        );
+      },
+    });
+    try {
+      const base = `http://localhost:${server.port}`;
+      const err = await fetchGuarded(`${base}/big`, { maxBytes: 100 }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ResponseTooLargeError);
+      expect((await fetchGuarded(`${base}/small`, { maxBytes: 100 })).body.byteLength).toBe(50);
+    } finally {
+      server.stop(true);
+    }
   });
 });
 
