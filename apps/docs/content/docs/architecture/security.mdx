@@ -25,7 +25,7 @@ configured, the server logs a warning at startup: anyone who reaches it can clai
 |---|---|
 | Admin password | bcrypt (cost 10) via `Bun.password`. 8 to 1024 characters (longer ones are refused before hashing). A failed login takes the same time whether or not the username exists. |
 | Session cookie | Named `session`; `HttpOnly`, `SameSite=Strict`, `Secure` (unless `WEBFROST_INSECURE_COOKIES=true`). HMAC-SHA256 signed with `SESSION_SECRET` **and** backed by a row in the `sessions` table. Expires after 7 days. |
-| API keys | 256-bit random, shown once, stored as SHA-256 hashes. Optional expiry; revocable. Sent as `Authorization: Bearer <key>`. |
+| API keys | 256-bit random, shown once, stored as SHA-256 hashes. Optional expiry; revocable. Sent as `Authorization: Bearer <key>`. A key that expires can only create keys that expire no later than itself, so a leaked short-lived key cannot mint a permanent one. |
 
 Sessions are revocable:
 
@@ -48,8 +48,8 @@ server binds to `127.0.0.1` unless `HOST` is set explicitly.
 
 `SameSite=Strict` keeps the cookie off requests started by other *sites*, but not by other
 origins on the same site (a sibling subdomain). So every state-changing request (`POST`, `PUT`,
-`PATCH`, `DELETE` under `/api/v1`) that does not carry a bearer token is checked before its body is
-parsed:
+`PATCH`, `DELETE` under `/api/v1`) that carries the session cookie or no bearer token is checked
+before its body is parsed:
 
 - `Sec-Fetch-Site` must be `same-origin` or `none`; `same-site` and `cross-site` get `403`.
 - A browser that sends no `Sec-Fetch-Site` must send an `Origin` equal to the `Host`.
@@ -58,7 +58,9 @@ parsed:
 
 On top of that, every body must be `application/json` (multipart only for
 `POST /api/v1/import/file`), otherwise `415`: an HTML form cannot send JSON. Bearer-token requests
-skip the origin check, since a form cannot set an `Authorization` header.
+without the session cookie skip the origin check, since a form cannot set an `Authorization`
+header. One that also carries the cookie is checked, because auth falls back to the cookie when the
+token is not a valid key (a reverse proxy may inject its own `Authorization` header).
 
 ### Public read and private write
 

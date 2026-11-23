@@ -1,10 +1,11 @@
 import {
+  type AuthenticatedApiKey,
+  authenticateApiKey,
   createSession,
   getAdminUsername,
   revokeSession,
   updateAdminPassword,
   validateAdminCredentials,
-  validateApiKey,
   verifySession,
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
@@ -57,6 +58,14 @@ export function isGuestRequest(request: Request): boolean {
   return guestRequests.has(request);
 }
 
+// Requests admitted by an API key (not a session), with the key that admitted them.
+const keyRequests = new WeakMap<Request, AuthenticatedApiKey>();
+
+/** The API key a request was admitted with, or null (session, guest, or auth disabled). */
+export function apiKeyOf(request: Request): AuthenticatedApiKey | null {
+  return keyRequests.get(request) ?? null;
+}
+
 /**
  * Elysia plugin that adds Bearer + session auth to every route inside /api.
  * - AUTH_DISABLED=true bypasses all checks (dev only).
@@ -96,7 +105,11 @@ export function authPlugin(app: Elysia) {
     if (bearer || sessionToken) {
       const db = await getDb();
       try {
-        if (bearer && (await validateApiKey(db, bearer))) return;
+        const key = bearer ? await authenticateApiKey(db, bearer) : null;
+        if (key) {
+          keyRequests.set(request, key);
+          return;
+        }
         if (sessionToken) {
           let secret: string | null = null;
           try {

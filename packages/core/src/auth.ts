@@ -189,27 +189,41 @@ export function parseDbTimestamp(value: string): number {
   return Date.parse(`${date}T${time ?? "00:00:00"}${zone ?? "Z"}`);
 }
 
+/** The active key a request authenticated with. */
+export interface AuthenticatedApiKey {
+  id: string;
+  /** Stored expiry (ISO 8601 or SQLite format), or null for a key that never expires. */
+  expiresAt: string | null;
+}
+
 /**
- * Validate a raw API key against the database.
+ * Look up a raw API key and return it when it is active and not expired, or null.
  * Updates `last_used_at` on success.
- * Returns true if the key is valid, active, and not expired.
  *
  * `expires_at` is user-supplied (ISO 8601 or SQLite format) and parsed with
  * `parseDbTimestamp`; an unparseable expiry never validates.
  */
-export async function validateApiKey(db: Db, rawKey: string): Promise<boolean> {
+export async function authenticateApiKey(
+  db: Db,
+  rawKey: string,
+): Promise<AuthenticatedApiKey | null> {
   const keyHash = hashKey(rawKey);
   const row = await db.get<{ id: string; expires_at: string | null }>(
     sql`SELECT id, expires_at FROM api_keys WHERE key_hash = ${keyHash} AND revoked_at IS NULL`,
   );
 
-  if (!row) return false;
+  if (!row) return null;
   // Compared in app code so every database applies the same parsing rules.
-  if (row.expires_at !== null && !(parseDbTimestamp(row.expires_at) > Date.now())) return false;
+  if (row.expires_at !== null && !(parseDbTimestamp(row.expires_at) > Date.now())) return null;
 
   await db.run(sql`UPDATE api_keys SET last_used_at = ${db.now()} WHERE id = ${row.id}`);
 
-  return true;
+  return { id: row.id, expiresAt: row.expires_at };
+}
+
+/** True if the raw key is valid, active and not expired (see {@link authenticateApiKey}). */
+export async function validateApiKey(db: Db, rawKey: string): Promise<boolean> {
+  return (await authenticateApiKey(db, rawKey)) !== null;
 }
 
 // ---------------------------------------------------------------------------

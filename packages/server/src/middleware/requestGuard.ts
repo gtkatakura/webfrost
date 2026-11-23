@@ -1,6 +1,7 @@
 // Checks that run on every state-changing API request before its body is parsed:
 // cross-origin (CSRF) protection and the accepted request content types.
 import { Elysia } from "elysia";
+import { parseCookie } from "../context";
 import { type ApiErrorCode, jsonError } from "../errors";
 import { importBundleMaxBytes, importMaxBytes, maxRequestBodyBytes } from "../limits";
 
@@ -63,9 +64,12 @@ export function checkApiRequest(
   const { pathname } = new URL(request.url);
   if (!pathname.startsWith("/api/")) return null;
 
-  // Forms cannot set an Authorization header, so Bearer requests need no CSRF check.
+  // Forms cannot set an Authorization header, so Bearer requests need no CSRF check, unless
+  // they also carry a session cookie: auth falls back to it when the key is not valid (a
+  // proxy may inject its own Bearer header), and the cookie is what a forged request rides on.
   const bearer = request.headers.get("authorization")?.startsWith("Bearer ") === true;
-  if (!bearer && !isSameOriginRequest(request)) {
+  const session = parseCookie(request.headers.get("cookie"), "session") !== null;
+  if ((!bearer || session) && !isSameOriginRequest(request)) {
     return { status: 403, code: "CROSS_ORIGIN_REQUEST", error: "cross-origin request rejected" };
   }
 

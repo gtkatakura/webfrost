@@ -1,9 +1,17 @@
-import { type ApiKey, createApiKey, listApiKeys, revokeApiKey, sql } from "@webfrost/core";
+import {
+  type ApiKey,
+  createApiKey,
+  listApiKeys,
+  parseDbTimestamp,
+  revokeApiKey,
+  sql,
+} from "@webfrost/core";
 import { Elysia, t } from "elysia";
 import { SERVER_VERSION, getDb, getWebfrostDir } from "../context";
 import { apiError, apiErrorHandler } from "../errors";
 import { MAX_API_KEY_NAME_LENGTH } from "../limits";
 import { isoTimestamp, isoTimestampRequired, paginate, parseIsoTimestamp } from "../serialize";
+import { apiKeyOf } from "./auth";
 
 /** An API key as the API returns it: never its hash, and only active keys are listed. */
 function serializeApiKey(key: ApiKey) {
@@ -46,7 +54,7 @@ export const settingsRouter = new Elysia({ prefix: "/settings" })
   )
   .post(
     "/keys",
-    async ({ body, set }) => {
+    async ({ body, request, set }) => {
       // An optional ISO 8601 expiry ("2027-01-01T00:00:00Z"); without one the key never expires.
       let expiresAt: string | undefined;
       if (body.expiresAt !== undefined && body.expiresAt !== null) {
@@ -58,6 +66,20 @@ export const settingsRouter = new Elysia({ prefix: "/settings" })
           return apiError(set, 400, "VALIDATION", "expiresAt must be in the future");
         }
         expiresAt = parsed;
+      }
+      // A key may not mint a key that outlives it, or a leaked short-lived key would buy
+      // permanent access. Sessions and keys that never expire are not limited.
+      const caller = apiKeyOf(request);
+      if (caller?.expiresAt != null) {
+        const callerExpiry = parseDbTimestamp(caller.expiresAt);
+        if (expiresAt === undefined || parseDbTimestamp(expiresAt) > callerExpiry) {
+          return apiError(
+            set,
+            403,
+            "FORBIDDEN",
+            "an expiring API key can only create keys that expire no later than itself",
+          );
+        }
       }
       const db = await getDb();
       try {

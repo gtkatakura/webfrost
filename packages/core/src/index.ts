@@ -15,6 +15,7 @@ export {
 export type { DatabaseConfig, Db, DialectName } from "./db";
 export { sql } from "kysely";
 export {
+  authenticateApiKey,
   createAdminUser,
   createApiKey,
   createSession,
@@ -22,6 +23,7 @@ export {
   getAdminUsername,
   hasAdminUser,
   listApiKeys,
+  parseDbTimestamp,
   revokeAllSessions,
   revokeApiKey,
   revokeSession,
@@ -31,7 +33,7 @@ export {
   verifySession,
   verifySessionToken,
 } from "./auth";
-export type { ApiKey } from "./auth";
+export type { ApiKey, AuthenticatedApiKey } from "./auth";
 export { FetchCache } from "./fetch-cache";
 export type { CachedResponse } from "./fetch-cache";
 export { detectFormat, parseUrls } from "./import";

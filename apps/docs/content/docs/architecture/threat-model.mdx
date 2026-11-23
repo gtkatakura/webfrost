@@ -63,7 +63,7 @@ The CLI drives the same core library directly against the data directory, withou
 | Stolen session cookie | `HttpOnly`/`SameSite=Strict`/`Secure`; server-side sessions revoked on logout, on re-login over the same cookie and on password change | Mitigated |
 | Oversized bodies (huge passwords for bcrypt, giant imports) | Length limits on every string field; imports capped by size and URL count (`413`); request body cap | Mitigated |
 | Forged cookie | HMAC-SHA256 with `SESSION_SECRET`, constant-time compare, must match a session row | Mitigated |
-| Leaked API key | Stored hashed; revocable; optional expiry | Mitigated |
+| Leaked API key | Stored hashed; revocable; optional expiry, which a key cannot escape by minting a longer-lived one | Mitigated |
 | First-run takeover: whoever reaches a fresh instance first creates the admin | Setup only works while no admin exists; `WEBFROST_SETUP_TOKEN` makes it require a secret; a warning is logged at startup while setup is open and unprotected | Mitigated with `WEBFROST_SETUP_TOKEN`; otherwise finish setup before exposing the port |
 | CSRF, including from a sibling subdomain (same site) | Cookie-authenticated writes need `Sec-Fetch-Site: same-origin`/`none`, or a matching `Origin`; JSON-only bodies (`415` otherwise); `SameSite=Strict`; `form-action 'self'` | Mitigated |
 | Everything above bypassed by `AUTH_DISABLED=true` | Warning logged at startup; binds to `127.0.0.1` unless `HOST` is set | Operator responsibility |

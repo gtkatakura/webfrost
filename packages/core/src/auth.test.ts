@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sql } from "kysely";
 import {
+  authenticateApiKey,
   createAdminUser,
   createApiKey,
   createSession,
@@ -126,6 +127,13 @@ describe("API keys", () => {
   test("validateApiKey returns true for valid key", async () => {
     const { rawKey } = await createApiKey(db, "valid-key");
     expect(await validateApiKey(db, rawKey)).toBe(true);
+  });
+
+  test("authenticateApiKey returns the key's id and expiry, or null once expired", async () => {
+    const { id, rawKey } = await createApiKey(db, "expiring", "2999-01-01 00:00:00");
+    expect(await authenticateApiKey(db, rawKey)).toEqual({ id, expiresAt: "2999-01-01 00:00:00" });
+    const expired = await createApiKey(db, "expired", "2000-01-01 00:00:00");
+    expect(await authenticateApiKey(db, expired.rawKey)).toBeNull();
   });
 
   test("validateApiKey returns false for unknown key", async () => {

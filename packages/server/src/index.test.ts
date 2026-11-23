@@ -169,6 +169,32 @@ describe("cross-origin and content-type protection", () => {
     expectSecurityHeaders(res);
   });
 
+  test("a Bearer header does not exempt a cross-site request that carries the session cookie", async () => {
+    // A proxy may inject its own Bearer token; auth then falls back to the cookie.
+    const res = await app.handle(
+      new Request("http://localhost/api/v1/tags", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer proxy-token",
+          "sec-fetch-site": "same-site",
+          cookie: "session=anything",
+        },
+        body: JSON.stringify({ name: "pwned-bearer" }),
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("CROSS_ORIGIN_REQUEST");
+    const tags = await app.handle(
+      new Request("http://localhost/api/v1/tags", { headers: authHeader }),
+    );
+    expect(
+      ((await tags.json()) as { items: { name: string }[] }).items.some(
+        (t) => t.name === "pwned-bearer",
+      ),
+    ).toBe(false);
+  });
+
   test("a same-origin form-encoded body is refused with 415", async () => {
     const res = await app.handle(
       new Request("http://localhost/api/v1/tags", {

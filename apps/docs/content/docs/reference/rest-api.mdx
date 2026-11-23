@@ -382,7 +382,7 @@ curl -X POST $API/import/file -H "Authorization: Bearer $KEY" \
 | `GET` | `/stats` | `{ snapshotCount, storageBytes, storageByExtractor, successRate, activeScheduleCount, failedToday }`. Cached for 60 seconds. |
 | `GET` | `/settings/info` | `{ version, storagePath, snapshotCount }` |
 | `GET` | `/settings/keys` | List active API keys, oldest first, paginated: items are `{ id, name, expiresAt, lastUsedAt, createdAt }` |
-| `POST` | `/settings/keys` | `{ name, expiresAt? }`. `201` with `{ id, name, expiresAt, lastUsedAt, createdAt, rawKey }`; `rawKey` is shown once. |
+| `POST` | `/settings/keys` | `{ name, expiresAt? }`. `201` with `{ id, name, expiresAt, lastUsedAt, createdAt, rawKey }`; `rawKey` is shown once. Called with a key that expires, `expiresAt` is required and no later than that key's expiry (`403` otherwise). |
 | `DELETE` | `/settings/keys/:id` | Revoke a key. `204`, or `404`. |
 
 `expiresAt` is optional and ISO 8601, such as `2027-01-01T00:00:00Z`. A value without an offset is read as UTC. It must be in the future, otherwise `400` `VALIDATION`. Omit it or send `null` for a key that never expires.
