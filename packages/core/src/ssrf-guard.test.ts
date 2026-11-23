@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import {
   assertPublicUrl,
   fetchGuarded,
@@ -172,6 +172,116 @@ describe("reserved ranges", () => {
     ["2606:4700:4700::1111", false],
   ])("isPrivateIPv6(%s) = %s", (ip, expected) => {
     expect(isPrivateIPv6(ip)).toBe(expected);
+  });
+
+  test.each([
+    ["::127.0.0.1", true], // deprecated IPv4-compatible, as glibc prints it
+    ["::7f00:1", true],
+    ["::8.8.8.8", true], // the whole ::/96 is refused
+    ["::ffff:0:7f00:1", true], // IPv4-translated (::ffff:0:0:0/96) → 127.0.0.1
+    ["::ffff:0:10.0.0.1", true],
+    ["::ffff:0:808:808", false],
+    ["0:0:0:0:0:ffff:7f00:1", true], // mapped, long form
+    ["::ffff:127.0.0.1%eth0", true], // zone ID
+    ["64:ff9b::10.0.0.1", true], // NAT64, dotted tail
+    ["64:ff9b:1::a00:1", true], // local-use NAT64 (64:ff9b:1::/48)
+    ["2002:7f00:1::1", true], // 6to4 → 127.0.0.1
+    ["2002:a9fe:a9fe::", true], // 6to4 → 169.254.169.254
+    ["2002:808:808::1", false], // 6to4 → 8.8.8.8
+    ["2001:0:4136:e378:8000:63bf:3fff:fdd2", true], // Teredo
+    ["100::1", true], // discard-only
+    ["4000::1", true], // outside 2000::/3
+    ["2a00:1450:4001:82a::200e", false],
+    ["not-an-address", true], // unparseable fails closed
+    ["1:2:3:4:5:6:7:8:9", true],
+  ])("isPrivateIPv6(%s) = %p (embedded IPv4 and allowlist)", (ip, expected) => {
+    expect(isPrivateIPv6(ip)).toBe(expected);
+  });
+});
+
+describe("fetchGuarded address pinning (DNS rebinding)", () => {
+  let lookups = 0;
+  let calls: { url: string; init: Record<string, unknown> }[] = [];
+  let refuse = new Set<string>();
+
+  beforeEach(() => {
+    Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
+    lookups = 0;
+    calls = [];
+    refuse = new Set();
+    // A rebinding resolver: public addresses the first time, the metadata endpoint after.
+    spyOn(Bun.dns, "lookup").mockImplementation((async () => {
+      lookups++;
+      return lookups === 1
+        ? [
+            { address: "203.0.113.7", family: 4, ttl: 0 },
+            { address: "2606:4700::6810:84e5", family: 6, ttl: 0 },
+          ]
+        : [{ address: "169.254.169.254", family: 4, ttl: 0 }];
+    }) as unknown as typeof Bun.dns.lookup);
+    spyOn(globalThis, "fetch").mockImplementation((async (url: string, init: RequestInit) => {
+      calls.push({ url: String(url), init: init as Record<string, unknown> });
+      if (refuse.has(new URL(String(url)).hostname)) throw new Error("ECONNREFUSED");
+      return new Response("pinned");
+    }) as unknown as typeof fetch);
+  });
+
+  afterEach(() => {
+    mock.restore();
+  });
+
+  test("connects to the checked address with the original Host and TLS server name", async () => {
+    const res = await fetchGuarded("https://rebind.example:8443/page?q=1");
+    expect(new TextDecoder().decode(res.body)).toBe("pinned");
+    expect(res.url).toBe("https://rebind.example:8443/page?q=1");
+    expect(lookups).toBe(1);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe("https://203.0.113.7:8443/page?q=1");
+    expect(calls[0]?.init.headers).toEqual({ host: "rebind.example:8443" });
+    expect(calls[0]?.init.tls).toEqual({ serverName: "rebind.example" });
+  });
+
+  test("falls back to the next checked address when one refuses the connection", async () => {
+    refuse.add("203.0.113.7");
+    const res = await fetchGuarded("http://rebind.example/");
+    expect(new TextDecoder().decode(res.body)).toBe("pinned");
+    expect(calls.map((c) => c.url)).toEqual([
+      "http://203.0.113.7/",
+      "http://[2606:4700::6810:84e5]/",
+    ]);
+    expect(calls[1]?.init.tls).toBeUndefined();
+    expect(lookups).toBe(1);
+  });
+});
+
+describe("fetchGuarded 3xx handling", () => {
+  test.each([
+    [304, null],
+    [300, null],
+    [300, "/elsewhere"], // 300 is not a redirect status, even with a Location
+    [302, null],
+  ])("returns %i (Location: %p) as the final response", async (status, location) => {
+    const server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        if (new URL(req.url).pathname === "/elsewhere") return new Response("followed");
+        const headers: Record<string, string> = location ? { location } : {};
+        return new Response(status === 304 ? null : "as received", { status, headers });
+      },
+    });
+    process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
+    try {
+      const url = `http://127.0.0.1:${server.port}/page`;
+      const res = await fetchGuarded(url);
+      expect(res.status).toBe(status);
+      expect(res.url).toBe(url);
+      expect(res.redirects).toEqual([]);
+      expect(new TextDecoder().decode(res.body)).toBe(status === 304 ? "" : "as received");
+      expect((await safeFetch(url)).status).toBe(status);
+    } finally {
+      Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
+      server.stop(true);
+    }
   });
 });
 

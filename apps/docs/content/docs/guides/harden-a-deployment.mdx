@@ -71,7 +71,7 @@ Set `WEBFROST_TRUST_PROXY` only when the server is reachable through the proxy a
 
 ## 6. Block egress to internal networks
 
-The SSRF guard checks every address the pipeline connects to, but it has gaps a network rule does not: DNS rebinding, redirects inside the browser, and yt-dlp's own requests (see [Residual risks](/docs/architecture/security#residual-risks)). If people you do not fully trust can submit URLs, give the container no route to your internal ranges and to `169.254.169.254`, with your firewall or your orchestrator's network policy.
+The SSRF guard checks every address the pipeline connects to, but it has gaps a network rule does not: DNS rebinding in the browser, redirects inside the browser, and yt-dlp's own requests (see [Residual risks](/docs/architecture/security#residual-risks)). If people you do not fully trust can submit URLs, give the container no route to your internal ranges and to `169.254.169.254`, with your firewall or your orchestrator's network policy.
 
 ## 7. Protect the data directory
 
