@@ -71,6 +71,8 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
+          # the build step builds the docs, whose promo video and posters live in Git LFS
+          lfs: true
 
       # Tools (Bun) at the versions pinned in mise.toml.
       - uses: jdx/mise-action@v5.2.8
