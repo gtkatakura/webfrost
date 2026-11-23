@@ -15,7 +15,7 @@ import {
   importTooManyUrlsMessage,
   parseUrls,
 } from "./import";
-import { fetchGuarded } from "./ssrf-guard";
+import { ResponseTooLargeError, fetchGuarded } from "./ssrf-guard";
 
 /**
  * Fetch an RSS 2.0 or Atom feed and return all article URLs found in it.
@@ -26,7 +26,15 @@ import { fetchGuarded } from "./ssrf-guard";
  * queued. Relative links resolve against the URL the feed was finally served from.
  */
 export async function fetchRssFeedUrls(feedUrl: string): Promise<string[]> {
-  const response = await fetchGuarded(feedUrl);
+  let response: Awaited<ReturnType<typeof fetchGuarded>>;
+  try {
+    response = await fetchGuarded(feedUrl, { maxBytes: importMaxBytes() });
+  } catch (err) {
+    if (err instanceof ResponseTooLargeError) {
+      throw new ImportLimitError("bytes", importTooLargeMessage());
+    }
+    throw err;
+  }
   if (response.status < 200 || response.status >= 300) {
     throw new Error(`Failed to fetch feed ${feedUrl}: HTTP ${response.status}`);
   }

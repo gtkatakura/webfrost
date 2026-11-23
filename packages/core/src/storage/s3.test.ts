@@ -256,6 +256,11 @@ describe("S3Backend", () => {
       const size = await storage.fileSize("s3:snapshots/1/missing.warc");
       expect(size).toBe(0);
     });
+
+    test("throws on a failure that is not a missing object", async () => {
+      mock.setHandler(() => new Response(null, { status: 503 }));
+      await expect(storage.fileSize("s3:snapshots/1/archive.warc")).rejects.toThrow();
+    });
   });
 
   describe("deleteAll", () => {

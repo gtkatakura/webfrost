@@ -232,6 +232,46 @@ export interface SafeFetchOptions {
    * (default true = decode). The WARC writer uses false to keep the bytes as sent.
    */
   decompress?: boolean;
+  /**
+   * Largest final response body to accept, in bytes (default 50 MB). A larger
+   * Content-Length is refused before the body is read, and the download stops as soon as
+   * the cap is passed; both throw `ResponseTooLargeError`.
+   */
+  maxBytes?: number;
+}
+
+/** The response body is over the size the caller allowed. */
+export class ResponseTooLargeError extends Error {
+  constructor(
+    readonly maxBytes: number,
+    message = `Response too large: exceeded ${maxBytes} bytes`,
+  ) {
+    super(message);
+    this.name = "ResponseTooLargeError";
+  }
+}
+
+/**
+ * Make an error from a request to a pinned address read as one about the original host:
+ * the address (and URL) it was sent to is swapped back for the hostname the caller asked for.
+ */
+function nameOriginalHost(err: unknown, parsed: URL, pinned: URL): void {
+  if (!(err instanceof Error) || pinned.href === parsed.href) return;
+  const bare = (h: string) => h.replace(/^\[|\]$/g, "");
+  const swap = (text: string) =>
+    text
+      .split(pinned.href)
+      .join(parsed.href)
+      .split(pinned.host)
+      .join(parsed.host)
+      .split(bare(pinned.hostname))
+      .join(bare(parsed.hostname));
+  try {
+    err.message = swap(err.message);
+    if (err.stack) err.stack = swap(err.stack);
+  } catch {
+    // A read-only message stays as it is.
+  }
 }
 
 /** Read a body stream into one buffer, failing once it exceeds `maxBytes`. */
@@ -248,7 +288,7 @@ async function readCapped(response: Response, maxBytes: number): Promise<Uint8Ar
         totalBytes += value.byteLength;
         if (totalBytes > maxBytes) {
           await reader.cancel();
-          throw new Error(`Response too large: exceeded ${maxBytes} bytes`);
+          throw new ResponseTooLargeError(maxBytes);
         }
         chunks.push(value);
       }
@@ -271,7 +311,7 @@ async function readCapped(response: Response, maxBytes: number): Promise<Uint8Ar
  * - connects to the checked address itself, so DNS rebinding cannot redirect it
  * - follows 301/302/303/307/308 with a Location manually, re-validating each hop;
  *   any other 3xx is returned as the final response
- * - caps the response body at 50 MB to prevent OOM
+ * - caps the response body at `options.maxBytes` (default 50 MB) to prevent OOM
  * - aborts after WEBFROST_FETCH_TIMEOUT_MS (default 30 s, whole request incl. redirects)
  *   or when `options.signal` aborts
  */
@@ -310,6 +350,7 @@ export async function fetchGuarded(
         } as RequestInit);
         break;
       } catch (err) {
+        nameOriginalHost(err, parsed, new URL(target.url));
         if (signal?.aborted) throw failure(err);
         lastError = err;
       }
@@ -338,16 +379,19 @@ export async function fetchGuarded(
     }
 
     // Content-Length pre-check
+    const maxBytes = options.maxBytes ?? MAX_RESPONSE_BYTES;
     const contentLength = response.headers.get("content-length");
-    if (contentLength !== null && Number(contentLength) > MAX_RESPONSE_BYTES) {
-      throw new Error(
-        `Response too large: content-length=${contentLength}, max=${MAX_RESPONSE_BYTES}`,
+    if (contentLength !== null && Number(contentLength) > maxBytes) {
+      await response.body?.cancel().catch(() => {});
+      throw new ResponseTooLargeError(
+        maxBytes,
+        `Response too large: content-length=${contentLength}, max=${maxBytes}`,
       );
     }
 
     let body: Uint8Array<ArrayBuffer>;
     try {
-      body = await readCapped(response, MAX_RESPONSE_BYTES);
+      body = await readCapped(response, maxBytes);
     } catch (err) {
       throw failure(err);
     }

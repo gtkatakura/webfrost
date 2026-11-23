@@ -22,8 +22,15 @@ export async function recordImport(
 
 /** List the most recent import records, newest first, skipping the first `offset`. */
 export async function listImports(db: Db, limit = 50, offset = 0): Promise<ImportRecord[]> {
+  // Whole numbers the database accepts; a bad value falls back to the default.
+  const whole = (n: number, min: number, fallback: number): number => {
+    const t = Math.trunc(n);
+    return Number.isSafeInteger(t) && t >= min ? t : fallback;
+  };
+  const rowLimit = whole(limit, 1, 50);
+  const rowOffset = whole(offset, 0, 0);
   return db.all<ImportRecord>(
-    sql`SELECT id, source_url, format, queued, skipped, created_at FROM imports ORDER BY created_at DESC, id DESC LIMIT ${limit} OFFSET ${offset}`,
+    sql`SELECT id, source_url, format, queued, skipped, created_at FROM imports ORDER BY created_at DESC, id DESC LIMIT ${rowLimit} OFFSET ${rowOffset}`,
   );
 }
 

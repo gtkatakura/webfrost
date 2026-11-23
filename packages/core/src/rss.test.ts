@@ -133,6 +133,21 @@ describe("fetchRssFeedUrls", () => {
     expect(await fetchRssFeedUrls(`${base}/old`)).toEqual([`${base}/blog/post-1`]);
   });
 
+  test("a feed whose Content-Length is over WEBFROST_IMPORT_MAX_BYTES is refused unread", async () => {
+    process.env.WEBFROST_IMPORT_MAX_BYTES = "100";
+    const huge = Bun.serve({
+      port: 0,
+      fetch: () => new Response(new Uint8Array(200_000)),
+    });
+    try {
+      const err = await fetchRssFeedUrls(`http://127.0.0.1:${huge.port}/`).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ImportLimitError);
+      expect((err as ImportLimitError).limit).toBe("bytes");
+    } finally {
+      huge.stop(true);
+    }
+  });
+
   test("a feed over WEBFROST_IMPORT_MAX_BYTES is refused", async () => {
     process.env.WEBFROST_IMPORT_MAX_BYTES = "100";
     const err = await fetchRssFeedUrls(`${base}/big`).catch((e: unknown) => e);

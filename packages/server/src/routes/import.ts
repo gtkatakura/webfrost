@@ -1,5 +1,6 @@
 import {
   ImportLimitError,
+  ResponseTooLargeError,
   countImports,
   detectFormat,
   fetchGuarded,
@@ -154,8 +155,12 @@ export const importRouter = new Elysia({ prefix: "/import" })
       if (sourceUrl) {
         let response: Awaited<ReturnType<typeof fetchGuarded>>;
         try {
-          response = await fetchGuarded(sourceUrl);
+          response = await fetchGuarded(sourceUrl, { maxBytes: importMaxBytes() });
         } catch (err) {
+          if (err instanceof ResponseTooLargeError) {
+            set.status = 413;
+            return tooLarge();
+          }
           return apiError(
             set,
             400,
@@ -308,5 +313,10 @@ export const importsRouter = new Elysia({ prefix: "/imports" }).onError(apiError
       await db.close();
     }
   },
-  { query: t.Object({ page: t.Optional(t.String()), limit: t.Optional(t.String()) }) },
+  {
+    query: t.Object({
+      page: t.Optional(t.String({ pattern: "^(-?[0-9]{1,15}(\\.[0-9]{1,15})?)?$" })),
+      limit: t.Optional(t.String({ pattern: "^(-?[0-9]{1,15}(\\.[0-9]{1,15})?)?$" })),
+    }),
+  },
 );

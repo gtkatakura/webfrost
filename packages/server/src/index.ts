@@ -35,6 +35,7 @@ export { directoryAssets, embeddedAssets } from "./ui-assets";
 
 /** How often the server looks for snapshots orphaned by an interrupted run. */
 const RECOVERY_INTERVAL_MS = 60_000;
+const IMPORT_SWEEP_INTERVAL_MS = 5 * 60_000;
 /** Sending the last spans and metrics must never hold up the exit for longer than this. */
 const TELEMETRY_FLUSH_TIMEOUT_MS = 5_000;
 
@@ -231,7 +232,9 @@ export function withDefaultTheme(html: string): string {
  *   `webfrost schedule worker` process. Set WEBFROST_SCHEDULER=false to disable
  *   it when a dedicated worker already polls the same archive.
  */
-export function startBackgroundWork(): { stop: () => void } {
+export function startBackgroundWork(options: { importSweepMs?: number } = {}): {
+  stop: () => void;
+} {
   const dir = getWebfrostDir();
   mkdirSync(dir, { recursive: true });
 
@@ -257,11 +260,22 @@ export function startBackgroundWork(): { stop: () => void } {
   };
   void recover();
   const recovery = setInterval(() => void recover(), RECOVERY_INTERVAL_MS);
+  // Imports a crash interrupted are cleaned up at startup and then periodically: a
+  // process that dies leaves its heartbeat to go stale only minutes later.
   void sweepInterruptedImports(dir);
+  const importSweep = setInterval(
+    () => void sweepInterruptedImports(dir),
+    options.importSweepMs ?? IMPORT_SWEEP_INTERVAL_MS,
+  );
 
   if (process.env.WEBFROST_SCHEDULER === "false") {
     logger.info("WEBFROST_SCHEDULER=false — schedules are not run by this process");
-    return { stop: () => clearInterval(recovery) };
+    return {
+      stop: () => {
+        clearInterval(recovery);
+        clearInterval(importSweep);
+      },
+    };
   }
 
   const scheduler = startScheduler({ dir, runner, logger });
@@ -269,6 +283,7 @@ export function startBackgroundWork(): { stop: () => void } {
   return {
     stop: () => {
       clearInterval(recovery);
+      clearInterval(importSweep);
       scheduler.stop();
     },
   };

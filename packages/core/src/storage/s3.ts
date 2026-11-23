@@ -170,8 +170,20 @@ export class S3Backend implements StorageBackend {
     try {
       const key = this.fromRef(ref);
       return await this.client.size(key);
-    } catch {
-      return 0;
+    } catch (err) {
+      // Only a missing object measures 0; throttling, auth and network errors must not.
+      const e = err as { code?: string; name?: string; status?: number; statusCode?: number };
+      if (
+        e.code === "NoSuchKey" ||
+        e.code === "NotFound" ||
+        e.name === "NoSuchKey" ||
+        e.name === "NotFound" ||
+        e.status === 404 ||
+        e.statusCode === 404
+      ) {
+        return 0;
+      }
+      throw err;
     }
   }
 

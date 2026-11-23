@@ -13,7 +13,7 @@
  * StorageBackend under names it derives itself, and the server keeps serving them with
  * content types derived from the extractor, archived HTML only through the sandboxed preview.
  */
-import { lstat, mkdir, readdir, rm } from "node:fs/promises";
+import { lstat, mkdir, readdir, rm, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { Zip, ZipDeflate, ZipPassThrough } from "fflate";
 import { sql } from "kysely";
@@ -750,6 +750,13 @@ export const STALE_IMPORT_SECONDS = 5 * 60;
 /** A spool folder untouched for this long belongs to an upload that died. */
 export const STALE_UPLOAD_SECONDS = 60 * 60;
 
+/** How often a spool folder in use has its modification time refreshed. */
+let spoolKeepAliveMs = 60_000;
+/** Test hook: shorten the keep-alive interval. */
+export function setSpoolKeepAliveMs(ms: number): void {
+  spoolKeepAliveMs = ms;
+}
+
 /**
  * Remove snapshots left `importing` by an import that never finished (the process died while
  * copying files), together with their files: they have no results, so there is nothing to
@@ -826,7 +833,17 @@ export async function spoolToTempFile(
   const folder = join(tmpRoot, `bundle-${crypto.randomUUID()}`);
   await mkdir(folder, { mode: 0o700 });
   const path = join(folder, "bundle.zip");
-  const remove = () => rm(folder, { recursive: true, force: true });
+  // The folder's mtime is what sweepStaleBundleUploads reads; keep it fresh until the
+  // caller is done with the file, so a slow upload or a long import is never swept.
+  const keepAlive = setInterval(() => {
+    const now = new Date();
+    void utimes(folder, now, now).catch(() => {});
+  }, spoolKeepAliveMs);
+  keepAlive.unref();
+  const remove = async () => {
+    clearInterval(keepAlive);
+    await rm(folder, { recursive: true, force: true });
+  };
   const writer = Bun.file(path).writer();
   let bytes = 0;
   try {

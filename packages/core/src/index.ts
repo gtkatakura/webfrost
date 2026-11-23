@@ -56,6 +56,7 @@ export {
   isPrivateIPv6,
   safeFetch,
 } from "./ssrf-guard";
+export { ResponseTooLargeError } from "./ssrf-guard";
 export type { FetchedResponse, GuardedFetchResult, SafeFetchOptions } from "./ssrf-guard";
 export { webfrostDataDir } from "./data-dir";
 export {
