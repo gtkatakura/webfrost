@@ -7,14 +7,17 @@ export class ConcurrencyLimiter {
 
   async run<T>(fn: () => Promise<T>): Promise<T> {
     if (this.running >= this.limit) {
+      // The releasing task hands its slot over: `running` stays counted for this waiter.
       await new Promise<void>((resolve) => this.queue.push(resolve));
+    } else {
+      this.running++;
     }
-    this.running++;
     try {
       return await fn();
     } finally {
-      this.running--;
-      this.queue.shift()?.();
+      const next = this.queue.shift();
+      if (next) next();
+      else this.running--;
     }
   }
 }

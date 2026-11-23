@@ -9,6 +9,7 @@ import {
 } from "@webfrost/core";
 import { type Command, type Group, parseId } from "../cli";
 import { CliError } from "../errors";
+import { safeText } from "../sanitize";
 import { withDb } from "./shared";
 
 const tagAdd: Command = {
@@ -29,7 +30,7 @@ const tagAdd: Command = {
       const tag =
         (await listTags(db)).find((t) => t.name === tagName) ?? (await createTag(db, tagName));
       await addTagToSnapshot(db, snapshotId, tag.id);
-      ctx.logger.info(`Tag "${tag.name}" added to snapshot ${snapshotId}.`);
+      ctx.logger.info(`Tag "${safeText(tag.name)}" added to snapshot ${snapshotId}.`);
     });
     return 0;
   },
@@ -56,7 +57,10 @@ const tagList: Command = {
         tags = await listTags(db);
       }
       if (tags.length === 0) console.log(empty);
-      for (const t of tags) console.log(`${t.id}\t${t.slug}\t${t.name}\t${t.color ?? "-"}`);
+      for (const t of tags)
+        console.log(
+          `${t.id}\t${safeText(t.slug)}\t${safeText(t.name)}\t${safeText(t.color ?? "-")}`,
+        );
     });
     return 0;
   },
@@ -75,7 +79,7 @@ const tagCreate: Command = {
     await withDb(ctx, async (db) => {
       try {
         const tag = await createTag(db, name, color);
-        console.log(`Tag created: ${tag.id}\t${tag.slug}\t${tag.name}`);
+        console.log(`Tag created: ${tag.id}\t${safeText(tag.slug)}\t${safeText(tag.name)}`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (/unique/i.test(msg)) throw new CliError(`Tag "${name}" already exists.`);
@@ -98,7 +102,7 @@ const tagRemove: Command = {
       const tag = await getTag(db, tagId);
       if (!tag) throw new CliError(`Tag ${tagId} not found.`);
       await deleteTag(db, tagId);
-      ctx.logger.info(`Tag "${tag.name}" removed.`);
+      ctx.logger.info(`Tag "${safeText(tag.name)}" removed.`);
     });
     return 0;
   },

@@ -1,4 +1,5 @@
 import { emitTelemetryLog } from "@webfrost/core";
+import { safeMessage } from "./sanitize";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -24,7 +25,7 @@ export function createLogger(
     emitTelemetryLog(lvl, msg);
     const ts = new Date().toISOString().slice(11, 19); // HH:MM:SS
     const label = lvl.toUpperCase().padEnd(5);
-    const line = `[${ts}] ${label} ${msg}\n`;
+    const line = `[${ts}] ${label} ${safeMessage(msg)}\n`;
     if (options.toStderr || lvl === "error" || lvl === "warn") {
       process.stderr.write(line);
     } else {

@@ -35,6 +35,8 @@ Flags are parsed per command, and every command accepts both `--flag value` and 
 
 Log lines look like `[14:02:11] INFO  Snapshot 1 archived.` Info goes to stdout, warnings and errors to stderr. Results such as `list` and `search` are plain tab-separated text.
 
+Text that comes from archived pages, imports or tags (URLs, snippets, tag names, error reasons) is printed with control characters, escape sequences included, removed, so an archived page cannot write to your terminal. `--json` output is not changed: JSON escaping covers it.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -77,7 +79,7 @@ Check that WebFrost has what it needs, and say what to do about what is missing:
 - yt-dlp and ffmpeg (optional), with an install command for your OS: `brew`, `apt`, `dnf` or `winget`;
 - whether the server port is free.
 
-Exits 1 if a required check fails (data directory, database, Chromium). Missing yt-dlp or ffmpeg and a busy port are warnings. `--json` prints `{ ok, checks }`.
+`doctor` only removes a data directory it created for the write test, and only if it is still empty: a symlink or an existing directory is never touched. Exits 1 if a required check fails (data directory, database, Chromium). Missing yt-dlp or ffmpeg and a busy port are warnings. `--json` prints `{ ok, checks }`.
 
 ## Archive
 
