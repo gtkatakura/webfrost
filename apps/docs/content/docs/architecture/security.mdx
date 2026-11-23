@@ -282,8 +282,8 @@ to the usual limit by the request guard before its body is read, and must declar
 | Per-extractor timeout | 60 s | `WEBFROST_EXTRACTOR_TIMEOUT_MS` |
 | yt-dlp process timeout | 10 min | `WEBFROST_MEDIA_TIMEOUT_MS` |
 | Browser shutdown | 5 s | — |
-| Import size (file, `content` or fetched `url`) | 10 MiB | `WEBFROST_IMPORT_MAX_BYTES` |
-| URLs per import | 10 000 | `WEBFROST_IMPORT_MAX_URLS` |
+| Import size (file, `content`, fetched `url` or RSS feed, in the API, the CLI and RSS schedules) | 10 MiB | `WEBFROST_IMPORT_MAX_BYTES` |
+| URLs per import or per RSS schedule run | 10 000 | `WEBFROST_IMPORT_MAX_URLS` |
 | Snapshot bundle (uploaded and decompressed) | 2 GiB | `WEBFROST_IMPORT_BUNDLE_MAX_BYTES` |
 | List page size | 200 | — |
 | Password / username / tag and key name / URL length | 1024 / 128 / 100 / 8192 | — |

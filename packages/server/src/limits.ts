@@ -11,24 +11,16 @@ export const MAX_CRON_LENGTH = 256;
 /** Largest page a list endpoint returns, whatever `limit` asks for. */
 export const MAX_LIST_LIMIT = 200;
 
-const DEFAULT_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
-const DEFAULT_IMPORT_MAX_URLS = 10_000;
+// The import limits live in core: the scheduler and the CLI hold feeds to the same ones.
+import { importMaxBytes } from "@webfrost/core";
+
+export { importMaxBytes, importMaxUrls } from "@webfrost/core";
 
 function positiveIntEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined || raw === "") return fallback;
   const value = Number(raw);
   return Number.isInteger(value) && value > 0 ? value : fallback;
-}
-
-/** WEBFROST_IMPORT_MAX_BYTES: largest import file or `content` body (default 10 MiB). */
-export function importMaxBytes(): number {
-  return positiveIntEnv("WEBFROST_IMPORT_MAX_BYTES", DEFAULT_IMPORT_MAX_BYTES);
-}
-
-/** WEBFROST_IMPORT_MAX_URLS: most URLs a single import may queue (default 10000). */
-export function importMaxUrls(): number {
-  return positiveIntEnv("WEBFROST_IMPORT_MAX_URLS", DEFAULT_IMPORT_MAX_URLS);
 }
 
 /**

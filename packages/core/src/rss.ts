@@ -7,20 +7,37 @@
 
 import { sql } from "kysely";
 import type { Db } from "./db";
-import { parseUrls } from "./import";
-import { safeFetch } from "./ssrf-guard";
+import {
+  ImportLimitError,
+  importMaxBytes,
+  importMaxUrls,
+  importTooLargeMessage,
+  importTooManyUrlsMessage,
+  parseUrls,
+} from "./import";
+import { fetchGuarded } from "./ssrf-guard";
 
 /**
  * Fetch an RSS 2.0 or Atom feed and return all article URLs found in it.
  * Uses the SSRF-safe fetcher to prevent server-side request forgery.
+ *
+ * The feed is held to the import limits: a body over WEBFROST_IMPORT_MAX_BYTES, or more
+ * than WEBFROST_IMPORT_MAX_URLS links, throws an ImportLimitError before anything is
+ * queued. Relative links resolve against the URL the feed was finally served from.
  */
 export async function fetchRssFeedUrls(feedUrl: string): Promise<string[]> {
-  const response = await safeFetch(feedUrl);
-  if (!response.ok) {
+  const response = await fetchGuarded(feedUrl);
+  if (response.status < 200 || response.status >= 300) {
     throw new Error(`Failed to fetch feed ${feedUrl}: HTTP ${response.status}`);
   }
-  const content = await response.text();
-  return parseUrls(content, "rss", feedUrl);
+  if (response.body.byteLength > importMaxBytes()) {
+    throw new ImportLimitError("bytes", importTooLargeMessage());
+  }
+  const content = new TextDecoder().decode(response.body);
+  const max = importMaxUrls();
+  const urls = parseUrls(content, "rss", response.url, { maxUrls: max });
+  if (urls.length > max) throw new ImportLimitError("urls", importTooManyUrlsMessage(urls.length));
+  return urls;
 }
 
 /**

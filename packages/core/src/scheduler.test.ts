@@ -24,6 +24,10 @@ beforeAll(async () => {
     fetch(req) {
       const { pathname, origin } = new URL(req.url);
       if (pathname === "/feed.xml") return new Response(FEED(origin));
+      if (pathname === "/huge-feed.xml") {
+        const items = [1, 2, 3, 4].map((i) => `<item><link>${origin}/h${i}</link></item>`);
+        return new Response(`<rss>${items.join("")}</rss>`);
+      }
       if (pathname === "/down") return new Response("no", { status: 500 });
       return new Response("<html><body><p>hello</p></body></html>", {
         headers: { "content-type": "text/html" },
@@ -162,6 +166,19 @@ describe("runDueSchedules", () => {
 });
 
 describe("scheduler robustness", () => {
+  test("an RSS feed over WEBFROST_IMPORT_MAX_URLS fails the run and queues nothing", async () => {
+    process.env.WEBFROST_IMPORT_MAX_URLS = "3";
+    try {
+      const id = await addSchedule(db, `${baseUrl}/huge-feed.xml`, "*/5 * * * *", "rss_feed");
+      await makeDue(id);
+      await runDueSchedules({ dir: testDir, runner: new JobRunner({ dir: testDir }) });
+      expect(await snapshots()).toHaveLength(0);
+      expect((await getSchedule(db, id))?.last_status).toBe("failed");
+    } finally {
+      Reflect.deleteProperty(process.env, "WEBFROST_IMPORT_MAX_URLS");
+    }
+  }, 60_000);
+
   test("a schedule whose cron no longer parses does not block the others", async () => {
     const good = await addSchedule(db, `${baseUrl}/page`, "*/5 * * * *");
     const broken = await addSchedule(db, `${baseUrl}/broken`, "*/5 * * * *");
