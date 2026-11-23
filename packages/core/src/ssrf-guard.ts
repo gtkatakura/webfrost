@@ -12,6 +12,7 @@
  */
 
 import { isIP } from "node:net";
+import { BROWSER_REQUEST_HEADERS } from "./request-headers";
 
 const MAX_RESPONSE_BYTES = 50 * 1024 * 1024; // 50 MB
 const MAX_REDIRECTS = 5;
@@ -185,15 +186,20 @@ interface FetchTarget {
  * The requests that reach `parsed` through one of the checked addresses, in order. The
  * connection goes to the address itself, so a second DNS answer (rebinding) is never
  * used; the Host header and the TLS server name (SNI and certificate check) stay the
- * hostname's. An IP literal, or no checked address (opt-out), is fetched as is.
+ * hostname's. An IP literal, or no checked address (opt-out), is fetched as is. Every request
+ * carries the headers of a Chrome navigation (`BROWSER_REQUEST_HEADERS`).
  */
 function fetchTargets(parsed: URL, addresses: CheckedAddress[]): FetchTarget[] {
   const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
-  if (addresses.length === 0 || isIP(hostname)) return [{ url: parsed.href, init: {} }];
+  if (addresses.length === 0 || isIP(hostname)) {
+    return [{ url: parsed.href, init: { headers: { ...BROWSER_REQUEST_HEADERS } } }];
+  }
   return addresses.map(({ address, family }) => {
     const pinned = new URL(parsed.href);
     pinned.hostname = family === 6 ? `[${address}]` : address;
-    const init: Record<string, unknown> = { headers: { host: parsed.host } };
+    const init: Record<string, unknown> = {
+      headers: { ...BROWSER_REQUEST_HEADERS, host: parsed.host },
+    };
     if (parsed.protocol === "https:") init.tls = { serverName: hostname };
     return { url: pinned.href, init };
   });

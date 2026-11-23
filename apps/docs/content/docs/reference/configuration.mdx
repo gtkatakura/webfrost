@@ -66,6 +66,7 @@ PostgreSQL connection options go in the URL as usual, for example `?sslmode=requ
 | `WEBFROST_CHROMIUM_PATH` | none | Use this Chromium or Chrome binary. Checked first; without it WebFrost uses the Chromium `webfrost setup` installed, then a system Chrome or Chromium, then Playwright's own. See [the lookup order](/docs/reference/cli#chromium-lookup-order). |
 | `WEBFROST_CACHE_DIR` | `$XDG_CACHE_HOME/webfrost` or `~/.cache/webfrost` (Linux), `~/Library/Caches/webfrost` (macOS), `%LOCALAPPDATA%\webfrost` (Windows) | Where `webfrost setup` installs Chromium. |
 | `WEBFROST_ALLOW_PRIVATE_URLS` | `false` | `true` allows archiving loopback, private and link-local addresses (intranet archiving). Leave it off when people you do not fully trust can submit URLs. See [Security](/docs/architecture/security#ssrf-protection). |
+| `NODE_EXTRA_CA_CERTS` | none | A file of PEM certificates added to the runtime's built-in roots, read at start. For sites whose certificate authority browsers trust and the runtime does not yet: see [Troubleshooting](/docs/guides/troubleshooting#unable-to-get-local-issuer-certificate). |
 
 Fixed limits that are not configurable: browser navigation 30 seconds, response body 50 MB, media file 500 MB, browser shutdown 5 seconds, 5 redirects per fetch.
 

@@ -71,6 +71,13 @@ beforeAll(async () => {
       if (pathname === "/late.json") {
         return Response.json({ text: "arrived after load" });
       }
+      if (pathname === "/browsers-only") {
+        // Like a server that turns away scripted clients: anything that is not Chrome gets an error.
+        if (!/ Chrome\/\d+/.test(req.headers.get("user-agent") ?? "")) {
+          return new Response("no bots", { status: 403 });
+        }
+        return new Response(ARTICLE, { headers: { "content-type": "text/html" } });
+      }
       if (pathname === "/article") {
         return new Response(ARTICLE, { headers: { "content-type": "text/html" } });
       }
@@ -205,6 +212,21 @@ describe("runPipeline", () => {
     const html = readFileSync(dom?.content ?? "", "utf8");
     expect(html).toContain('class="r in"');
     expect(html).toContain('src="/late.json"');
+  }, 60_000);
+
+  test("archives a page whose server answers browsers only", async () => {
+    const url = `${baseUrl}/browsers-only`;
+    const id = await createSnapshot(db, url);
+    await runPipeline(db, id, url, testDir);
+
+    expect(await statusOf(id)).toBe("done");
+    const stored = await results(id);
+    const ok = stored.filter((r) => r.error === null).map((r) => r.extractor);
+    expect(ok).toContain("html");
+    expect(ok).toContain("warc");
+    expect(ok).toContain("readability");
+    // The text formats hold the page, not the server's refusal.
+    expect(stored.find((r) => r.extractor === "readability")?.content).toContain("Glaciers");
   }, 60_000);
 
   test("marks the snapshot failed when the page cannot be fetched", async () => {
