@@ -1,16 +1,21 @@
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { basename } from "node:path";
 import {
   BundleError,
   type ImportFormat,
   JobRunner,
+  ResponseTooLargeError,
   createStorageBackend,
   detectFormat,
+  fetchGuarded,
   getSnapshot,
+  importMaxBytes,
+  importMaxUrls,
   importSnapshotBundle,
+  importTooLargeMessage,
+  importTooManyUrlsMessage,
   isUrlArchived,
   parseUrls,
-  safeFetch,
 } from "@webfrost/core";
 import type { Command } from "../cli";
 import { CliError, UsageError } from "../errors";
@@ -93,30 +98,39 @@ Exit codes:
     }
     let content: string;
     let filename: string;
+    let finalUrl: string | undefined;
     if (isSourceUrl) {
-      let response: Response;
+      let response: Awaited<ReturnType<typeof fetchGuarded>>;
       try {
-        response = await safeFetch(source);
+        response = await fetchGuarded(source, { maxBytes: importMaxBytes() });
       } catch (err) {
+        if (err instanceof ResponseTooLargeError) throw new CliError(importTooLargeMessage());
         throw new CliError(
           `Cannot fetch ${source}: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
-      if (!response.ok) throw new CliError(`Cannot fetch ${source}: HTTP ${response.status}`);
-      content = await response.text();
+      if (response.status < 200 || response.status >= 300) {
+        throw new CliError(`Cannot fetch ${source}: HTTP ${response.status}`);
+      }
+      if (response.body.byteLength > importMaxBytes()) throw new CliError(importTooLargeMessage());
+      content = new TextDecoder().decode(response.body);
+      finalUrl = response.url;
       filename = basename(new URL(source).pathname) || source;
     } else {
       try {
+        if (statSync(source).size > importMaxBytes()) throw new CliError(importTooLargeMessage());
         content = readFileSync(source, "utf8");
-      } catch {
+      } catch (err) {
+        if (err instanceof CliError) throw err;
         throw new CliError(`Cannot read file: ${source}`);
       }
       filename = basename(source);
     }
 
     const format = (formatFlag as ImportFormat | undefined) ?? detectFormat(filename, content);
-    // A feed fetched from a URL may use links relative to it.
-    const urls = parseUrls(content, format, isSourceUrl ? source : undefined);
+    // A feed fetched from a URL may use links relative to the URL it was finally served from.
+    const urls = parseUrls(content, format, finalUrl, { maxUrls: importMaxUrls() });
+    if (urls.length > importMaxUrls()) throw new CliError(importTooManyUrlsMessage(urls.length));
     // For RSS imports, skip what is already archived.
     const deduplicate = format === "rss";
 

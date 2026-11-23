@@ -62,6 +62,18 @@ describe("checkApiRequest", () => {
     ).toBeNull();
   });
 
+  test("a Bearer request that also carries a session cookie still gets the origin check", () => {
+    const refusal = checkApiRequest(
+      post("/api/v1/tags", {
+        ...JSON_HEADERS,
+        authorization: "Bearer proxy-token",
+        cookie: "session=abc",
+        "sec-fetch-site": "same-site",
+      }),
+    );
+    expect(refusal?.code).toBe("CROSS_ORIGIN_REQUEST");
+  });
+
   test("safe methods and non-API paths are never checked", () => {
     expect(
       checkApiRequest(

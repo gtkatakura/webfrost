@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import type { Browser } from "playwright";
-import { type HostCheck, guardBrowserContext } from "./browser-guard";
+import { type HostCheck, guardBrowserContext, newGuardedContext } from "./browser-guard";
 import { chromiumLaunchOptions } from "./pipeline";
 
 /**
@@ -36,14 +36,36 @@ beforeAll(async () => {
 
   internal = Bun.serve({
     port: 0,
-    fetch(req) {
+    fetch(req, server) {
       internalHits.push(new URL(req.url).pathname);
+      if (server.upgrade(req, { data: undefined })) return undefined;
       return new Response("<html><body>TOP-SECRET-INTERNAL</body></html>", {
         headers: { "content-type": "text/html", "access-control-allow-origin": "*" },
       });
     },
+    websocket: {
+      open(ws) {
+        ws.send("TOP-SECRET-INTERNAL");
+      },
+      message() {},
+    },
   });
   const internalOrigin = `http://localhost:${internal.port}`;
+  const internalWs = `ws://localhost:${internal.port}`;
+  // A worker script that reaches the internal host and reports what it got back.
+  // Works as a dedicated worker (postMessage) and as a shared worker (onconnect ports).
+  const workerProbe = (kind: "fetch" | "ws") => {
+    const go =
+      kind === "fetch"
+        ? `fetch("${internalOrigin}/worker-fetch").then((r) => r.text()).then(report, () => report("blocked"));`
+        : `try { const ws = new WebSocket("${internalWs}/worker-ws"); ws.onmessage = (m) => report(String(m.data)); ws.onerror = () => report("blocked"); } catch { report("blocked"); }`;
+    return `const shared = typeof SharedWorkerGlobalScope !== "undefined";
+      const ports = [];
+      const report = (t) => (shared ? ports.forEach((p) => p.postMessage(t)) : postMessage(t));
+      const go = () => { ${go} };
+      if (shared) self.onconnect = (e) => { ports.push(e.ports[0]); go(); }; else go();`;
+  };
+  const show = `(t) => { const p = document.createElement("p"); p.id = "worker-result"; p.textContent = t; document.body.appendChild(p); }`;
 
   site = Bun.serve({
     port: 0,
@@ -69,6 +91,28 @@ beforeAll(async () => {
           );
         case "/redirect-sub":
           return html(`<iframe src="/hop"></iframe>`);
+        case "/worker-fetch.js":
+        case "/worker-ws.js":
+          return new Response(workerProbe(pathname === "/worker-ws.js" ? "ws" : "fetch"), {
+            headers: { "content-type": "text/javascript" },
+          });
+        case "/dedicated-fetch":
+        case "/dedicated-ws":
+          return html(
+            `<script>const w = new Worker("/worker-${pathname.slice(11)}.js"); w.onmessage = (m) => (${show})(m.data);</script>`,
+          );
+        case "/shared-fetch":
+        case "/shared-ws":
+          return html(
+            `<script>const w = new SharedWorker("/worker-${pathname.slice(8)}.js"); w.port.onmessage = (m) => (${show})(m.data); w.port.start();</script>`,
+          );
+        case "/in-flight":
+          // A request that is approved before seal() and only redirects after it.
+          return html(
+            `<script>fetch("/slow-hop").then(r => r.text()).then(t => { document.body.append(t) }, () => {})</script>`,
+          );
+        case "/slow-hop":
+          return Bun.sleep(800).then(() => Response.redirect(`${internalOrigin}/after-seal`, 302));
         case "/hop":
           return Response.redirect(`${internalOrigin}/via-redirect`, 302);
         case "/redirect-main":
@@ -86,10 +130,10 @@ afterAll(async () => {
   internal?.stop(true);
 });
 
-async function visit(path: string, { seal = false } = {}) {
+/** Load `path` the way the pipeline does: in a context from `newGuardedContext` (proxy + guard). */
+async function visit(path: string, { seal = false, wait = 0 } = {}) {
   internalHits = [];
-  const context = await browser.newContext({ serviceWorkers: "block" });
-  const guard = await guardBrowserContext(context, allowOnlyPublicFixture);
+  const { context, guard } = await newGuardedContext(browser, {}, allowOnlyPublicFixture);
   const page = await context.newPage();
   let navigationError: string | null = null;
   let sealed: string | null = null;
@@ -98,7 +142,7 @@ async function visit(path: string, { seal = false } = {}) {
     // What the pipeline does: cut the network as soon as the page has loaded…
     if (seal) sealed = await guard.seal();
     // …and only then spend time capturing it.
-    await page.waitForTimeout(seal ? 1200 : 300);
+    await page.waitForTimeout(wait || (seal ? 1200 : 300));
   } catch (err) {
     navigationError = err instanceof Error ? err.message : String(err);
   }
@@ -131,11 +175,12 @@ describe.skipIf(!chromiumInstalled)("guardBrowserContext", () => {
     expect(title).toBe("blocked");
   });
 
-  test("a subresource redirected to an internal host is reported as a violation", async () => {
-    // Redirect hops cannot be intercepted, so the pipeline relies on this signal to
-    // refuse to capture the page.
+  test("a subresource redirected to an internal host is reported and never reaches it", async () => {
+    // route() cannot intercept redirect hops: the pipeline refuses to capture the page
+    // on this signal, and the egress proxy refuses the hop's connection.
     const { violation } = await visit("/redirect-sub");
     expect(violation).toContain("/via-redirect");
+    expect(internalHits).toEqual([]);
   });
 
   test("without seal(), a redirect that fires after load reaches the internal host", async () => {
@@ -160,8 +205,23 @@ describe.skipIf(!chromiumInstalled)("guardBrowserContext", () => {
     expect(content).toContain("public");
   });
 
+  test("a request in flight at seal() cannot be redirected to an internal host", async () => {
+    const { content } = await visit("/in-flight", { seal: true, wait: 2000 });
+    expect(internalHits).toEqual([]);
+    expect(content).not.toContain("TOP-SECRET-INTERNAL");
+  });
+
+  for (const path of ["/dedicated-fetch", "/dedicated-ws", "/shared-fetch", "/shared-ws"]) {
+    test(`a worker cannot reach an internal host (${path.slice(1)})`, async () => {
+      const { content } = await visit(path, { wait: 1500 });
+      expect(internalHits).toEqual([]);
+      expect(content).not.toContain("TOP-SECRET-INTERNAL");
+    });
+  }
+
   test("a navigation redirected to an internal host is reported as a violation", async () => {
     const { violation } = await visit("/redirect-main");
     expect(violation).toContain("/main-redirect");
+    expect(internalHits).toEqual([]);
   });
 });

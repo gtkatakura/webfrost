@@ -330,6 +330,62 @@ describe("import limits", () => {
   });
 });
 
+describe("import of a fetched url", () => {
+  let feedServer: ReturnType<typeof Bun.serve>;
+  let base: string;
+
+  beforeEach(() => {
+    process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
+    feedServer = Bun.serve({
+      port: 0,
+      fetch(req) {
+        const { pathname } = new URL(req.url);
+        if (pathname === "/feed.xml") {
+          const items = Array.from(
+            { length: 5 },
+            (_, i) => `<item><link>https://x.example/${i}</link></item>`,
+          );
+          return new Response(`<rss>${items.join("")}</rss>`);
+        }
+        return new Response("no", { status: 404 });
+      },
+    });
+    base = `http://127.0.0.1:${feedServer.port}`;
+  });
+
+  afterEach(() => {
+    feedServer.stop(true);
+    Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
+    Reflect.deleteProperty(process.env, "WEBFROST_IMPORT_MAX_BYTES");
+    Reflect.deleteProperty(process.env, "WEBFROST_IMPORT_MAX_URLS");
+  });
+
+  async function snapshotCount(): Promise<number> {
+    const { openDb } = await import("@webfrost/core");
+    const db = await openDb(testDir);
+    const row = await db.get<{ n: number }>(sql`SELECT COUNT(*) AS n FROM snapshots`);
+    await db.close();
+    return Number(row?.n);
+  }
+
+  test("a feed over WEBFROST_IMPORT_MAX_BYTES is refused with 413, with or without format", async () => {
+    process.env.WEBFROST_IMPORT_MAX_BYTES = "100";
+    for (const format of [undefined, "rss", "text"]) {
+      const res = await post(await getApp(), { url: `${base}/feed.xml`, format });
+      expect(res.status).toBe(413);
+      expect(((await res.json()) as { code: string }).code).toBe("PAYLOAD_TOO_LARGE");
+    }
+    expect(await snapshotCount()).toBe(0);
+  });
+
+  test("a feed over WEBFROST_IMPORT_MAX_URLS is refused with 413 and queues none", async () => {
+    process.env.WEBFROST_IMPORT_MAX_URLS = "1";
+    const res = await post(await getApp(), { url: `${base}/feed.xml`, format: "rss" });
+    expect(res.status).toBe(413);
+    expect(await snapshotCount()).toBe(0);
+  });
+});
+
 function postFile(
   app: Awaited<ReturnType<typeof getApp>>,
   content: string,
@@ -423,6 +479,21 @@ describe("POST /import/file — multipart upload", () => {
 // ---------------------------------------------------------------------------
 // GET /imports
 // ---------------------------------------------------------------------------
+
+describe("GET /imports paging", () => {
+  test("a malformed page or limit is a 400; odd but numeric values are clamped", async () => {
+    const { openDb } = await import("@webfrost/core");
+    await (await openDb(testDir)).close();
+    const app = await getApp();
+    for (const q of ["page=abc", "limit=1e9", "page=Infinity", "limit=%20"]) {
+      const res = await app.handle(new Request(`http://localhost/imports?${q}`));
+      expect(res.status).toBe(400);
+    }
+    const res = await app.handle(new Request("http://localhost/imports?page=-3&limit=2.9"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ items: [], total: 0, page: 1, limit: 2 });
+  });
+});
 
 describe("GET /imports", () => {
   test("returns empty array when no imports have been run", async () => {

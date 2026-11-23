@@ -146,6 +146,27 @@ describe("POST /tags", () => {
     expect(res.status).toBe(409);
   });
 
+  test("names in other scripts are separate tags; a name without letters is a 400", async () => {
+    const app = await getTagsApp();
+    const post = (name: string) =>
+      app.handle(
+        new Request("http://localhost/tags", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name }),
+        }),
+      );
+    expect((await post("日本")).status).toBe(201);
+    expect((await post("中国")).status).toBe(201);
+    expect((await post("ação")).status).toBe(201);
+    expect((await post("aço")).status).toBe(201);
+    const bad = await post("!!!");
+    expect(bad.status).toBe(400);
+    expect((await post("  日本 ")).status).toBe(409);
+    const list = await app.handle(new Request("http://localhost/tags"));
+    expect(((await list.json()) as { items: unknown[] }).items).toHaveLength(4);
+  });
+
   test("returns 400 for missing name", async () => {
     const { openDb } = await import("@webfrost/core");
     await (await openDb(testDir)).close();

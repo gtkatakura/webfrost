@@ -274,7 +274,7 @@ await client.importFile(fileInput.files[0]); // a File keeps its own name
 | `getStats()` | `DashboardStats` |
 | `getServerInfo()` | `{ version, storagePath, snapshotCount }` (`GET /settings/info`) |
 | `listApiKeys(options?, request?)` | `Page<ApiKey>`, active keys only, oldest first |
-| `createApiKey(name, { expiresAt?, signal? })` | `ApiKeyCreated`, which includes `rawKey`, shown once. `expiresAt` is an ISO 8601 string or a `Date` in the future; omit it for a key that never expires. |
+| `createApiKey(name, { expiresAt?, signal? })` | `ApiKeyCreated`, which includes `rawKey`, shown once. `expiresAt` is an ISO 8601 string or a `Date` in the future; omit it for a key that never expires. A client using a key that expires must pass an `expiresAt` no later than its own, or it throws `FORBIDDEN`. |
 | `revokeApiKey(id: string)` | `boolean`. `false` when the key did not exist. |
 
 ## Types

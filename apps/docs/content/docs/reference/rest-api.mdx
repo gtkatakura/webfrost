@@ -97,7 +97,7 @@ Every list endpoint returns the same envelope:
 | Query | Default | Description |
 |---|---|---|
 | `page` | `1` | 1-based page |
-| `limit` | `20` | Page size, capped at `200`. Non-integers are truncated; a value that is not a number falls back to the default. |
+| `limit` | `20` | Page size, capped at `200`. Non-integers are truncated; a value that is not a number falls back to the default. Plain numbers only: `Infinity` or `1e400` answer `400` `VALIDATION` (also on `GET /imports`) |
 
 The lists are `GET /snapshots` (also with `q` and `status`; newest first), `GET /tags` (by name), `GET /snapshots/:id/tags` (by name), `GET /schedules` (oldest first), `GET /imports` (newest first) and `GET /settings/keys` (oldest first).
 
@@ -158,7 +158,7 @@ curl -X POST $API/setup -H "Content-Type: application/json" \
 | `GET` | `/snapshots/:id` | One snapshot with archive results and per-extractor metadata. |
 | `POST` | `/snapshots/:id/retry` | Archive a snapshot again, in place. `202`, `404`, or `409` while it is being archived. |
 | `POST` | `/snapshots/import` | Store a snapshot archived elsewhere, from a snapshot bundle (`application/zip`). `201`. |
-| `DELETE` | `/snapshots/:id` | Delete a snapshot and its files. `204`, or `404`. |
+| `DELETE` | `/snapshots/:id` | Delete a snapshot and its files. `204`, `404`, or `409` `CONFLICT` while the snapshot is still `pending` (its pipeline is running) or being imported; wait for it to finish, then delete. |
 
 ### Create
 
@@ -186,8 +186,8 @@ curl "$API/snapshots?page=1&limit=20&status=done" -H "Authorization: Bearer $KEY
 
 | Query | Default | Description |
 |---|---|---|
-| `page` | `1` | 1-based page |
-| `limit` | `20` | Page size, capped at 200 |
+| `page` | `1` | 1-based page. Plain numbers only: `Infinity` or `1e400` answer `400` `VALIDATION` |
+| `limit` | `20` | Page size, capped at 200. Same rule as `page` |
 | `status` | none | Filter by `pending`, `done` or `failed` |
 | `q` | none | Full-text search term |
 
@@ -231,7 +231,7 @@ curl -X POST $API/snapshots/import -H "Authorization: Bearer $KEY" \
 # 201 { "id": 57, "url": "https://www.youtube.com/watch?v=...", "status": "done" }
 ```
 
-The import always creates a **new** snapshot with a new id. Its status (`done` or `failed`), creation time, color scheme, results (inline content, errors, durations) and files come from the bundle; tags are matched by name and created when missing; a `done` snapshot is added to the search index. Nothing is fetched and no pipeline runs. Importing the same bundle twice makes two snapshots.
+The import always creates a **new** snapshot with a new id. Its status (`done` or `failed`), creation time, color scheme, results (inline content, errors, durations) and files come from the bundle; tags are matched by name or slug and created when missing (also when two imports bring the same new tag at once); a `done` snapshot is added to the search index. Nothing is fetched and no pipeline runs. Importing the same bundle twice makes two snapshots.
 
 It needs credentials like every write (an API key, or a session with the [CSRF check](/docs/architecture/security#cross-site-requests-csrf)), also when public read is on, and counts against the 60-per-minute [rate limit](#rate-limits) of snapshot creation. At most two imports run at once per server process; a third gets `429` `RATE_LIMITED` with `Retry-After: 30` before its body is read. While the upload streams in, the connection may go up to 255 seconds without data before it is closed; once the body is complete there is no idle timeout while the server copies it into storage.
 
@@ -275,7 +275,7 @@ The server treats a bundle as untrusted input:
 - The server picks where each file is stored and serves it with the content type of its extractor, never one from the bundle. Archived HTML is still shown only through the sandboxed [preview](#archive-files).
 - `sizeBytes` is recomputed from what was stored.
 
-If something fails after the checks (a corrupt entry discovered while decompressing, storage unavailable), everything written for the import is removed again. While the files are copied the new snapshot exists with the internal status `importing`: it is left out of lists, search, stats and `GET /snapshots/:id` (`404`), and `DELETE` or `POST /snapshots/:id/retry` on it answer `409` `CONFLICT`. If the server dies during an import, the next start removes that snapshot and its files, and the upload left in `WEBFROST_DIR/tmp`, once they are over an hour old.
+If something fails after the checks (a corrupt entry discovered while decompressing, storage unavailable), everything written for the import is removed again. While the files are copied the new snapshot exists with the internal status `importing`: it is left out of lists, search, stats and `GET /snapshots/:id` (`404`), and `DELETE` or `POST /snapshots/:id/retry` on it answer `409` `CONFLICT`. If the server dies during an import, the next start removes that snapshot and its files once the import has shown no sign of life (a heartbeat, written every 30 seconds while it runs) for 5 minutes, and the upload left in `WEBFROST_DIR/tmp` once it is over an hour old.
 
 #### Archive results
 
@@ -319,10 +319,10 @@ curl -OJ $API/snapshots/1/archives/screenshot/download -H "Authorization: Bearer
 | `singlefile` | `text/html` | `singlefile.html` |
 | `media` | `video/mp4` or `audio/mpeg` | `media.mp4` or `media.mp3` |
 | `media-poster` | `image/jpeg` | `poster.jpg` |
-| `media-metadata` | `application/json` | `media-metadata.json` |
+| `media-metadata` | `application/json` | `media-metadata.json` (only the display fields of yt-dlp's output: id, title, description, uploader, channel, duration, counts, dates, page URL, tags, size; never stream URLs or request headers) |
 | `readability`, `html` | `application/json` | `readability.json`, `html.json` (the stored value as is) |
 
-Downloads carry `Content-Disposition: attachment`. With the S3 backend every file format except `media-metadata` answers `302` to a presigned URL valid for one hour; the URL signs the content type and an `attachment` disposition (`response-content-type`, `response-content-disposition`), so archived HTML downloads instead of rendering on the bucket's origin. See [Storage](/docs/guides/storage#downloads-with-s3).
+Downloads carry `Content-Disposition: attachment`. Files are streamed from storage, never held whole in memory. With the S3 backend every file format except `media-metadata` answers `302` to a presigned URL valid for one hour; the URL signs the content type and an `attachment` disposition (`response-content-type`, `response-content-disposition`), so archived HTML downloads instead of rendering on the bucket's origin. See [Storage](/docs/guides/storage#downloads-with-s3).
 
 `preview` works only for `dom-snapshot` and `singlefile` (`400` `BAD_REQUEST` otherwise). It serves the page with `Content-Security-Policy: sandbox; default-src 'none'; ...`, so scripts, forms and network requests are disabled even if the URL is opened directly. The UI frames it in `<iframe sandbox="">`.
 
@@ -331,11 +331,13 @@ Downloads carry `Content-Disposition: attachment`. With the S3 backend every fil
 | Method | Route | Description |
 |---|---|---|
 | `GET` | `/tags` | List tags by name, paginated: items are `{ id, name, slug, color, createdAt }`; `color` is `null` when none was set |
-| `POST` | `/tags` | `{ name, color? }`. `201` with the tag. `409` `CONFLICT` if a tag with that name (or slug) exists. |
+| `POST` | `/tags` | `{ name, color? }`. `201` with the tag. The name is trimmed. `400` `VALIDATION` for a name that is empty, over 100 characters or has no letter or digit in any script (`!!!`). `409` `CONFLICT` if a tag with that name or the same slug exists. |
 | `DELETE` | `/tags/:id` | Delete a tag and remove it from all snapshots. `204`, or `404`. |
 | `GET` | `/snapshots/:id/tags` | Tags on a snapshot, paginated |
 | `POST` | `/snapshots/:id/tags` | `{ tagId }`. `201` with the tag, also when it was already attached. `404` for an unknown snapshot or tag. |
 | `DELETE` | `/snapshots/:id/tags/:tagId` | Remove a tag from a snapshot. `204`, or `404` when the snapshot does not exist or the tag is not on it. |
+
+A tag is identified by its slug: the name lowercased (Unicode NFKC), with each run of characters that are not letters, digits or combining marks turned into one hyphen. Letters of every script are kept (`日本語`, `ação`), so `ação` and `aço` are two tags, while `News` and `news!` are one. Bundle export, bundle import, `POST /tags` and `webfrost tag` all use this rule.
 
 Tag names are part of the search index and stay in sync when you add or remove tags after archiving.
 
@@ -361,7 +363,7 @@ A schedule is `{ id, url, cron, createdAt, lastRunAt, nextRunAt, paused, lastSta
 
 `POST /import` takes JSON `{ url?, content?, format? }`. Send `url` (a feed or file to fetch) or `content` (raw text), otherwise `400` `VALIDATION`. A `url` that cannot be fetched answers `400` `FETCH_FAILED`. `format` is `rss`, `opml`, `netscape` or `text`; it is detected when omitted, and any other value is ignored. A `url` without a format is tried as an RSS feed first. Only RSS imports skip URLs that are already archived. `POST /import/file` takes a `file` field and an optional `format` field, and answers with the same `{ queued, skipped, total, format }`; `total` is the number of URLs found.
 
-An import larger than `WEBFROST_IMPORT_MAX_BYTES` (default 10 MiB: the file, the `content` field or the fetched `url`) or with more URLs than `WEBFROST_IMPORT_MAX_URLS` (default 10000) is refused with `413 { "code": "PAYLOAD_TOO_LARGE" }` and queues nothing.
+An import larger than `WEBFROST_IMPORT_MAX_BYTES` (default 10 MiB: the file, the `content` field or the fetched `url`, including a feed tried as RSS) or with more URLs than `WEBFROST_IMPORT_MAX_URLS` (default 10000) is refused with `413 { "code": "PAYLOAD_TOO_LARGE" }` and queues nothing.
 
 ```bash
 curl -X POST $API/import -H "Authorization: Bearer $KEY" \
@@ -379,10 +381,10 @@ curl -X POST $API/import/file -H "Authorization: Bearer $KEY" \
 
 | Method | Route | Description |
 |---|---|---|
-| `GET` | `/stats` | `{ snapshotCount, storageBytes, storageByExtractor, successRate, activeScheduleCount, failedToday }`. Cached for 60 seconds. |
+| `GET` | `/stats` | `{ snapshotCount, storageBytes, storageByExtractor, successRate, activeScheduleCount, failedToday }`. Cached for 60 seconds. Sizes of files archived before sizes were recorded are measured on first use, 16 at a time; a lookup that fails is retried on the next call instead of being stored as 0 bytes. |
 | `GET` | `/settings/info` | `{ version, storagePath, snapshotCount }` |
 | `GET` | `/settings/keys` | List active API keys, oldest first, paginated: items are `{ id, name, expiresAt, lastUsedAt, createdAt }` |
-| `POST` | `/settings/keys` | `{ name, expiresAt? }`. `201` with `{ id, name, expiresAt, lastUsedAt, createdAt, rawKey }`; `rawKey` is shown once. |
+| `POST` | `/settings/keys` | `{ name, expiresAt? }`. `201` with `{ id, name, expiresAt, lastUsedAt, createdAt, rawKey }`; `rawKey` is shown once. Called with a key that expires, `expiresAt` is required and no later than that key's expiry (`403` otherwise). |
 | `DELETE` | `/settings/keys/:id` | Revoke a key. `204`, or `404`. |
 
 `expiresAt` is optional and ISO 8601, such as `2027-01-01T00:00:00Z`. A value without an offset is read as UTC. It must be in the future, otherwise `400` `VALIDATION`. Omit it or send `null` for a key that never expires.

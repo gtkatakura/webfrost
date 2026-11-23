@@ -35,6 +35,8 @@ Flags are parsed per command, and every command accepts both `--flag value` and 
 
 Log lines look like `[14:02:11] INFO  Snapshot 1 archived.` Info goes to stdout, warnings and errors to stderr. Results such as `list` and `search` are plain tab-separated text.
 
+Text that comes from archived pages, imports or tags (URLs, snippets, tag names, error reasons) is printed with control characters, escape sequences included, removed, so an archived page cannot write to your terminal. `--json` output is not changed: JSON escaping covers it.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -77,7 +79,7 @@ Check that WebFrost has what it needs, and say what to do about what is missing:
 - yt-dlp and ffmpeg (optional), with an install command for your OS: `brew`, `apt`, `dnf` or `winget`;
 - whether the server port is free.
 
-Exits 1 if a required check fails (data directory, database, Chromium). Missing yt-dlp or ffmpeg and a busy port are warnings. `--json` prints `{ ok, checks }`.
+`doctor` only removes a data directory it created for the write test, and only if it is still empty: a symlink or an existing directory is never touched. Exits 1 if a required check fails (data directory, database, Chromium). Missing yt-dlp or ffmpeg and a busy port are warnings. `--json` prints `{ ok, checks }`.
 
 ## Archive
 
@@ -141,7 +143,7 @@ Rebuild the search index from existing data. Use it after index corruption or a 
 
 ### `webfrost import [--format <fmt>] <url-or-file>`
 
-Archive every URL found in a file or at an `http(s)` address. `--format` is one of `text`, `opml`, `netscape` or `rss`; without it the format is detected from the file name and content. The command runs all pipelines and ends with `Import complete: total=…, done=…, skipped=…, failed=… (…s)`. It exits 1 if any URL could not be queued or ended `failed`, 0 otherwise.
+Archive every URL found in a file or at an `http(s)` address. `--format` is one of `text`, `opml`, `netscape` or `rss`; without it the format is detected from the file name and content. The command runs all pipelines and ends with `Import complete: total=…, done=…, skipped=…, failed=… (…s)`. It exits 1 if any URL could not be queued or ended `failed`, 0 otherwise, and refuses (exit 1, nothing queued) an import over `WEBFROST_IMPORT_MAX_BYTES` or `WEBFROST_IMPORT_MAX_URLS`. Relative links in a feed resolve against the URL the feed was finally served from, after redirects.
 
 ```bash
 webfrost import urls.txt
@@ -198,8 +200,8 @@ The bundle is a ZIP with `manifest.json` (the snapshot, its tag names and every 
 
 | Command | Description |
 |---|---|
-| `tag create <name> [--color <hex>]` | Create a tag. Fails if the name exists. |
-| `tag add <snapshot-id> <name>` | Add a tag to a snapshot, creating the tag if needed. |
+| `tag create <name> [--color <hex>]` | Create a tag. Fails if the name (or one with the same slug, such as `news!` for `News`) exists, or if it has no letter or digit. |
+| `tag add <snapshot-id> <name>` | Add a tag to a snapshot, using the existing tag with that name or slug (`news` finds `News`), or creating it. |
 | `tag list [<snapshot-id>]` | List all tags, or the tags on one snapshot. Columns: id, slug, name, color. |
 | `tag remove <tag-id>` | Delete a tag and remove it from every snapshot. Takes the tag id, not a name. |
 
@@ -224,7 +226,7 @@ webfrost schedule add https://example.com --cron "0 0 * * *"
 webfrost schedule add --rss https://example.com/feed.xml --cron "0 * * * *"
 ```
 
-`schedule worker` polls every 30 seconds, runs due schedules through the same scheduler the server embeds, runs pipelines at `WEBFROST_CONCURRENCY`, and re-queues snapshots left `pending` by an interrupted run. You do not need it when `webfrost serve` or the Docker server runs; it is for CLI-only setups. It is safe next to a server on one archive, because due schedules are claimed atomically. Set `WEBFROST_SCHEDULER=false` on the server to make the worker the only one. Ctrl+C lets running archives finish (up to 20 seconds). Cron is evaluated in the process time zone (`TZ`); it accepts names (`mon-fri`, `jan`), steps over ranges and `@daily`-style aliases, and `schedule add` rejects out-of-range values. See [Scheduled archiving](/docs/guides/scheduled-archiving).
+An RSS schedule holds its feed to `WEBFROST_IMPORT_MAX_BYTES` and `WEBFROST_IMPORT_MAX_URLS` too: a feed over either limit fails that run and queues nothing. `schedule worker` polls every 30 seconds, runs due schedules through the same scheduler the server embeds, runs pipelines at `WEBFROST_CONCURRENCY`, and re-queues snapshots left `pending` by an interrupted run. You do not need it when `webfrost serve` or the Docker server runs; it is for CLI-only setups. It is safe next to a server on one archive, because due schedules are claimed atomically. Set `WEBFROST_SCHEDULER=false` on the server to make the worker the only one. Ctrl+C lets running archives finish (up to 20 seconds). Cron is evaluated in the process time zone (`TZ`); it accepts names (`mon-fri`, `jan`), steps over ranges and `@daily`-style aliases, and `schedule add` rejects out-of-range values. See [Scheduled archiving](/docs/guides/scheduled-archiving).
 
 ## Admin
 

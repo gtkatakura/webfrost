@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import {
+  CronError,
   JobRunner,
   SCHEDULER_INTERVAL_MS,
   addRssFeedSchedule,
@@ -10,6 +11,7 @@ import {
 } from "@webfrost/core";
 import { type Command, type Group, parseHttpUrl, parseId } from "../cli";
 import { CliError, UsageError } from "../errors";
+import { safeText } from "../sanitize";
 import { withDb } from "./shared";
 
 const scheduleAdd: Command = {
@@ -49,10 +51,11 @@ const scheduleAdd: Command = {
             ? await addRssFeedSchedule(db, target, cron)
             : await addSchedule(db, target, cron);
       } catch (err) {
-        throw new UsageError(
-          `Invalid cron expression "${cron}": ${err instanceof Error ? err.message : String(err)}`,
-          path,
-        );
+        // Only a bad cron expression is a usage error; a database failure is not.
+        if (err instanceof CronError) {
+          throw new UsageError(`Invalid cron expression "${cron}": ${err.message}`, path);
+        }
+        throw err;
       }
       const label = rss !== undefined ? "RSS feed schedule" : "Schedule";
       ctx.logger.info(`${label} ${id} created: ${target} @ ${cron}`);
@@ -72,7 +75,7 @@ const scheduleList: Command = {
       for (const s of schedules) {
         const kind = s.kind === "rss_feed" ? "[rss]" : "[url]";
         console.log(
-          `${s.id}\t${kind}\t${s.cron}\t${s.url}\tlast:${s.last_run_at ?? "never"}\tnext:${s.next_run_at}`,
+          `${s.id}\t${kind}\t${s.cron}\t${safeText(s.url)}\tlast:${s.last_run_at ?? "never"}\tnext:${s.next_run_at}`,
         );
       }
     });

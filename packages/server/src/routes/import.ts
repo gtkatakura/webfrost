@@ -1,12 +1,14 @@
 import {
+  ImportLimitError,
+  ResponseTooLargeError,
   countImports,
   detectFormat,
+  fetchGuarded,
   fetchRssFeedUrls,
   isUrlArchived,
   listImports,
   parseUrls,
   recordImport,
-  safeFetch,
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
 import { getDb, getRunner } from "../context";
@@ -18,8 +20,9 @@ import { isoTimestampRequired, pageParams } from "../serialize";
 function overLimit(urls: string[]): { error: string; code: "PAYLOAD_TOO_LARGE" } | null {
   const max = importMaxUrls();
   if (urls.length <= max) return null;
+  // Parsing stops one URL past the cap, so `urls.length` is not the import's full size.
   return {
-    error: `import has ${urls.length} URLs; the limit is ${max} (WEBFROST_IMPORT_MAX_URLS)`,
+    error: `import has more than ${max} URLs; the limit is ${max} (WEBFROST_IMPORT_MAX_URLS)`,
     code: "PAYLOAD_TOO_LARGE",
   };
 }
@@ -106,6 +109,10 @@ export const importRouter = new Elysia({ prefix: "/import" })
         try {
           urls = await fetchRssFeedUrls(sourceUrl);
         } catch (err) {
+          if (err instanceof ImportLimitError) {
+            set.status = 413;
+            return { error: err.message, code: "PAYLOAD_TOO_LARGE" as const };
+          }
           // If RSS fetch fails and format was explicitly rss, return error
           if (formatHint === "rss") {
             return apiError(
@@ -144,11 +151,16 @@ export const importRouter = new Elysia({ prefix: "/import" })
       // General path: fetch from URL then parse
       let rawContent: string;
       let filename: string;
+      let finalUrl: string | undefined;
       if (sourceUrl) {
-        let response: Response;
+        let response: Awaited<ReturnType<typeof fetchGuarded>>;
         try {
-          response = await safeFetch(sourceUrl);
+          response = await fetchGuarded(sourceUrl, { maxBytes: importMaxBytes() });
         } catch (err) {
+          if (err instanceof ResponseTooLargeError) {
+            set.status = 413;
+            return tooLarge();
+          }
           return apiError(
             set,
             400,
@@ -156,7 +168,7 @@ export const importRouter = new Elysia({ prefix: "/import" })
             err instanceof Error ? err.message : "failed to fetch url",
           );
         }
-        if (!response.ok) {
+        if (response.status < 200 || response.status >= 300) {
           return apiError(
             set,
             400,
@@ -164,11 +176,12 @@ export const importRouter = new Elysia({ prefix: "/import" })
             `HTTP ${response.status} fetching ${sourceUrl}`,
           );
         }
-        rawContent = await response.text();
-        if (Buffer.byteLength(rawContent, "utf8") > importMaxBytes()) {
+        if (response.body.byteLength > importMaxBytes()) {
           set.status = 413;
           return tooLarge();
         }
+        rawContent = new TextDecoder().decode(response.body);
+        finalUrl = response.url;
         filename = new URL(sourceUrl).pathname.split("/").pop() ?? "";
       } else {
         // biome-ignore lint/style/noNonNullAssertion: content is guaranteed non-null (validated above)
@@ -180,8 +193,8 @@ export const importRouter = new Elysia({ prefix: "/import" })
         ? (formatHint as ImportFormat)
         : detectFormat(filename, rawContent);
 
-      // Relative links in a fetched feed resolve against the feed's own URL.
-      const urls = parseUrls(rawContent, format, sourceUrl);
+      // Relative links in a fetched feed resolve against the URL it was finally served from.
+      const urls = parseUrls(rawContent, format, finalUrl, { maxUrls: importMaxUrls() });
       const refusal = overLimit(urls);
       if (refusal) {
         set.status = 413;
@@ -240,7 +253,7 @@ export const importRouter = new Elysia({ prefix: "/import" })
         ? (formatHint as ImportFormat)
         : detectFormat(filename, rawContent);
 
-      const urls = parseUrls(rawContent, format);
+      const urls = parseUrls(rawContent, format, undefined, { maxUrls: importMaxUrls() });
       const refusal = overLimit(urls);
       if (refusal) {
         set.status = 413;
@@ -300,5 +313,10 @@ export const importsRouter = new Elysia({ prefix: "/imports" }).onError(apiError
       await db.close();
     }
   },
-  { query: t.Object({ page: t.Optional(t.String()), limit: t.Optional(t.String()) }) },
+  {
+    query: t.Object({
+      page: t.Optional(t.String({ pattern: "^(-?[0-9]{1,15}(\\.[0-9]{1,15})?)?$" })),
+      limit: t.Optional(t.String({ pattern: "^(-?[0-9]{1,15}(\\.[0-9]{1,15})?)?$" })),
+    }),
+  },
 );

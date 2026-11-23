@@ -370,4 +370,26 @@ describe("bundle import limits and crash recovery", () => {
       await check.close();
     }
   });
+
+  test("a running server sweeps again later, not only at startup", async () => {
+    const { startBackgroundWork } = await import("../index");
+    const tmp = join(serverDir, "tmp");
+    mkdirSync(tmp, { recursive: true });
+    const saved = process.env.WEBFROST_SCHEDULER;
+    process.env.WEBFROST_SCHEDULER = "false";
+    const background = startBackgroundWork({ importSweepMs: 25 });
+    try {
+      // Left behind after startup: only a periodic sweep can remove it.
+      const stale = join(tmp, `bundle-${crypto.randomUUID()}`);
+      mkdirSync(stale);
+      const old = new Date(Date.now() - 2 * 3600 * 1000);
+      utimesSync(stale, old, old);
+      for (let i = 0; i < 100 && existsSync(stale); i++) await Bun.sleep(25);
+      expect(existsSync(stale)).toBe(false);
+    } finally {
+      background.stop();
+      if (saved === undefined) Reflect.deleteProperty(process.env, "WEBFROST_SCHEDULER");
+      else process.env.WEBFROST_SCHEDULER = saved;
+    }
+  });
 });

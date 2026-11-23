@@ -1,9 +1,10 @@
+import { Database } from "bun:sqlite";
 /**
  * Command-line behaviour: parsing, help, exit codes and the machine-readable output.
  * Runs the real entry point as a child process against a throwaway data directory.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseExpires } from "./commands/admin";
@@ -246,6 +247,20 @@ describe("add", () => {
   });
 });
 
+/** The URLs of every snapshot in the throwaway archive (none when it was never created). */
+function snapshotUrls(): string[] {
+  const file = readdirSync(dir).find((f) => f.endsWith(".db") || f.endsWith(".sqlite"));
+  if (!file) return [];
+  const db = new Database(join(dir, file), { readonly: true });
+  try {
+    return (db.query("SELECT url FROM snapshots ORDER BY id").all() as { url: string }[]).map(
+      (r) => r.url,
+    );
+  } finally {
+    db.close();
+  }
+}
+
 describe("import", () => {
   test("exits 1 when a snapshot fails, 0 when a file has no URLs", async () => {
     const file = join(dir, "urls.txt");
@@ -258,6 +273,47 @@ describe("import", () => {
     await Bun.write(emptyFile, "nothing to see\n");
     const empty = await cli(["import", emptyFile]);
     expect(empty.exitCode).toBe(0);
+  });
+
+  test("a file over WEBFROST_IMPORT_MAX_BYTES is refused before anything is queued", async () => {
+    const file = join(dir, "urls.txt");
+    await Bun.write(file, "http://localhost:19999/a\nhttp://localhost:19999/b\n");
+    const r = await cli(["import", file], { env: { WEBFROST_IMPORT_MAX_BYTES: "10" } });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toContain("WEBFROST_IMPORT_MAX_BYTES");
+    expect(snapshotUrls()).toEqual([]);
+  });
+
+  test("more URLs than WEBFROST_IMPORT_MAX_URLS are refused and none is queued", async () => {
+    const file = join(dir, "urls.txt");
+    await Bun.write(file, "http://localhost:19999/a\nhttp://localhost:19999/b\n");
+    const r = await cli(["import", file], { env: { WEBFROST_IMPORT_MAX_URLS: "1" } });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toContain("WEBFROST_IMPORT_MAX_URLS");
+    expect(snapshotUrls()).toEqual([]);
+  });
+
+  test("relative feed links resolve against the URL reached after a redirect", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        const { pathname, origin } = new URL(req.url);
+        if (pathname === "/old") return Response.redirect(`${origin}/blog/feed.xml`, 302);
+        if (pathname === "/blog/feed.xml") {
+          return new Response(
+            '<feed xmlns="http://www.w3.org/2005/Atom"><entry><link href="post-1"/></entry></feed>',
+          );
+        }
+        return new Response("gone", { status: 404 });
+      },
+    });
+    try {
+      const base = `http://127.0.0.1:${server.port}`;
+      await cli(["import", `${base}/old`], { env: { WEBFROST_ALLOW_PRIVATE_URLS: "true" } });
+      expect(snapshotUrls()).toEqual([`${base}/blog/post-1`]);
+    } finally {
+      server.stop(true);
+    }
   });
 
   test("a missing file is an error", async () => {
@@ -363,5 +419,30 @@ describe("serve session secret", () => {
   test("SESSION_SECRET and AUTH_DISABLED win over the file", () => {
     expect(ensureSessionSecret(dir, { SESSION_SECRET: "x".repeat(40) })).toBe("env");
     expect(ensureSessionSecret(dir, { AUTH_DISABLED: "true" })).toBe("disabled");
+  });
+});
+
+describe("schedule add", () => {
+  test("an invalid cron expression is a usage error", async () => {
+    const r = await cli(["schedule", "add", "https://example.com", "--cron", "not a cron"]);
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain("Invalid cron expression");
+  });
+
+  test("a database failure is not reported as an invalid cron expression", async () => {
+    const ok = await cli(["schedule", "add", "https://example.com", "--cron", "0 * * * *"]);
+    expect(ok.exitCode).toBe(0);
+    const file = readdirSync(dir).find((f) => f.endsWith(".db") || f.endsWith(".sqlite"));
+    expect(file).toBeDefined();
+    const db = new Database(join(dir, file ?? ""));
+    db.run(
+      "CREATE TRIGGER no_schedules BEFORE INSERT ON schedules BEGIN SELECT RAISE(ABORT, 'archive is read-only'); END",
+    );
+    db.close();
+
+    const r = await cli(["schedule", "add", "https://example.com/two", "--cron", "0 * * * *"]);
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toContain("archive is read-only");
+    expect(r.stderr).not.toContain("Invalid cron expression");
   });
 });

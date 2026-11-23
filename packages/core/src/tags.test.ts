@@ -5,14 +5,17 @@ import { join } from "node:path";
 import { sql } from "kysely";
 import { type Db, openDb } from "./db";
 import {
+  InvalidTagNameError,
   addTagToSnapshot,
   createTag,
   deleteTag,
+  getOrCreateTag,
   getTag,
   listSnapshotTags,
   listTags,
   removeTagFromSnapshot,
   slugify,
+  tagNameProblem,
 } from "./tags";
 
 let testDir: string;
@@ -51,6 +54,70 @@ describe("slugify", () => {
 
   test("preserves numbers", async () => {
     expect(slugify("web 2.0")).toBe("web-2-0");
+  });
+});
+
+describe("tag names in any script", () => {
+  test("slugify keeps letters and digits of every script", () => {
+    expect(slugify("日本語")).toBe("日本語");
+    expect(slugify("Привет, мир")).toBe("привет-мир");
+    expect(slugify("Ação")).toBe("ação");
+    expect(slugify("हिन्दी")).toBe("हिन्दी");
+    expect(slugify("!!!")).toBe("");
+  });
+
+  test("names that differ only in non-ASCII letters are different tags", async () => {
+    const names = ["ação", "aço", "日本", "中国", "русский", "العربية"];
+    for (const name of names) await createTag(db, name);
+    expect((await listTags(db)).map((t) => t.name).sort()).toEqual([...names].sort());
+  });
+
+  test("a name with no letter or digit is refused, and nothing is stored", async () => {
+    for (const name of ["!!!", "🔥", "   ", ""]) {
+      await expect(createTag(db, name)).rejects.toBeInstanceOf(InvalidTagNameError);
+    }
+    expect(await listTags(db)).toEqual([]);
+  });
+
+  test("createTag trims the name; an equivalent name is a conflict", async () => {
+    const tag = await createTag(db, "  News ");
+    expect(tag.name).toBe("News");
+    await expect(createTag(db, "NEWS!")).rejects.toThrow(/UNIQUE/);
+  });
+
+  test("tagNameProblem is the importer's rule", () => {
+    expect(tagNameProblem("ok")).toBeNull();
+    expect(tagNameProblem(" ok")).not.toBeNull();
+    expect(tagNameProblem("x".repeat(101))).not.toBeNull();
+    expect(tagNameProblem("!!!")).not.toBeNull();
+    expect(tagNameProblem(5)).not.toBeNull();
+  });
+});
+
+describe("getOrCreateTag", () => {
+  test("finds a tag by name or slug and creates it otherwise", async () => {
+    const news = await createTag(db, "News");
+    expect((await getOrCreateTag(db, "news")).id).toBe(news.id);
+    expect((await getOrCreateTag(db, "NEWS!")).id).toBe(news.id);
+    const fresh = await getOrCreateTag(db, "日本語");
+    expect(fresh.slug).toBe("日本語");
+    expect((await getOrCreateTag(db, "日本語")).id).toBe(fresh.id);
+    expect(await listTags(db)).toHaveLength(2);
+  });
+
+  test("finds a tag stored with a slug from before slugs kept non-ASCII letters", async () => {
+    await db.run(
+      sql`INSERT INTO tags (name, slug, color, created_at) VALUES ('ação', 'a-o', ${null}, ${db.now()})`,
+    );
+    const tag = await getOrCreateTag(db, "ação");
+    expect(tag.slug).toBe("a-o");
+    expect(await listTags(db)).toHaveLength(1);
+  });
+
+  test("concurrent calls for one new tag create it once", async () => {
+    const tags = await Promise.all(Array.from({ length: 8 }, () => getOrCreateTag(db, "Race")));
+    expect(new Set(tags.map((t) => t.id)).size).toBe(1);
+    expect(await listTags(db)).toHaveLength(1);
   });
 });
 

@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sql } from "kysely";
 import { openDb } from "./db";
-import { isUrlArchived } from "./rss";
+import { ImportLimitError } from "./import";
+import { fetchRssFeedUrls, isUrlArchived } from "./rss";
 import { addRssFeedSchedule, addSchedule, listSchedules } from "./schedules";
 
 let testDir: string;
@@ -75,5 +76,91 @@ describe("addRssFeedSchedule", () => {
     expect(schedules.some((s) => s.kind === "url")).toBe(true);
     expect(schedules.some((s) => s.kind === "rss_feed")).toBe(true);
     await db.close();
+  });
+});
+
+describe("fetchRssFeedUrls", () => {
+  let server: ReturnType<typeof Bun.serve>;
+  let base: string;
+  const saved: Record<string, string | undefined> = {};
+  const ENV = [
+    "WEBFROST_ALLOW_PRIVATE_URLS",
+    "WEBFROST_IMPORT_MAX_BYTES",
+    "WEBFROST_IMPORT_MAX_URLS",
+  ];
+
+  beforeAll(() => {
+    server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        const { pathname } = new URL(req.url);
+        if (pathname === "/old") return Response.redirect(`${base}/blog/feed.xml`, 302);
+        if (pathname === "/blog/feed.xml") {
+          return new Response(
+            '<feed xmlns="http://www.w3.org/2005/Atom"><entry><link href="post-1"/></entry></feed>',
+          );
+        }
+        if (pathname === "/big") {
+          const item = "<item><link>https://x.example/1</link></item>";
+          return new Response(`<rss>${item.repeat(50)}</rss>`);
+        }
+        if (pathname === "/many") {
+          const items = [1, 2, 3, 4].map((i) => `<item><link>https://x.example/${i}</link></item>`);
+          return new Response(`<rss>${items.join("")}</rss>`);
+        }
+        return new Response("nope", { status: 404 });
+      },
+    });
+    base = `http://127.0.0.1:${server.port}`;
+    for (const k of ENV) saved[k] = process.env[k];
+    process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
+  });
+
+  afterAll(() => {
+    server.stop(true);
+    for (const k of ENV) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(process.env, "WEBFROST_IMPORT_MAX_BYTES");
+    Reflect.deleteProperty(process.env, "WEBFROST_IMPORT_MAX_URLS");
+  });
+
+  test("relative links resolve against the URL after redirects", async () => {
+    expect(await fetchRssFeedUrls(`${base}/old`)).toEqual([`${base}/blog/post-1`]);
+  });
+
+  test("a feed whose Content-Length is over WEBFROST_IMPORT_MAX_BYTES is refused unread", async () => {
+    process.env.WEBFROST_IMPORT_MAX_BYTES = "100";
+    const huge = Bun.serve({
+      port: 0,
+      fetch: () => new Response(new Uint8Array(200_000)),
+    });
+    try {
+      const err = await fetchRssFeedUrls(`http://127.0.0.1:${huge.port}/`).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ImportLimitError);
+      expect((err as ImportLimitError).limit).toBe("bytes");
+    } finally {
+      huge.stop(true);
+    }
+  });
+
+  test("a feed over WEBFROST_IMPORT_MAX_BYTES is refused", async () => {
+    process.env.WEBFROST_IMPORT_MAX_BYTES = "100";
+    const err = await fetchRssFeedUrls(`${base}/big`).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ImportLimitError);
+    expect((err as ImportLimitError).limit).toBe("bytes");
+  });
+
+  test("a feed with more links than WEBFROST_IMPORT_MAX_URLS is refused", async () => {
+    process.env.WEBFROST_IMPORT_MAX_URLS = "3";
+    const err = await fetchRssFeedUrls(`${base}/many`).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ImportLimitError);
+    expect((err as ImportLimitError).limit).toBe("urls");
+    process.env.WEBFROST_IMPORT_MAX_URLS = "4";
+    expect(await fetchRssFeedUrls(`${base}/many`)).toHaveLength(4);
   });
 });

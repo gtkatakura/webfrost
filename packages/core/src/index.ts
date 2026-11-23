@@ -15,6 +15,7 @@ export {
 export type { DatabaseConfig, Db, DialectName } from "./db";
 export { sql } from "kysely";
 export {
+  authenticateApiKey,
   createAdminUser,
   createApiKey,
   createSession,
@@ -22,6 +23,7 @@ export {
   getAdminUsername,
   hasAdminUser,
   listApiKeys,
+  parseDbTimestamp,
   revokeAllSessions,
   revokeApiKey,
   revokeSession,
@@ -31,10 +33,18 @@ export {
   verifySession,
   verifySessionToken,
 } from "./auth";
-export type { ApiKey } from "./auth";
+export type { ApiKey, AuthenticatedApiKey } from "./auth";
 export { FetchCache } from "./fetch-cache";
 export type { CachedResponse } from "./fetch-cache";
-export { detectFormat, parseUrls } from "./import";
+export {
+  ImportLimitError,
+  detectFormat,
+  importMaxBytes,
+  importMaxUrls,
+  importTooLargeMessage,
+  importTooManyUrlsMessage,
+  parseUrls,
+} from "./import";
 export type { ImportFormat } from "./import";
 export { countImports, listImports, recordImport } from "./import-history";
 export type { ImportRecord } from "./import-history";
@@ -46,6 +56,7 @@ export {
   isPrivateIPv6,
   safeFetch,
 } from "./ssrf-guard";
+export { ResponseTooLargeError } from "./ssrf-guard";
 export type { FetchedResponse, GuardedFetchResult, SafeFetchOptions } from "./ssrf-guard";
 export { webfrostDataDir } from "./data-dir";
 export {
@@ -130,11 +141,17 @@ export {
   addTagToSnapshot,
   createTag,
   deleteTag,
+  findTagByName,
+  getOrCreateTag,
   getTag,
+  InvalidTagNameError,
   listSnapshotTags,
   listTags,
+  MAX_TAG_NAME_LENGTH,
+  normalizeTagName,
   removeTagFromSnapshot,
   slugify,
+  tagNameProblem,
 } from "./tags";
 export type { Tag } from "./tags";
 export { indexSnapshot, rebuildIndex, removeFromIndex, searchSnapshots } from "./search";

@@ -523,7 +523,18 @@ describe("snapshots", () => {
     expect(res.status).toBe(404);
   });
 
-  test("DELETE /api/v1/snapshots/:id returns 204", async () => {
+  test("DELETE /api/v1/snapshots/:id returns 409 while the snapshot is being archived", async () => {
+    const res = await authed(`/api/v1/snapshots/${snapshotId}`, { method: "DELETE" });
+    expect(res.status).toBe(409);
+    expect((await authed(`/api/v1/snapshots/${snapshotId}`)).status).toBe(200);
+  });
+
+  test("DELETE /api/v1/snapshots/:id returns 204 once archiving is over", async () => {
+    const { sql } = await import("@webfrost/core");
+    const { getDb } = await import("../src/context");
+    const db = await getDb();
+    await db.run(sql`UPDATE snapshots SET status = 'done' WHERE id = ${snapshotId}`);
+    await db.close();
     const res = await authed(`/api/v1/snapshots/${snapshotId}`, { method: "DELETE" });
     expect(res.status).toBe(204);
   });
