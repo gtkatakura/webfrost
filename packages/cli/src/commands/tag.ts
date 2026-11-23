@@ -1,7 +1,9 @@
 import {
+  InvalidTagNameError,
   addTagToSnapshot,
   createTag,
   deleteTag,
+  getOrCreateTag,
   getSnapshot,
   getTag,
   listSnapshotTags,
@@ -27,8 +29,14 @@ const tagAdd: Command = {
     await withDb(ctx, async (db) => {
       if (!(await getSnapshot(db, snapshotId)))
         throw new CliError(`Snapshot ${snapshotId} not found.`);
-      const tag =
-        (await listTags(db)).find((t) => t.name === tagName) ?? (await createTag(db, tagName));
+      let tag: Awaited<ReturnType<typeof getOrCreateTag>>;
+      try {
+        tag = await getOrCreateTag(db, tagName);
+      } catch (err) {
+        if (err instanceof InvalidTagNameError)
+          throw new CliError(`Invalid tag name: ${err.message}.`);
+        throw err;
+      }
       await addTagToSnapshot(db, snapshotId, tag.id);
       ctx.logger.info(`Tag "${safeText(tag.name)}" added to snapshot ${snapshotId}.`);
     });
@@ -82,6 +90,8 @@ const tagCreate: Command = {
         console.log(`Tag created: ${tag.id}\t${safeText(tag.slug)}\t${safeText(tag.name)}`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
+        if (err instanceof InvalidTagNameError)
+          throw new CliError(`Invalid tag name: ${err.message}.`);
         if (/unique/i.test(msg)) throw new CliError(`Tag "${name}" already exists.`);
         throw err;
       }

@@ -200,8 +200,8 @@ The bundle is a ZIP with `manifest.json` (the snapshot, its tag names and every 
 
 | Command | Description |
 |---|---|
-| `tag create <name> [--color <hex>]` | Create a tag. Fails if the name exists. |
-| `tag add <snapshot-id> <name>` | Add a tag to a snapshot, creating the tag if needed. |
+| `tag create <name> [--color <hex>]` | Create a tag. Fails if the name (or one with the same slug, such as `news!` for `News`) exists, or if it has no letter or digit. |
+| `tag add <snapshot-id> <name>` | Add a tag to a snapshot, using the existing tag with that name or slug (`news` finds `News`), or creating it. |
 | `tag list [<snapshot-id>]` | List all tags, or the tags on one snapshot. Columns: id, slug, name, color. |
 | `tag remove <tag-id>` | Delete a tag and remove it from every snapshot. Takes the tag id, not a name. |
 
