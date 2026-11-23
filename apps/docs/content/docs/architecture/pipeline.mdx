@@ -18,7 +18,7 @@ In order:
 
 1. **Create.** The entry point inserts the snapshot as `pending` and a `job_queue` row whose heartbeat starts the job's lease. `webfrost add` runs the pipeline inline and waits; the server, imports and schedules hand it to the job runner and return at once (`202`).
 2. **Wait for a slot.** The runner waits for the host's spacing slot, then for a free concurrency slot.
-3. **Fetch.** The page is fetched with the SSRF-guarded `safeFetch` (redirects re-checked on every hop, body capped at 50 MB, 30 s timeout). If the fetch fails or the server answers 400 or higher, no extractor runs and the snapshot is `failed`.
+3. **Fetch.** The page is fetched with the SSRF-guarded `safeFetch` (redirects re-checked on every hop, a 3xx other than 301/302/303/307/308 with a `Location` kept as the response, body capped at 50 MB, 30 s timeout). If the fetch fails or the server answers 400 or higher, no extractor runs and the snapshot is `failed`.
 4. **Browser.** Chromium launches once and navigates once. The browser guard checks every request (see below). If the browser or navigation fails, the four browser extractors are recorded as failed and everything else continues.
 5. **Extract.** All extractors run in parallel, each under its own timeout. Text extractors read the cached response, browser extractors use the open page, and media runs `yt-dlp` as a subprocess. The browser closes as soon as its extractors finish rather than waiting for a long media download.
 6. **Record.** Every extractor writes either a result or an error row with its duration. The snapshot becomes `done` if at least one extractor produced output, otherwise `failed`. Statuses are only `pending`, `done` and `failed`.

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import crypto from "node:crypto";
 import zlib from "node:zlib";
 import { decodeContentEncoding, decodeText, isTextualContentType } from "./http-body";
 
@@ -25,6 +26,30 @@ describe("decodeContentEncoding", () => {
     expect(text(decodeContentEncoding(bytes, "identity"))).toBe(TEXT);
     expect(() => decodeContentEncoding(bytes, "compress")).toThrow("unsupported");
   });
+
+  test("refuses more than three stacked codings before decoding any", () => {
+    let layered: Uint8Array = bytes;
+    for (let i = 0; i < 3; i++) layered = zlib.gzipSync(layered);
+    expect(text(decodeContentEncoding(layered, "gzip, gzip, gzip"))).toBe(TEXT);
+    const four = zlib.gzipSync(layered);
+    expect(() => decodeContentEncoding(four, "gzip, gzip, gzip, gzip")).toThrow(
+      "too many content-codings",
+    );
+    // Hundreds of entries in the header cost nothing.
+    const many = Array.from({ length: 500 }, () => "gzip").join(", ");
+    expect(() => decodeContentEncoding(four, many)).toThrow("too many content-codings");
+  });
+
+  test("shares one output budget across stacked codings", () => {
+    // Incompressible data: every layer inflates to about 40 MB, 120 MB in all.
+    const random = crypto.randomBytes(40 * 1024 * 1024);
+    let layered: Uint8Array = random;
+    for (let i = 0; i < 3; i++) layered = zlib.gzipSync(layered, { level: 1 });
+    expect(() => decodeContentEncoding(layered, "gzip, gzip, gzip")).toThrow();
+    // Two layers fit the budget.
+    const two = zlib.gzipSync(zlib.gzipSync(random, { level: 1 }), { level: 1 });
+    expect(decodeContentEncoding(two, "gzip, gzip").byteLength).toBe(random.byteLength);
+  }, 30_000);
 });
 
 describe("decodeText", () => {

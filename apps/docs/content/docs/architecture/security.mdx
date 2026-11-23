@@ -112,9 +112,11 @@ With public read enabled, anonymous visitors share the same read limit per clien
 Anyone who can create a snapshot can make the server issue HTTP requests. WebFrost restricts where
 those requests may go.
 
-**What is blocked** (for both IPv4 and IPv6, including IPv4-mapped and NAT64 forms): loopback,
-RFC 1918 private ranges, carrier-grade NAT (`100.64.0.0/10`), link-local (`169.254.0.0/16`, which
-covers cloud metadata endpoints), unique-local and site-local IPv6, multicast and reserved ranges.
+**What is blocked:** loopback, RFC 1918 private ranges, carrier-grade NAT (`100.64.0.0/10`),
+link-local (`169.254.0.0/16`, which covers cloud metadata endpoints), multicast and reserved ranges.
+For IPv6 only global unicast (`2000::/3`) is allowed, minus Teredo (`2001::/32`); the forms that
+carry an IPv4 address (IPv4-mapped, IPv4-translated, NAT64 `64:ff9b::/96`, 6to4 `2002::/16`) are
+judged by that address, and `::/96` and the local-use NAT64 prefix `64:ff9b:1::/48` are refused.
 Only `http:` and `https:` URLs are accepted.
 
 **Where it is enforced.** See also how the browser guard works in the [pipeline](/docs/architecture/pipeline#the-browser-guard).
@@ -122,7 +124,7 @@ Only `http:` and `https:` URLs are accepted.
 
 | Path | Enforcement |
 |---|---|
-| Initial page fetch, RSS/OPML feed fetch, SingleFile asset inlining | `safeFetch`: resolves the host, rejects blocked addresses, follows redirects manually and re-checks every hop, caps the body at 50 MB, times out after 30 s. |
+| Initial page fetch, RSS/OPML feed fetch, SingleFile asset inlining | `safeFetch`: resolves the host, rejects blocked addresses, then connects to the address it checked (keeping the `Host` header and the TLS server name), so a second DNS answer is never used. Follows redirects manually and re-checks every hop, caps the body at 50 MB, times out after 30 s. |
 | Headless Chromium (PDF, screenshot, DOM snapshot, SingleFile) | Every request the page makes — navigation, iframes, images, scripts, `fetch`/XHR, WebSockets — is checked and aborted if the host is blocked. Service workers are disabled. |
 | Redirects inside the browser | Chromium does not allow intercepting a redirect hop. If any hop lands on a blocked host the browser extractors are **not run** for that snapshot and are recorded as failed, so the response is never captured. The request itself may still have been sent (blind SSRF). |
 | After the network settles | Once the page has loaded and its network has gone quiet (up to `WEBFROST_SETTLE_MS`), every further request is refused before anything is captured, so a script cannot wait out the check and then pull an internal URL into a frame. Every request made before that is still checked. |
@@ -142,9 +144,13 @@ where it sends, and WebFrost never adds trace headers to the pages it archives.
 
 ### Residual risks
 
-- **DNS rebinding.** The guard resolves a hostname and the HTTP client then resolves it again. An
-  attacker controlling a domain's DNS with a very short TTL can return a public address to the
-  first lookup and a private one to the second.
+- **DNS rebinding in the browser.** `safeFetch` connects to the address it checked, but Chromium
+  resolves hostnames itself, and the browser guard keeps one verdict per hostname. An attacker
+  controlling a domain's DNS with a very short TTL can return a public address to the check and a
+  private one to Chromium.
+- **Network-specific NAT64 prefixes.** Only the well-known `64:ff9b::/96` is decoded. A host
+  behind NAT64 with its own prefix inside `2000::/3` should block that prefix's private mappings
+  at the network layer.
 - **Blind requests through browser redirects**, as described above.
 - **yt-dlp** makes its own requests and follows its own redirects. It is only invoked for a URL
   that already passed `safeFetch`, and it is limited as described in
@@ -276,6 +282,7 @@ to the usual limit by the request guard before its body is read, and must declar
 | Parallel pipelines | 3 | `WEBFROST_CONCURRENCY` |
 | HTTP fetch timeout | 30 s | `WEBFROST_FETCH_TIMEOUT_MS` |
 | HTTP response size | 50 MB | — |
+| Decoding the page's `Content-Encoding` (for the text extractors) | 3 codings, 50 MB per pass, 100 MB in all; past that the bytes are used as received | — |
 | Browser navigation timeout | 30 s | — |
 | Per-extractor timeout | 60 s | `WEBFROST_EXTRACTOR_TIMEOUT_MS` |
 | yt-dlp process timeout | 10 min | `WEBFROST_MEDIA_TIMEOUT_MS` |

@@ -6,11 +6,16 @@ import zlib from "node:zlib";
 
 /** Decoded bodies larger than this are refused (protects against compression bombs). */
 const MAX_DECODED_BYTES = 50 * 1024 * 1024;
+/** More stacked codings than this are refused: each one is a full synchronous pass. */
+const MAX_CODINGS = 3;
+/** Output budget shared by all passes, so stacked codings cannot multiply the work. */
+const MAX_TOTAL_DECODED_BYTES = 2 * MAX_DECODED_BYTES;
 
 /**
  * Undo the Content-Encoding of `body` ("gzip", "br", "deflate", "zstd", or a list such
  * as "gzip, br" applied in that order). Returns the body unchanged for identity or a
- * missing header. Throws for an unknown coding, corrupt data or an oversized result.
+ * missing header. Throws for an unknown coding, more than three codings, corrupt data or
+ * an oversized result.
  */
 export function decodeContentEncoding(
   body: Uint8Array,
@@ -21,10 +26,15 @@ export function decodeContentEncoding(
     .split(",")
     .map((c) => c.trim().toLowerCase())
     .filter((c) => c && c !== "identity");
+  if (codings.length > MAX_CODINGS) {
+    throw new Error(`too many content-codings: ${codings.length} (max ${MAX_CODINGS})`);
+  }
   let out: Uint8Array = body;
-  const opts = { maxOutputLength: MAX_DECODED_BYTES };
+  let budget = MAX_TOTAL_DECODED_BYTES;
   // Codings are listed in the order they were applied, so undo them from the end.
   for (const coding of codings.reverse()) {
+    if (budget <= 0) throw new Error("decoded body too large");
+    const opts = { maxOutputLength: Math.min(MAX_DECODED_BYTES, budget) };
     switch (coding) {
       case "gzip":
       case "x-gzip":
@@ -47,6 +57,7 @@ export function decodeContentEncoding(
       default:
         throw new Error(`unsupported content-encoding: ${coding}`);
     }
+    budget -= out.byteLength;
   }
   return new Uint8Array(out.buffer, out.byteOffset, out.byteLength);
 }

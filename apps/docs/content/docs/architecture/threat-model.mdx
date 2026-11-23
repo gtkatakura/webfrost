@@ -72,10 +72,10 @@ The CLI drives the same core library directly against the data directory, withou
 
 | Threat | Control | Status |
 |---|---|---|
-| SSRF to loopback / private / link-local / metadata addresses | `safeFetch` resolves and rejects on every hop; IPv4-mapped and NAT64 forms covered | Mitigated |
+| SSRF to loopback / private / link-local / metadata addresses | `safeFetch` resolves and rejects on every hop; IPv6 limited to global unicast, IPv4-mapped, NAT64 and 6to4 forms judged by their IPv4 address | Mitigated |
 | SSRF through redirects | Redirects followed manually and re-validated (max 5) | Mitigated |
 | Non-HTTP schemes (`file:`, `ftp:`) | Rejected at the route, the CLI and in `safeFetch` | Mitigated |
-| DNS rebinding between check and connect | None at application level | **Open** — use network egress controls |
+| DNS rebinding between check and connect | `safeFetch` connects to the checked address; Chromium resolves on its own | **Open** for the browser — use network egress controls |
 | Memory exhaustion via huge responses | 50 MB cap, streamed | Mitigated |
 | Slow-loris upstream holding a worker | 30 s fetch timeout | Mitigated |
 | Flooding the pipeline | 60 creations/min per client; `WEBFROST_CONCURRENCY` bounds running pipelines | Mitigated |
@@ -137,7 +137,7 @@ by definition. It still refuses non-HTTP(S) URLs and applies the same SSRF guard
 
 | # | Risk | Severity | What to do today |
 |---|---|---|---|
-| 1 | DNS rebinding past the SSRF guard | Medium | Block egress to internal ranges at the network layer |
+| 1 | DNS rebinding past the browser guard | Medium | Block egress to internal ranges at the network layer |
 | 2 | Blind SSRF through browser redirect hops and yt-dlp | Medium | Same as above |
 | 3 | Chromium without its own sandbox | Medium | Keep the image current; treat the container as the sandbox |
 | 4 | First-run setup race | Low | Set `WEBFROST_SETUP_TOKEN`, or complete setup before exposing the port |
