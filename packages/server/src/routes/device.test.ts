@@ -271,6 +271,27 @@ describe("DeviceAuthStore", () => {
     expect(store.collect(mine[0]?.deviceCode ?? "")).toEqual({ status: "unknown" });
   });
 
+  test("a request already approved never makes room: its command line is about to collect it", () => {
+    let now = 0;
+    const store = new DeviceAuthStore({ maxPerClient: 2, maxRequests: 4, now: () => now });
+    const ip = "203.0.113.7";
+    const approved = store.start({ name: "approved", requesterIp: ip });
+    expect(store.approve(approved.userCode)).toBe(true);
+
+    // The same address (several people behind one proxy, say) starts more than it may hold,
+    // and other addresses fill the store.
+    for (let i = 0; i < 4; i++) {
+      now += 1000;
+      store.start({ name: `later ${i}`, requesterIp: ip });
+    }
+    for (let i = 0; i < 6; i++) {
+      now += 1000;
+      store.start({ name: `other ${i}`, requesterIp: `198.51.100.${i}` });
+    }
+    expect(store.size).toBe(4);
+    expect(store.collect(approved.deviceCode)).toEqual({ status: "approved", name: "approved" });
+  });
+
   test("a full store drops its oldest request, never the one just started", () => {
     let now = 0;
     const store = new DeviceAuthStore({ maxPerClient: 1, maxRequests: 3, now: () => now });

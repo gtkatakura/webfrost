@@ -136,13 +136,19 @@ export class DeviceAuthStore {
     interval: number;
   } {
     this.dropExpired();
-    const mine = [...this.byUserCode.values()].filter((e) => e.requesterIp === input.requesterIp);
+    // Only requests still waiting for an answer make room. One a person has approved is about
+    // to be collected by its command line: dropping it would fail a login after the approval.
+    const waiting = [...this.byUserCode.values()].filter((e) => e.status === "pending");
+    const mine = waiting.filter((e) => e.requesterIp === input.requesterIp);
     if (mine.length >= (this.options.maxPerClient ?? MAX_DEVICE_REQUESTS_PER_CLIENT)) {
       const oldest = DeviceAuthStore.oldest(mine);
       if (oldest) this.forget(oldest);
     }
     if (this.byUserCode.size >= (this.options.maxRequests ?? MAX_DEVICE_REQUESTS)) {
-      const oldest = DeviceAuthStore.oldest(this.byUserCode.values());
+      // Answered ones go only when nothing else can: they are few, and expire like the rest.
+      const oldest =
+        DeviceAuthStore.oldest(waiting.filter((e) => this.byDeviceCode.has(e.deviceCodeHash))) ??
+        DeviceAuthStore.oldest(this.byUserCode.values());
       if (oldest) this.forget(oldest);
     }
 

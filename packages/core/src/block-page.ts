@@ -41,12 +41,14 @@ const SHORT_PAGE_TEXT = 1500;
 
 /** `phrase` in `title` as whole words: "security check" is not in "security checklist". */
 function hasPhrase(title: string, phrase: string): boolean {
-  const at = title.indexOf(phrase);
-  if (at < 0) return false;
   const letter = /[\p{L}\p{N}]/u;
-  const before = title[at - 1];
-  const after = title[at + phrase.length];
-  return !(before && letter.test(before)) && !(after && letter.test(after));
+  // Every occurrence: the first may be inside a longer word and a later one stand alone.
+  for (let at = title.indexOf(phrase); at >= 0; at = title.indexOf(phrase, at + 1)) {
+    const before = title[at - 1];
+    const after = title[at + phrase.length];
+    if (!(before && letter.test(before)) && !(after && letter.test(after))) return true;
+  }
+  return false;
 }
 
 /** Phrases (lower case) an interstitial's text opens with. */

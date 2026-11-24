@@ -30,6 +30,8 @@ describe("blockPageReason", () => {
     for (const title of ["403 Forbidden", "Access Denied", "Security check", "One more step"]) {
       expect(blockPageReason(title, article)).toContain("anti-bot");
     }
+    // The word standing alone later in the title counts, also after a longer word that starts like it.
+    expect(blockPageReason("Security checklist: security check", article)).toContain("anti-bot");
     // An unmistakable wall title needs no second signal.
     expect(blockPageReason("Just a moment...", long)).toContain("anti-bot");
   });
