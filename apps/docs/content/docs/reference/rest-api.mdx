@@ -99,7 +99,7 @@ Every list endpoint returns the same envelope:
 | `page` | `1` | 1-based page |
 | `limit` | `20` | Page size, capped at `200`. Non-integers are truncated; a value that is not a number falls back to the default. Plain numbers only: `Infinity` or `1e400` answer `400` `VALIDATION` (also on `GET /imports`) |
 
-The lists are `GET /snapshots` (also with `q` and `status`; newest first), `GET /tags` (by name), `GET /snapshots/:id/tags` (by name), `GET /schedules` (oldest first), `GET /imports` (newest first) and `GET /settings/keys` (oldest first).
+The lists are `GET /snapshots` (also with `q` and the [filters](#list); newest first), `GET /tags` (by name), `GET /snapshots/:id/tags` (by name), `GET /schedules` (oldest first), `GET /imports` (newest first) and `GET /settings/keys` (oldest first).
 
 ## Timestamps
 
@@ -188,8 +188,20 @@ curl "$API/snapshots?page=1&limit=20&status=done" -H "Authorization: Bearer $KEY
 |---|---|---|
 | `page` | `1` | 1-based page. Plain numbers only: `Infinity` or `1e400` answer `400` `VALIDATION` |
 | `limit` | `20` | Page size, capped at 200. Same rule as `page` |
-| `status` | none | Filter by `pending`, `done` or `failed` |
-| `q` | none | Full-text search term |
+| `status` | none | `pending`, `done` or `failed`, or several separated by commas (`failed,pending`): snapshots in any of them |
+| `since` | none | Created at or after this moment: an ISO 8601 date (`2026-11-01`, midnight UTC) or timestamp |
+| `before` | none | Created before this moment, same format |
+| `extractor` | none | An extractor name (`pdf`, `warc`, ...), or several separated by commas: snapshots where every one of them produced output |
+| `tag` | none | A tag id, or several separated by commas: snapshots that carry every one of them |
+| `contains` | none | Text to find in the URL or the title, anywhere in it, up to 200 characters |
+| `q` | none | Full-text search term; see [Search](#search) |
+
+The filters are applied by the database, before paging: they look at every snapshot in the archive, and `total` counts the ones they keep. They combine (a snapshot must pass all of them) and work the same way on a [search](#search). `contains` ignores the case of ASCII letters (for accented letters it depends on the database) and takes `%` and `_` literally; the title it looks at is the one in the search index, so a failed or pending snapshot is matched by its URL alone. Use `contains` to find snapshots by address and `q` to search inside the pages. A value that cannot be read (`since=yesterday`, `tag=news`, more than 20 values in a list) answers `400` `VALIDATION` instead of being ignored.
+
+```bash
+# Failed or pending snapshots of one site, archived since November
+curl "$API/snapshots?contains=example.com&status=failed,pending&since=2026-11-01" -H "Authorization: Bearer $KEY"
+```
 
 Each item is `{ id, url, status, failure, createdAt, extractors, title, excerpt, screenshotUrl, tags }`. `failure` is `null` unless the snapshot failed; then it is `{ category, class, label, detail }`: why it could not be archived (see [Failures](#failures)). Guests get `detail: null`. `extractors` lists only extractors that succeeded. `title` and `excerpt` come from Readability. `screenshotUrl` is the path of the [download route](#archive-files) for the video `media-poster` still when the snapshot has one, else for the small `thumbnail` WebP (`/api/v1/snapshots/:id/archives/thumbnail/download`), else for the full `screenshot` (`/api/v1/snapshots/:id/archives/screenshot/download`), or `null` when there is neither.
 
@@ -199,7 +211,7 @@ Each item is `{ id, url, status, failure, createdAt, extractors, title, excerpt,
 curl "$API/snapshots?q=climate+change&page=1&limit=20" -H "Authorization: Bearer $KEY"
 ```
 
-The query uses FTS5 syntax (`"exact phrase"`, prefix `term*`, `OR`, `NOT`; column filters on SQLite). On PostgreSQL and MySQL the same common syntax is accepted; see [full-text search](/docs/reference/database#full-text-search). It searches URL, title, extracted text and tag names. An invalid expression returns no results. `rank` is lower for better matches on every database, but its scale differs between them. Results are ranked by relevance, `status` filters them like the list, and each item adds `snippet` and `rank` to the list fields:
+The query uses FTS5 syntax (`"exact phrase"`, prefix `term*`, `OR`, `NOT`; column filters on SQLite). On PostgreSQL and MySQL the same common syntax is accepted; see [full-text search](/docs/reference/database#full-text-search). It searches URL, title, extracted text and tag names. An invalid expression returns no results. `rank` is lower for better matches on every database, but its scale differs between them. Results are ranked by relevance, the list's [filters](#list) (`status`, `since`, `before`, `extractor`, `tag`, `contains`) narrow them before they are counted and paged, and each item adds `snippet` and `rank` to the list fields:
 
 ```json
 { "id": 1, "url": "https://example.com", "snippet": "...climate <mark>change</mark>...", "rank": -1.2, "status": "done" }
@@ -374,7 +386,7 @@ For triage, the failed snapshots are sorted into groups that call for the same d
 | Method | Route | Description |
 |---|---|---|
 | `GET` | `/failures` | `{ groups: [{ id, label, categories, count, domains }] }`, every group (empty ones included). |
-| `GET` | `/failures/:group/domains` | The group's domains, most failed snapshots first: `{ items: [{ host, count, withWorkingSnapshot, lastFailedAt, example: { id, url } }], total, snapshots, page, limit }`. `withWorkingSnapshot` counts the pages that also have a snapshot that worked. `q` keeps the domains containing it, case-insensitive (`q=mangahost` finds every mirror). `page`, `limit` (default 50). `404` for an unknown group. |
+| `GET` | `/failures/:group/domains` | The group's domains, most failed snapshots first: `{ items: [{ host, count, withWorkingSnapshot, lastFailedAt, example: { id, url } }], total, snapshots, page, limit }`. `withWorkingSnapshot` counts the pages that also have a snapshot that worked. `q` keeps the domains containing it, case-insensitive (`q=mirrorsite` finds every mirror). `page`, `limit` (default 50). `404` for an unknown group. |
 | `GET` | `/failures/:group/snapshots` | The group's failed snapshots, newest first, in the same shape as the next route: all of them, or of one domain (`host`), or of the domains containing `q`. `page`, `limit` (default 50). What [`webfrost rescue`](/docs/reference/cli#webfrost-rescue-group---from-url) works from. |
 | `GET` | `/failures/:group/domains/:host/snapshots` | The domain's failed snapshots in the group, newest first: `{ items: [{ id, url, createdAt, failure, workingSnapshotId }], total, page, limit }`. `workingSnapshotId` is the newest snapshot of the same URL that worked, or `null`. |
 | `POST` | `/failures/:group/retry` | `{ hosts?, ids? }` (up to 500 hosts, 5000 ids). Archives the selected failed snapshots again. For `domain-gone` each domain is looked up first: one that resolves again is retried, one that still does not is left as it is and returned in `stillGone`. `{ queued, stillGone }`. |

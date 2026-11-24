@@ -70,6 +70,75 @@ export interface PaginatedResult<T> {
   limit: number;
 }
 
+/**
+ * What a list or a search keeps. Every field narrows the result, and an absent or empty one
+ * does nothing.
+ */
+export interface SnapshotFilter {
+  /** Any of these statuses. */
+  statuses?: readonly string[];
+  /** Created at or after this moment, in the stored form ("YYYY-MM-DD HH:MM:SS", UTC). */
+  since?: string;
+  /** Created before this moment, in the stored form. */
+  before?: string;
+  /** Every one of these extractors produced output. */
+  extractors?: readonly string[];
+  /** Carries every one of these tags. */
+  tagIds?: readonly number[];
+  /** The URL or the title contains this text, whatever the case of its ASCII letters. */
+  contains?: string;
+}
+
+/** The single status older callers pass, as a filter. */
+export function toSnapshotFilter(filter: SnapshotFilter | string | undefined): SnapshotFilter {
+  if (filter === undefined) return {};
+  return typeof filter === "string" ? (filter ? { statuses: [filter] } : {}) : filter;
+}
+
+/** `text` as a LIKE pattern that matches it anywhere, with "!" as the escape character. */
+function containsPattern(text: string): string {
+  return `%${text.replace(/[!%_]/g, (char) => `!${char}`)}%`;
+}
+
+/**
+ * The filter as SQL conditions on `snapshots s`, each starting with AND (so it follows a WHERE
+ * that already has a condition). Empty when the filter keeps everything.
+ */
+export function snapshotFilterSql(db: Db, filter: SnapshotFilter): RawBuilder<unknown> {
+  const conditions: RawBuilder<unknown>[] = [];
+  if (filter.statuses?.length) {
+    conditions.push(sql`AND s.status IN (${sql.join([...filter.statuses])})`);
+  }
+  if (filter.since) conditions.push(sql`AND s.created_at >= ${filter.since}`);
+  if (filter.before) conditions.push(sql`AND s.created_at < ${filter.before}`);
+  for (const extractor of filter.extractors ?? []) {
+    conditions.push(
+      sql`AND EXISTS (SELECT 1 FROM archive_results fe
+                      WHERE fe.snapshot_id = s.id AND fe.extractor = ${extractor} AND fe.error IS NULL)`,
+    );
+  }
+  for (const tagId of filter.tagIds ?? []) {
+    conditions.push(
+      sql`AND EXISTS (SELECT 1 FROM snapshot_tags ft
+                      WHERE ft.snapshot_id = s.id AND ft.tag_id = ${tagId})`,
+    );
+  }
+  const text = filter.contains?.trim();
+  if (text) {
+    const pattern = containsPattern(text);
+    // The title lives in the search index (a page has one once Readability has read it), so a
+    // snapshot that is not indexed is matched by its URL alone.
+    const title =
+      db.dialect === "sqlite"
+        ? sql`SELECT 1 FROM snapshots_fts fi
+              WHERE fi.rowid = s.id AND lower(fi.title) LIKE lower(${pattern}) ESCAPE '!'`
+        : sql`SELECT 1 FROM search_index fi
+              WHERE fi.snapshot_id = s.id AND lower(fi.title) LIKE lower(${pattern}) ESCAPE '!'`;
+    conditions.push(sql`AND (lower(s.url) LIKE lower(${pattern}) ESCAPE '!' OR EXISTS (${title}))`);
+  }
+  return conditions.length > 0 ? sql.join(conditions, sql` `) : sql``;
+}
+
 interface SnapshotRow {
   id: number;
   url: string;
@@ -199,18 +268,17 @@ export async function getSnapshotsByIds(
 /**
  * One page of snapshots, newest first — page 1 is what was archived most recently,
  * which is what a "recent activity" view and the first screen of a list should show.
+ * `filter` narrows the whole list, not the page: a status alone, or a {@link SnapshotFilter}.
  */
 export async function listSnapshotsWithExtractorsPaginated(
   db: Db,
   requestedPage: number,
   requestedLimit: number,
-  status?: string,
+  filter?: SnapshotFilter | string,
 ): Promise<PaginatedResult<SnapshotWithExtractors>> {
   const { page, limit, offset } = pageWindow(requestedPage, requestedLimit);
   // Snapshots still being imported are not shown until their files are in place.
-  const where = status
-    ? sql`WHERE s.status = ${status} AND s.status <> ${IMPORTING_STATUS} AND s.trashed_at IS NULL`
-    : sql`WHERE s.status <> ${IMPORTING_STATUS} AND s.trashed_at IS NULL`;
+  const where = sql`WHERE s.status <> ${IMPORTING_STATUS} AND s.trashed_at IS NULL ${snapshotFilterSql(db, toSnapshotFilter(filter))}`;
 
   const countRow = await db.get<{ total: number }>(
     sql`SELECT COUNT(*) AS total FROM snapshots s ${where}`,

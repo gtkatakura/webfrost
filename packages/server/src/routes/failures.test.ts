@@ -90,18 +90,18 @@ describe("GET /failures", () => {
 
 describe("GET /failures/:group/domains", () => {
   test("paginated, filtered, and 404 for an unknown group", async () => {
-    await seed("http://mangahost4.invalid/a", "failed", "domain_not_found");
-    await seed("http://mangahost4.invalid/b", "failed", "domain_not_found");
-    await seed("http://br.mangahost.invalid/c", "failed", "domain_not_found");
+    await seed("http://mirrorsite4.invalid/a", "failed", "domain_not_found");
+    await seed("http://mirrorsite4.invalid/b", "failed", "domain_not_found");
+    await seed("http://br.mirrorsite.invalid/c", "failed", "domain_not_found");
     await seed("http://other.invalid/d", "failed", "domain_not_found");
     const app = await getApp();
 
     const filtered = await (
-      await app.handle(new Request("http://localhost/failures/domain-gone/domains?q=MangaHost"))
+      await app.handle(new Request("http://localhost/failures/domain-gone/domains?q=MirrorSite"))
     ).json();
     expect(filtered.items.map((d: { host: string; count: number }) => [d.host, d.count])).toEqual([
-      ["mangahost4.invalid", 2],
-      ["br.mangahost.invalid", 1],
+      ["mirrorsite4.invalid", 2],
+      ["br.mirrorsite.invalid", 1],
     ]);
     expect(filtered.snapshots).toBe(3);
 
@@ -146,17 +146,17 @@ describe("POST /failures/:group/trash and /delete", () => {
 
 describe("select all", () => {
   test("all, narrowed by the filter, less what was unticked; no ids needed", async () => {
-    const m1 = await seed("http://m1.mangahost.invalid/a", "failed", "domain_not_found");
-    const m2 = await seed("http://m2.mangahost.invalid/a", "failed", "domain_not_found");
-    const m2b = await seed("http://m2.mangahost.invalid/b", "failed", "domain_not_found");
-    const m3 = await seed("http://m3.mangahost.invalid/a", "failed", "domain_not_found");
+    const m1 = await seed("http://m1.mirrorsite.invalid/a", "failed", "domain_not_found");
+    const m2 = await seed("http://m2.mirrorsite.invalid/a", "failed", "domain_not_found");
+    const m2b = await seed("http://m2.mirrorsite.invalid/b", "failed", "domain_not_found");
+    const m3 = await seed("http://m3.mirrorsite.invalid/a", "failed", "domain_not_found");
     const other = await seed("http://other.invalid/", "failed", "domain_not_found");
     const app = await getApp();
 
     const res = await post(app, "/failures/domain-gone/trash", {
       all: true,
-      q: "mangahost",
-      excludeHosts: ["m3.mangahost.invalid"],
+      q: "mirrorsite",
+      excludeHosts: ["m3.mirrorsite.invalid"],
       excludeIds: [m2b],
     });
     expect(await res.json()).toEqual({ trashed: 2 });

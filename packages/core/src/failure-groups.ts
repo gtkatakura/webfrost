@@ -134,7 +134,7 @@ export interface FailureDomain {
 
 /**
  * The domains of a group, most failed snapshots first, one page at a time. `q` keeps the domains that
- * contain it (case-insensitive): "mangahost" finds every mirror.
+ * contain it (case-insensitive): "mirrorsite" finds every mirror.
  */
 export async function listFailureDomains(
   db: Db,

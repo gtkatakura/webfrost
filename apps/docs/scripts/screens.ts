@@ -24,6 +24,8 @@ const shots = [
   { name: "snapshots", path: "/#/snapshots" },
   { name: "search", path: `/#/search?q=${encodeURIComponent(query)}` },
   { name: "snapshot-panel", path: `/#/snapshots/${viewerId}` },
+  // Needs a few failed snapshots in the archive (a domain that does not exist, a 404, a 403).
+  { name: "failures", path: "/#/failures" },
 ];
 
 const browser = await chromium.launch(

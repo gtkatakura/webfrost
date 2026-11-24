@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SnapshotPage } from "@webfrost/sdk";
 import { toast } from "sonner";
 import { useClient } from "../context";
@@ -7,18 +7,26 @@ import { errorMessage } from "../lib/errors";
 
 export const snapshotKeys = {
   all: ["snapshots"] as const,
-  list: (page: number, limit: number) => ["snapshots", "list", page, limit] as const,
+  list: (page: number, limit: number, contains = "") =>
+    ["snapshots", "list", page, limit, contains] as const,
   detail: (id: number) => ["snapshots", "detail", id] as const,
 };
 
 /** Poll interval while any snapshot in view is still pending. */
 export const PENDING_POLL_MS = 5000;
 
-export function useSnapshots(page = 1, limit = 20) {
+/**
+ * One page of the snapshot list. `contains` is sent to the server, which looks for it in the URL
+ * and the title of every snapshot: the page and `total` are of the matches in the whole archive.
+ */
+export function useSnapshots(page = 1, limit = 20, contains = "") {
   const client = useClient();
+  const text = contains.trim();
   const query = useQuery<SnapshotPage>({
-    queryKey: snapshotKeys.list(page, limit),
-    queryFn: () => client.listSnapshots({ page, limit }),
+    queryKey: snapshotKeys.list(page, limit, text),
+    queryFn: () => client.listSnapshots({ page, limit, ...(text ? { contains: text } : {}) }),
+    // The rows stay while the next page or the next filter loads, instead of a flash of skeletons.
+    placeholderData: keepPreviousData,
     refetchInterval: (q) =>
       q.state.data?.items.some((s) => s.status === "pending") ? PENDING_POLL_MS : false,
   });

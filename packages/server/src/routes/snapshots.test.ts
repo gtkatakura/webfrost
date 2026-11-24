@@ -34,6 +34,148 @@ async function getApp() {
 }
 
 // ---------------------------------------------------------------------------
+// GET /snapshots: filters applied by the database
+// ---------------------------------------------------------------------------
+
+describe("GET /snapshots filters", () => {
+  let newsTag: number;
+  let laterTag: number;
+
+  /**
+   * 30 snapshots, so every filter has matches beyond the first page of 20:
+   *   1-25  done, https://site-N.example/page, title "Glacier report N", html and pdf
+   *   26-28 failed, https://gone-N.example/old, not indexed, no results
+   *   29-30 pending, https://queue-N.example/new
+   * Created one day apart from 2026-01-01. Snapshot 3 carries both tags, snapshot 4 only "news".
+   */
+  beforeEach(async () => {
+    const { openDb, indexSnapshot, createTag, addTagToSnapshot } = await import("@webfrost/core");
+    const db = await openDb(testDir);
+    for (let n = 1; n <= 30; n++) {
+      const status = n <= 25 ? "done" : n <= 28 ? "failed" : "pending";
+      const host = n <= 25 ? "site" : n <= 28 ? "gone" : "queue";
+      const url = `https://${host}-${n}.example/${n <= 25 ? "page" : n <= 28 ? "old" : "new"}`;
+      const createdAt = `2026-01-${String(n).padStart(2, "0")} 12:00:00`;
+      await db.run(
+        sql`INSERT INTO snapshots (url, status, created_at) VALUES (${url}, ${status}, ${createdAt})`,
+      );
+      if (n > 25) continue;
+      await db.run(
+        sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${n}, 'html', 'x')`,
+      );
+      if (n % 5 === 0) {
+        await db.run(
+          sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${n}, 'pdf', 'x')`,
+        );
+      }
+      await indexSnapshot(db, n, url, `Glacier report ${n}`, "ice and snow", "");
+    }
+    newsTag = (await createTag(db, "news")).id;
+    laterTag = (await createTag(db, "later")).id;
+    await addTagToSnapshot(db, 3, newsTag);
+    await addTagToSnapshot(db, 3, laterTag);
+    await addTagToSnapshot(db, 4, newsTag);
+    await db.close();
+  });
+
+  async function get(query: string): Promise<{ status: number; body: SnapshotPage }> {
+    const app = await getApp();
+    const res = await app.handle(new Request(`http://localhost/snapshots?${query}`));
+    return { status: res.status, body: (await res.json()) as SnapshotPage };
+  }
+
+  /** Ids of every snapshot the filter keeps, read page by page like a client would. */
+  async function ids(query: string): Promise<number[]> {
+    const found: number[] = [];
+    for (let page = 1; ; page++) {
+      const { status, body } = await get(`${query}&page=${page}`);
+      expect(status).toBe(200);
+      found.push(...body.items.map((s) => s.id));
+      if (page * body.limit >= body.total) {
+        expect(found).toHaveLength(body.total);
+        return found.sort((a, b) => a - b);
+      }
+    }
+  }
+
+  test("contains finds a snapshot that is not on the first page, by URL", async () => {
+    // Newest first: snapshot 2 is on the second page of the unfiltered list.
+    const unfiltered = await get("limit=20");
+    expect(unfiltered.body.items.map((s) => s.id)).not.toContain(2);
+
+    const { body } = await get("contains=site-2.example");
+    expect(body.items.map((s) => s.id)).toEqual([2]);
+    expect(body.total).toBe(1);
+  });
+
+  test("contains matches titles and failed snapshots, and counts the whole archive", async () => {
+    const byTitle = await get("contains=LACIER%20REP");
+    expect(byTitle.body.total).toBe(25);
+    expect(byTitle.body.items).toHaveLength(20);
+
+    expect(await ids("contains=gone-")).toEqual([26, 27, 28]);
+    expect((await get("contains=nowhere")).body).toMatchObject({ items: [], total: 0 });
+  });
+
+  test("status takes several values", async () => {
+    expect(await ids("status=failed,pending")).toEqual([26, 27, 28, 29, 30]);
+    expect(await ids("status=failed")).toEqual([26, 27, 28]);
+  });
+
+  test("since and before bound the creation time", async () => {
+    expect(await ids("since=2026-01-29")).toEqual([29, 30]);
+    expect(await ids("since=2026-01-29T12:00:00Z")).toEqual([29, 30]);
+    expect(await ids("before=2026-01-03")).toEqual([1, 2]);
+    expect(await ids("since=2026-01-10&before=2026-01-12")).toEqual([10, 11]);
+  });
+
+  test("extractor keeps snapshots where each one produced output", async () => {
+    expect(await ids("extractor=pdf")).toEqual([5, 10, 15, 20, 25]);
+    expect(await ids("extractor=html,pdf")).toEqual([5, 10, 15, 20, 25]);
+    expect((await get("extractor=warc")).body.total).toBe(0);
+  });
+
+  test("tag keeps snapshots that carry every tag", async () => {
+    expect(await ids(`tag=${newsTag}`)).toEqual([3, 4]);
+    expect(await ids(`tag=${newsTag},${laterTag}`)).toEqual([3]);
+  });
+
+  test("the filters apply to a search too, before it is counted", async () => {
+    expect((await get("q=glacier")).body.total).toBe(25);
+    expect(await ids("q=glacier&extractor=pdf")).toEqual([5, 10, 15, 20, 25]);
+    expect(await ids(`q=glacier&tag=${newsTag}&since=2026-01-04`)).toEqual([4]);
+    expect(await ids("q=glacier&contains=site-1")).toEqual([
+      1, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+    ]);
+    expect((await get("q=glacier&status=failed,pending")).body.total).toBe(0);
+  });
+
+  test("a filter that cannot be read is an error, not a filter that is dropped", async () => {
+    for (const query of [
+      "since=yesterday",
+      "before=2026-13-45",
+      "tag=news",
+      "tag=1,x",
+      "tag=0",
+      `status=${Array.from({ length: 21 }, (_, i) => `s${i}`).join(",")}`,
+      `contains=${"a".repeat(201)}`,
+    ]) {
+      const app = await getApp();
+      const res = await app.handle(new Request(`http://localhost/snapshots?${query}`));
+      expect(res.status).toBe(400);
+    }
+    const { status, body } = await get("since=yesterday");
+    expect(status).toBe(400);
+    expect(body).toMatchObject({ code: "VALIDATION" });
+  });
+
+  test("blank filters keep everything", async () => {
+    const { body } = await get("contains=%20&status=&extractor=&tag=&since=&before=");
+    expect(body.total).toBe(30);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // POST /snapshots
 // ---------------------------------------------------------------------------
 

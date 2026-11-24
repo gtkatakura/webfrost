@@ -139,7 +139,7 @@ export function FailureGroupPage() {
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter domains, e.g. mangahost"
+            placeholder="Filter domains, e.g. mirrorsite"
             className="field w-full pl-8"
           />
         </label>

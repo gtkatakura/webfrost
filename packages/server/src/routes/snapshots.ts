@@ -9,12 +9,12 @@ import {
   searchSnapshots,
   sql,
 } from "@webfrost/core";
-import type { SnapshotWithExtractors, StorageBackend } from "@webfrost/core";
+import type { SnapshotFilter, SnapshotWithExtractors, StorageBackend } from "@webfrost/core";
 import { Elysia, t } from "elysia";
 import { getDb, getRunner, getStorage } from "../context";
 import { apiError, apiErrorHandler } from "../errors";
 import { MAX_URL_LENGTH } from "../limits";
-import { isoTimestampRequired, pageParams } from "../serialize";
+import { isoTimestampRequired, pageParams, parseIsoTimestamp } from "../serialize";
 import { API_PREFIX } from "../version";
 import { isGuestRequest } from "./auth";
 import { serializeTag } from "./tags";
@@ -48,6 +48,70 @@ export function serializeFailure(
     label: known.label,
     detail: guest ? null : detail,
   };
+}
+
+/** The most values one list filter takes (statuses, extractors or tags). */
+const MAX_FILTER_VALUES = 20;
+/** The longest text `contains` takes. */
+const MAX_CONTAINS_LENGTH = 200;
+
+/** A comma-separated query value as its parts, blanks dropped. */
+function listParam(value: string | undefined): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
+}
+
+interface SnapshotFilterQuery {
+  status?: string | undefined;
+  since?: string | undefined;
+  before?: string | undefined;
+  extractor?: string | undefined;
+  tag?: string | undefined;
+  contains?: string | undefined;
+}
+
+/**
+ * The filters of `GET /snapshots`, for the list and the search alike. They reach the database,
+ * so they narrow the whole archive and `total` counts what is left. A value that cannot be read
+ * is an error rather than a filter silently dropped: the caller would get far more than it asked.
+ */
+export function snapshotFilterFromQuery(
+  query: SnapshotFilterQuery,
+): { filter: SnapshotFilter } | { error: string } {
+  const statuses = listParam(query.status);
+  const extractors = listParam(query.extractor);
+  const tags = listParam(query.tag);
+  for (const [name, values] of [
+    ["status", statuses],
+    ["extractor", extractors],
+    ["tag", tags],
+  ] as const) {
+    if (values.length > MAX_FILTER_VALUES) {
+      return { error: `${name} takes at most ${MAX_FILTER_VALUES} values` };
+    }
+  }
+
+  const tagIds: number[] = [];
+  for (const tag of tags) {
+    if (!/^[0-9]{1,15}$/.test(tag) || Number(tag) < 1) {
+      return { error: "tag must be a tag id, or several separated by commas" };
+    }
+    tagIds.push(Number(tag));
+  }
+
+  const filter: SnapshotFilter = { statuses, extractors, tagIds };
+  for (const name of ["since", "before"] as const) {
+    const value = query[name]?.trim();
+    if (!value) continue;
+    const stored = parseIsoTimestamp(value);
+    if (stored === null) return { error: `${name} must be an ISO 8601 date or timestamp` };
+    filter[name] = stored;
+  }
+  const contains = query.contains?.trim();
+  if (contains) filter.contains = contains;
+  return { filter };
 }
 
 /** List-level fields shared by the list, search and detail responses. */
@@ -230,20 +294,22 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
   )
   .get(
     "/",
-    async ({ query, request }) => {
+    async ({ query, request, set }) => {
       const guest = isGuestRequest(request);
+      const parsed = snapshotFilterFromQuery(query);
+      if ("error" in parsed) return apiError(set, 400, "VALIDATION", parsed.error);
+      const { filter } = parsed;
       const db = await getDb();
       try {
         const q = query.q?.trim();
         // Capped for everyone, guests included: one request must not dump the archive.
         const { page, limit } = pageParams(query);
-        const status = query.status?.trim() || undefined;
 
         if (q) {
           // FTS5 ranked search — paginated hits with an HTML-safe snippet, plus the
           // same summary fields as the list so clients can filter and render without
           // a second request.
-          const result = await searchSnapshots(db, q, limit, page, status);
+          const result = await searchSnapshots(db, q, limit, page, filter);
           const meta = await getSnapshotsByIds(
             db,
             result.items.map((r) => r.id),
@@ -265,7 +331,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
           };
         }
 
-        const result = await listSnapshotsWithExtractorsPaginated(db, page, limit, status);
+        const result = await listSnapshotsWithExtractorsPaginated(db, page, limit, filter);
         return {
           items: result.items.map((s) => ({ id: s.id, url: s.url, ...snapshotSummary(s, guest) })),
           total: result.total,
@@ -282,7 +348,17 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
         // Plain numbers only: "Infinity" or "1e400" would reach SQL as an invalid OFFSET.
         page: t.Optional(t.String({ pattern: "^(-?[0-9]{1,15}(\\.[0-9]{1,15})?)?$" })),
         limit: t.Optional(t.String({ pattern: "^(-?[0-9]{1,15}(\\.[0-9]{1,15})?)?$" })),
-        status: t.Optional(t.String()),
+        // One value or several separated by commas: any of these statuses.
+        status: t.Optional(t.String({ maxLength: 200 })),
+        // Created at or after `since`, and before `before` (ISO 8601).
+        since: t.Optional(t.String({ maxLength: 40 })),
+        before: t.Optional(t.String({ maxLength: 40 })),
+        // Every one of these extractors produced output.
+        extractor: t.Optional(t.String({ maxLength: 400 })),
+        // Carries every one of these tags (ids).
+        tag: t.Optional(t.String({ maxLength: 400 })),
+        // The URL or the title contains this text.
+        contains: t.Optional(t.String({ maxLength: MAX_CONTAINS_LENGTH })),
       }),
     },
   )

@@ -269,10 +269,29 @@ export interface RequestOptions {
   signal?: AbortSignal | undefined;
 }
 
-export interface ListSnapshotsOptions extends PageOptions {
-  /** Filter by snapshot status. */
-  status?: SnapshotStatus;
+/**
+ * Filters of the snapshot list and of the search. The server applies them to the whole archive,
+ * so `total` and the pages count only what they keep.
+ */
+export interface SnapshotFilters {
+  /** One status, or several: a snapshot in any of them is kept. */
+  status?: SnapshotStatus | readonly SnapshotStatus[];
+  /** Created at or after this moment: an ISO 8601 date or timestamp, or a Date. */
+  since?: string | Date;
+  /** Created before this moment: an ISO 8601 date or timestamp, or a Date. */
+  before?: string | Date;
+  /** Extractor names (`"pdf"`, `"warc"`, ...): kept when every one of them produced output. */
+  extractors?: readonly string[];
+  /** Tag ids: kept when the snapshot carries every one of them. */
+  tags?: readonly number[];
+  /** The URL or the title contains this text (the case of ASCII letters is ignored). */
+  contains?: string;
 }
+
+export interface ListSnapshotsOptions extends PageOptions, SnapshotFilters {}
+
+/** Options for {@link WebFrostClient.searchSnapshotsPage}: the page plus the list's filters. */
+export interface SearchSnapshotsOptions extends PageOptions, SnapshotFilters {}
 
 /** Options for {@link WebFrostClient.iterateSnapshots}: the list filters plus a signal. */
 export interface IterateSnapshotsOptions extends ListSnapshotsOptions, RequestOptions {}

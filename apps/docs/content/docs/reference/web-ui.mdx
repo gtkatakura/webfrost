@@ -12,6 +12,8 @@ import panelLight from "@/assets/screens/snapshot-panel-light.webp?preset=conten
 import panelDark from "@/assets/screens/snapshot-panel-dark.webp?preset=content";
 import searchLight from "@/assets/screens/search-light.webp?preset=content";
 import searchDark from "@/assets/screens/search-dark.webp?preset=content";
+import failuresLight from "@/assets/screens/failures-light.webp?preset=content";
+import failuresDark from "@/assets/screens/failures-dark.webp?preset=content";
 
 The server serves the web UI next to the REST API, at `http://localhost:3000` by default. It talks to the server only through the API, so it can do what an [API key](/docs/reference/rest-api) can do, no more.
 
@@ -62,7 +64,7 @@ If the server cannot be reached at all, the UI says so and offers **Retry** inst
 
 All snapshots, newest first, 20 per page, as cards (a thumbnail of the first screen, or a frame of the video for a video page, the title, URL, status and capture time) or as rows. Each row shows the URL (with the title and a thumbnail in comfortable rows), a badge per extractor (green when it produced output, dashed and grey when it did not), tags, status and capture time.
 
-- **Filter by URL or title…** narrows the rows of the current page.
+- **Filter by URL or title…** looks for the text in the URL and the title of every snapshot in the archive, not only on the page in view: the list, its count and its pages become the matches. It is sent as you type and kept in the address (`?filter=`), so Back and a shared link return to the same list. To search inside the pages, use [Search](#search).
 - The three buttons next to it switch between **Cards** (the default), **Comfortable rows** and **Compact rows**; the choice is remembered per browser.
 - **New Snapshot** archives a URL, or links to Import.
 - Check rows or cards (or the header box to select the page) for the bulk bar: **Delete** the selection, or add a tag to all of it.
@@ -92,7 +94,7 @@ The viewer opens on **Media** when the snapshot has a video, otherwise on **Page
 
 Full-text search over the extracted text, URL, title and tag names, 20 results per page, with the matching words highlighted. The query goes into the address (`?q=`) as you type.
 
-- **Filter this page**: status, date (last 7, 30 or 90 days), extractor and tag. These filters apply to the results already on the page; they do not search the rest of the archive.
+- **Filters**: status, date (last 7, 30 or 90 days), extractor and tag. The server applies them to every result, so the count and the pages are of what matches in the whole archive. They are kept in the address (`?status=`, `?days=`, `?extractor=`, `?tag=`) with the query.
 - **Save** keeps the query as a named saved search, shown as a chip under the search box. Up to 10 are kept, in your browser (`localStorage`), not on the server.
 
 ### Tags
@@ -109,7 +111,9 @@ The UI creates URL schedules. A schedule that follows an RSS feed is created wit
 
 The snapshots that could not be archived, grouped by why, so you can decide about many at once. The first screen has a card per group that has failures (**Domain no longer exists**, **Page gone**, **Blocked by the site**, **Rate limited**, **Temporary problems**, **Site misconfigured**, **Private address**, **Interrupted**, **Reason not recorded**), with its number of snapshots and domains and what it means.
 
-A group lists its domains, most failed snapshots first, loading more as you scroll. The filter keeps the domains that contain what you type (`mangahost` finds every mirror). **Worked before** says how many of a domain's pages also have a snapshot that worked. Open a domain to see its failed snapshots one by one, each with the reason and, when there is one, a link to the earlier archive that worked. The icon next to a URL opens the page on the live site in a new tab, to check whether it really is gone.
+<Screenshot light={failuresLight} dark={failuresDark} alt="Review failures: a card per group (domain no longer exists, page gone, blocked by the site) with its counts and what it means" />
+
+A group lists its domains, most failed snapshots first, loading more as you scroll. The filter keeps the domains that contain what you type (`mirrorsite` finds every mirror). **Worked before** says how many of a domain's pages also have a snapshot that worked. Open a domain to see its failed snapshots one by one, each with the reason and, when there is one, a link to the earlier archive that worked. The icon next to a URL opens the page on the live site in a new tab, to check whether it really is gone.
 
 Select domains or snapshots, then:
 

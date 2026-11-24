@@ -129,7 +129,12 @@ export {
   listSnapshotsWithExtractors,
   listSnapshotsWithExtractorsPaginated,
 } from "./list";
-export type { Snapshot, SnapshotWithExtractors, PaginatedResult } from "./list";
+export type {
+  Snapshot,
+  SnapshotFilter,
+  SnapshotWithExtractors,
+  PaginatedResult,
+} from "./list";
 export {
   JOB_LEASE_SECONDS,
   addUrl,

@@ -314,7 +314,7 @@ Exit codes:
   2  usage error`,
   examples: [
     "webfrost rescue blocked --from https://archive.example.com --dry-run",
-    "webfrost rescue blocked --from https://archive.example.com --q kabum",
+    "webfrost rescue blocked --from https://archive.example.com --q shop",
     "webfrost rescue rate-limited --from https://archive.example.com --yes --json",
   ],
   async run(ctx) {

@@ -3,7 +3,7 @@ import { categorizeError, categorizeStatus, failureClass } from "./failure";
 
 describe("categorizeError", () => {
   test("a name that does not exist is a dead domain; a resolver in trouble is not", () => {
-    expect(categorizeError("getaddrinfo ENOTFOUND meganim.ga")).toBe("domain_not_found");
+    expect(categorizeError("getaddrinfo ENOTFOUND oldforum.example")).toBe("domain_not_found");
     expect(categorizeError("getaddrinfo ESERVFAIL example.com")).toBe("dns_error");
     expect(categorizeError("getaddrinfo EAI_AGAIN example.com")).toBe("dns_error");
     expect(categorizeError("getaddrinfo ETIMEOUT example.com")).toBe("dns_error");

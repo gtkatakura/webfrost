@@ -133,9 +133,9 @@ describe("trash retention setting", () => {
 
 describe("failure groups", () => {
   test("groups by category; a page that worked before is counted, never listed as failed", async () => {
-    await seed("https://mangahost4.invalid/a", "failed", "domain_not_found");
-    await seed("https://mangahost4.invalid/b", "failed", "domain_not_found");
-    const worked = await seed("https://mangahost4.invalid/b", "done");
+    await seed("https://mirrorsite4.invalid/a", "failed", "domain_not_found");
+    await seed("https://mirrorsite4.invalid/b", "failed", "domain_not_found");
+    const worked = await seed("https://mirrorsite4.invalid/b", "done");
     await seed("https://site.example/x", "failed", "page_not_found");
     await seed("https://so.example/q", "failed", "access_denied");
     await seed("https://old.example/", "failed", null);
@@ -150,24 +150,24 @@ describe("failure groups", () => {
 
     const domains = await listFailureDomains(db, "domain-gone");
     expect(domains?.items).toEqual([
-      expect.objectContaining({ host: "mangahost4.invalid", count: 2, withWorkingSnapshot: 1 }),
+      expect.objectContaining({ host: "mirrorsite4.invalid", count: 2, withWorkingSnapshot: 1 }),
     ]);
-    const snapshots = await listFailedSnapshots(db, "domain-gone", "mangahost4.invalid");
+    const snapshots = await listFailedSnapshots(db, "domain-gone", "mirrorsite4.invalid");
     expect(snapshots?.items.map((s) => s.workingSnapshotId)).toEqual([worked, null]);
   });
 
   test("domains are paginated and filtered by a fragment", async () => {
     for (let i = 0; i < 5; i++)
-      await seed(`https://m${i}.mangahost.invalid/`, "failed", "domain_not_found");
+      await seed(`https://m${i}.mirrorsite.invalid/`, "failed", "domain_not_found");
     await seed("https://other.invalid/", "failed", "domain_not_found");
 
     const page1 = await listFailureDomains(db, "domain-gone", {
-      q: "MANGAHOST",
+      q: "MIRRORSITE",
       page: 1,
       limit: 2,
     });
     const page3 = await listFailureDomains(db, "domain-gone", {
-      q: "mangahost",
+      q: "mirrorsite",
       page: 3,
       limit: 2,
     });

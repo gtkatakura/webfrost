@@ -36,12 +36,14 @@ import type {
   Schedule,
   SearchPage,
   SearchResult,
+  SearchSnapshotsOptions,
   ServerInfo,
   SetupResult,
   SetupStatusResult,
   Snapshot,
   SnapshotCreated,
   SnapshotDetail,
+  SnapshotFilters,
   SnapshotImported,
   SnapshotPage,
   Tag,
@@ -133,6 +135,25 @@ function pageQuery(options: { page?: number; limit?: number } | undefined): URLS
   if (options?.page !== undefined) params.set("page", String(options.page));
   if (options?.limit !== undefined) params.set("limit", String(options.limit));
   return params;
+}
+
+/** The snapshot filters as query parameters (only the ones given; an empty list filters nothing). */
+function filterQuery(params: URLSearchParams, filters: SnapshotFilters | undefined): void {
+  if (!filters) return;
+  const list = (name: string, values: readonly (string | number)[]) => {
+    if (values.length > 0) params.set(name, values.join(","));
+  };
+  const moment = (name: string, value: string | Date | undefined) => {
+    if (value !== undefined) params.set(name, value instanceof Date ? value.toISOString() : value);
+  };
+  if (filters.status !== undefined) {
+    list("status", typeof filters.status === "string" ? [filters.status] : filters.status);
+  }
+  moment("since", filters.since);
+  moment("before", filters.before);
+  list("extractor", filters.extractors ?? []);
+  list("tag", filters.tags ?? []);
+  if (filters.contains?.trim()) params.set("contains", filters.contains.trim());
 }
 
 function withQuery(path: string, params: URLSearchParams): string {
@@ -452,13 +473,15 @@ export class WebFrostClient {
 
   /**
    * List snapshots, newest first, one page at a time (20 per page unless `limit` says otherwise).
+   * The filters (`status`, `since`, `before`, `extractors`, `tags`, `contains`) are applied by
+   * the server to the whole archive: `total` is the number of snapshots they keep.
    */
   async listSnapshots(
     options?: ListSnapshotsOptions,
     request?: RequestOptions,
   ): Promise<SnapshotPage> {
     const params = pageQuery(options);
-    if (options?.status !== undefined) params.set("status", options.status);
+    filterQuery(params, options);
     return (await this.page(
       "/snapshots",
       params,
@@ -515,14 +538,16 @@ export class WebFrostClient {
 
   /**
    * Full-text search with pagination.
-   * Returns the page of ranked results plus the total match count.
+   * Returns the page of ranked results plus the total match count. `options` also takes the
+   * list's filters, applied by the server before the results are counted and paged.
    */
   async searchSnapshotsPage(
     query: string,
-    options?: PageOptions,
+    options?: SearchSnapshotsOptions,
     request?: RequestOptions,
   ): Promise<SearchPage> {
     const params = pageQuery(options);
+    filterQuery(params, options);
     params.set("q", query);
     return (await this.page("/snapshots", params, toSearchResult, request)) as SearchPage;
   }

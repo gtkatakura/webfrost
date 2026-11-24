@@ -92,7 +92,7 @@ With `retries` set, **GET and HEAD** requests are retried on network errors, tim
 
 ## Pagination
 
-Every list method (`listSnapshots`, `searchSnapshotsPage`, `listTags`, `listSnapshotTags`, `listSchedules`, `listApiKeys`, `listImports`) takes `(options?: { page, limit }, request?: { signal })` and returns a `Page<T>`: `{ items, total, page, limit }`. `limit` defaults to 20 and the server caps it at 200.
+Every list method (`listSnapshots`, `searchSnapshotsPage`, `listTags`, `listSnapshotTags`, `listSchedules`, `listApiKeys`, `listImports`) takes `(options?: { page, limit }, request?: { signal })` (the snapshot methods also take [filters](#listsnapshotsoptions-promisesnapshotpage)) and returns a `Page<T>`: `{ items, total, page, limit }`. `limit` defaults to 20 and the server caps it at 200.
 
 ```ts
 const { items, total, page, limit } = await client.listTags({ page: 1, limit: 50 });
@@ -121,16 +121,33 @@ The server archives in the background. Poll `getSnapshot` until `status` is no l
 
 ### `listSnapshots(options?): Promise<SnapshotPage>`
 
-`options` is `{ page?, limit?, status? }`. Results are newest first. The second argument is `{ signal }`.
+`options` is `{ page?, limit? }` plus the filters below. Results are newest first. The second argument is `{ signal }`.
+
+| Filter | Keeps snapshots |
+|---|---|
+| `status` | in this status (`"pending"`, `"done"`, `"failed"`), or in any of an array of them |
+| `since` | created at or after this moment: an ISO 8601 date or timestamp, or a `Date` |
+| `before` | created before this moment |
+| `extractors` | where every one of these extractors produced output (`["pdf", "warc"]`) |
+| `tags` | that carry every one of these tag ids |
+| `contains` | whose URL or title contains this text |
+
+The server applies them to the whole archive, so `total` and the pages count only what they keep; see the [REST API](/docs/reference/rest-api#list) for the details of each one.
 
 ```ts
 const { items, total, page, limit } = await client.listSnapshots({ page: 1, limit: 20 });
 const pending = await client.listSnapshots({ status: "pending" });
+// Every snapshot of one site that did not work, since November
+const broken = await client.listSnapshots({
+  contains: "example.com",
+  status: ["failed", "pending"],
+  since: "2026-11-01",
+});
 ```
 
 ### `iterateSnapshots(options?): AsyncGenerator<Snapshot>`
 
-Every snapshot matching the filters, one page at a time (100 per request unless `limit` says otherwise). `options` is `{ page?, limit?, status?, signal? }`. It is lazy: breaking out of the loop stops fetching.
+Every snapshot matching the filters, one page at a time (100 per request unless `limit` says otherwise). `options` is `{ page?, limit?, signal? }` plus the filters of `listSnapshots`. It is lazy: breaking out of the loop stops fetching.
 
 ```ts
 for await (const snapshot of client.iterateSnapshots({ status: "done" })) {
@@ -151,10 +168,12 @@ Snippets are HTML-escaped by the server; the only markup is a literal `<mark>` a
 
 ### `searchSnapshotsPage(query, options?): Promise<SearchPage>`
 
-Paginated search. `options` is `{ page?, limit? }`.
+Paginated search. `options` is `{ page?, limit? }` plus the filters of `listSnapshots`: the server applies them before it counts and pages the results.
 
 ```ts
 const { items, total } = await client.searchSnapshotsPage("climate change", { page: 2, limit: 20 });
+// Only results that have a PDF and carry tag 3
+const withPdf = await client.searchSnapshotsPage("climate change", { extractors: ["pdf"], tags: [3] });
 ```
 
 ### `getSnapshot(id: number): Promise<SnapshotDetail | null>`
@@ -282,8 +301,8 @@ What [Review failures](/docs/reference/web-ui#review-failures) is built on: fail
 A `FailureSelection` is `{ hosts?, ids? }`, or `{ all: true, q?, host?, excludeHosts?, excludeIds? }` for "everything the page shows, less what was unticked", so selecting thousands needs no ids. A `TrashSelection` is `{ ids }` or `{ all: true, excludeIds? }`. Ids that are not (or no longer) failures of the group are ignored.
 
 ```ts
-// Every failed snapshot of mangahost mirrors, blocked by the site, to the trash
-const { trashed } = await client.trashFailures("blocked", { all: true, q: "mangahost" });
+// Every failed snapshot of mirrorsite mirrors, blocked by the site, to the trash
+const { trashed } = await client.trashFailures("blocked", { all: true, q: "mirrorsite" });
 ```
 
 ## Auth, setup and administration

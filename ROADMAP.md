@@ -28,7 +28,6 @@ Every breaking change is called out in the [changelog](CHANGELOG.md).
   past the anti-bot checks a fresh browser does not (Stack Exchange's, for one).
 - **OpenAPI description** of the HTTP API, with interactive docs.
 - **Archiving pages behind a login**, from a cookies file or a browser profile.
-- **Search filters on the server** (status, date range, tags), not only on the current page.
 - **Export** of an archive or a selection as zip or WACZ.
 - **More imports:** browser history, Pocket and Pinboard exports.
 - **Filtering egress proxy** that pins the checked IP for every request the browser and yt-dlp make,
@@ -47,7 +46,7 @@ Every breaking change is called out in the [changelog](CHANGELOG.md).
 A Docker image for amd64 and arm64 and a single `webfrost` binary for macOS and Linux (script or
 Homebrew); SQLite by default with Litestream backups, or PostgreSQL and MySQL; eight formats from one visit
 (WARC, raw HTML, readable text, PDF, full-page screenshot, DOM snapshot, self-contained HTML, video), in a
-light or dark color scheme, complete for single-page apps; full-text search; tags; imports from bookmarks, OPML, RSS/Atom and URL
+light or dark color scheme, complete for single-page apps; full-text search, with filters (status, date, extractor, tag, URL or title) that the database applies to the whole archive; tags; imports from bookmarks, OPML, RSS/Atom and URL
 lists; `webfrost push` to archive on your own machine and keep the snapshot on the server, and `webfrost
 rescue` to do it for every failure of a group, replacing each one that works (also one-file
 snapshot bundles with `webfrost export` and `import`); cron and feed schedules run by the server; a job queue with crash recovery and per-site pacing;

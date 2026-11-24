@@ -285,6 +285,75 @@ describe("WebFrostClient.getSnapshot", () => {
   });
 });
 
+describe("WebFrostClient snapshot filters", () => {
+  /** The query string the client sent on its only request. */
+  function sentParams(): URLSearchParams {
+    return new URL((fetchSpy.mock.calls[0] as unknown[])[0] as string).searchParams;
+  }
+
+  test("listSnapshots sends every filter to the server", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ items: [], total: 0, page: 1, limit: 20 }));
+    const client = new WebFrostClient({ baseUrl: BASE });
+    await client.listSnapshots({
+      status: ["done", "failed"],
+      since: "2026-11-01",
+      before: new Date("2026-12-01T00:00:00Z"),
+      extractors: ["pdf", "warc"],
+      tags: [3, 7],
+      contains: "  example.com/docs  ",
+    });
+
+    expect(Object.fromEntries(sentParams())).toEqual({
+      status: "done,failed",
+      since: "2026-11-01",
+      before: "2026-12-01T00:00:00.000Z",
+      extractor: "pdf,warc",
+      tag: "3,7",
+      contains: "example.com/docs",
+    });
+  });
+
+  test("empty filters send nothing", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ items: [], total: 0, page: 1, limit: 20 }));
+    const client = new WebFrostClient({ baseUrl: BASE });
+    await client.listSnapshots({ status: [], extractors: [], tags: [], contains: "   " });
+
+    expect((fetchSpy.mock.calls[0] as unknown[])[0]).toBe(`${BASE}/api/v1/snapshots`);
+  });
+
+  test("searchSnapshotsPage sends the filters with the query", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ items: [], total: 0, page: 2, limit: 20 }));
+    const client = new WebFrostClient({ baseUrl: BASE });
+    await client.searchSnapshotsPage("glacier", {
+      page: 2,
+      status: "done",
+      since: "2026-11-01",
+      extractors: ["pdf"],
+      tags: [3],
+    });
+
+    expect(Object.fromEntries(sentParams())).toEqual({
+      q: "glacier",
+      page: "2",
+      status: "done",
+      since: "2026-11-01",
+      extractor: "pdf",
+      tag: "3",
+    });
+  });
+
+  test("iterateSnapshots keeps the filters on every page", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ items: [], total: 0, page: 1, limit: 100 }));
+    const client = new WebFrostClient({ baseUrl: BASE });
+    for await (const _ of client.iterateSnapshots({ contains: "example", tags: [3] })) {
+      // no items
+    }
+
+    expect(sentParams().get("contains")).toBe("example");
+    expect(sentParams().get("tag")).toBe("3");
+  });
+});
+
 describe("WebFrostClient.searchSnapshotsPage", () => {
   const hit = {
     id: 1,
@@ -659,9 +728,9 @@ describe("WebFrostClient failures", () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ trashed: 3 }));
     const client = new WebFrostClient({ baseUrl: BASE });
 
-    await client.listFailureDomains("domain-gone", { q: "manga host", page: 2 });
+    await client.listFailureDomains("domain-gone", { q: "mirror site", page: 2 });
     expect(String(fetchSpy.mock.calls[0]?.[0])).toBe(
-      `${BASE}/api/v1/failures/domain-gone/domains?q=manga+host&page=2`,
+      `${BASE}/api/v1/failures/domain-gone/domains?q=mirror+site&page=2`,
     );
     expect(await client.trashFailures("domain-gone", { hosts: ["gone.example"] })).toEqual({
       trashed: 3,

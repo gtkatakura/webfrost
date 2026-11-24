@@ -21,6 +21,8 @@ export type {
   MeResult,
   Page,
   PageOptions,
+  SearchSnapshotsOptions,
+  SnapshotFilters,
   RequestOptions,
   Schedule,
   FailedSnapshot,

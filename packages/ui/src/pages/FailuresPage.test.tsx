@@ -57,18 +57,18 @@ const GROUPS: FailureGroupSummary[] = [
 const DOMAINS: FailureDomainPageData = {
   items: [
     {
-      host: "mangahost4.com",
+      host: "mirrorsite4.com",
       count: 46,
       withWorkingSnapshot: 3,
       lastFailedAt: "2026-11-23T02:14:00Z",
-      example: { id: 7, url: "https://mangahost4.com/manga/x" },
+      example: { id: 7, url: "https://mirrorsite4.com/post/x" },
     },
     {
-      host: "meganim.ga",
+      host: "oldforum.example",
       count: 82,
       withWorkingSnapshot: 0,
       lastFailedAt: "2026-11-23T02:14:00Z",
-      example: { id: 9, url: "http://meganim.ga/y" },
+      example: { id: 9, url: "http://oldforum.example/y" },
     },
   ],
   total: 2,
@@ -101,8 +101,8 @@ describe("FailureGroupPage", () => {
 
   test("lists domains with the earlier-archive hint and a link to each", async () => {
     renderAt("/failures/domain-gone", base);
-    const link = await screen.findByRole("link", { name: "Open mangahost4.com" });
-    expect(link.getAttribute("href")).toBe("/failures/domain-gone/mangahost4.com");
+    const link = await screen.findByRole("link", { name: "Open mirrorsite4.com" });
+    expect(link.getAttribute("href")).toBe("/failures/domain-gone/mirrorsite4.com");
     expect(screen.getByText("3 pages have an earlier archive")).toBeTruthy();
     expect(screen.getByText(/Only the snapshots that failed are affected/)).toBeTruthy();
   });
@@ -116,9 +116,11 @@ describe("FailureGroupPage", () => {
         return Promise.resolve(DOMAINS);
       },
     });
-    await screen.findByText("mangahost4.com");
-    fireEvent.change(screen.getByPlaceholderText(/Filter domains/), { target: { value: "manga" } });
-    await waitFor(() => expect(asked).toContain("manga"));
+    await screen.findByText("mirrorsite4.com");
+    fireEvent.change(screen.getByPlaceholderText(/Filter domains/), {
+      target: { value: "mirror" },
+    });
+    await waitFor(() => expect(asked).toContain("mirror"));
   });
 
   test("blocked explains that a retry sometimes works", async () => {
@@ -153,10 +155,10 @@ describe("FailureGroupPage", () => {
         return Promise.resolve({ trashed: 46 });
       },
     });
-    fireEvent.click(await screen.findByLabelText("Select mangahost4.com"));
+    fireEvent.click(await screen.findByLabelText("Select mirrorsite4.com"));
     expect(screen.getByText("1 domain · 46 snapshots selected")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Move to trash/ }));
-    await waitFor(() => expect(trashed).toEqual([["domain-gone", { hosts: ["mangahost4.com"] }]]));
+    await waitFor(() => expect(trashed).toEqual([["domain-gone", { hosts: ["mirrorsite4.com"] }]]));
   });
 
   test("domain-gone offers 'Check again'", async () => {
@@ -165,12 +167,14 @@ describe("FailureGroupPage", () => {
       ...base,
       retryFailures: (_g, selection) => {
         retried.push(selection);
-        return Promise.resolve({ queued: 0, stillGone: ["meganim.ga"] });
+        return Promise.resolve({ queued: 0, stillGone: ["oldforum.example"] });
       },
     });
     fireEvent.click(await screen.findByLabelText("Select all loaded"));
     fireEvent.click(screen.getByRole("button", { name: /Check again/ }));
-    await waitFor(() => expect(retried).toEqual([{ hosts: ["mangahost4.com", "meganim.ga"] }]));
+    await waitFor(() =>
+      expect(retried).toEqual([{ hosts: ["mirrorsite4.com", "oldforum.example"] }]),
+    );
   });
 
   test("permanent delete needs the domain name typed first", async () => {
@@ -182,49 +186,55 @@ describe("FailureGroupPage", () => {
         return Promise.resolve({ deleted: 46, busy: 0 });
       },
     });
-    fireEvent.click(await screen.findByLabelText("Select mangahost4.com"));
+    fireEvent.click(await screen.findByLabelText("Select mirrorsite4.com"));
     fireEvent.click(screen.getByRole("button", { name: "Delete permanently" }));
     const button = screen
       .getAllByRole("button", { name: "Delete permanently", hidden: true })
       .at(-1) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     const input = screen.getByLabelText("Confirmation phrase");
-    fireEvent.change(input, { target: { value: "mangahost" } });
+    fireEvent.change(input, { target: { value: "mirrorsite" } });
     expect(button.disabled).toBe(true);
-    fireEvent.change(input, { target: { value: "mangahost4.com" } });
+    fireEvent.change(input, { target: { value: "mirrorsite4.com" } });
     expect(button.disabled).toBe(false);
     fireEvent.click(button);
-    await waitFor(() => expect(deleted).toEqual([["domain-gone", { hosts: ["mangahost4.com"] }]]));
+    await waitFor(() => expect(deleted).toEqual([["domain-gone", { hosts: ["mirrorsite4.com"] }]]));
   });
 
   test("clicking the row selects it, and the open chevron navigates without selecting", async () => {
     renderAt("/failures/domain-gone", base);
-    const name = await screen.findByText("mangahost4.com");
+    const name = await screen.findByText("mirrorsite4.com");
     const row = name.closest("tr") as HTMLElement;
     // The name is part of the row, not a link: clicking it selects, it does not open the domain.
     expect(name.closest("a")).toBeNull();
     fireEvent.click(name);
-    expect((screen.getByLabelText("Select mangahost4.com") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("Select mirrorsite4.com") as HTMLInputElement).checked).toBe(
+      true,
+    );
     fireEvent.click(name);
     fireEvent.click(row.querySelectorAll("td")[2] as HTMLElement);
-    expect((screen.getByLabelText("Select mangahost4.com") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("Select mirrorsite4.com") as HTMLInputElement).checked).toBe(
+      true,
+    );
     fireEvent.click(row.querySelectorAll("td")[2] as HTMLElement);
-    expect((screen.getByLabelText("Select mangahost4.com") as HTMLInputElement).checked).toBe(
+    expect((screen.getByLabelText("Select mirrorsite4.com") as HTMLInputElement).checked).toBe(
       false,
     );
     // Space on the focused row toggles too.
     fireEvent.keyDown(row, { key: " " });
-    expect((screen.getByLabelText("Select mangahost4.com") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("Select mirrorsite4.com") as HTMLInputElement).checked).toBe(
+      true,
+    );
     fireEvent.keyDown(row, { key: " " });
     // Shift+click selects the range.
-    fireEvent.click(screen.getByLabelText("Select mangahost4.com"));
-    fireEvent.click(screen.getByLabelText("Select meganim.ga"), { shiftKey: true });
+    fireEvent.click(screen.getByLabelText("Select mirrorsite4.com"));
+    fireEvent.click(screen.getByLabelText("Select oldforum.example"), { shiftKey: true });
     expect(screen.getByText("2 domains · 128 snapshots selected")).toBeTruthy();
     fireEvent.click(screen.getByLabelText("Select all loaded"));
     fireEvent.click(screen.getByLabelText("Select all loaded"));
     // The chevron is a link: it neither selects nor is swallowed by the row.
-    const open = screen.getByRole("link", { name: "Open mangahost4.com" });
-    expect(open.getAttribute("href")).toBe("/failures/domain-gone/mangahost4.com");
+    const open = screen.getByRole("link", { name: "Open mirrorsite4.com" });
+    expect(open.getAttribute("href")).toBe("/failures/domain-gone/mirrorsite4.com");
     fireEvent.click(open);
     expect(screen.queryByRole("toolbar")).toBeNull();
   });
@@ -315,7 +325,7 @@ describe("FailureDomainPage", () => {
   const SNAPSHOTS: FailedSnapshot[] = [
     {
       id: 11,
-      url: "https://mangahost4.com/a",
+      url: "https://mirrorsite4.com/a",
       createdAt: "2026-11-23T02:14:00Z",
       failure: {
         category: "domain_not_found",
@@ -327,7 +337,7 @@ describe("FailureDomainPage", () => {
     },
     {
       id: 12,
-      url: "https://mangahost4.com/b",
+      url: "https://mirrorsite4.com/b",
       createdAt: "2026-11-23T02:14:00Z",
       failure: null,
       workingSnapshotId: null,
@@ -339,20 +349,20 @@ describe("FailureDomainPage", () => {
   };
 
   test("lists snapshots and links the earlier archive only when there is one", async () => {
-    renderAt("/failures/domain-gone/mangahost4.com", client);
-    expect(await screen.findByText("https://mangahost4.com/a")).toBeTruthy();
+    renderAt("/failures/domain-gone/mirrorsite4.com", client);
+    expect(await screen.findByText("https://mirrorsite4.com/a")).toBeTruthy();
     const earlier = screen.getAllByRole("link", { name: "Earlier archive" });
     expect(earlier).toHaveLength(1);
     expect(earlier[0]?.getAttribute("href")).toBe("/snapshots/3");
   });
 
   test("each row opens the original page in a new tab, without selecting it", async () => {
-    renderAt("/failures/domain-gone/mangahost4.com", client);
-    await screen.findByText("https://mangahost4.com/a");
+    renderAt("/failures/domain-gone/mirrorsite4.com", client);
+    await screen.findByText("https://mirrorsite4.com/a");
     const originals = screen.getAllByRole("link", { name: "Open the original page in a new tab" });
     expect(originals.map((a) => a.getAttribute("href"))).toEqual([
-      "https://mangahost4.com/a",
-      "https://mangahost4.com/b",
+      "https://mirrorsite4.com/a",
+      "https://mirrorsite4.com/b",
     ]);
     expect(originals[0]?.getAttribute("target")).toBe("_blank");
     expect(originals[0]?.getAttribute("rel")).toContain("noopener");
@@ -362,7 +372,7 @@ describe("FailureDomainPage", () => {
 
   test("selected snapshots are trashed by id, with an Undo path", async () => {
     const trashed: unknown[] = [];
-    renderAt("/failures/domain-gone/mangahost4.com", {
+    renderAt("/failures/domain-gone/mirrorsite4.com", {
       ...client,
       trashFailures: (_g, selection) => {
         trashed.push(selection);

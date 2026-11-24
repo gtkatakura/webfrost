@@ -3,6 +3,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type {
   DashboardStats,
+  ListSnapshotsOptions,
+  SearchPage,
+  SearchSnapshotsOptions,
   Snapshot,
   SnapshotCreated,
   SnapshotDetail,
@@ -41,7 +44,8 @@ const defaultStats: DashboardStats = {
 };
 
 function mockClient(overrides: {
-  listSnapshots?: () => Promise<SnapshotPage>;
+  listSnapshots?: (options?: ListSnapshotsOptions) => Promise<SnapshotPage>;
+  searchSnapshotsPage?: (query: string, options?: SearchSnapshotsOptions) => Promise<SearchPage>;
   createSnapshot?: (
     url: string,
     options?: { colorScheme?: "light" | "dark" },
@@ -182,57 +186,173 @@ describe("ListPage — data renders", () => {
 });
 
 // ---------------------------------------------------------------------------
-// ListPage — Flow 3: Search / Filter
+// ListPage — Flow 3: the filter is answered by the server
 // ---------------------------------------------------------------------------
 
-describe("ListPage — search / filter", () => {
-  test("filters list by URL search input", async () => {
-    const snapshots = [
-      makeSnapshot({ id: 1, url: "https://alpha.com" }),
-      makeSnapshot({ id: 2, url: "https://beta.org" }),
-    ];
-    const client = mockClient({ listSnapshots: () => Promise.resolve(snapshotPage(snapshots)) });
-    renderApp(client, "/snapshots");
+describe("ListPage — filter", () => {
+  /**
+   * A server with 45 snapshots. Its first page shows beta.org; alpha.com is on a later page, so
+   * only a filter the server applies can find it.
+   */
+  function archiveOf45(calls: Array<ListSnapshotsOptions | undefined>) {
+    return mockClient({
+      listSnapshots: (options) => {
+        calls.push(options);
+        if (options?.contains === "alpha") {
+          return Promise.resolve({
+            items: [makeSnapshot({ id: 41, url: "https://alpha.com" })],
+            total: 1,
+            page: 1,
+            limit: 20,
+          });
+        }
+        if (options?.contains) {
+          return Promise.resolve({ items: [], total: 0, page: 1, limit: 20 });
+        }
+        return Promise.resolve({
+          items: [makeSnapshot({ id: 1, url: "https://beta.org" })],
+          total: 45,
+          page: options?.page ?? 1,
+          limit: 20,
+        });
+      },
+    });
+  }
 
-    // Wait for data to load — count badge shows filtered.length
-    await screen.findByText("2");
+  test("finds a snapshot that is not on the page, by asking the server", async () => {
+    const calls: Array<ListSnapshotsOptions | undefined> = [];
+    renderApp(archiveOf45(calls), "/snapshots");
 
-    const searchInput = screen.getByPlaceholderText("Filter by URL or title\u2026");
-    fireEvent.change(searchInput, { target: { value: "alpha" } });
+    await screen.findByText("https://beta.org");
+    expect(screen.getByText("45")).toBeTruthy();
+    expect(calls.at(-1)?.contains).toBeUndefined();
 
-    expect(screen.getByText("1")).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText("Filter by URL or title\u2026"), {
+      target: { value: "alpha" },
+    });
+
+    await screen.findByText("https://alpha.com");
+    expect(screen.queryByText("https://beta.org")).toBeNull();
+    // The badge counts the matches in the archive.
+    expect(screen.getByTitle("Snapshots matching the filter").textContent).toBe("1");
+    expect(calls.at(-1)).toMatchObject({ contains: "alpha", page: 1 });
   });
 
-  test("restores full list when search is cleared", async () => {
-    const snapshots = [
-      makeSnapshot({ id: 1, url: "https://alpha.com" }),
-      makeSnapshot({ id: 2, url: "https://beta.org" }),
-    ];
-    const client = mockClient({ listSnapshots: () => Promise.resolve(snapshotPage(snapshots)) });
-    renderApp(client, "/snapshots");
+  test("restores the full list when the filter is cleared", async () => {
+    renderApp(archiveOf45([]), "/snapshots");
+    await screen.findByText("https://beta.org");
 
-    await screen.findByText("2");
+    const input = screen.getByPlaceholderText("Filter by URL or title\u2026");
+    fireEvent.change(input, { target: { value: "alpha" } });
+    await screen.findByText("https://alpha.com");
 
-    const searchInput = screen.getByPlaceholderText("Filter by URL or title\u2026");
-    fireEvent.change(searchInput, { target: { value: "alpha" } });
-    expect(screen.getByText("1")).toBeTruthy();
-
-    fireEvent.change(searchInput, { target: { value: "" } });
-    expect(screen.getByText("2")).toBeTruthy();
+    fireEvent.change(input, { target: { value: "" } });
+    await screen.findByText("https://beta.org");
+    expect(screen.getByTitle("Total snapshots").textContent).toBe("45");
+    expect(screen.queryByText("https://alpha.com")).toBeNull();
   });
 
-  test("shows no-match message when filter returns no results", async () => {
-    const snapshots = [makeSnapshot({ id: 1, url: "https://alpha.com" })];
-    const client = mockClient({ listSnapshots: () => Promise.resolve(snapshotPage(snapshots)) });
-    renderApp(client, "/snapshots");
+  test("says so when nothing in the archive matches", async () => {
+    renderApp(archiveOf45([]), "/snapshots");
+    await screen.findByText("https://beta.org");
 
-    // Wait for the count badge to confirm data has loaded
-    await screen.findByText("1");
+    fireEvent.change(screen.getByPlaceholderText("Filter by URL or title\u2026"), {
+      target: { value: "zzz-no-match" },
+    });
 
-    const searchInput = screen.getByPlaceholderText("Filter by URL or title\u2026");
-    fireEvent.change(searchInput, { target: { value: "zzz-no-match" } });
+    expect(await screen.findByText("No snapshots match your filter")).toBeTruthy();
+    expect(screen.queryByText("No snapshots yet")).toBeNull();
+  });
 
-    expect(screen.getByText("No results match your filter")).toBeTruthy();
+  test("a filter in the address is applied on load; Enter sends a new one from page 1", async () => {
+    const calls: Array<ListSnapshotsOptions | undefined> = [];
+    renderApp(archiveOf45(calls), "/snapshots?filter=beta-archive&page=2");
+
+    const input = (await screen.findByPlaceholderText(
+      "Filter by URL or title\u2026",
+    )) as HTMLInputElement;
+    expect(input.value).toBe("beta-archive");
+    await waitFor(() => expect(calls.length).toBeGreaterThan(0));
+    expect(calls[0]).toMatchObject({ contains: "beta-archive", page: 2 });
+
+    fireEvent.change(input, { target: { value: "alpha" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await screen.findByText("https://alpha.com");
+    expect(calls.at(-1)).toMatchObject({ contains: "alpha", page: 1 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SearchPage — the filters are answered by the server
+// ---------------------------------------------------------------------------
+
+describe("SearchPage — filters", () => {
+  type Call = { query: string; options: SearchSnapshotsOptions | undefined };
+
+  function hit(id: number, title: string) {
+    return {
+      id,
+      url: `https://example.com/${id}`,
+      snippet: "ice",
+      rank: -1,
+      status: "done" as const,
+      createdAt: "2026-01-15T10:00:00Z",
+      title,
+      extractors: [],
+      tags: [],
+    };
+  }
+
+  /** 60 hits for the query; 1 of them, on no particular page, is a failed snapshot. */
+  function searchClient(calls: Call[]) {
+    return mockClient({
+      searchSnapshotsPage: (query, options) => {
+        calls.push({ query, options });
+        const failedOnly = [options?.status].flat().includes("failed");
+        return Promise.resolve({
+          items: failedOnly ? [hit(57, "The failed one")] : [hit(1, "First of many")],
+          total: failedOnly ? 1 : 60,
+          page: options?.page ?? 1,
+          limit: 20,
+        } as unknown as SearchPage);
+      },
+    });
+  }
+
+  test("a filter is sent to the server and counts the whole archive", async () => {
+    const calls: Call[] = [];
+    renderApp(searchClient(calls), "/search?q=ice&page=3");
+
+    await screen.findByText("First of many");
+    expect(screen.getByText("60 results")).toBeTruthy();
+    expect(calls.at(-1)).toMatchObject({ query: "ice", options: { page: 3 } });
+    expect(calls.at(-1)?.options?.status).toBeUndefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "failed" }));
+
+    // The failed hit was on none of the loaded pages: only the server can return it.
+    await screen.findByText("The failed one");
+    expect(screen.getByText("1 result matches the filters")).toBeTruthy();
+    expect(calls.at(-1)).toMatchObject({ query: "ice", options: { status: ["failed"], page: 1 } });
+    expect(screen.queryByText(/current page of results only/)).toBeNull();
+  });
+
+  test("filters in the address are applied on load", async () => {
+    const calls: Call[] = [];
+    renderApp(searchClient(calls), "/search?q=ice&status=done,failed&extractor=pdf&tag=3&days=30");
+
+    await screen.findByText("The failed one");
+    const options = calls.at(-1)?.options;
+    expect(options).toMatchObject({ status: ["done", "failed"], extractors: ["pdf"], tags: [3] });
+    expect(options?.since).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(screen.getByRole("button", { name: "pdf" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Last 30 days" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Clear all/ }));
+    await screen.findByText("First of many");
+    expect(calls.at(-1)?.options).toEqual({ page: 1, limit: 20 });
   });
 });
 
@@ -585,7 +705,7 @@ describe("Snapshot list layouts and shortcuts", () => {
     await screen.findByText("https://example.com");
 
     fireEvent.keyDown(document.body, { key: "/" });
-    expect(document.activeElement).toBe(screen.getByLabelText("Filter this page by URL or title"));
+    expect(document.activeElement).toBe(screen.getByLabelText("Filter snapshots by URL or title"));
 
     fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
     expect(localStorage.getItem("webfrost-sidebar-collapsed")).toBe("true");
