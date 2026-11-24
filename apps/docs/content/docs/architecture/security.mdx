@@ -176,7 +176,10 @@ deployments that intentionally archive intranet pages. The `http(s)`-only rule s
 **Not an archived URL:** `webfrost push` (and `webfrost rescue`, with `--from`) uploads to the server the user names with `--to`, usually
 their own server on a private address, so it uses a plain `fetch` rather than `safeFetch`. It sends
 the API key only there: redirects are not followed, and the key is the one `webfrost login` saved
-for that server or `WEBFROST_API_KEY`, never an argument on the command line. On the receiving side the import fetches nothing.
+for that server or `WEBFROST_API_KEY`, never an argument on the command line. The same holds for the
+credentials of a proxy in front of the server (`WEBFROST_HEADERS`, or the headers a command of the
+user's prints): sent only to that server, never printed or saved, and never in place of WebFrost's
+own (see [the CLI reference](/docs/reference/cli#a-server-behind-a-proxy-or-on-a-private-network)). On the receiving side the import fetches nothing.
 
 **Not user-controlled:** the optional [OpenTelemetry export](/docs/guides/observability) sends to
 the `OTEL_EXPORTER_OTLP_*ENDPOINT` the operator set in the environment, usually a collector on a

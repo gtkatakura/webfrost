@@ -10,6 +10,7 @@ import {
 import { type Command, type Context, parseHttpUrl, parseId } from "../cli";
 import { credentialsPath, isReadableByOthers, savedServer } from "../credentials";
 import { CliError, UsageError } from "../errors";
+import { prepareServer, proxyHeaders, redirectAdvice } from "../proxy-headers";
 import { printJson, withDb } from "./shared";
 
 /**
@@ -203,6 +204,7 @@ export async function upload(
     res = await fetch(endpoint, {
       method: "POST",
       headers: {
+        ...proxyHeaders(new URL(endpoint)),
         authorization: `Bearer ${apiKey}`,
         "content-type": "application/zip",
         "content-length": String(bytes),
@@ -236,10 +238,7 @@ export async function upload(
     };
   }
   if (res.status >= 300 && res.status < 400) {
-    throw new UploadError(
-      `the server answered with a redirect (HTTP ${res.status}); pass its final URL`,
-      res.status,
-    );
+    throw new UploadError(`the server could not be asked: ${redirectAdvice(res)}`, res.status);
   }
   if (res.status === 401) throw new UploadError(KEY_REJECTED, 401);
   if (res.status === 429) {
@@ -306,6 +305,7 @@ Exit codes:
     const ids = ctx.args.map((raw) => parseId(raw, "snapshot id", ["push"]));
     const base = serverBase(ctx, ctx.string("to"), "to", ["push"]);
     const apiKey = requireApiKey(ctx, base);
+    await prepareServer(ctx, base);
     const endpoint = `${base.href.replace(/\/+$/, "")}/api/v1/snapshots/import`;
 
     const outcomes: PushOutcome[] = [];

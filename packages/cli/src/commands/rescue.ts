@@ -16,6 +16,7 @@ import {
 import type { Command, Context } from "../cli";
 import { CliError, UsageError } from "../errors";
 import { isInteractive } from "../prompt";
+import { prepareServer, proxyHeaders, redirectAdvice } from "../proxy-headers";
 import { safeText } from "../sanitize";
 import {
   KEY_REJECTED,
@@ -92,6 +93,7 @@ async function api<T>(base: URL, apiKey: string, path: string, body?: unknown): 
   try {
     res = await fetch(url, {
       headers: {
+        ...proxyHeaders(base),
         authorization: `Bearer ${apiKey}`,
         ...(body === undefined ? {} : { "content-type": "application/json" }),
       },
@@ -105,9 +107,7 @@ async function api<T>(base: URL, apiKey: string, path: string, body?: unknown): 
   }
   if (res.status === 401) throw new CliError(KEY_REJECTED);
   if (res.status >= 300 && res.status < 400) {
-    throw new CliError(
-      `the server answered with a redirect (HTTP ${res.status}); pass its final URL to --from`,
-    );
+    throw new CliError(`${base.origin} could not be asked: ${redirectAdvice(res)}`);
   }
   if (!res.ok)
     throw new CliError(`${body === undefined ? "GET" : "POST"} ${path} failed: HTTP ${res.status}`);
@@ -330,6 +330,7 @@ Exit codes:
     }
     const base = serverBase(ctx, ctx.string("from"), "from", PATH);
     const apiKey = requireApiKey(ctx, base);
+    await prepareServer(ctx, base);
     const limit = ctx.int("limit", { min: 1 });
     const giveUpAfter = ctx.int("give-up-after", { min: 0 }) ?? 3;
     const minText = ctx.int("min-text", { min: 0 }) ?? 150;

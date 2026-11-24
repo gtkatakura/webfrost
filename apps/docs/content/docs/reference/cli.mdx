@@ -189,12 +189,48 @@ The page it opens is the server's own web UI: signed in, you see the same code, 
 |---|---|
 | `--name <text>` | The name the key is listed under on the server. Default: `webfrost CLI on <hostname>`. |
 | `--no-browser` | Do not open a browser, only print the address. Over SSH or in a container no browser is opened anyway: open the address on any device where you are signed in to the server. |
+| `--headers-command <command>` | For a server [behind a proxy with its own sign-in](#a-server-behind-a-proxy-or-on-a-private-network): a command that prints the headers the proxy wants. Saved with the key and run again by `push`, `rescue` and `logout`. |
 | `--insecure` | Allow a plain-`http` server that is not this machine. |
 | `--json` | Print `{ server, key: { id, name }, file }` at the end. The key itself is never printed. |
 
 The key is saved in `$XDG_CONFIG_HOME/webfrost/credentials.json` (`~/.config/webfrost/credentials.json`), one entry per server address, in a file only you can read (mode `0600`, in a `0700` directory); a saved key is only ever sent to the server it came from. Approve a request only when you started it yourself and the codes match: whoever started it receives the key. Exit code 0 when connected, 1 when denied, expired or the server could not be reached. The protocol is in the [REST API](/docs/reference/rest-api#connect-a-command-line), and what it protects against in [Security](/docs/architecture/security#connecting-a-command-line).
 
-If the server is too old for it, or something in front of it (a proxy with its own sign-in) keeps the command line from `/api/`, the command says so; create a key by hand and use `WEBFROST_API_KEY` then.
+If the server is too old for it, the command says so; create a key by hand and use `WEBFROST_API_KEY` then.
+
+#### A server behind a proxy, or on a private network
+
+How the command line reaches the server is separate from how it proves who it is to WebFrost:
+
+- **A private network** (a VPN, WireGuard, a tailnet such as Tailscale's): nothing to set up. Give `login`, `push` and `rescue` the address the server has on that network. Plain `http` to another machine still needs `--insecure`, since nothing on the command line can tell that the network encrypts it.
+- **A proxy that asks for its own sign-in** before anything reaches WebFrost (an identity-aware proxy, an OAuth proxy, a load balancer's sign-in): your browser passes it with its sign-in page; the command line is answered with a redirect to that page. It needs the proxy's credentials as request headers, which every such proxy has a way to give to programs: a token its own tool prints, or a service token.
+
+Give them in one of two ways, both independent of any product:
+
+```bash
+# A command that prints the headers, one "Name: value" per line. WEBFROST_SERVER is the server's address.
+webfrost login https://archive.example.com \
+  --headers-command 'printf "x-proxy-token: %s\n" "$(proxy-cli token --for "$WEBFROST_SERVER")"'
+
+# Or the headers themselves, for a token that does not expire (a service token, in CI)
+export WEBFROST_HEADERS='x-proxy-client-id: 1234
+x-proxy-client-secret: …'
+```
+
+`--headers-command` is saved with the server's key, so `push`, `rescue` and `logout` run it again by themselves and always send a fresh token; `WEBFROST_HEADERS_COMMAND` gives a command for one run without saving it. The command is yours: it comes from the flag, the variable or your own credentials file, never from a server. As one example, behind Cloudflare Access, after `cloudflared access login https://archive.example.com` once:
+
+```bash
+webfrost login https://archive.example.com \
+  --headers-command 'printf "cf-access-token: %s\n" "$(cloudflared access token -app="$WEBFROST_SERVER")"'
+```
+
+What keeps the proxy's credentials from leaking:
+
+- They are sent to the server you named and nowhere else: no request of the command line follows a redirect.
+- They are never printed, not in errors either, and never saved: the file keeps the command, not what it prints.
+- They are sent next to WebFrost's API key, never instead of it: `Authorization`, `Cookie` and `Host` cannot be set this way, so a proxy that takes its own credentials in `Authorization` is not supported.
+- Have the command fetch the secret rather than contain it: a command line can be seen by other users of the machine while it runs.
+
+The other way round, a proxy can let requests to `/api/` through without its sign-in, since they carry WebFrost's own credentials; then the command line needs nothing extra, and the API is as exposed as WebFrost's own authentication makes it.
 
 ### `webfrost logout <server>`
 
@@ -347,6 +383,8 @@ Every command that opens a browser (`add`, `import`, `schedule worker`, `serve`)
 | `WEBFROST_PASSWORD` | none | Password for `admin create` |
 | `WEBFROST_API_KEY` | none | API key of the server `push` and `rescue` talk to, used instead of the one `login` saved |
 | `XDG_CONFIG_HOME` | `~/.config` | Where `login` keeps `webfrost/credentials.json` |
+| `WEBFROST_HEADERS` | none | Extra request headers for `login`, `logout`, `push` and `rescue`, one `Name: value` per line: the credentials of [a proxy in front of the server](#a-server-behind-a-proxy-or-on-a-private-network) |
+| `WEBFROST_HEADERS_COMMAND` | none | A command that prints such headers, run once per command, instead of the one `login --headers-command` saved |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | none | Send traces and metrics of every command to your OpenTelemetry collector; flushed when the command ends. See [Observability](/docs/guides/observability). |
 
 Timeouts, storage and the server variables `serve` reads are in [Configuration](/docs/reference/configuration).

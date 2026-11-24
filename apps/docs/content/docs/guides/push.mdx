@@ -32,7 +32,7 @@ Snapshot 57 now shows up in the server's web UI and search, with the video, its 
 
 Use an `https` URL. Plain `http` is refused unless the server is on this machine, or you pass `--insecure` for a network you trust (a home LAN, a VPN), since the key and the snapshot would travel unencrypted.
 
-[`webfrost login`](/docs/reference/cli#webfrost-login-server) asks the server for an API key of its own: it shows a short code and opens the server's web UI, where you approve the request that shows the same code. The key is saved in a file only you can read and is listed on the server under Settings, API keys, where you can revoke it (or run `webfrost logout`). In a script or CI, set `WEBFROST_API_KEY` to a key created in Settings instead; a key is never taken from a command-line flag, so it does not land in your shell history or in the process list.
+[`webfrost login`](/docs/reference/cli#webfrost-login-server) asks the server for an API key of its own: it shows a short code and opens the server's web UI, where you approve the request that shows the same code. The key is saved in a file only you can read and is listed on the server under Settings, API keys, where you can revoke it (or run `webfrost logout`). If the server is only reachable on a private network, or sits behind a proxy with its own sign-in, see [how the command line reaches it](/docs/reference/cli#a-server-behind-a-proxy-or-on-a-private-network). In a script or CI, set `WEBFROST_API_KEY` to a key created in Settings instead; a key is never taken from a command-line flag, so it does not land in your shell history or in the process list.
 
 Your local copy stays where it was. Remove it with `webfrost delete 12` once the push succeeded, if you do not want to keep it.
 

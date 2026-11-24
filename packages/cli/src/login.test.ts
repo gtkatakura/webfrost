@@ -326,3 +326,165 @@ describe("webfrost logout", () => {
     expect(await keysOnServer()).toHaveLength(1);
   }, 30_000);
 });
+
+describe("a server behind a proxy with its own sign-in", () => {
+  const TOKEN = "proxy-t0ken";
+  let proxy: ReturnType<typeof Bun.serve>;
+  let seen: string[];
+  const via = () => `http://127.0.0.1:${proxy.port}`;
+
+  /**
+   * What an identity-aware proxy does: a request without its token is sent to a sign-in page;
+   * with it, the request goes on to the server, WebFrost's own credentials included.
+   */
+  beforeEach(() => {
+    seen = [];
+    proxy = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      async fetch(req) {
+        const url = new URL(req.url);
+        if (req.headers.get("x-proxy-token") !== TOKEN) {
+          return new Response(null, {
+            status: 302,
+            headers: { location: `https://sso.example/login?next=${url.pathname}` },
+          });
+        }
+        seen.push(`${req.method} ${url.pathname}`);
+        const headers = new Headers(req.headers);
+        headers.delete("host");
+        headers.delete("x-proxy-token");
+        const upstream = await fetch(`${origin()}${url.pathname}${url.search}`, {
+          method: req.method,
+          headers,
+          ...(req.body ? { body: await req.arrayBuffer() } : {}),
+          redirect: "manual",
+        });
+        return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
+      },
+    });
+  });
+
+  afterEach(() => proxy.stop(true));
+
+  /** `webfrost login` through the proxy, approved by the admin as soon as it shows its code. */
+  async function loginVia(args: string[], env: Record<string, string> = {}) {
+    const proc = spawnCli(["login", via(), "--no-browser", ...args], env);
+    const reader = proc.stderr.getReader();
+    const decoder = new TextDecoder();
+    let stderr = "";
+    let approved = false;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      stderr += decoder.decode(value, { stream: true });
+      const code = /^ {2}([A-Z]{4}-[A-Z]{4})$/m.exec(stderr)?.[1];
+      if (code && !approved) {
+        approved = true;
+        expect(await answer(code, "approve")).toBe(200);
+      }
+    }
+    const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+    return { exitCode, stdout, stderr };
+  }
+
+  test("without the proxy's credentials the command says where it was sent and what to do", async () => {
+    const out = await runCli(["login", via(), "--no-browser"]);
+    expect(out.exitCode).toBe(1);
+    expect(out.stderr).toContain("redirect to sso.example");
+    expect(out.stderr).toContain("--headers-command");
+    expect(out.stderr).toContain("WEBFROST_HEADERS");
+    expect(seen).toEqual([]);
+  }, 30_000);
+
+  test("WEBFROST_HEADERS carries them on every request, and they are never printed", async () => {
+    const env = { WEBFROST_HEADERS: `x-proxy-token: ${TOKEN}` };
+    const login = await loginVia([], env);
+    expect(login.stdout).toContain(`Connected to ${via()}`);
+    expect(login.exitCode).toBe(0);
+    expect(login.stdout + login.stderr).not.toContain(TOKEN);
+    expect(seen).toContain("POST /api/v1/auth/device");
+    expect(seen).toContain("POST /api/v1/auth/device/token");
+
+    // The static headers are not saved: without them the next command is sent to sign in again.
+    const without = await runCli(["rescue", "blocked", "--from", via(), "--dry-run"]);
+    expect(without.exitCode).toBe(1);
+    expect(without.stderr).toContain("redirect to sso.example");
+    const withThem = await runCli(["rescue", "blocked", "--from", via(), "--dry-run"], env);
+    expect(withThem.exitCode).toBe(0);
+  }, 60_000);
+
+  test("--headers-command is run for the server, saved with its key, and reused by later commands", async () => {
+    // A helper as a proxy's token tool would be: told which server, it prints the header.
+    const helper = `[ "$WEBFROST_SERVER" = "${via()}" ] && printf 'X-Proxy-Token: %s\\n' "$HELPER_TOKEN"`;
+    const env = { HELPER_TOKEN: TOKEN };
+
+    const login = await loginVia(["--headers-command", helper], env);
+    expect(login.stdout).toContain(`Connected to ${via()}`);
+    expect(login.exitCode).toBe(0);
+
+    const saved = JSON.parse(readFileSync(credentialsFile(), "utf8")) as {
+      servers: Record<string, { apiKey: string; headersCommand?: string }>;
+    };
+    expect(saved.servers[via()]?.headersCommand).toBe(helper);
+    // The command is saved; the token it prints never is.
+    expect(readFileSync(credentialsFile(), "utf8")).not.toContain(TOKEN);
+
+    // No flag and no variable now: the saved command and the saved key do it.
+    seen.length = 0;
+    const rescue = await runCli(["rescue", "blocked", "--from", via(), "--dry-run", "--json"], env);
+    expect(rescue.stderr).not.toContain("redirect");
+    expect(rescue.exitCode).toBe(0);
+    expect(seen.some((line) => line.startsWith("GET /api/v1/failures/blocked/snapshots"))).toBe(
+      true,
+    );
+
+    // Logging in again keeps the command; logging out goes through the proxy too.
+    const again = await loginVia([], env);
+    expect(again.exitCode).toBe(0);
+    const kept = JSON.parse(readFileSync(credentialsFile(), "utf8")) as {
+      servers: Record<string, { headersCommand?: string }>;
+    };
+    expect(kept.servers[via()]?.headersCommand).toBe(helper);
+
+    const out = await runCli(["logout", via()], env);
+    expect(out.stdout).toContain("revoked");
+    expect(out.exitCode).toBe(0);
+  }, 90_000);
+
+  test("a headers command that fails or prints something else stops the command before any request", async () => {
+    const failing = await runCli([
+      "login",
+      via(),
+      "--no-browser",
+      "--headers-command",
+      "echo 'token tool: not signed in' >&2; exit 3",
+    ]);
+    expect(failing.exitCode).toBe(1);
+    expect(failing.stderr).toContain("token tool: not signed in");
+    expect(failing.stderr).toContain("headers command failed (exit code 3)");
+
+    const junk = await runCli([
+      "login",
+      via(),
+      "--no-browser",
+      "--headers-command",
+      "echo 'eyJhbGciOi.secret-token.sig'",
+    ]);
+    expect(junk.exitCode).toBe(1);
+    expect(junk.stderr).toContain("is not a header");
+    expect(junk.stderr).not.toContain("secret-token");
+
+    const forged = await runCli([
+      "login",
+      via(),
+      "--no-browser",
+      "--headers-command",
+      "echo 'Authorization: Bearer other'",
+    ]);
+    expect(forged.exitCode).toBe(1);
+    expect(forged.stderr).toContain("cannot set authorization");
+    expect(seen).toEqual([]);
+    expect(existsSync(credentialsFile())).toBe(false);
+  }, 60_000);
+});

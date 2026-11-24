@@ -12,6 +12,7 @@ import { hostname } from "node:os";
 import type { Command, Context } from "../cli";
 import { credentialsPath, removeServer, saveServer, savedServer } from "../credentials";
 import { CliError } from "../errors";
+import { prepareServer, proxyHeaders, redirectAdvice } from "../proxy-headers";
 import { printable, serverUrl } from "./push";
 import { printJson } from "./shared";
 
@@ -35,7 +36,7 @@ async function post(base: URL, path: string, body: unknown): Promise<Response> {
   try {
     return await fetch(apiUrl(base, path), {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { ...proxyHeaders(base), "content-type": "application/json" },
       body: JSON.stringify(body),
       redirect: "manual",
     });
@@ -49,9 +50,7 @@ async function post(base: URL, path: string, body: unknown): Promise<Response> {
 /** Why the server did not answer the API, in words that say what to do. */
 function refusal(base: URL, res: Response): CliError {
   if (res.status >= 300 && res.status < 400) {
-    return new CliError(
-      `${base.origin} answered with a redirect (HTTP ${res.status}) instead of its API. Pass the server's final URL; if a proxy in front of it asks for its own sign-in, it must let requests to /api/ through (they carry WebFrost's own credentials).`,
-    );
+    return new CliError(`${base.origin} could not be asked: ${redirectAdvice(res)}`);
   }
   if (res.status === 404) {
     return new CliError(
@@ -151,6 +150,12 @@ export const loginCommand: Command = {
       value: "text",
       description: 'The name the API key is listed under (default: "webfrost CLI on <hostname>")',
     },
+    "headers-command": {
+      type: "string",
+      value: "command",
+      description:
+        'For a server behind a proxy with its own sign-in: a command that prints the headers the proxy wants, one "Name: value" per line. Saved with the key and run again by push, rescue and logout',
+    },
     "no-browser": {
       type: "boolean",
       description: "Do not open a browser; print the address to open yourself",
@@ -169,6 +174,14 @@ export const loginCommand: Command = {
 The key is saved in $XDG_CONFIG_HOME/webfrost/credentials.json (~/.config/webfrost/credentials.json),
 readable by you only. WEBFROST_API_KEY, when set, is used instead of a saved key.
 
+A server behind a proxy with its own sign-in:
+  --headers-command        a command that prints the proxy's headers ("Name: value" lines);
+                           it sees WEBFROST_SERVER, is saved with the key and run again by
+                           push, rescue and logout
+  WEBFROST_HEADERS         the headers themselves, one per line (a service token)
+  WEBFROST_HEADERS_COMMAND such a command for this run only
+They are sent to that server only, next to the API key, and never printed or saved.
+
 Exit codes:
   0  connected
   1  denied, expired, or the server could not be reached
@@ -180,6 +193,11 @@ Exit codes:
   ],
   async run(ctx) {
     const base = serverUrl(ctx, ctx.args[0] ?? "", LOGIN_PATH);
+    // Given now, or kept from an earlier login to this server (WEBFROST_HEADERS_COMMAND is for
+    // one run and is not saved).
+    const headersCommand =
+      ctx.string("headers-command")?.trim() || savedServer(base.origin)?.headersCommand;
+    await prepareServer(ctx, base, ctx.string("headers-command"));
     const say = (msg: string) => {
       if (!ctx.quiet) process.stderr.write(`${msg}\n`);
     };
@@ -220,6 +238,7 @@ Exit codes:
       keyId: answer.key.id,
       name: answer.key.name,
       savedAt: new Date().toISOString(),
+      ...(headersCommand ? { headersCommand } : {}),
     });
     const keyName = printable(answer.key.name, 100);
     if (ctx.bool("json")) {
@@ -268,9 +287,10 @@ Exit codes:
     let revoked: "yes" | "gone" | "unknown" = "unknown";
     let why = "";
     try {
+      await prepareServer(ctx, base);
       const res = await fetch(apiUrl(base, `/settings/keys/${encodeURIComponent(saved.keyId)}`), {
         method: "DELETE",
-        headers: { authorization: `Bearer ${saved.apiKey}` },
+        headers: { ...proxyHeaders(base), authorization: `Bearer ${saved.apiKey}` },
         redirect: "manual",
       });
       // 401: the key no longer works there (revoked or expired); 404: it is not listed any more.

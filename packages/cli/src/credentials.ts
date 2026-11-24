@@ -18,6 +18,11 @@ export interface SavedServer {
   /** The name the key is listed under on the server. */
   name: string;
   savedAt: string;
+  /**
+   * A command of the user's that prints the headers a proxy in front of this server wants
+   * (`webfrost login --headers-command`), run again by every command that talks to the server.
+   */
+  headersCommand?: string;
 }
 
 interface CredentialsFile {
