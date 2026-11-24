@@ -186,6 +186,36 @@ The key comes from `WEBFROST_API_KEY` only, never from a flag, so it does not en
 
 Each bundle is written to a temporary file and uploaded with its size known; on a terminal, uploads over 1 MB show a progress line. One snapshot that fails (not found, refused by the server) does not stop the others. Exit code 0 when every snapshot was stored, 1 otherwise, 2 for a usage error. A reverse proxy in front of the server may have its own upload limit below the server's `WEBFROST_IMPORT_BUNDLE_MAX_BYTES` (default 2 GiB); raise it for large videos.
 
+### `webfrost rescue <group> --from <url>`
+
+For the failed snapshots of a group on a server (the groups of [Review failures](/docs/reference/web-ui#review-failures), e.g. `blocked`), archive each page on this machine, check the copy, and send the ones that work to the server, which stores the copy and moves the failure to its trash in one step ([`?replaces=`](/docs/reference/rest-api#import-a-snapshot-bundle)). Use it for pages a site refuses to your server but not to your own connection. The guide: [Many failed pages at once](/docs/guides/push#many-failed-pages-at-once).
+
+```bash
+export WEBFROST_API_KEY=wf_...
+webfrost rescue blocked --from https://archive.example.com --dry-run   # what would be tried
+webfrost rescue blocked --from https://archive.example.com
+# 1155 failed snapshots across 459 domains in "Blocked by the site" on https://archive.example.com.
+# Archive them here and replace each one that works? [y/N] y
+# [1/1155] rescued: https://www.example.com/article (snapshot 7344)
+# [2/1155] anti-bot or login wall, not sent: https://shop.example.com/cart (only 27 characters of text ...)
+```
+
+| Option | Description |
+|---|---|
+| `--from <url>` | Required. The server's base URL. Plain `http` follows the same rule as `push` (`--insecure`). |
+| `--host <domain>`, `--q <text>` | Only that domain, or the domains containing the text (like the filter in the web UI). |
+| `--limit <n>` | At most `n` snapshots. |
+| `--give-up-after <n>` | After `n` failures in a row on a domain here, skip the rest of it (default 3; 0 = never), so a site that refuses this machine too is not asked hundreds of times. |
+| `--min-text <chars>` | Readable text a copy needs to be sent (default 150; 0 = no minimum). |
+| `--concurrency <n>` | Domains worked on at once (default 2, at most 8). Pages of one domain are always one at a time. |
+| `--dry-run` | Print the domains and their counts (`count<TAB>domain`), then stop. |
+| `-y`, `--yes` | Start without asking. Needed when stdin is not a terminal. |
+| `--json` | Print `{ summary, results: [{ id, url, outcome, remoteId?, reason? }] }` at the end. |
+
+A copy is sent only when it finished `done` and is the page itself: not an anti-bot interstitial (Cloudflare's "Just a moment...", "Client Challenge", "Access Denied" and similar, by title or by what the page says) and not a page with almost no text (a login wall or an empty shell). Each result is one of `rescued`, `still-failing` (fails here too), `gone` (404/410 or a domain that does not resolve here; it stays in its group on the server, trash it there), `wall` (not sent), `skipped` (the server no longer has it as a failure: retried, archived or trashed since), `not-tried` (`--give-up-after`) and `error` (could not be sent).
+
+The pages are archived in a scratch archive, `rescue/` in the data directory, never in your own archive, and each copy is deleted there once it was sent or rejected. Running it again goes on with what is left: a rescued page is no longer in the group, and the server refuses a copy whose failure changed, so nothing is stored twice. Ctrl+C stops after the pages in progress and prints the summary. Exit code 0 when it ran to the end, 1 when a copy could not be sent, 2 for a usage error; a rejected key or a server that cannot be reached stops the run.
+
 ### `webfrost export <id> [-o <file>]`
 
 Write a snapshot's bundle to a file, `snapshot-<id>.zip` by default. `--json` prints `{ id, path, bytes }`. Import it with `webfrost import <file>` into another local archive, or upload it with `curl` to [`POST /api/v1/snapshots/import`](/docs/reference/rest-api#import-a-snapshot-bundle).

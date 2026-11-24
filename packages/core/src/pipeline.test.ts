@@ -118,6 +118,12 @@ function results(snapshotId: number) {
   );
 }
 
+async function failureOf(snapshotId: number) {
+  return db.get<{ failure_category: string | null; failure_detail: string | null }>(
+    sql`SELECT failure_category, failure_detail FROM snapshots WHERE id = ${snapshotId}`,
+  );
+}
+
 async function statusOf(snapshotId: number) {
   return (
     await db.get<{ status: string }>(sql`SELECT status FROM snapshots WHERE id = ${snapshotId}`)
@@ -241,6 +247,51 @@ describe("runPipeline", () => {
     expect(await results(id)).toHaveLength(0);
   });
 
+  test("a failed snapshot says why: the category and the message are stored on it", async () => {
+    const url = `${baseUrl}/missing`;
+    const id = await createSnapshot(db, url);
+    await runPipeline(db, id, url, testDir);
+
+    const row = await failureOf(id);
+    expect(row?.failure_category).toBe("page_not_found");
+    expect(row?.failure_detail).toContain("404");
+  });
+
+  test("a domain that does not resolve is recorded, and its next snapshots fail without a lookup", async () => {
+    const host = `webfrost-dead-${crypto.randomUUID().slice(0, 8)}.invalid`;
+    const first = `http://${host}/a`;
+    const id1 = await createSnapshot(db, first);
+    await runPipeline(db, id1, first, testDir);
+
+    expect(await statusOf(id1)).toBe("failed");
+    expect((await failureOf(id1))?.failure_category).toBe("domain_not_found");
+    expect(
+      (await db.get<{ host: string }>(sql`SELECT host FROM dead_hosts WHERE host = ${host}`))?.host,
+    ).toBe(host);
+
+    const second = `http://${host}/b`;
+    const id2 = await createSnapshot(db, second);
+    await runPipeline(db, id2, second, testDir);
+
+    const row = await failureOf(id2);
+    expect(await statusOf(id2)).toBe("failed");
+    expect(row?.failure_category).toBe("domain_not_found");
+    // Reported from the record, not from a second DNS lookup.
+    expect(row?.failure_detail).toContain("known since");
+  });
+
+  test("a snapshot that succeeds after a failure has no failure left on it", async () => {
+    const url = `${baseUrl}/article`;
+    const id = await createSnapshot(db, url);
+    await db.run(
+      sql`UPDATE snapshots SET failure_category = 'timeout', failure_detail = 'earlier' WHERE id = ${id}`,
+    );
+    await runPipeline(db, id, url, testDir);
+
+    expect(await statusOf(id)).toBe("done");
+    expect(await failureOf(id)).toEqual({ failure_category: null, failure_detail: null });
+  }, 60_000);
+
   test("refuses private addresses unless explicitly allowed", async () => {
     process.env.WEBFROST_ALLOW_PRIVATE_URLS = "false";
     try {
@@ -248,6 +299,7 @@ describe("runPipeline", () => {
       const id = await createSnapshot(db, url);
       await runPipeline(db, id, url, testDir);
       expect(await statusOf(id)).toBe("failed");
+      expect((await failureOf(id))?.failure_category).toBe("private_address");
     } finally {
       process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
     }
@@ -397,6 +449,24 @@ describe("JobRunner", () => {
     expect(await statusOf(id)).toBe("pending");
     await runner.onIdle();
     expect(await statusOf(id)).toBe("failed");
+  }, 60_000);
+
+  test("retry clears the failure and forgets a dead domain, so DNS is asked again", async () => {
+    const host = `webfrost-dead-${crypto.randomUUID().slice(0, 8)}.invalid`;
+    const url = `http://${host}/`;
+    const id = await createSnapshot(db, url);
+    await runPipeline(db, id, url, testDir);
+    expect((await failureOf(id))?.failure_category).toBe("domain_not_found");
+
+    const runner = new JobRunner({ dir: testDir });
+    expect(await runner.retry(db, id)).toBe("queued");
+    expect(await failureOf(id)).toEqual({ failure_category: null, failure_detail: null });
+    await runner.onIdle();
+
+    // Looked up again (a fresh lookup's message, not the record's), and recorded again.
+    const row = await failureOf(id);
+    expect(row?.failure_category).toBe("domain_not_found");
+    expect(row?.failure_detail).not.toContain("known since");
   }, 60_000);
 
   test("recoverPending re-runs orphaned snapshots without duplicating results", async () => {

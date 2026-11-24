@@ -87,6 +87,7 @@ describe("WebFrostClient.listSnapshots", () => {
         id: 1,
         url: "https://a.com",
         status: "done",
+        failure: null,
         createdAt: "2024-01-01T00:00:00.000Z",
         extractors: ["warc"],
         tags: [],
@@ -98,6 +99,7 @@ describe("WebFrostClient.listSnapshots", () => {
         id: 2,
         url: "https://b.com",
         status: "pending",
+        failure: null,
         createdAt: "2024-01-02T00:00:00.000Z",
         extractors: [],
         tags: [],
@@ -236,6 +238,7 @@ describe("WebFrostClient.getSnapshot", () => {
       id: 1,
       url: "https://example.com",
       status: "done",
+      failure: null,
       createdAt: "2024-01-01T00:00:00.000Z",
       extractors: ["warc"],
       tags: [],
@@ -601,5 +604,59 @@ describe("WebFrostClient.importSnapshot", () => {
       .importSnapshot(new Blob(["x"]), { timeoutMs: 10 })
       .catch((e: unknown) => e)) as WebFrostError;
     expect(timedOut.code).toBe("TIMEOUT");
+  });
+});
+
+describe("WebFrostClient failures", () => {
+  test("a failed snapshot carries its failure; an older server's answer maps to null", async () => {
+    const failure = {
+      category: "domain_not_found",
+      class: "permanent",
+      label: "Domain does not exist",
+      detail: "getaddrinfo ENOTFOUND gone.example",
+    } as const;
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({
+        items: [
+          {
+            id: 1,
+            url: "https://gone.example",
+            status: "failed",
+            failure,
+            createdAt: "2024-01-01T00:00:00Z",
+          },
+          {
+            id: 2,
+            url: "https://old.example",
+            status: "failed",
+            createdAt: "2024-01-01T00:00:00Z",
+          },
+        ],
+        total: 2,
+        page: 1,
+        limit: 20,
+      }),
+    );
+    const page = await new WebFrostClient({ baseUrl: BASE }).listSnapshots();
+    expect(page.items.map((s) => s.failure)).toEqual([failure, null]);
+  });
+
+  test("listFailureDomains passes the filter and trashFailures posts the selection", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ items: [], total: 0, snapshots: 0, page: 2, limit: 50 }),
+    );
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ trashed: 3 }));
+    const client = new WebFrostClient({ baseUrl: BASE });
+
+    await client.listFailureDomains("domain-gone", { q: "manga host", page: 2 });
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toBe(
+      `${BASE}/api/v1/failures/domain-gone/domains?q=manga+host&page=2`,
+    );
+    expect(await client.trashFailures("domain-gone", { hosts: ["gone.example"] })).toEqual({
+      trashed: 3,
+    });
+    const [url, init] = fetchSpy.mock.calls[1] ?? [];
+    expect(String(url)).toBe(`${BASE}/api/v1/failures/domain-gone/trash`);
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({ hosts: ["gone.example"] });
   });
 });

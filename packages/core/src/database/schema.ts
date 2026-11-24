@@ -13,6 +13,20 @@ export interface Schema {
     status: Generated<string>;
     created_at: Generated<string>;
     color_scheme: Generated<string | null>;
+    failure_category: Generated<string | null>;
+    failure_detail: Generated<string | null>;
+    trashed_at: Generated<string | null>;
+  };
+  app_settings: {
+    name: string;
+    value: string;
+    updated_at: Generated<string>;
+  };
+  dead_hosts: {
+    host: string;
+    detail: string | null;
+    first_seen_at: Generated<string>;
+    last_seen_at: Generated<string>;
   };
   archive_results: {
     id: Generated<number>;

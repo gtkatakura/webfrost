@@ -2,6 +2,7 @@ import { sql } from "kysely";
 import { newGuardedContext } from "./browser-guard";
 import { resolveChromium } from "./chromium";
 import type { Db } from "./db";
+import { hostOf, knownDeadHost, markDeadHost } from "./dead-hosts";
 import { domSnapshotExtractor } from "./extractors/dom-snapshot";
 import { htmlExtractor } from "./extractors/html";
 import { mediaExtractor } from "./extractors/media";
@@ -10,6 +11,7 @@ import { readabilityExtractor } from "./extractors/readability";
 import { screenshotExtractor } from "./extractors/screenshot";
 import { singleFileExtractor } from "./extractors/singlefile";
 import { warcExtractor } from "./extractors/warc";
+import { type Failure, failureFromError, failureFromStatus } from "./failure";
 import { FetchCache } from "./fetch-cache";
 import { newLeaseToken, recordResult, setJobStatus, touchJob } from "./results";
 import { extractIndexFields, indexSnapshot } from "./search";
@@ -269,13 +271,13 @@ async function archive(
   const lease = options?.lease;
 
   /** Returns false when the job's lease has passed to another worker. */
-  /** `reason`: why the run failed, as a `failureCategory`. */
+  /** `failure`: why the run failed; stored on the snapshot and traced as its category. */
   async function setStatus(
     status: "running" | "done" | "failed",
-    reason?: string,
+    failure?: Failure,
   ): Promise<boolean> {
     try {
-      const owned = await setJobStatus(db, snapshotId, status, lease);
+      const owned = await setJobStatus(db, snapshotId, status, lease, failure);
       if (!owned) {
         logger?.warn(
           `lease lost snapshot=${snapshotId}: another worker adopted the job; dropping status=${status}`,
@@ -283,7 +285,7 @@ async function archive(
         span.setAttributes({ "webfrost.lease.lost": true });
       } else if (status !== "running") {
         span.setAttributes({ "webfrost.snapshot.status": status });
-        if (status === "failed") span.fail(undefined, reason ?? "no_output");
+        if (status === "failed") span.fail(undefined, failure?.category ?? "no_output");
         recordMetric("snapshots.finished", 1, { "webfrost.snapshot.status": status });
       }
       return owned;
@@ -306,6 +308,19 @@ async function archive(
   }
 
   if (!(await setStatus("running"))) return;
+
+  // A domain that did not resolve a moment ago does not resolve now: report it without asking DNS again.
+  try {
+    const dead = await knownDeadHost(db, url);
+    if (dead) {
+      logger?.warn(`fetch skipped snapshot=${snapshotId}: ${dead.detail}`);
+      await setStatus("failed", dead);
+      return;
+    }
+  } catch (err) {
+    // Only a shortcut: without it the fetch finds out the same.
+    logger?.debug(`dead host check failed snapshot=${snapshotId}: ${errorMessage(err)}`);
+  }
 
   // Politeness: never start two runs against the same host closer than the configured gap.
   if (options?.throttle !== false) {
@@ -342,13 +357,20 @@ async function archive(
     );
   } catch (err) {
     logger?.error(`fetch failed snapshot=${snapshotId}: ${errorMessage(err)}`);
-    await setStatus("failed", `fetch_${failureCategory(errorMessage(err))}`);
+    const failure = failureFromError(errorMessage(err));
+    const host = hostOf(url);
+    if (failure.category === "domain_not_found" && host) {
+      await markDeadHost(db, host, failure.detail).catch((markErr: unknown) =>
+        logger?.debug(`could not record dead host ${host}: ${errorMessage(markErr)}`),
+      );
+    }
+    await setStatus("failed", failure);
     return;
   }
 
   if (!cached.status || cached.status >= 400) {
     logger?.warn(`fetch error snapshot=${snapshotId} status=${cached.status ?? "none"} url=${url}`);
-    await setStatus("failed", "fetch_http_status");
+    await setStatus("failed", failureFromStatus(cached.status, url));
     return;
   }
 

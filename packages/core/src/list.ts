@@ -46,6 +46,11 @@ export interface Snapshot {
 }
 
 export interface SnapshotWithExtractors extends Snapshot {
+  /** Why a failed snapshot failed (a `FailureCategory`), and the message behind it. Null otherwise. */
+  failure_category: string | null;
+  failure_detail: string | null;
+  /** When the snapshot was moved to the trash; null when it is not there. */
+  trashed_at: string | null;
   /** Extractors that produced output (failed extractors are not listed). */
   extractors: string[];
   tags: Tag[];
@@ -70,6 +75,9 @@ interface SnapshotRow {
   url: string;
   status: string;
   created_at: string;
+  failure_category: string | null;
+  failure_detail: string | null;
+  trashed_at: string | null;
   extractor_names: string | null;
   readability_content: string | null;
   has_screenshot: number | null;
@@ -84,7 +92,7 @@ function snapshotSelect(db: Db): RawBuilder<SnapshotRow> {
     db.dialect === "postgres"
       ? sql`string_agg(DISTINCT ar.extractor, ',')`
       : sql`GROUP_CONCAT(DISTINCT ar.extractor)`;
-  return sql<SnapshotRow>`SELECT s.id, s.url, s.status, s.created_at,
+  return sql<SnapshotRow>`SELECT s.id, s.url, s.status, s.created_at, s.failure_category, s.failure_detail, s.trashed_at,
      ${names} AS extractor_names,
      MAX(CASE WHEN ar.extractor = 'readability' THEN ar.content END) AS readability_content,
      MAX(CASE WHEN ar.extractor = 'screenshot' THEN 1 END) AS has_screenshot,
@@ -95,7 +103,7 @@ function snapshotSelect(db: Db): RawBuilder<SnapshotRow> {
 }
 
 /** GROUP BY that every dialect accepts for the columns snapshotSelect() returns. */
-const SNAPSHOT_GROUP_BY = sql`GROUP BY s.id, s.url, s.status, s.created_at`;
+const SNAPSHOT_GROUP_BY = sql`GROUP BY s.id, s.url, s.status, s.created_at, s.failure_category, s.failure_detail, s.trashed_at`;
 
 interface RawTagRow {
   snapshot_id: number;
@@ -142,6 +150,9 @@ function toSnapshot(r: SnapshotRow, tags: Map<number, Tag[]>): SnapshotWithExtra
     url: r.url,
     status: r.status,
     created_at: r.created_at,
+    failure_category: r.failure_category ?? null,
+    failure_detail: r.failure_detail ?? null,
+    trashed_at: r.trashed_at ?? null,
     extractors: r.extractor_names ? r.extractor_names.split(",") : [],
     tags: tags.get(r.id) ?? [],
     title,
@@ -154,13 +165,13 @@ function toSnapshot(r: SnapshotRow, tags: Map<number, Tag[]>): SnapshotWithExtra
 
 export async function listSnapshots(db: Db): Promise<Snapshot[]> {
   return db.all<Snapshot>(
-    sql`SELECT id, url, status, created_at FROM snapshots WHERE status <> ${IMPORTING_STATUS} ORDER BY id`,
+    sql`SELECT id, url, status, created_at FROM snapshots WHERE status <> ${IMPORTING_STATUS} AND trashed_at IS NULL ORDER BY id`,
   );
 }
 
 export async function listSnapshotsWithExtractors(db: Db): Promise<SnapshotWithExtractors[]> {
   const rows = await db.all(
-    sql<SnapshotRow>`${snapshotSelect(db)} WHERE s.status <> ${IMPORTING_STATUS} ${SNAPSHOT_GROUP_BY} ORDER BY s.id`,
+    sql<SnapshotRow>`${snapshotSelect(db)} WHERE s.status <> ${IMPORTING_STATUS} AND s.trashed_at IS NULL ${SNAPSHOT_GROUP_BY} ORDER BY s.id`,
   );
   // Load all snapshot-tag associations in a single query to avoid N+1
   const tags = await loadTags(db);
@@ -198,8 +209,8 @@ export async function listSnapshotsWithExtractorsPaginated(
   const { page, limit, offset } = pageWindow(requestedPage, requestedLimit);
   // Snapshots still being imported are not shown until their files are in place.
   const where = status
-    ? sql`WHERE s.status = ${status} AND s.status <> ${IMPORTING_STATUS}`
-    : sql`WHERE s.status <> ${IMPORTING_STATUS}`;
+    ? sql`WHERE s.status = ${status} AND s.status <> ${IMPORTING_STATUS} AND s.trashed_at IS NULL`
+    : sql`WHERE s.status <> ${IMPORTING_STATUS} AND s.trashed_at IS NULL`;
 
   const countRow = await db.get<{ total: number }>(
     sql`SELECT COUNT(*) AS total FROM snapshots s ${where}`,

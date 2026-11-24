@@ -18,6 +18,14 @@ Every breaking change is called out in the [changelog](CHANGELOG.md).
 
 - **Browser extension** for Chrome and Firefox: archive the page you are on in one click.
 - **Webhooks** when a snapshot finishes or fails.
+- **More of Review failures:** pages moved (follow the redirect or not), pages gone (look them up
+  in the Wayback Machine and archive that capture), sites that rate-limit (pace each host from its
+  `Retry-After` and rate-limit headers), and rules per domain that apply a decision to future snapshots.
+- **Archive blocked pages from your own machine, automatically:** a small WebFrost helper on your
+  computer, connected to the server, that takes the pages a site refuses to the server (blocked by IP or
+  anti-bot), archives them with your own connection and browser and sends them back, as they come:
+  what `webfrost rescue` does today when you run it. With your own browser profile it would also get
+  past the anti-bot checks a fresh browser does not (Stack Exchange's, for one).
 - **OpenAPI description** of the HTTP API, with interactive docs.
 - **Archiving pages behind a login**, from a cookies file or a browser profile.
 - **Search filters on the server** (status, date range, tags), not only on the current page.
@@ -40,7 +48,8 @@ A Docker image for amd64 and arm64 and a single `webfrost` binary for macOS and 
 Homebrew); SQLite by default with Litestream backups, or PostgreSQL and MySQL; eight formats from one visit
 (WARC, raw HTML, readable text, PDF, full-page screenshot, DOM snapshot, self-contained HTML, video), in a
 light or dark color scheme, complete for single-page apps; full-text search; tags; imports from bookmarks, OPML, RSS/Atom and URL
-lists; `webfrost push` to archive on your own machine and keep the snapshot on the server (also one-file
+lists; `webfrost push` to archive on your own machine and keep the snapshot on the server, and `webfrost
+rescue` to do it for every failure of a group, replacing each one that works (also one-file
 snapshot bundles with `webfrost export` and `import`); cron and feed schedules run by the server; a job queue with crash recovery and per-site pacing;
 filesystem or S3-compatible storage; API keys, revocable sessions and rate limits; read-only public mode;
 an SSRF guard for fetches and the headless browser; CLI, a versioned HTTP API (`/api/v1`, one error format,

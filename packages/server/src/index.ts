@@ -3,6 +3,7 @@ import {
   closeDatabases,
   hasAdminUser,
   initTelemetry,
+  purgeExpiredTrash,
   shutdownTelemetry,
   startScheduler,
   sweepStaleBundleUploads,
@@ -17,6 +18,7 @@ import { logger } from "./logger";
 import { rateLimiterPlugin } from "./middleware/rateLimiter";
 import { requestGuardPlugin } from "./middleware/requestGuard";
 import { authPlugin, authRouter } from "./routes/auth";
+import { failuresRouter } from "./routes/failures";
 import { importRouter, importsRouter } from "./routes/import";
 import { schedulesRouter } from "./routes/schedules";
 import { settingsRouter } from "./routes/settings";
@@ -25,6 +27,7 @@ import { snapshotImportRouter } from "./routes/snapshot-import";
 import { snapshotsRouter } from "./routes/snapshots";
 import { statsRouter } from "./routes/stats";
 import { snapshotTagsRouter, tagsRouter } from "./routes/tags";
+import { trashRouter } from "./routes/trash";
 import { gracefulShutdown, installShutdownHandlers, shutdownTimeoutMs } from "./shutdown";
 import { telemetryPlugin } from "./telemetry";
 import { type UiAssets, defaultUiAssets, mimeTypeFor } from "./ui-assets";
@@ -102,6 +105,8 @@ const apiRoutes = () =>
     .use(snapshotsRouter)
     .use(snapshotTagsRouter)
     .use(schedulesRouter)
+    .use(failuresRouter)
+    .use(trashRouter)
     .use(tagsRouter)
     .use(importRouter)
     .use(importsRouter)
@@ -267,6 +272,9 @@ export function startBackgroundWork(options: { importSweepMs?: number } = {}): {
     () => void sweepInterruptedImports(dir),
     options.importSweepMs ?? IMPORT_SWEEP_INTERVAL_MS,
   );
+  // Snapshots past the trash retention are deleted for good: at startup, then every hour.
+  void emptyExpiredTrash();
+  const trashSweep = setInterval(() => void emptyExpiredTrash(), TRASH_SWEEP_INTERVAL_MS);
 
   if (process.env.WEBFROST_SCHEDULER === "false") {
     logger.info("WEBFROST_SCHEDULER=false — schedules are not run by this process");
@@ -274,6 +282,7 @@ export function startBackgroundWork(options: { importSweepMs?: number } = {}): {
       stop: () => {
         clearInterval(recovery);
         clearInterval(importSweep);
+        clearInterval(trashSweep);
       },
     };
   }
@@ -284,9 +293,27 @@ export function startBackgroundWork(options: { importSweepMs?: number } = {}): {
     stop: () => {
       clearInterval(recovery);
       clearInterval(importSweep);
+      clearInterval(trashSweep);
       scheduler.stop();
     },
   };
+}
+
+const TRASH_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+
+/** Delete for good the snapshots that have been in the trash longer than the retention. Never throws. */
+export async function emptyExpiredTrash(): Promise<void> {
+  try {
+    const db = await getDb();
+    try {
+      const deleted = await purgeExpiredTrash(db, getStorage());
+      if (deleted > 0) logger.info({ deleted }, "deleted snapshots past the trash retention");
+    } finally {
+      await db.close();
+    }
+  } catch (err) {
+    logger.error({ err }, "emptying the expired trash failed");
+  }
 }
 
 /**

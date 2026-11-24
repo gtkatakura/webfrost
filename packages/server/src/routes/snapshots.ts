@@ -1,8 +1,10 @@
 import {
+  FAILURE_CATEGORIES,
   SnapshotBusyError,
   deleteSnapshot,
   getSnapshot,
   getSnapshotsByIds,
+  isFailureCategory,
   listSnapshotsWithExtractorsPaginated,
   searchSnapshots,
   sql,
@@ -27,10 +29,32 @@ export function archivePreviewPath(snapshotId: number, extractor: string): strin
   return `${API_PREFIX}/snapshots/${snapshotId}/archives/${extractor}/preview`;
 }
 
+/**
+ * Why a failed snapshot failed: its category, what kind of failure that is and a label for people. The
+ * raw message is left out for guests, as extractor errors are: it can name internal hosts.
+ */
+export function serializeFailure(
+  category: string | null,
+  detail: string | null,
+  guest: boolean,
+): { category: string; class: string; label: string; detail: string | null } | null {
+  if (!category) return null;
+  const known = isFailureCategory(category)
+    ? FAILURE_CATEGORIES[category]
+    : FAILURE_CATEGORIES.error;
+  return {
+    category,
+    class: known.class,
+    label: known.label,
+    detail: guest ? null : detail,
+  };
+}
+
 /** List-level fields shared by the list, search and detail responses. */
-function snapshotSummary(s: SnapshotWithExtractors) {
+function snapshotSummary(s: SnapshotWithExtractors, guest: boolean) {
   return {
     status: s.status,
+    failure: serializeFailure(s.failure_category, s.failure_detail, guest),
     createdAt: isoTimestampRequired(s.created_at),
     extractors: s.extractors,
     title: s.title,
@@ -206,7 +230,8 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
   )
   .get(
     "/",
-    async ({ query }) => {
+    async ({ query, request }) => {
+      const guest = isGuestRequest(request);
       const db = await getDb();
       try {
         const q = query.q?.trim();
@@ -231,7 +256,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
                 url: r.url,
                 snippet: r.snippet,
                 rank: r.rank,
-                ...(snapshot ? snapshotSummary(snapshot) : {}),
+                ...(snapshot ? snapshotSummary(snapshot, guest) : {}),
               };
             }),
             total: result.total,
@@ -242,7 +267,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
 
         const result = await listSnapshotsWithExtractorsPaginated(db, page, limit, status);
         return {
-          items: result.items.map((s) => ({ id: s.id, url: s.url, ...snapshotSummary(s) })),
+          items: result.items.map((s) => ({ id: s.id, url: s.url, ...snapshotSummary(s, guest) })),
           total: result.total,
           page: result.page,
           limit: result.limit,
@@ -312,7 +337,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
           url: snapshot.url,
           status: snapshot.status,
           createdAt: isoTimestampRequired(snapshot.created_at),
-          ...(summary ? snapshotSummary(summary) : {}),
+          ...(summary ? snapshotSummary(summary, guest) : {}),
           archiveResults: snapshot.archiveResults
             .filter((ar) => ar.error === null)
             .map((ar) => ({

@@ -3,6 +3,7 @@ import {
   Camera,
   ChevronLeft,
   ChevronRight,
+  CloudOff,
   Eye,
   KeyboardIcon,
   LayoutDashboard,
@@ -13,6 +14,7 @@ import {
   Settings,
   Sun,
   Tag,
+  Trash2,
   Upload,
 } from "lucide-react";
 import type { ElementType, ReactNode } from "react";
@@ -31,11 +33,13 @@ const PRIMARY_NAV: NavEntry[] = [
   { label: "Dashboard", to: "/", Icon: LayoutDashboard },
   { label: "Snapshots", to: "/snapshots", Icon: Camera },
   { label: "Schedules", to: "/schedules", Icon: Calendar, writeOnly: true },
+  { label: "Review failures", to: "/failures", Icon: CloudOff, writeOnly: true },
   { label: "Tags", to: "/tags", Icon: Tag },
 ];
 
 const SECONDARY_NAV: NavEntry[] = [
   { label: "Import", to: "/import", Icon: Upload, writeOnly: true },
+  { label: "Trash", to: "/trash", Icon: Trash2, writeOnly: true },
   { label: "Settings", to: "/settings", Icon: Settings, writeOnly: true },
 ];
 

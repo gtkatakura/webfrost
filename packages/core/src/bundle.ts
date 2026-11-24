@@ -96,6 +96,30 @@ export class BundleError extends Error {
   }
 }
 
+/**
+ * The snapshot a bundle was meant to replace (`replaces`) is not, or no longer, a failure of the same
+ * URL that can be replaced: it was archived since, retried, moved to the trash, deleted, or is another
+ * page. Nothing was stored.
+ */
+export class ReplaceConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReplaceConflictError";
+  }
+}
+
+/** Why the failed snapshot `id` cannot be replaced by a bundle of `url`, or null when it can. */
+async function replaceProblem(db: Db, id: number, url: string): Promise<string | null> {
+  const row = await db.get<{ url: string; status: string; trashed_at: string | null }>(
+    sql`SELECT url, status, trashed_at FROM snapshots WHERE id = ${id}`,
+  );
+  if (!row) return `snapshot ${id} does not exist`;
+  if (row.trashed_at !== null) return `snapshot ${id} is in the trash`;
+  if (row.status !== "failed") return `snapshot ${id} is ${row.status}, not failed`;
+  if (row.url !== url) return `snapshot ${id} is of another URL`;
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Limits
 // ---------------------------------------------------------------------------
@@ -531,6 +555,8 @@ export interface ImportedSnapshot {
   id: number;
   url: string;
   status: "done" | "failed";
+  /** The failed snapshot this one replaced (moved to the trash), with `replaces`. */
+  replaced?: number;
 }
 
 interface CheckedBundle {
@@ -642,12 +668,19 @@ async function tagIdFor(tx: Db, name: string): Promise<number> {
  * details, cannot be retried or deleted, and the recovery sweep leaves it alone. The final
  * transaction flips it to the bundle's status only if it is still `importing`. A crash
  * leaves the row behind; sweepStaleImports() removes it later.
+ *
+ * `replaces` names a failed snapshot of the same URL that this bundle is the working copy of (`webfrost
+ * rescue`): it must still be failed, not in the trash, and of the bundle's URL, and the bundle must be
+ * done; otherwise ReplaceConflictError and nothing is stored. In the final transaction it is checked
+ * again, its tags are carried over, and it is moved to the trash, so the two can never both stay, nor
+ * both go.
  */
 export async function importSnapshotBundle(
   db: Db,
   storage: StorageBackend,
   path: string,
   limits: BundleLimits = {},
+  options: { replaces?: number | undefined } = {},
 ): Promise<ImportedSnapshot> {
   let checked: CheckedBundle;
   try {
@@ -658,6 +691,14 @@ export async function importSnapshotBundle(
   }
   const { manifest, entries } = checked;
   const snap = manifest.snapshot;
+  const replaces = options.replaces;
+  if (replaces !== undefined) {
+    if (snap.status !== "done") {
+      throw new ReplaceConflictError("only a done snapshot can replace a failed one");
+    }
+    const problem = await replaceProblem(db, replaces, snap.url);
+    if (problem) throw new ReplaceConflictError(problem);
+  }
 
   const snapshotId = await db.transaction(async (tx) => {
     const id = await tx.insert(
@@ -704,6 +745,18 @@ export async function importSnapshotBundle(
       }
       const tagIds = new Set<number>();
       for (const name of snap.tags) tagIds.add(await tagIdFor(tx, name));
+      if (replaces !== undefined) {
+        // Checked again here: the failure may have been retried or trashed while the files were copied.
+        const problem = await replaceProblem(tx, replaces, snap.url);
+        if (problem) throw new ReplaceConflictError(problem);
+        const kept = await tx.all<{ tag_id: number }>(
+          sql`SELECT tag_id FROM snapshot_tags WHERE snapshot_id = ${replaces}`,
+        );
+        for (const r of kept) tagIds.add(Number(r.tag_id));
+        await tx.run(
+          sql`UPDATE snapshots SET trashed_at = ${tx.now()} WHERE id = ${replaces} AND status = 'failed' AND trashed_at IS NULL`,
+        );
+      }
       for (const tagId of tagIds) {
         await tx.run(
           sql`INSERT INTO snapshot_tags (snapshot_id, tag_id) VALUES (${snapshotId}, ${tagId})`,
@@ -738,7 +791,12 @@ export async function importSnapshotBundle(
     clearInterval(beat);
   }
 
-  return { id: snapshotId, url: snap.url, status: snap.status };
+  return {
+    id: snapshotId,
+    url: snap.url,
+    status: snap.status,
+    ...(replaces !== undefined ? { replaced: replaces } : {}),
+  };
 }
 
 /** How often a running import refreshes its job_queue heartbeat. */

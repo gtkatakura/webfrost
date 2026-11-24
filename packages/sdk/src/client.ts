@@ -14,6 +14,12 @@ import type {
   ArchiveUrlKind,
   CreateApiKeyOptions,
   DashboardStats,
+  FailedSnapshot,
+  FailureDomainPage,
+  FailureGroupId,
+  FailureGroupSummary,
+  FailureSelection,
+  GeneralSettings,
   ImportFormat,
   ImportOptions,
   ImportRecord,
@@ -39,6 +45,8 @@ import type {
   SnapshotImported,
   SnapshotPage,
   Tag,
+  TrashPage,
+  TrashSelection,
   WebFrostClientOptions,
 } from "./types.js";
 
@@ -662,6 +670,135 @@ export class WebFrostClient {
   /** Delete a schedule by id. Returns true if deleted, false if not found. */
   deleteSchedule(id: number, request?: RequestOptions): Promise<boolean> {
     return this.remove(`/schedules/${id}`, request);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Failures and trash
+  // ---------------------------------------------------------------------------
+
+  /** Every failure group with its counts. */
+  async listFailureGroups(request?: RequestOptions): Promise<FailureGroupSummary[]> {
+    const res = await this.json<{ groups: FailureGroupSummary[] }>("GET", "/failures", {
+      signal: request?.signal,
+    });
+    return res.groups;
+  }
+
+  /** The domains of a failure group, most failed snapshots first. `q` keeps domains containing it. */
+  listFailureDomains(
+    group: FailureGroupId,
+    options: { q?: string; page?: number; limit?: number } = {},
+    request?: RequestOptions,
+  ): Promise<FailureDomainPage> {
+    const params = new URLSearchParams();
+    if (options.q?.trim()) params.set("q", options.q.trim());
+    if (options.page) params.set("page", String(options.page));
+    if (options.limit) params.set("limit", String(options.limit));
+    const qs = params.toString();
+    return this.json("GET", `/failures/${encodeURIComponent(group)}/domains${qs ? `?${qs}` : ""}`, {
+      signal: request?.signal,
+    });
+  }
+
+  /** The failed snapshots of one domain in a group, newest first. */
+  listFailedSnapshots(
+    group: FailureGroupId,
+    host: string,
+    options: PageOptions = {},
+    request?: RequestOptions,
+  ): Promise<Page<FailedSnapshot>> {
+    const params = new URLSearchParams();
+    if (options.page) params.set("page", String(options.page));
+    if (options.limit) params.set("limit", String(options.limit));
+    const qs = params.toString();
+    return this.json(
+      "GET",
+      `/failures/${encodeURIComponent(group)}/domains/${encodeURIComponent(host)}/snapshots${qs ? `?${qs}` : ""}`,
+      { signal: request?.signal },
+    );
+  }
+
+  /**
+   * Archive the selected failed snapshots again. For "domain-gone" each domain is looked up first and
+   * only the ones that resolve again are retried; the others come back in `stillGone`.
+   */
+  retryFailures(
+    group: FailureGroupId,
+    selection: FailureSelection,
+    request?: RequestOptions,
+  ): Promise<{ queued: number; stillGone: string[] }> {
+    return this.json("POST", `/failures/${encodeURIComponent(group)}/retry`, {
+      body: selection,
+      signal: request?.signal,
+    });
+  }
+
+  /** Move the selected failed snapshots to the trash. */
+  trashFailures(
+    group: FailureGroupId,
+    selection: FailureSelection,
+    request?: RequestOptions,
+  ): Promise<{ trashed: number }> {
+    return this.json("POST", `/failures/${encodeURIComponent(group)}/trash`, {
+      body: selection,
+      signal: request?.signal,
+    });
+  }
+
+  /** Delete the selected failed snapshots for good, files included. */
+  deleteFailures(
+    group: FailureGroupId,
+    selection: FailureSelection,
+    request?: RequestOptions,
+  ): Promise<{ deleted: number; busy: number }> {
+    return this.json("POST", `/failures/${encodeURIComponent(group)}/delete`, {
+      body: selection,
+      signal: request?.signal,
+    });
+  }
+
+  /** One page of the trash, most recently trashed first. */
+  listTrash(options: PageOptions = {}, request?: RequestOptions): Promise<TrashPage> {
+    const params = new URLSearchParams();
+    if (options.page) params.set("page", String(options.page));
+    if (options.limit) params.set("limit", String(options.limit));
+    const qs = params.toString();
+    return this.json("GET", `/trash${qs ? `?${qs}` : ""}`, { signal: request?.signal });
+  }
+
+  /** Bring snapshots back from the trash. */
+  restoreFromTrash(
+    selection: number[] | TrashSelection,
+    request?: RequestOptions,
+  ): Promise<{ restored: number }> {
+    const body = Array.isArray(selection) ? { ids: selection } : selection;
+    return this.json("POST", "/trash/restore", { body, signal: request?.signal });
+  }
+
+  /** Delete snapshots in the trash for good. */
+  deleteFromTrash(
+    selection: number[] | TrashSelection,
+    request?: RequestOptions,
+  ): Promise<{ deleted: number; busy: number }> {
+    const body = Array.isArray(selection) ? { ids: selection } : selection;
+    return this.json("POST", "/trash/delete", { body, signal: request?.signal });
+  }
+
+  /** Delete everything in the trash for good. */
+  emptyTrash(request?: RequestOptions): Promise<{ deleted: number; busy: number }> {
+    return this.json("POST", "/trash/empty", { signal: request?.signal });
+  }
+
+  /** Settings changed from the web UI (the trash retention). */
+  getGeneralSettings(request?: RequestOptions): Promise<GeneralSettings> {
+    return this.json("GET", "/settings/general", { signal: request?.signal });
+  }
+
+  updateGeneralSettings(
+    update: { trashRetentionDays?: number },
+    request?: RequestOptions,
+  ): Promise<GeneralSettings> {
+    return this.json("PATCH", "/settings/general", { body: update, signal: request?.signal });
   }
 
   // ---------------------------------------------------------------------------

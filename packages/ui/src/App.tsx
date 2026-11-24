@@ -19,6 +19,9 @@ import { isStatus, shouldRetry } from "./lib/errors";
 import { returnToPath } from "./lib/returnTo";
 import { ApiKeysPage } from "./pages/ApiKeysPage";
 import { DashboardPage } from "./pages/DashboardPage";
+import { FailureDomainRoute } from "./pages/FailureDomainPage";
+import { FailureGroupRoute } from "./pages/FailureGroupPage";
+import { FailuresPage } from "./pages/FailuresPage";
 import { ImportPage } from "./pages/ImportPage";
 import { LoginPage } from "./pages/LoginPage";
 import { SchedulesPage } from "./pages/SchedulesPage";
@@ -28,6 +31,7 @@ import { SetupPage } from "./pages/SetupPage";
 import { SnapshotListPage } from "./pages/SnapshotListPage";
 import { SnapshotViewerPage } from "./pages/SnapshotViewerPage";
 import { TagsPage } from "./pages/TagsPage";
+import { TrashPage } from "./pages/TrashPage";
 
 /** Write-only pages: a guest is sent to /login and returns here after signing in. */
 function RequireWrite({ children }: { children: React.ReactNode }) {
@@ -89,6 +93,38 @@ function AppRoutes() {
             <Route path="snapshots" element={<SnapshotListPage />} />
             <Route path="search" element={<SearchPage />} />
             <Route path="tags" element={<TagsPage />} />
+            <Route
+              path="failures"
+              element={
+                <RequireWrite>
+                  <FailuresPage />
+                </RequireWrite>
+              }
+            />
+            <Route
+              path="failures/:group"
+              element={
+                <RequireWrite>
+                  <FailureGroupRoute />
+                </RequireWrite>
+              }
+            />
+            <Route
+              path="failures/:group/:host"
+              element={
+                <RequireWrite>
+                  <FailureDomainRoute />
+                </RequireWrite>
+              }
+            />
+            <Route
+              path="trash"
+              element={
+                <RequireWrite>
+                  <TrashPage />
+                </RequireWrite>
+              }
+            />
             <Route
               path="schedules"
               element={

@@ -191,7 +191,7 @@ curl "$API/snapshots?page=1&limit=20&status=done" -H "Authorization: Bearer $KEY
 | `status` | none | Filter by `pending`, `done` or `failed` |
 | `q` | none | Full-text search term |
 
-Each item is `{ id, url, status, createdAt, extractors, title, excerpt, screenshotUrl, tags }`. `extractors` lists only extractors that succeeded. `title` and `excerpt` come from Readability. `screenshotUrl` is the path of the [download route](#archive-files) for the video `media-poster` still when the snapshot has one, else for the small `thumbnail` WebP (`/api/v1/snapshots/:id/archives/thumbnail/download`), else for the full `screenshot` (`/api/v1/snapshots/:id/archives/screenshot/download`), or `null` when there is neither.
+Each item is `{ id, url, status, failure, createdAt, extractors, title, excerpt, screenshotUrl, tags }`. `failure` is `null` unless the snapshot failed; then it is `{ category, class, label, detail }`: why it could not be archived (see [Failures](#failures)). Guests get `detail: null`. `extractors` lists only extractors that succeeded. `title` and `excerpt` come from Readability. `screenshotUrl` is the path of the [download route](#archive-files) for the video `media-poster` still when the snapshot has one, else for the small `thumbnail` WebP (`/api/v1/snapshots/:id/archives/thumbnail/download`), else for the full `screenshot` (`/api/v1/snapshots/:id/archives/screenshot/download`), or `null` when there is neither.
 
 ### Search
 
@@ -231,15 +231,18 @@ curl -X POST $API/snapshots/import -H "Authorization: Bearer $KEY" \
 # 201 { "id": 57, "url": "https://www.youtube.com/watch?v=...", "status": "done" }
 ```
 
+`?replaces=<id>` makes the copy the working version of a failed snapshot ([`webfrost rescue`](/docs/reference/cli#webfrost-rescue-group---from-url)): the snapshot must still be `failed`, not in the trash, and of the bundle's URL, and the bundle must be `done`. The copy then takes over the failure's tags and the failure moves to the [trash](#trash), in the same transaction; the answer carries `replaced: <id>`. Otherwise it is `409` and nothing is stored. A failure that is not `failed` any more (retried, archived) or is in the trash is refused before the upload is read; the URL is checked once it is. Sending the same copy twice is a `409` the second time.
+
 The import always creates a **new** snapshot with a new id. Its status (`done` or `failed`), creation time, color scheme, results (inline content, errors, durations) and files come from the bundle; tags are matched by name or slug and created when missing (also when two imports bring the same new tag at once); a `done` snapshot is added to the search index. Nothing is fetched and no pipeline runs. Importing the same bundle twice makes two snapshots.
 
 It needs credentials like every write (an API key, or a session with the [CSRF check](/docs/architecture/security#cross-site-requests-csrf)), also when public read is on, and counts against the 60-per-minute [rate limit](#rate-limits) of snapshot creation. At most two imports run at once per server process; a third gets `429` `RATE_LIMITED` with `Retry-After: 30` before its body is read. While the upload streams in, the connection may go up to 255 seconds without data before it is closed; once the body is complete there is no idle timeout while the server copies it into storage.
 
 | Status | When |
 |---|---|
-| `201` | Imported: `{ id, url, status }` |
+| `201` | Imported: `{ id, url, status }`, plus `replaced` with `?replaces=` |
 | `400` `VALIDATION` | The bundle is not a valid ZIP, its manifest breaks the format, or its entries break a rule below. Nothing is stored. |
 | `429` `RATE_LIMITED` | Two imports are already running, or the rate limit; see `Retry-After` |
+| `409` `CONFLICT` | With `?replaces=`: that snapshot is not (or no longer) a failure of the bundle's URL, or the bundle is not `done`. Nothing is stored. |
 | `413` `PAYLOAD_TOO_LARGE` | The upload, or its content once decompressed, is over `WEBFROST_IMPORT_BUNDLE_MAX_BYTES` (default 2 GiB) |
 | `415` `UNSUPPORTED_MEDIA_TYPE` | The body is not `application/zip` |
 
@@ -353,6 +356,44 @@ Tag names are part of the search index and stay in sync when you add or remove t
 
 A schedule is `{ id, url, cron, createdAt, lastRunAt, nextRunAt, paused, lastStatus, consecutiveFailures }`. `lastStatus` is `success`, `failed` or `null`. The API creates URL schedules only; add an RSS feed schedule with `webfrost schedule add --rss`. See [Scheduled archiving](/docs/guides/scheduled-archiving).
 
+## Failures
+
+A failed snapshot keeps why it failed as a `category`, grouped in four classes:
+
+| Class | Categories | Meaning |
+|---|---|---|
+| `permanent` | `domain_not_found`, `page_not_found`, `private_address`, `tls_error`, `redirect_loop`, `bad_request` | The page or the site is gone, or cannot be archived from here: retrying does not help. |
+| `transient` | `rate_limited`, `server_error`, `timeout`, `network_error`, `dns_error` | The site or the network was unwell at that moment. |
+| `blocked` | `access_denied`, `refused_client` | The site answered but refused WebFrost (anti-bot, login). |
+| `internal` | `interrupted`, `no_output`, `error` | WebFrost did not finish the run. |
+
+`domain_not_found` is a name with no DNS record (NXDOMAIN). The first snapshot of such a domain records it for a week: the next snapshots of the same domain fail at once with the same category, without a lookup. Retrying a snapshot of the domain looks it up again.
+
+For triage, the failed snapshots are sorted into groups that call for the same decision: `domain-gone` (`domain_not_found`), `page-gone` (`page_not_found`), `blocked` (`access_denied`, `refused_client`), `rate-limited`, `temporary` (`timeout`, `server_error`, `network_error`, `dns_error`), `site-setup` (`tls_error`, `redirect_loop`, `bad_request`), `private-address`, `interrupted` (`interrupted`, `no_output`, `error`) and `unknown` (failed before the category was stored). A group holds failed snapshots only, never ones in the trash, and every decision below applies to those only: an earlier snapshot of the same page that worked is never touched.
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/failures` | `{ groups: [{ id, label, categories, count, domains }] }`, every group (empty ones included). |
+| `GET` | `/failures/:group/domains` | The group's domains, most failed snapshots first: `{ items: [{ host, count, withWorkingSnapshot, lastFailedAt, example: { id, url } }], total, snapshots, page, limit }`. `withWorkingSnapshot` counts the pages that also have a snapshot that worked. `q` keeps the domains containing it, case-insensitive (`q=mangahost` finds every mirror). `page`, `limit` (default 50). `404` for an unknown group. |
+| `GET` | `/failures/:group/snapshots` | The group's failed snapshots, newest first, in the same shape as the next route: all of them, or of one domain (`host`), or of the domains containing `q`. `page`, `limit` (default 50). What [`webfrost rescue`](/docs/reference/cli#webfrost-rescue-group---from-url) works from. |
+| `GET` | `/failures/:group/domains/:host/snapshots` | The domain's failed snapshots in the group, newest first: `{ items: [{ id, url, createdAt, failure, workingSnapshotId }], total, page, limit }`. `workingSnapshotId` is the newest snapshot of the same URL that worked, or `null`. |
+| `POST` | `/failures/:group/retry` | `{ hosts?, ids? }` (up to 500 hosts, 5000 ids). Archives the selected failed snapshots again. For `domain-gone` each domain is looked up first: one that resolves again is retried, one that still does not is left as it is and returned in `stillGone`. `{ queued, stillGone }`. |
+| `POST` | `/failures/:group/trash` | `{ hosts?, ids? }`. Moves the selected failed snapshots to the [trash](#trash). `{ trashed }`. |
+| `POST` | `/failures/:group/delete` | `{ hosts?, ids? }`. Deletes the selected failed snapshots for good, files included. `{ deleted, busy }` (`busy`: being archived, left alone). |
+
+Instead of `hosts` and `ids`, a selection can be `{ all: true }`: every failed snapshot of the group, narrowed by `q` (the domain filter) and `host` (one domain), less `excludeHosts` and `excludeIds`. That is how "select all" acts on thousands of snapshots without sending their ids. Ids that are not failed snapshots of the group (another reason, archived since, in the trash) are ignored, so a stale page cannot act on the wrong snapshot.
+
+## Trash
+
+A snapshot in the trash is hidden from every list, search and count but keeps its files. It is deleted for good once it has been there longer than the retention (`trashRetentionDays`, 30 days by default, see `/settings/general`); the server checks every hour. Until then it can be restored as it was.
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/trash` | Most recently trashed first: `{ items: [{ id, url, status, failure, createdAt, trashedAt, deleteAfter }], total, page, limit, retentionDays }`. `deleteAfter` is when it goes for good. |
+| `POST` | `/trash/restore` | `{ ids }`, or `{ all: true, excludeIds? }` for everything in the trash. Brings them back. `{ restored }`. |
+| `POST` | `/trash/delete` | `{ ids }`, or `{ all: true, excludeIds? }`. Deletes them for good, files included; ids not in the trash are ignored. `{ deleted, busy }`. |
+| `POST` | `/trash/empty` | Deletes everything in the trash for good. `{ deleted, busy }`. |
+
 ## Import
 
 | Method | Route | Description |
@@ -383,6 +424,8 @@ curl -X POST $API/import/file -H "Authorization: Bearer $KEY" \
 |---|---|---|
 | `GET` | `/stats` | `{ snapshotCount, storageBytes, storageByExtractor, successRate, activeScheduleCount, failedToday }`. Cached for 60 seconds. Sizes of files archived before sizes were recorded are measured on first use, 16 at a time; a lookup that fails is retried on the next call instead of being stored as 0 bytes. |
 | `GET` | `/settings/info` | `{ version, storagePath, snapshotCount }` |
+| `GET` | `/settings/general` | Settings changed from the web UI: `{ trashRetentionDays, trashRetentionLimits: { min, max } }`. |
+| `PATCH` | `/settings/general` | `{ trashRetentionDays }`, whole days from 1 to 365. Returns the settings; `400` `VALIDATION` out of range. |
 | `GET` | `/settings/keys` | List active API keys, oldest first, paginated: items are `{ id, name, expiresAt, lastUsedAt, createdAt }` |
 | `POST` | `/settings/keys` | `{ name, expiresAt? }`. `201` with `{ id, name, expiresAt, lastUsedAt, createdAt, rawKey }`; `rawKey` is shown once. Called with a key that expires, `expiresAt` is required and no later than that key's expiry (`403` otherwise). |
 | `DELETE` | `/settings/keys/:id` | Revoke a key. `204`, or `404`. |

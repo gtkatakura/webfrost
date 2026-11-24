@@ -69,10 +69,10 @@ async function laptopBundle(): Promise<Blob> {
   }
 }
 
-function postBundle(body: BodyInit, headers: Record<string, string> = {}) {
+function postBundle(body: BodyInit, headers: Record<string, string> = {}, query = "") {
   return import("../index").then(({ app }) =>
     app.handle(
-      new Request("http://localhost/api/v1/snapshots/import", {
+      new Request(`http://localhost/api/v1/snapshots/import${query}`, {
         method: "POST",
         headers: { "content-type": "application/zip", ...authHeader, ...headers },
         body,
@@ -219,6 +219,69 @@ describe("POST /api/v1/snapshots/import", () => {
       expect(blocked.status).toBe(429);
     } finally {
       Reflect.deleteProperty(process.env, "WEBFROST_TRUST_PROXY");
+    }
+  });
+});
+
+describe("POST /snapshots/import?replaces=<id> (webfrost rescue)", () => {
+  async function seedFailure(url: string, status = "failed"): Promise<number> {
+    const db = await openDb(serverDir);
+    try {
+      return await db.insert(
+        sql`INSERT INTO snapshots (url, status, failure_category) VALUES (${url}, ${status}, 'access_denied')`,
+      );
+    } finally {
+      await db.close();
+    }
+  }
+
+  async function state(id: number) {
+    const db = await openDb(serverDir);
+    try {
+      return await db.get<{ status: string; trashed: number }>(
+        sql`SELECT status, CASE WHEN trashed_at IS NULL THEN 0 ELSE 1 END AS trashed FROM snapshots WHERE id = ${id}`,
+      );
+    } finally {
+      await db.close();
+    }
+  }
+
+  test("201: the copy is stored and the failure moves to the trash; again is a 409", async () => {
+    const failed = await seedFailure("https://video.example/watch");
+    const bundle = await laptopBundle();
+    const res = await postBundle(bundle, {}, `?replaces=${failed}`);
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { id: number; replaced: number };
+    expect(body.replaced).toBe(failed);
+    expect(await state(failed)).toEqual({ status: "failed", trashed: 1 });
+    expect(await state(body.id)).toEqual({ status: "done", trashed: 0 });
+
+    const again = await postBundle(bundle, {}, `?replaces=${failed}`);
+    expect(again.status).toBe(409);
+    expect(((await again.json()) as { error: string }).error).toContain("in the trash");
+    expect(await snapshotCount()).toBe(2);
+  });
+
+  test("a failure of another URL is a 409 and nothing is stored", async () => {
+    const failed = await seedFailure("https://video.example/other");
+    const res = await postBundle(await laptopBundle(), {}, `?replaces=${failed}`);
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toContain("another URL");
+    expect(await snapshotCount()).toBe(1);
+    expect(await state(failed)).toEqual({ status: "failed", trashed: 0 });
+    const stored = join(serverDir, "snapshots");
+    expect(existsSync(stored) ? readdirSync(stored) : []).toEqual([]);
+  });
+
+  test("a snapshot that is not failed is refused before the upload is read; a bad id is a 400", async () => {
+    const done = await seedFailure("https://video.example/watch", "done");
+    const bundle = await laptopBundle();
+    const res = await postBundle(bundle, {}, `?replaces=${done}`);
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toContain("is done, not failed");
+    expect(await snapshotCount()).toBe(1);
+    for (const bad of ["0", "abc", "-1", "1e3"]) {
+      expect((await postBundle(bundle, {}, `?replaces=${bad}`)).status).toBe(400);
     }
   });
 });

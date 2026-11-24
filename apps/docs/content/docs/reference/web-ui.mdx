@@ -105,13 +105,33 @@ Create a schedule from a URL and a cron expression, typed or picked from a prese
 
 The UI creates URL schedules. A schedule that follows an RSS feed is created with the CLI or the API: see [Scheduled archiving](/docs/guides/scheduled-archiving#rss-feeds).
 
+### Review failures
+
+The snapshots that could not be archived, grouped by why, so you can decide about many at once. The first screen has a card per group that has failures (**Domain no longer exists**, **Page gone**, **Blocked by the site**, **Rate limited**, **Temporary problems**, **Site misconfigured**, **Private address**, **Interrupted**, **Reason not recorded**), with its number of snapshots and domains and what it means.
+
+A group lists its domains, most failed snapshots first, loading more as you scroll. The filter keeps the domains that contain what you type (`mangahost` finds every mirror). **Worked before** says how many of a domain's pages also have a snapshot that worked. Open a domain to see its failed snapshots one by one, each with the reason and, when there is one, a link to the earlier archive that worked. The icon next to a URL opens the page on the live site in a new tab, to check whether it really is gone.
+
+Select domains or snapshots, then:
+
+- **Retry** archives them again. In **Domain no longer exists** it is **Check again**: each domain is looked up first, and only the ones that resolve again are archived; the others stay.
+- **Move to trash** hides them; they can be restored from the **Trash** until they are deleted for good.
+- **Delete permanently** deletes them and their files at once, after you type the domain name (or `delete N snapshots`) to confirm.
+
+Only the snapshots that failed are affected: an earlier snapshot of the same page that worked always stays.
+
+**Blocked by the site** explains that the site refuses requests from your server (an IP in a data centre, or an anti-bot check), that a browser on the same server is refused too, that a retry sometimes works, and that you can archive those pages from your own computer and send them to the server: all of them with [`webfrost rescue blocked`](/docs/guides/push#many-failed-pages-at-once), which replaces each failure with the copy that worked, or one by one with `webfrost push`.
+
+### Trash
+
+Snapshots moved to the trash, most recent first, each with the date it will be deleted for good. **Restore** brings them back; **Delete permanently** and **Empty trash** ask you to type a confirmation. How long the trash keeps them (30 days by default) is in **Settings**.
+
 ### Import
 
 Choose a format (**RSS / Atom** feed URL, **OPML File**, **Bookmarks HTML**, **Plain Text URLs**), then give the URL, file or list. The result shows how many URLs were found, queued and skipped. The **History** tab lists the latest 50 imports. See [Bulk import](/docs/guides/bulk-import).
 
 ### Settings and API keys
 
-**Settings** has four cards: **API Keys** (a link to the keys page), **Change Password** (signs out every other session), **Appearance** (the theme) and **Server Info** (version, storage path and snapshot count).
+**Settings** has five cards: **API Keys** (a link to the keys page), **Change Password** (signs out every other session), **Appearance** (the theme), **Trash** (how many days snapshots stay in the trash, 1 to 365) and **Server Info** (version, storage path and snapshot count).
 
 **API keys** creates and revokes keys for the REST API. A new key is shown once, when you create it.
 

@@ -1,8 +1,10 @@
 import {
   BundleError,
   BundleTooLargeError,
+  ReplaceConflictError,
   importSnapshotBundle,
   spoolToTempFile,
+  sql,
 } from "@webfrost/core";
 import { Elysia } from "elysia";
 import { getDb, getStorage, getWebfrostDir } from "../context";
@@ -18,6 +20,10 @@ import { logger } from "../logger";
  * snapshot with a new id. Nothing is fetched. The request guard has already refused other
  * content types and a declared length over WEBFROST_IMPORT_BUNDLE_MAX_BYTES; the auth plugin
  * requires an API key or a session (with the CSRF check) like every other write.
+ *
+ * `?replaces=<id>` (`webfrost rescue`): the bundle is the working copy of that failed snapshot. It must
+ * be a done snapshot of the same URL, and the failure still failed and not in the trash; then the
+ * failure moves to the trash in the same transaction. Otherwise 409 and nothing is stored.
  *
  * At most MAX_CONCURRENT_BUNDLE_IMPORTS run at once (each can hold a 2 GiB upload on disk
  * and keep storage busy); beyond that the request is refused with 429 before its body is read.
@@ -49,13 +55,22 @@ export const snapshotImportRouter = new Elysia({ prefix: "/snapshots" })
     async ({ request, set, server }) => {
       if (!request.body)
         return apiError(set, 400, "VALIDATION", "the body must be a snapshot bundle");
+      const raw = new URL(request.url).searchParams.get("replaces");
+      if (raw !== null && !/^[1-9][0-9]{0,14}$/.test(raw))
+        return apiError(set, 400, "VALIDATION", "replaces must be a snapshot id");
+      const replaces = raw === null ? undefined : Number(raw);
+      if (replaces !== undefined) {
+        // Before the upload is read: a failure that is already gone needs no gigabytes sent.
+        const problem = await replaceablePreCheck(replaces);
+        if (problem) return apiError(set, 409, "CONFLICT", problem);
+      }
       if (activeImports >= MAX_CONCURRENT_BUNDLE_IMPORTS) {
         set.headers["retry-after"] = String(BUSY_RETRY_AFTER_SECONDS);
         return apiError(set, 429, "RATE_LIMITED", "too many bundle imports at once; retry later");
       }
       activeImports++;
       try {
-        return await importBody(request, request.body, set, server);
+        return await importBody(request, request.body, set, server, replaces);
       } finally {
         activeImports--;
       }
@@ -69,6 +84,7 @@ async function importBody(
   body: ReadableStream<Uint8Array>,
   set: { status?: number | string; headers: Record<string, unknown> },
   server: { timeout(request: Request, seconds: number): void } | null,
+  replaces: number | undefined,
 ) {
   const setIdleTimeout = (seconds: number) => {
     try {
@@ -96,17 +112,41 @@ async function importBody(
 
   const db = await getDb();
   try {
-    const imported = await importSnapshotBundle(db, getStorage(), spooled.path, {
-      maxTotalBytes: maxBytes,
-    });
-    logger.info({ snapshotId: imported.id, bytes: spooled.bytes }, "snapshot bundle imported");
+    const imported = await importSnapshotBundle(
+      db,
+      getStorage(),
+      spooled.path,
+      { maxTotalBytes: maxBytes },
+      { replaces },
+    );
+    logger.info(
+      { snapshotId: imported.id, bytes: spooled.bytes, replaced: imported.replaced },
+      "snapshot bundle imported",
+    );
     set.status = 201;
     return imported;
   } catch (err) {
+    if (err instanceof ReplaceConflictError) return apiError(set, 409, "CONFLICT", err.message);
     if (err instanceof BundleError) return apiError(set, 400, "VALIDATION", err.message);
     throw err;
   } finally {
     await db.close();
     await spooled.remove();
+  }
+}
+
+/** The part of the `replaces` check that needs no bundle (the URL is checked once it is read). */
+async function replaceablePreCheck(id: number): Promise<string | null> {
+  const db = await getDb();
+  try {
+    const row = await db.get<{ status: string; trashed_at: string | null }>(
+      sql`SELECT status, trashed_at FROM snapshots WHERE id = ${id}`,
+    );
+    if (!row) return `snapshot ${id} does not exist`;
+    if (row.trashed_at !== null) return `snapshot ${id} is in the trash`;
+    if (row.status !== "failed") return `snapshot ${id} is ${row.status}, not failed`;
+    return null;
+  } finally {
+    await db.close();
   }
 }

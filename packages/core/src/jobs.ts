@@ -1,6 +1,7 @@
 import { sql } from "kysely";
 import { ConcurrencyLimiter, createConcurrencyLimiter } from "./concurrency";
 import { type Db, openDb } from "./db";
+import { forgetDeadHost, hostOf } from "./dead-hosts";
 import {
   JOB_HEARTBEAT_MS,
   JOB_LEASE_SECONDS,
@@ -127,7 +128,13 @@ export class JobRunner {
         );
       }
       await tx.run(sql`DELETE FROM archive_results WHERE snapshot_id = ${snapshotId}`);
-      await tx.run(sql`UPDATE snapshots SET status = 'pending' WHERE id = ${snapshotId}`);
+      await tx.run(
+        sql`UPDATE snapshots SET status = 'pending', failure_category = NULL, failure_detail = NULL
+            WHERE id = ${snapshotId}`,
+      );
+      // Asked to try again: a domain recorded as dead gets a fresh DNS lookup.
+      const host = hostOf(row.url);
+      if (host) await forgetDeadHost(tx, host);
       return { result: "queued" as const, url: row.url };
     });
     if (outcome.result !== "queued") return outcome.result;
@@ -167,7 +174,11 @@ export class JobRunner {
         logger?.error(
           `pipeline crashed snapshot=${snapshotId}: ${err instanceof Error ? err.message : String(err)}`,
         );
-        await this.markFailed(snapshotId, entry.lease);
+        await this.markFailed(
+          snapshotId,
+          entry.lease,
+          `the pipeline crashed: ${err instanceof Error ? err.message : String(err)}`,
+        );
       })
       .finally(() => {
         this.inFlight.delete(snapshotId);
@@ -251,7 +262,12 @@ export class JobRunner {
 
           if ((attempts ?? 0) >= MAX_ATTEMPTS) {
             await tx.run(sql`UPDATE job_queue SET status = 'failed' WHERE snapshot_id = ${id}`);
-            await tx.run(sql`UPDATE snapshots SET status = 'failed' WHERE id = ${id}`);
+            await tx.run(
+              sql`UPDATE snapshots
+                  SET status = 'failed', failure_category = 'interrupted',
+                      failure_detail = ${`the run was interrupted ${attempts} times (crash or restart)`}
+                  WHERE id = ${id}`,
+            );
             this.options
               .logger?.(id)
               ?.error(`giving up on snapshot=${id}: interrupted ${attempts} times`);
@@ -369,7 +385,11 @@ export class JobRunner {
     this.heartbeat = undefined;
   }
 
-  private async markFailed(snapshotId: number, lease: string | undefined): Promise<void> {
+  private async markFailed(
+    snapshotId: number,
+    lease: string | undefined,
+    detail: string,
+  ): Promise<void> {
     try {
       const db = await openDb(this.options.dir);
       try {
@@ -380,7 +400,8 @@ export class JobRunner {
           );
           if (lease !== undefined && changed === 0) return;
           await tx.run(
-            sql`UPDATE snapshots SET status = 'failed' WHERE id = ${snapshotId} AND status = 'pending'`,
+            sql`UPDATE snapshots SET status = 'failed', failure_category = 'interrupted', failure_detail = ${detail}
+                WHERE id = ${snapshotId} AND status = 'pending'`,
           );
         });
       } finally {

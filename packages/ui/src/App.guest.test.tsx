@@ -33,6 +33,7 @@ function snapshot(id: number, url: string): Snapshot {
     id,
     url,
     status: "done",
+    failure: null,
     createdAt: "2024-01-15T10:00:00.000Z",
     extractors: [],
     tags: [],

@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 import type { Db } from "./db";
+import type { Failure } from "./failure";
 
 /**
  * Lease fencing.
@@ -65,6 +66,7 @@ export async function setJobStatus(
   snapshotId: number,
   status: "running" | "done" | "failed",
   lease?: string,
+  failure?: Failure,
 ): Promise<boolean> {
   return db.transaction(async (tx) => {
     const fence = lease === undefined ? sql`` : sql`AND lease_token = ${lease}`;
@@ -73,11 +75,19 @@ export async function setJobStatus(
     );
     if (lease !== undefined && changed === 0) return false;
     if (status !== "running") {
-      await tx.run(sql`UPDATE snapshots SET status = ${status} WHERE id = ${snapshotId}`);
+      // A failed run says why; a run that finished clears what an earlier failure left.
+      const why = status === "failed" ? (failure ?? NO_OUTPUT) : null;
+      await tx.run(
+        sql`UPDATE snapshots
+            SET status = ${status}, failure_category = ${why?.category ?? null}, failure_detail = ${why?.detail ?? null}
+            WHERE id = ${snapshotId}`,
+      );
     }
     return true;
   });
 }
+
+const NO_OUTPUT: Failure = { category: "no_output", detail: "no format could be archived" };
 
 /** Refresh a job's heartbeat (only while `lease` owns it). Never throws. */
 export async function touchJob(db: Db, snapshotId: number, lease?: string): Promise<void> {

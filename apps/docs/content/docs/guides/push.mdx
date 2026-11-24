@@ -34,6 +34,30 @@ The key is read only from `WEBFROST_API_KEY`, never from a command-line flag, so
 
 Your local copy stays where it was. Remove it with `webfrost delete 12` once the push succeeded, if you do not want to keep it.
 
+## Many failed pages at once
+
+When the server could not archive many pages, typically the **Blocked by the site** group in [Review failures](/docs/reference/web-ui#review-failures) (a site that refuses data-center addresses), `webfrost rescue` does the archive-and-push for every one of them, and swaps each failure for the copy that worked:
+
+```bash
+export WEBFROST_API_KEY=wf_...
+# What would be tried, per domain
+webfrost rescue blocked --from https://archive.example.com --dry-run
+# One domain first, to see how it goes
+webfrost rescue blocked --from https://archive.example.com --host www.example.com
+# Then the rest
+webfrost rescue blocked --from https://archive.example.com
+```
+
+For each failed snapshot it archives the page here, in a scratch archive (`rescue/` in the data directory, not your own archive), and checks the copy before anything is sent:
+
+- It must have finished `done`. A page that fails here too stays as it is on the server.
+- It must be the page itself. A copy whose title or first lines are an anti-bot interstitial ("Just a moment...", "Client Challenge", "Access Denied" and the like), or that has almost no text (a login wall, a cart page), is **not sent**: it would look like a success and hide the failure.
+- A page that answers 404 here, or a domain that does not resolve, is reported as really gone; trash it in Review failures.
+
+The copy that passes is sent with the id of the failure it replaces. The server stores it, carries over the failure's tags and moves the failure to the trash in one transaction, and only while that snapshot is still a failure of the same URL: if it was retried, archived or trashed in the meantime, the copy is refused and nothing is stored. So running `rescue` again, after a Ctrl+C or a crash, carries on with what is left and never stores a page twice.
+
+A site that refuses this machine as well is not asked hundreds of times: after three failures in a row on a domain (`--give-up-after`) the rest of it is skipped and reported as not tried. Some anti-bot checks refuse any automated browser, wherever it runs; those pages stay in the group. Each page runs every extractor, so expect tens of seconds per page; `--concurrency` works on more domains at once, one page at a time per domain. Every option: [`webfrost rescue`](/docs/reference/cli#webfrost-rescue-group---from-url).
+
 ## Without push
 
 A snapshot can travel as a file too. `webfrost export 12 -o talk.zip` writes a **snapshot bundle**: one ZIP with the snapshot's files and a `manifest.json`. Then either:

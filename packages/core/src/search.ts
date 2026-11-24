@@ -187,7 +187,10 @@ export async function searchSnapshots(
   const { page, limit, offset } = pageWindow(requestedPage, requestedLimit);
   const empty = { items: [], total: 0, page, limit };
   if (!query.trim()) return empty;
-  const statusFilter = status ? sql`AND s.status = ${status}` : sql``;
+  // Snapshots in the trash are not found.
+  const statusFilter = status
+    ? sql`AND s.trashed_at IS NULL AND s.status = ${status}`
+    : sql`AND s.trashed_at IS NULL`;
 
   if (db.dialect === "sqlite") {
     try {

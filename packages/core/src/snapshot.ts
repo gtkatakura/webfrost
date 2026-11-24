@@ -19,6 +19,9 @@ export interface SnapshotDetail {
   url: string;
   status: string;
   created_at: string;
+  failure_category: string | null;
+  failure_detail: string | null;
+  trashed_at: string | null;
   archiveResults: ArchiveResult[];
 }
 
@@ -45,8 +48,16 @@ export class SnapshotBusyError extends Error {
 
 /** A snapshot, or null when it does not exist or is still being imported. */
 export async function getSnapshot(db: Db, id: number): Promise<SnapshotDetail | null> {
-  const snapshot = await db.get<{ id: number; url: string; status: string; created_at: string }>(
-    sql`SELECT id, url, status, created_at FROM snapshots WHERE id = ${id} AND status <> ${IMPORTING_STATUS}`,
+  const snapshot = await db.get<{
+    id: number;
+    url: string;
+    status: string;
+    created_at: string;
+    failure_category: string | null;
+    failure_detail: string | null;
+    trashed_at: string | null;
+  }>(
+    sql`SELECT id, url, status, created_at, failure_category, failure_detail, trashed_at FROM snapshots WHERE id = ${id} AND status <> ${IMPORTING_STATUS}`,
   );
 
   if (!snapshot) return null;

@@ -134,7 +134,7 @@ Only `http:` and `https:` URLs are accepted.
 **Opt-out:** `WEBFROST_ALLOW_PRIVATE_URLS=true` disables the address check everywhere, for
 deployments that intentionally archive intranet pages. The `http(s)`-only rule still applies.
 
-**Not an archived URL:** `webfrost push` uploads to the server the user names with `--to`, usually
+**Not an archived URL:** `webfrost push` (and `webfrost rescue`, with `--from`) uploads to the server the user names with `--to`, usually
 their own server on a private address, so it uses a plain `fetch` rather than `safeFetch`. It sends
 the API key only there: redirects are not followed, and the key is read from `WEBFROST_API_KEY`,
 never from the command line. On the receiving side the import fetches nothing.

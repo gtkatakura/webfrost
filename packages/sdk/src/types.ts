@@ -61,10 +61,115 @@ export interface PageOptions {
 }
 
 /** Single snapshot from GET /snapshots list. Timestamps are ISO 8601 UTC ("2026-11-21T21:42:38Z"). */
+/** What kind of failure a category is: what is worth doing about it. */
+export type FailureClass = "permanent" | "transient" | "blocked" | "internal";
+
+/** Why a failed snapshot could not be archived. */
+export interface SnapshotFailure {
+  /** Stable id, e.g. "domain_not_found", "page_not_found", "access_denied", "timeout". */
+  category: string;
+  class: FailureClass;
+  /** For people, e.g. "Domain does not exist". */
+  label: string;
+  /** The message behind it; null for guests. */
+  detail: string | null;
+}
+
+/** A group of failed snapshots that call for the same decision. */
+export type FailureGroupId =
+  | "domain-gone"
+  | "page-gone"
+  | "blocked"
+  | "rate-limited"
+  | "temporary"
+  | "site-setup"
+  | "private-address"
+  | "interrupted"
+  | "unknown";
+
+export interface FailureGroupSummary {
+  id: FailureGroupId;
+  label: string;
+  categories: string[];
+  /** Failed snapshots in the group (not counting the trash). */
+  count: number;
+  /** Distinct domains among them. */
+  domains: number;
+}
+
+/** A domain within a failure group. */
+export interface FailureDomain {
+  host: string;
+  count: number;
+  /** Of those, the pages that also have a snapshot that worked (never touched from the failure pages). */
+  withWorkingSnapshot: number;
+  lastFailedAt: string;
+  example: { id: number; url: string };
+}
+
+export interface FailureDomainPage extends Page<FailureDomain> {
+  /** Failed snapshots across every domain that matches (not only this page). */
+  snapshots: number;
+}
+
+export interface FailedSnapshot {
+  id: number;
+  url: string;
+  createdAt: string;
+  failure: SnapshotFailure | null;
+  /** The newest snapshot of the same URL that worked, if any. */
+  workingSnapshotId: number | null;
+}
+
+/**
+ * What a bulk decision on a failure group applies to: explicit `hosts` and/or `ids`, or `all` (every
+ * failed snapshot of the group, narrowed by the page's filter `q` and, on a domain's page, `host`) less
+ * what was unticked (`excludeHosts`, `excludeIds`). "Select all N" sends no ids.
+ */
+export interface FailureSelection {
+  hosts?: string[];
+  ids?: number[];
+  all?: boolean;
+  q?: string;
+  host?: string;
+  excludeHosts?: string[];
+  excludeIds?: number[];
+}
+
+/** Explicit `ids`, or `all` (everything in the trash) less `excludeIds`. */
+export interface TrashSelection {
+  ids?: number[];
+  all?: boolean;
+  excludeIds?: number[];
+}
+
+export interface TrashedSnapshot {
+  id: number;
+  url: string;
+  status: SnapshotStatus;
+  failure: SnapshotFailure | null;
+  createdAt: string;
+  trashedAt: string;
+  /** When it is deleted for good. */
+  deleteAfter: string | null;
+}
+
+export interface TrashPage extends Page<TrashedSnapshot> {
+  retentionDays: number;
+}
+
+export interface GeneralSettings {
+  /** Days a snapshot stays in the trash before it is deleted for good. */
+  trashRetentionDays: number;
+  trashRetentionLimits: { min: number; max: number };
+}
+
 export interface Snapshot {
   id: number;
   url: string;
   status: SnapshotStatus;
+  /** Why the snapshot failed; null unless status is "failed" (and for servers older than 0.3). */
+  failure: SnapshotFailure | null;
   createdAt: string;
   /** Extractor names that have produced results for this snapshot (e.g. ["warc", "readability"]) */
   extractors: string[];

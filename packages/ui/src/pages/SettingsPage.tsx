@@ -1,7 +1,7 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
-import type { ServerInfo } from "@webfrost/sdk";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { GeneralSettings, ServerInfo } from "@webfrost/sdk";
 import { ChevronRight, Moon, Sun } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Button, buttonClasses } from "../components/ui/Button";
@@ -51,6 +51,38 @@ export function SettingsPage() {
     },
     onError: (err) => toast.error(errorMessage(err)),
   });
+
+  const queryClient = useQueryClient();
+  const { data: general } = useQuery<GeneralSettings>({
+    queryKey: ["general-settings"],
+    queryFn: () => client.getGeneralSettings(),
+    retry: false,
+  });
+  const [retention, setRetention] = useState("");
+  const [retentionError, setRetentionError] = useState<string | null>(null);
+  useEffect(() => {
+    if (general) setRetention(String(general.trashRetentionDays));
+  }, [general]);
+
+  const saveRetention = useMutation({
+    mutationFn: (days: number) => client.updateGeneralSettings({ trashRetentionDays: days }),
+    onSuccess: (saved) => {
+      setRetentionError(null);
+      queryClient.setQueryData(["general-settings"], saved);
+      queryClient.invalidateQueries({ queryKey: ["trash"] });
+      toast.success("Trash settings saved");
+    },
+    onError: (err) => {
+      const message = errorMessage(err);
+      setRetentionError(message);
+      toast.error(message);
+    },
+  });
+
+  function handleSaveRetention(e: React.FormEvent) {
+    e.preventDefault();
+    saveRetention.mutate(Number(retention));
+  }
 
   function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -108,6 +140,40 @@ export function SettingsPage() {
             <div>
               <Button type="submit" disabled={changePassword.isPending}>
                 {changePassword.isPending ? "Saving…" : "Change password"}
+              </Button>
+            </div>
+          </form>
+        </SettingCard>
+
+        <SettingCard
+          title="Trash"
+          description="Snapshots you move to the trash are deleted for good after a while."
+        >
+          <form onSubmit={handleSaveRetention} className="flex max-w-sm flex-col gap-3">
+            <TextField
+              label="Keep snapshots in the trash for N days"
+              type="number"
+              inputMode="numeric"
+              required
+              step={1}
+              min={general?.trashRetentionLimits.min}
+              max={general?.trashRetentionLimits.max}
+              value={retention}
+              onChange={(e) => setRetention(e.target.value)}
+              {...(general
+                ? {
+                    hint: `Between ${general.trashRetentionLimits.min} and ${general.trashRetentionLimits.max} days.`,
+                  }
+                : {})}
+            />
+            {retentionError && (
+              <p role="alert" className="m-0 text-ui-sm text-danger">
+                {retentionError}
+              </p>
+            )}
+            <div>
+              <Button type="submit" disabled={!general || saveRetention.isPending}>
+                {saveRetention.isPending ? "Saving…" : "Save"}
               </Button>
             </div>
           </form>

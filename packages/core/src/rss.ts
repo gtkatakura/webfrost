@@ -54,7 +54,7 @@ export async function fetchRssFeedUrls(feedUrl: string): Promise<string[]> {
  */
 export async function isUrlArchived(db: Db, url: string): Promise<boolean> {
   const row = await db.get<{ id: number }>(
-    sql`SELECT id FROM snapshots WHERE url = ${url} LIMIT 1`,
+    sql`SELECT id FROM snapshots WHERE url = ${url} AND trashed_at IS NULL LIMIT 1`,
   );
   return row !== null;
 }
