@@ -58,9 +58,10 @@ export const GROUP_INFO: Record<FailureGroupId, GroupInfo> = {
         <p className="mb-0 mt-2">
           <strong>From your own computer</strong>, the webfrost CLI archives these pages with your
           connection and sends the ones that work to this server, each replacing its failure. Pages
-          that are still refused there, or come back as an anti-bot page, are left as they are. It
-          needs an API key of this server (<Link to="/settings/api-keys">Settings, API keys</Link>)
-          in <code>WEBFROST_API_KEY</code>; <code>--dry-run</code> first lists what it would try.{" "}
+          that are still refused there, or come back as an anti-bot page, are left as they are.
+          Connect that computer to this server once with <code>webfrost login</code> (it opens a
+          page here for you to approve; no API key to copy), then run the second command;{" "}
+          <code>--dry-run</code> first lists what it would try.{" "}
           <a
             href="https://webfrost.dev/docs/guides/push#many-failed-pages-at-once"
             target="_blank"
@@ -69,6 +70,7 @@ export const GROUP_INFO: Record<FailureGroupId, GroupInfo> = {
             How to
           </a>
         </p>
+        <LoginCommand />
         <RescueCommand group="blocked" />
         <p className="mb-0 mt-2">
           <strong>Coming later:</strong> a WebFrost helper on your computer that does this
@@ -297,6 +299,11 @@ export function serverUrl(): string {
   // Opened from a file or about:blank there is no address to give.
   if (!/^https?:/.test(origin)) return "<server>";
   return `${origin}${pathname.replace(/\/index\.html$/, "").replace(/\/+$/, "")}`;
+}
+
+/** `webfrost login` aimed at this server (read when shown, not when the module loads). */
+export function LoginCommand() {
+  return <CommandBlock command={`webfrost login ${serverUrl()}`} />;
 }
 
 /** `webfrost rescue` for a group, aimed at this server (read when shown, not when the module loads). */

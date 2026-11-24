@@ -393,6 +393,46 @@ export interface ApiKeyCreated extends ApiKey {
   rawKey: string;
 }
 
+/**
+ * A request to connect a command line to the server, from POST /auth/device. The command line
+ * keeps `deviceCode` to itself and shows `userCode`; a signed-in person approves it at
+ * `verificationPath` in the web UI.
+ */
+export interface DeviceAuthorization {
+  /** Secret of the client that started the request: what it polls with. */
+  deviceCode: string;
+  /** The short code the person compares, such as "WDJB-MJHT". */
+  userCode: string;
+  /** Seconds until the request expires unanswered. */
+  expiresIn: number;
+  /** Seconds to wait between polls. */
+  interval: number;
+  /** Path of the approval page, relative to the server's address. */
+  verificationPath: string;
+  /** The same page with the code filled in. */
+  verificationPathComplete: string;
+}
+
+/** What a poll of a connection request learns. `approved` is answered once, with the new API key. */
+export type DevicePollResult =
+  | { status: "pending" }
+  | { status: "denied" }
+  /** The request expired, was collected already, or the server restarted. */
+  | { status: "expired" }
+  | { status: "approved"; apiKey: string; key: ApiKey };
+
+/** A connection request as the person approving it sees it. */
+export interface DeviceRequest {
+  userCode: string;
+  /** The name the command line gave itself; the API key is created under it. */
+  name: string;
+  /** The address the request came from, as the server saw it. */
+  requesterIp: string;
+  status: "pending" | "approved" | "denied";
+  requestedAt: string;
+  expiresAt: string;
+}
+
 /** Single record from GET /imports */
 export interface ImportRecord {
   id: string;

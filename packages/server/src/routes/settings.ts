@@ -18,7 +18,7 @@ import { isoTimestamp, isoTimestampRequired, paginate, parseIsoTimestamp } from 
 import { apiKeyOf } from "./auth";
 
 /** An API key as the API returns it: never its hash, and only active keys are listed. */
-function serializeApiKey(key: ApiKey) {
+export function serializeApiKey(key: ApiKey) {
   return {
     id: key.id,
     name: key.name,

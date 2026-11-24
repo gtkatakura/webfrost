@@ -30,7 +30,14 @@ let laptopDir: string;
 async function runCli(args: string[], env: Record<string, string | undefined> = {}) {
   const proc = Bun.spawn(["bun", "run", CLI, ...args], {
     cwd: laptopDir,
-    env: { ...process.env, WEBFROST_DIR: laptopDir, WEBFROST_API_KEY: undefined, ...env },
+    env: {
+      ...process.env,
+      WEBFROST_DIR: laptopDir,
+      WEBFROST_API_KEY: undefined,
+      // No key saved by `webfrost login` on the machine running the tests may leak in.
+      XDG_CONFIG_HOME: join(laptopDir, "config"),
+      ...env,
+    },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -138,11 +145,12 @@ describe("webfrost push", () => {
     }
   });
 
-  test("without WEBFROST_API_KEY it fails before sending anything", async () => {
+  test("without a key (no login, no WEBFROST_API_KEY) it fails before sending anything", async () => {
     const id = await seedLaptop();
     const result = await runCli(["push", String(id), "--to", `http://127.0.0.1:${server.port}`]);
     expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain("WEBFROST_API_KEY is not set");
+    expect(result.stderr).toContain(`No API key for http://127.0.0.1:${server.port}`);
+    expect(result.stderr).toContain(`webfrost login http://127.0.0.1:${server.port}`);
   });
 
   test("a wrong key is reported per snapshot, exit code 1", async () => {
@@ -151,7 +159,7 @@ describe("webfrost push", () => {
       WEBFROST_API_KEY: "wf_not_a_real_key",
     });
     expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain("rejected WEBFROST_API_KEY");
+    expect(result.stderr).toContain("rejected the API key");
   });
 
   test("an unknown snapshot fails, the others are still sent", async () => {

@@ -129,7 +129,7 @@ describe("FailureGroupPage", () => {
     expect(screen.getByText(/Coming later/)).toBeTruthy();
   });
 
-  test("blocked shows the rescue command for this server, ready to copy", async () => {
+  test("blocked shows the two commands for this server, login then rescue, ready to copy", async () => {
     const copied: string[] = [];
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -139,11 +139,20 @@ describe("FailureGroupPage", () => {
       "https://archive.example.com/",
     );
     renderAt("/failures/blocked", base);
-    const command = "webfrost rescue blocked --from https://archive.example.com";
-    expect(await screen.findByText(command)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Copy command" }));
-    await waitFor(() => expect(copied).toEqual([command]));
+    const login = "webfrost login https://archive.example.com";
+    const rescue = "webfrost rescue blocked --from https://archive.example.com";
+    expect(await screen.findByText(rescue)).toBeTruthy();
+    expect(screen.getByText(login)).toBeTruthy();
+    // No API key to create by hand any more.
+    expect(screen.queryByText("WEBFROST_API_KEY")).toBeNull();
+
+    const [copyLogin, copyRescue] = screen.getAllByRole("button", { name: "Copy command" });
+    if (!copyLogin || !copyRescue) throw new Error("expected two commands to copy");
+    fireEvent.click(copyRescue);
+    await waitFor(() => expect(copied).toEqual([rescue]));
     expect(await screen.findByRole("button", { name: "Copied" })).toBeTruthy();
+    fireEvent.click(copyLogin);
+    await waitFor(() => expect(copied).toEqual([rescue, login]));
   });
 
   test("moving a selected domain to the trash sends its host", async () => {

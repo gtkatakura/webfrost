@@ -27,7 +27,7 @@ Link: </api/v1/snapshots?page=2>; rel="successor-version"
 
 ## Authentication
 
-Every `/api/v1/*` route requires authentication except `POST /auth/login`, `POST /auth/logout`, `GET /setup/status` and `POST /setup`. Unauthenticated requests get `401 { "error": "unauthorized", "code": "UNAUTHORIZED" }`.
+Every `/api/v1/*` route requires authentication except `POST /auth/login`, `POST /auth/logout`, `GET /setup/status`, `POST /setup` and the two routes a command line uses to [ask for access](#connect-a-command-line), `POST /auth/device` and `POST /auth/device/token`. Unauthenticated requests get `401 { "error": "unauthorized", "code": "UNAUTHORIZED" }`.
 
 **API key.** Send it as a bearer token:
 
@@ -113,7 +113,8 @@ Limits are per client IP over a sliding one-minute window, held in memory, and s
 |---|---|
 | `GET` and `HEAD` on `/api/v1/*` | 300 per minute |
 | `POST /snapshots`, `POST /snapshots/:id/retry`, `POST /snapshots/import`, `POST /import`, `POST /import/file` | 60 per minute |
-| `POST /auth/login`, `POST /auth/change-password`, `POST /setup` | 10 per minute |
+| `POST /auth/login`, `POST /auth/change-password`, `POST /setup`, `POST /auth/device` | 10 per minute (`/auth/device` has its own count) |
+| `POST /auth/device/token` | 60 per minute |
 
 A limited request gets `429` with a `Retry-After` header (seconds). The client IP is the TCP peer address. `X-Forwarded-For` is used only when `WEBFROST_TRUST_PROXY=true`, which you should set only behind a reverse proxy. Proxies append the address they saw to the header, so the server takes the entry `WEBFROST_TRUSTED_PROXY_HOPS` (default `1`) places from the right, never the client-chosen left-most one. IPv6 clients share one limit per `/64`.
 
@@ -148,6 +149,33 @@ curl -X POST $API/setup -H "Content-Type: application/json" \
 | `POST` | `/auth/change-password` | `{ currentPassword, newPassword }` |
 
 `change-password` answers `400` `VALIDATION` if `newPassword` has fewer than 8 characters and **`403`** `INVALID_CREDENTIALS` (not `401`) if `currentPassword` is wrong, because the caller is authenticated and clients treat `401` as an expired session. On success every session of the user is revoked and a browser caller receives a fresh cookie.
+
+### Connect a command line
+
+How [`webfrost login`](/docs/reference/cli#webfrost-login-server) gets an API key without anyone copying one, modelled on the OAuth 2.0 Device Authorization Grant ([RFC 8628](https://www.rfc-editor.org/rfc/rfc8628)): the command line starts a request and shows a short code, a person signed in to the web UI approves the request that shows the same code, and the command line, which has been polling, receives a key.
+
+| Method | Route | Auth | Description |
+|---|---|---|---|
+| `POST` | `/auth/device` | none | Start a request. Body `{ name? }`: the name the key will be listed under (up to 100 characters; default `webfrost CLI`). Returns `{ deviceCode, userCode, expiresIn, interval, verificationPath, verificationPathComplete }`. |
+| `POST` | `/auth/device/token` | none | Body `{ deviceCode }`. `{ "status": "pending" }` until the request is answered, then once `{ "status": "approved", apiKey, key }` or `{ "status": "denied" }`. `404` for an unknown, expired or already collected request. |
+| `GET` | `/auth/device/requests/:userCode` | session | The request behind a code: `{ userCode, name, requesterIp, status, requestedAt, expiresAt }`, or `404`. |
+| `POST` | `/auth/device/requests/:userCode/:decision` | session | `:decision` is `approve` or `deny`. `{ "ok": true }`; `404` for an unknown, expired or already answered code; `403` when called with an API key. |
+
+```bash
+curl -X POST $API/auth/device -H "Content-Type: application/json" -d '{"name": "laptop"}'
+# { "deviceCode": "9f2c…", "userCode": "WDJB-MJHT", "expiresIn": 600, "interval": 2,
+#   "verificationPath": "/#/connect", "verificationPathComplete": "/#/connect?code=WDJB-MJHT" }
+
+# The person opens <server>/#/connect?code=WDJB-MJHT, signed in, and approves. Meanwhile, every 2 seconds:
+curl -X POST $API/auth/device/token -H "Content-Type: application/json" -d '{"deviceCode": "9f2c…"}'
+# { "status": "pending" }   …then, once:
+# { "status": "approved", "apiKey": "…", "key": { "id": "…", "name": "laptop", "expiresAt": null, … } }
+```
+
+- `deviceCode` is the secret of whoever started the request; `userCode` (8 letters, shown as `XXXX-XXXX`, accepted in any case and without the dash) is what the person compares. The two paths are relative to the server's address, as the client knows it.
+- A request waits `expiresIn` seconds (10 minutes). At most 200 wait at once; further ones get `429`. They are held in memory, so a server restart forgets them and the next poll answers `404`.
+- The API key is created at the poll that returns it, never before the approval, and that poll removes the request: a device code that leaks later is worth nothing. The key is an ordinary one, listed under `GET /settings/keys` and revoked with `DELETE /settings/keys/:id`.
+- Seeing and answering a request take a session (the web UI), with the usual [cross-site check](/docs/architecture/security#cross-site-requests-csrf). An API key cannot approve one: `403`.
 
 ## Snapshots
 

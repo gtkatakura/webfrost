@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ApiKey } from "@webfrost/sdk";
 import { useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "../components/ui/Button";
 import { ErrorState, LoadingRows, PageHeader } from "../components/ui/StateViews";
 import { useClient } from "../context";
+import { LoginCommand } from "../features/failures/shared";
 import { useCopy } from "../lib/clipboard";
 import { collect } from "../lib/collect";
 import { errorMessage } from "../lib/errors";
@@ -101,6 +103,18 @@ export function ApiKeysPage() {
           </p>
         </div>
       )}
+
+      <section className="mb-8">
+        <h2 className="mb-1 mt-0 text-ui-lg font-semibold text-high">Connect the command line</h2>
+        <p className="m-0 max-w-2xl text-ui-sm text-mid">
+          The webfrost CLI gets its own key without you copying one: run this on the computer to
+          connect and approve the request it opens here (or{" "}
+          <Link to="/connect">enter its code</Link>).
+        </p>
+        <div className="max-w-2xl">
+          <LoginCommand />
+        </div>
+      </section>
 
       <section className="mb-8">
         <h2 className="mb-3 mt-0 text-ui-lg font-semibold text-high">Create new key</h2>

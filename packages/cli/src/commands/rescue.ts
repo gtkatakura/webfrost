@@ -18,6 +18,7 @@ import { CliError, UsageError } from "../errors";
 import { isInteractive } from "../prompt";
 import { safeText } from "../sanitize";
 import {
+  KEY_REJECTED,
   UploadError,
   exportBundle,
   formatBytes,
@@ -102,7 +103,7 @@ async function api<T>(base: URL, apiKey: string, path: string, body?: unknown): 
       `cannot reach ${base.origin}: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
-  if (res.status === 401) throw new CliError("the server rejected WEBFROST_API_KEY (HTTP 401)");
+  if (res.status === 401) throw new CliError(KEY_REJECTED);
   if (res.status >= 300 && res.status < 400) {
     throw new CliError(
       `the server answered with a redirect (HTTP ${res.status}); pass its final URL to --from`,
@@ -306,7 +307,8 @@ The pages are archived in a scratch archive (rescue/ in the data directory),
 not your own, and each copy is deleted there once it was sent or rejected.
 
 Environment:
-  WEBFROST_API_KEY  An API key of the server (Settings > API keys).
+  WEBFROST_API_KEY  An API key of the server, instead of the one webfrost login
+                    saved for it.
 
 Exit codes:
   0  it ran to the end (pages that still fail are reported, not an error)
@@ -327,7 +329,7 @@ Exit codes:
       );
     }
     const base = serverBase(ctx, ctx.string("from"), "from", PATH);
-    const apiKey = requireApiKey("rescue");
+    const apiKey = requireApiKey(ctx, base);
     const limit = ctx.int("limit", { min: 1 });
     const giveUpAfter = ctx.int("give-up-after", { min: 0 }) ?? 3;
     const minText = ctx.int("min-text", { min: 0 }) ?? 150;

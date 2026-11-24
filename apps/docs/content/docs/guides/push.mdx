@@ -20,8 +20,10 @@ Your server is where the archive lives, but it is not always the best place to a
 webfrost add https://www.youtube.com/watch?v=...
 # Snapshot 12 done ...
 
-# 2. Send it to the server
-export WEBFROST_API_KEY=wf_...
+# 2. Connect to the server (once per machine: it opens the server's web UI for you to approve)
+webfrost login https://archive.example.com
+
+# 3. Send it
 webfrost push 12 --to https://archive.example.com
 # Pushed snapshot 12 (73.4 MB): snapshot 57 on https://archive.example.com, done
 ```
@@ -30,7 +32,7 @@ Snapshot 57 now shows up in the server's web UI and search, with the video, its 
 
 Use an `https` URL. Plain `http` is refused unless the server is on this machine, or you pass `--insecure` for a network you trust (a home LAN, a VPN), since the key and the snapshot would travel unencrypted.
 
-The key is read only from `WEBFROST_API_KEY`, never from a command-line flag, so it does not land in your shell history or in the process list. Put it in your shell profile or a password manager's CLI rather than typing it each time.
+[`webfrost login`](/docs/reference/cli#webfrost-login-server) asks the server for an API key of its own: it shows a short code and opens the server's web UI, where you approve the request that shows the same code. The key is saved in a file only you can read and is listed on the server under Settings, API keys, where you can revoke it (or run `webfrost logout`). In a script or CI, set `WEBFROST_API_KEY` to a key created in Settings instead; a key is never taken from a command-line flag, so it does not land in your shell history or in the process list.
 
 Your local copy stays where it was. Remove it with `webfrost delete 12` once the push succeeded, if you do not want to keep it.
 
@@ -39,7 +41,7 @@ Your local copy stays where it was. Remove it with `webfrost delete 12` once the
 When the server could not archive many pages, typically the **Blocked by the site** group in [Review failures](/docs/reference/web-ui#review-failures) (a site that refuses data-center addresses), `webfrost rescue` does the archive-and-push for every one of them, and swaps each failure for the copy that worked:
 
 ```bash
-export WEBFROST_API_KEY=wf_...
+webfrost login https://archive.example.com   # once, if this machine is not connected yet
 # What would be tried, per domain
 webfrost rescue blocked --from https://archive.example.com --dry-run
 # One domain first, to see how it goes

@@ -18,6 +18,7 @@ import { ShellSkeleton } from "./layouts/ShellSkeleton";
 import { isStatus, shouldRetry } from "./lib/errors";
 import { returnToPath } from "./lib/returnTo";
 import { ApiKeysPage } from "./pages/ApiKeysPage";
+import { ConnectPage } from "./pages/ConnectPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { FailureDomainRoute } from "./pages/FailureDomainPage";
 import { FailureGroupRoute } from "./pages/FailureGroupPage";
@@ -47,6 +48,16 @@ function RequireWrite({ children }: { children: React.ReactNode }) {
     );
   }
   return <>{children}</>;
+}
+
+/**
+ * Signed out, every page is the login page, which then returns to where the visitor was going:
+ * a link from `webfrost login` (/connect?code=...) must survive the sign-in.
+ */
+function ToLogin() {
+  const location = useLocation();
+  const from = `${location.pathname}${location.search}${location.hash}`;
+  return <Navigate to="/login" replace state={from === "/" ? undefined : { from }} />;
 }
 
 function LoginRoute() {
@@ -150,6 +161,14 @@ function AppRoutes() {
               }
             />
             <Route
+              path="connect"
+              element={
+                <RequireWrite>
+                  <ConnectPage />
+                </RequireWrite>
+              }
+            />
+            <Route
               path="settings/api-keys"
               element={
                 <RequireWrite>
@@ -163,7 +182,7 @@ function AppRoutes() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </>
       ) : (
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="*" element={<ToLogin />} />
       )}
     </Routes>
   );

@@ -32,6 +32,7 @@ Pages live after a `#` in the address, so a link to a page or a snapshot works w
 | `/#/import` | Import | No |
 | `/#/settings` | Settings | No |
 | `/#/settings/api-keys` | API keys | No |
+| `/#/connect` | Connect a command line | No |
 | `/#/setup` | First-run setup, only until an admin exists | |
 | `/#/login` | Sign in | |
 
@@ -137,7 +138,11 @@ Choose a format (**RSS / Atom** feed URL, **OPML File**, **Bookmarks HTML**, **P
 
 **Settings** has five cards: **API Keys** (a link to the keys page), **Change Password** (signs out every other session), **Appearance** (the theme), **Trash** (how many days snapshots stay in the trash, 1 to 365) and **Server Info** (version, storage path and snapshot count).
 
-**API keys** creates and revokes keys for the REST API. A new key is shown once, when you create it.
+**API keys** creates and revokes keys for the REST API. A new key is shown once, when you create it. For the `webfrost` CLI there is nothing to create or copy: the page shows the command to run on the computer you want to connect.
+
+### Connect a command line
+
+Where [`webfrost login`](/docs/reference/cli#webfrost-login-server) sends you (`/#/connect?code=…`; opened without a code, the page asks for it). It shows the request behind the code: the code itself, to compare with the one in your terminal, the name the command line gave itself and the address it asked from. **Approve** creates an API key for it, listed under API keys with that name; **Deny** creates nothing. Approve only a request you started yourself: whoever started it receives the key. Signed out, the link takes you through the sign-in and back to the request. A request waits 10 minutes.
 
 ## Read-only guest view
 

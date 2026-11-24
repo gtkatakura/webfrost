@@ -17,6 +17,8 @@ For the structured analysis (assets, trust boundaries, risks by component) see t
 ## Authentication
 
 Every `/api/v1/*` route requires authentication except `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`,
+the two routes of [`webfrost login`](#connecting-a-command-line) (`POST /api/v1/auth/device` and
+`POST /api/v1/auth/device/token`),
 `GET /api/v1/setup/status` and `POST /api/v1/setup` (which only works while no admin user exists, and
 only with `WEBFROST_SETUP_TOKEN` when that is set). While no admin exists and no setup token is
 configured, the server logs a warning at startup: anyone who reaches it can claim it.
@@ -43,6 +45,35 @@ generates one on first run when it is unset and keeps it in `<data dir>/session-
 `AUTH_DISABLED=true` turns all of the above off. It exists for local development and automated
 tests. Never set it on anything reachable from a network you do not fully control. With it the
 server binds to `127.0.0.1` unless `HOST` is set explicitly.
+
+### Connecting a command line
+
+`webfrost login <server>` gets an API key without anyone copying one, following the OAuth 2.0 Device
+Authorization Grant (RFC 8628). The command line starts a request (`POST /api/v1/auth/device`) and
+shows a short code; a person signed in to the web UI opens the approval page, sees the same code,
+the name and the address the request came from, and approves or denies; the command line polls
+(`POST /api/v1/auth/device/token`) and receives the key.
+
+What the two public routes give without an approval is nothing: a request is a slot in memory.
+
+- **No key before approval, and none at rest in plain text.** The key is created at the poll that
+  returns it, stored as a hash like every other key, and that poll removes the request.
+- **One answer, once.** An approval or a denial cannot be changed, and it is delivered a single
+  time; the device code (256 bits, kept only as a hash) is worthless afterwards.
+- **Short-lived and bounded.** A request expires after 10 minutes. At most 200 wait at once, new
+  requests are limited to 10 a minute per client and polls to 60.
+- **Only a signed-in person approves.** Seeing and answering a request need the session cookie and
+  pass the cross-site check below, so another site cannot approve one with the admin's browser. An
+  API key cannot approve a request and so turn itself into another key.
+- **The key is an ordinary API key**: named after what the command line called itself (shown before
+  approving, as plain text), listed under Settings, API keys and revocable there or with
+  `webfrost logout`. On the client it is saved in `~/.config/webfrost/credentials.json`, mode
+  `0600`, and only ever sent to the server it came from, never along a redirect.
+
+The risk this kind of flow carries is being talked into approving someone else's request: an
+attacker starts one and sends you its link. The approval page says so, and shows the code, the
+name and the address of the requester; approve only a request you started yourself, whose code
+your own terminal shows. A request you did not start costs nothing to deny or ignore.
 
 ### Cross-site requests (CSRF)
 
@@ -91,6 +122,8 @@ In-memory, sliding one-minute window, per client IP:
 | Scope | Limit |
 |---|---|
 | `POST /api/v1/auth/login`, `/api/v1/auth/change-password`, `/api/v1/setup` | 10 / min |
+| `POST /api/v1/auth/device` | 10 / min |
+| `POST /api/v1/auth/device/token` | 60 / min |
 | `POST /api/v1/snapshots`, `/api/v1/snapshots/:id/retry`, `/api/v1/snapshots/import`, `/api/v1/import`, `/api/v1/import/file` | 60 / min |
 | `GET` / `HEAD` on `/api/v1/*` | 300 / min |
 
@@ -136,8 +169,8 @@ deployments that intentionally archive intranet pages. The `http(s)`-only rule s
 
 **Not an archived URL:** `webfrost push` (and `webfrost rescue`, with `--from`) uploads to the server the user names with `--to`, usually
 their own server on a private address, so it uses a plain `fetch` rather than `safeFetch`. It sends
-the API key only there: redirects are not followed, and the key is read from `WEBFROST_API_KEY`,
-never from the command line. On the receiving side the import fetches nothing.
+the API key only there: redirects are not followed, and the key is the one `webfrost login` saved
+for that server or `WEBFROST_API_KEY`, never an argument on the command line. On the receiving side the import fetches nothing.
 
 **Not user-controlled:** the optional [OpenTelemetry export](/docs/guides/observability) sends to
 the `OTEL_EXPORTER_OTLP_*ENDPOINT` the operator set in the environment, usually a collector on a

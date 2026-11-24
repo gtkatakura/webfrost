@@ -50,7 +50,7 @@ light or dark color scheme, complete for single-page apps; full-text search, wit
 lists; `webfrost push` to archive on your own machine and keep the snapshot on the server, and `webfrost
 rescue` to do it for every failure of a group, replacing each one that works (also one-file
 snapshot bundles with `webfrost export` and `import`); cron and feed schedules run by the server; a job queue with crash recovery and per-site pacing;
-filesystem or S3-compatible storage; API keys, revocable sessions and rate limits; read-only public mode;
+filesystem or S3-compatible storage; API keys, revocable sessions and rate limits; `webfrost login` to connect the CLI to a server by approving it in the web UI, with no key to copy; read-only public mode;
 an SSRF guard for fetches and the headless browser; CLI, a versioned HTTP API (`/api/v1`, one error format,
 one pagination format) with a TypeScript SDK, and a web UI with the
 WebFrost look in light and dark, a card view of the archive, a full-window viewer per snapshot, clear error states, accessible dialogs and a phone layout; optional

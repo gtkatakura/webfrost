@@ -8,6 +8,7 @@ import {
   exportSnapshotBundle,
 } from "@webfrost/core";
 import { type Command, type Context, parseHttpUrl, parseId } from "../cli";
+import { credentialsPath, isReadableByOthers, savedServer } from "../credentials";
 import { CliError, UsageError } from "../errors";
 import { printJson, withDb } from "./shared";
 
@@ -55,6 +56,11 @@ export function serverBase(
   path: string[],
 ): URL {
   if (!raw) throw new UsageError(`Missing --${flag} <url>: the WebFrost server.`, path);
+  return serverUrl(ctx, raw, path);
+}
+
+/** The same check for a server URL given as an argument (`webfrost login <server>`). */
+export function serverUrl(ctx: Context, raw: string, path: string[]): URL {
   const base = parseHttpUrl(raw, path);
   if (base.protocol === "http:" && !isLoopbackHost(base.hostname)) {
     if (!ctx.bool("insecure")) {
@@ -70,16 +76,31 @@ export function serverBase(
   return base;
 }
 
-/** WEBFROST_API_KEY, which is only ever read from the environment. */
-export function requireApiKey(command: string): string {
-  const apiKey = process.env.WEBFROST_API_KEY;
-  if (!apiKey) {
-    throw new CliError(
-      `WEBFROST_API_KEY is not set. Create an API key on the server (Settings > API keys) and export it: WEBFROST_API_KEY=wf_... webfrost ${command} ...`,
-    );
+/**
+ * The API key for a server: WEBFROST_API_KEY when it is set (a key is never taken from a flag,
+ * which would land in shell history and process lists), else the one `webfrost login` saved for
+ * this server. A saved key is only ever sent to the server it was issued by.
+ */
+export function requireApiKey(ctx: Context, base: URL): string {
+  const fromEnv = process.env.WEBFROST_API_KEY;
+  if (fromEnv) return fromEnv;
+  const saved = savedServer(base.origin);
+  if (saved) {
+    if (isReadableByOthers(credentialsPath())) {
+      ctx.logger.warn(
+        `${credentialsPath()} can be read by other users of this machine: chmod 600 it.`,
+      );
+    }
+    return saved.apiKey;
   }
-  return apiKey;
+  throw new CliError(
+    `No API key for ${base.origin}. Connect once with: webfrost login ${base.origin}\n(or set WEBFROST_API_KEY to a key from the server's Settings > API keys)`,
+  );
 }
+
+/** What to say when the server answers 401 to the key. */
+export const KEY_REJECTED =
+  "the server rejected the API key (HTTP 401): it was revoked or has expired. Connect again with webfrost login <server>, or set WEBFROST_API_KEY";
 
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -220,8 +241,7 @@ export async function upload(
       res.status,
     );
   }
-  if (res.status === 401)
-    throw new UploadError("the server rejected WEBFROST_API_KEY (HTTP 401)", 401);
+  if (res.status === 401) throw new UploadError(KEY_REJECTED, 401);
   if (res.status === 429) {
     const wait = Number(res.headers.get("retry-after"));
     throw new UploadError(
@@ -268,23 +288,24 @@ export const pushCommand: Command = {
   },
   notes: `
 Environment:
-  WEBFROST_API_KEY  An API key of the server (Settings > API keys). Read from the
-                    environment only, never a flag, so it stays out of shell history
-                    and process lists.
+  WEBFROST_API_KEY  An API key of the server, instead of the one webfrost login
+                    saved for it. Read from the environment only, never a flag, so
+                    it stays out of shell history and process lists.
 
 Exit codes:
   0  every snapshot was stored on the server
   1  at least one could not be exported or was refused (the others are still sent)
   2  usage error`,
   examples: [
-    "WEBFROST_API_KEY=wf_... webfrost push 12 --to https://archive.example.com",
+    "webfrost login https://archive.example.com   # once",
+    "webfrost push 12 --to https://archive.example.com",
     "webfrost push 12 13 14 --to https://archive.example.com --json",
     "webfrost push 12 --to http://192.168.1.20:3000 --insecure",
   ],
   async run(ctx) {
     const ids = ctx.args.map((raw) => parseId(raw, "snapshot id", ["push"]));
     const base = serverBase(ctx, ctx.string("to"), "to", ["push"]);
-    const apiKey = requireApiKey("push");
+    const apiKey = requireApiKey(ctx, base);
     const endpoint = `${base.href.replace(/\/+$/, "")}/api/v1/snapshots/import`;
 
     const outcomes: PushOutcome[] = [];

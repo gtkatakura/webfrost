@@ -18,6 +18,7 @@ import { logger } from "./logger";
 import { rateLimiterPlugin } from "./middleware/rateLimiter";
 import { requestGuardPlugin } from "./middleware/requestGuard";
 import { authPlugin, authRouter } from "./routes/auth";
+import { deviceRouter } from "./routes/device";
 import { failuresRouter } from "./routes/failures";
 import { importRouter, importsRouter } from "./routes/import";
 import { schedulesRouter } from "./routes/schedules";
@@ -101,6 +102,7 @@ const apiRoutes = () =>
     .use(authPlugin)
     .use(setupRouter)
     .use(authRouter)
+    .use(deviceRouter)
     .use(snapshotImportRouter)
     .use(snapshotsRouter)
     .use(snapshotTagsRouter)
@@ -180,6 +182,24 @@ export const app = new Elysia()
       windowMs: 60_000,
       methods: ["POST"],
       path: /^\/api(?:\/v1)?\/(auth\/login|auth\/change-password|setup)\/?$/,
+    }),
+  )
+  // `webfrost login`, which needs no credentials: 10 new connection requests a minute, and 60
+  // polls for their answer (the CLI polls every 2 seconds).
+  .use(
+    rateLimiterPlugin({
+      limit: 10,
+      windowMs: 60_000,
+      methods: ["POST"],
+      path: /^\/api(?:\/v1)?\/auth\/device\/?$/,
+    }),
+  )
+  .use(
+    rateLimiterPlugin({
+      limit: 60,
+      windowMs: 60_000,
+      methods: ["POST"],
+      path: /^\/api(?:\/v1)?\/auth\/device\/token\/?$/,
     }),
   )
   .group(API_PREFIX, (app) => app.use(apiRoutes()))

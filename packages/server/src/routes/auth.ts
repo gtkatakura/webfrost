@@ -48,6 +48,9 @@ const LOGIN_ROUTE = /^(?:\/api(?:\/v1)?)?\/auth\/login\/?$/;
 const LOGOUT_ROUTE = /^(?:\/api(?:\/v1)?)?\/auth\/logout\/?$/;
 const SETUP_STATUS_ROUTE = /^(?:\/api(?:\/v1)?)?\/setup\/status\/?$/;
 const SETUP_ROUTE = /^(?:\/api(?:\/v1)?)?\/setup\/?$/;
+// `webfrost login`: the CLI starts a connection request and polls for its answer before it has
+// any credentials. Neither route gives anything until a signed-in person approves the request.
+const DEVICE_ROUTES = /^(?:\/api(?:\/v1)?)?\/auth\/device(?:\/token)?\/?$/;
 
 // Requests let through as anonymous guests, so routes can hold back details
 // (such as storage paths) that only the admin should see.
@@ -97,6 +100,7 @@ export function authPlugin(app: Elysia) {
     if (request.method === "POST" && LOGOUT_ROUTE.test(url.pathname)) return;
     if (request.method === "GET" && SETUP_STATUS_ROUTE.test(url.pathname)) return;
     if (request.method === "POST" && SETUP_ROUTE.test(url.pathname)) return;
+    if (request.method === "POST" && DEVICE_ROUTES.test(url.pathname)) return;
 
     const authHeader = request.headers.get("authorization");
     const bearer = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;

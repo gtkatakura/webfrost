@@ -740,3 +740,67 @@ describe("WebFrostClient failures", () => {
     expect(JSON.parse(String((init as RequestInit).body))).toEqual({ hosts: ["gone.example"] });
   });
 });
+
+describe("WebFrostClient: connecting a command line", () => {
+  test("startDeviceAuthorization asks without credentials and returns the codes", async () => {
+    const started = {
+      deviceCode: "d".repeat(64),
+      userCode: "WDJB-MJHT",
+      expiresIn: 600,
+      interval: 2,
+      verificationPath: "/#/connect",
+      verificationPathComplete: "/#/connect?code=WDJB-MJHT",
+    };
+    fetchSpy.mockResolvedValueOnce(jsonResponse(started));
+    const client = new WebFrostClient({ baseUrl: BASE });
+    expect(await client.startDeviceAuthorization({ name: "laptop" })).toEqual(started);
+
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${BASE}/api/v1/auth/device`);
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ name: "laptop" });
+  });
+
+  test("pollDeviceAuthorization reports pending, approved with the key, and a gone request as expired", async () => {
+    const client = new WebFrostClient({ baseUrl: BASE });
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ status: "pending" }));
+    expect(await client.pollDeviceAuthorization("abc")).toEqual({ status: "pending" });
+    expect(JSON.parse((fetchSpy.mock.calls[0] as [string, RequestInit])[1].body as string)).toEqual(
+      { deviceCode: "abc" },
+    );
+
+    const key = { id: "k1", name: "laptop", expiresAt: null, lastUsedAt: null, createdAt: "x" };
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ status: "approved", apiKey: "secret", key }));
+    expect(await client.pollDeviceAuthorization("abc")).toEqual({
+      status: "approved",
+      apiKey: "secret",
+      key,
+    });
+
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ error: "unknown or expired connection request", code: "NOT_FOUND" }, 404),
+    );
+    expect(await client.pollDeviceAuthorization("abc")).toEqual({ status: "expired" });
+  });
+
+  test("getDeviceRequest is null for an unknown code; approve and deny say whether they applied", async () => {
+    const client = new WebFrostClient({ baseUrl: BASE });
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ error: "x", code: "NOT_FOUND" }, 404));
+    expect(await client.getDeviceRequest("WDJB MJHT")).toBeNull();
+    expect((fetchSpy.mock.calls[0] as [string])[0]).toBe(
+      `${BASE}/api/v1/auth/device/requests/WDJB%20MJHT`,
+    );
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ ok: true }));
+    expect(await client.approveDeviceRequest("WDJB-MJHT")).toBe(true);
+    const [url, init] = fetchSpy.mock.calls[1] as [string, RequestInit];
+    expect(url).toBe(`${BASE}/api/v1/auth/device/requests/WDJB-MJHT/approve`);
+    expect(init.method).toBe("POST");
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ error: "x", code: "NOT_FOUND" }, 404));
+    expect(await client.denyDeviceRequest("WDJB-MJHT")).toBe(false);
+    expect((fetchSpy.mock.calls[2] as [string])[0]).toBe(
+      `${BASE}/api/v1/auth/device/requests/WDJB-MJHT/deny`,
+    );
+  });
+});

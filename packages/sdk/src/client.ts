@@ -14,6 +14,9 @@ import type {
   ArchiveUrlKind,
   CreateApiKeyOptions,
   DashboardStats,
+  DeviceAuthorization,
+  DevicePollResult,
+  DeviceRequest,
   FailedSnapshot,
   FailureDomainPage,
   FailureGroupId,
@@ -869,6 +872,75 @@ export class WebFrostClient {
   /** Revoke an API key by id. Returns true if revoked, false if not found. */
   revokeApiKey(id: string, request?: RequestOptions): Promise<boolean> {
     return this.remove(`/settings/keys/${encodeURIComponent(id)}`, request);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Connecting a command line (webfrost login)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Start a request to connect this client to the server: no credentials needed. Show
+   * `userCode`, send the person to `verificationPathComplete` on the server, and poll with
+   * {@link pollDeviceAuthorization} every `interval` seconds.
+   */
+  startDeviceAuthorization(
+    options?: { name?: string } & RequestOptions,
+  ): Promise<DeviceAuthorization> {
+    return this.json("POST", "/auth/device", {
+      body: options?.name !== undefined ? { name: options.name } : {},
+      signal: options?.signal,
+    });
+  }
+
+  /**
+   * Ask whether a connection request was answered. `approved` comes once, with an API key the
+   * server created for this client; after it (or once the request expires) the answer is
+   * `expired`.
+   */
+  pollDeviceAuthorization(deviceCode: string, request?: RequestOptions): Promise<DevicePollResult> {
+    return this.send(
+      "POST",
+      "/auth/device/token",
+      { body: { deviceCode }, signal: request?.signal, allow: [404] },
+      async (res) =>
+        res.status === 404 ? { status: "expired" } : ((await res.json()) as DevicePollResult),
+    );
+  }
+
+  /** The connection request a code names, or null when there is none (any more). */
+  getDeviceRequest(userCode: string, request?: RequestOptions): Promise<DeviceRequest | null> {
+    return this.send(
+      "GET",
+      `/auth/device/requests/${encodeURIComponent(userCode)}`,
+      { signal: request?.signal, allow: [404] },
+      async (res) => (res.status === 404 ? null : ((await res.json()) as DeviceRequest)),
+    );
+  }
+
+  private answerDeviceRequest(
+    userCode: string,
+    decision: "approve" | "deny",
+    request?: RequestOptions,
+  ): Promise<boolean> {
+    return this.send(
+      "POST",
+      `/auth/device/requests/${encodeURIComponent(userCode)}/${decision}`,
+      { signal: request?.signal, allow: [404] },
+      async (res) => res.status !== 404,
+    );
+  }
+
+  /**
+   * Approve a connection request: the client that started it receives an API key. Needs a
+   * session (the web UI), not an API key. False when the code is unknown, expired or answered.
+   */
+  approveDeviceRequest(userCode: string, request?: RequestOptions): Promise<boolean> {
+    return this.answerDeviceRequest(userCode, "approve", request);
+  }
+
+  /** Deny a connection request. False when the code is unknown, expired or answered. */
+  denyDeviceRequest(userCode: string, request?: RequestOptions): Promise<boolean> {
+    return this.answerDeviceRequest(userCode, "deny", request);
   }
 
   // ---------------------------------------------------------------------------
