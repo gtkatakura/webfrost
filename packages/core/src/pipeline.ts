@@ -92,10 +92,19 @@ export function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promis
  * WebRTC may only use the proxy, so a page cannot reach an internal address over UDP
  * (STUN/TURN) around the SSRF egress proxy.
  */
-export function chromiumLaunchOptions(): { executablePath?: string; args: string[] } {
+export function chromiumLaunchOptions(): {
+  executablePath?: string;
+  args: string[];
+  handleSIGINT: false;
+  handleSIGTERM: false;
+  handleSIGHUP: false;
+} {
   const { path } = resolveChromium();
   const args = ["--force-webrtc-ip-handling-policy=disable_non_proxied_udp"];
-  return path ? { executablePath: path, args } : { args };
+  // The server and the CLI handle their own signals (finish what is running, then exit). Playwright's
+  // default would close the browser and exit the process on the first Ctrl+C, before any of that.
+  const signals = { handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false } as const;
+  return path ? { executablePath: path, args, ...signals } : { args, ...signals };
 }
 
 /** How far down the page the scroll pass goes; past that, a page is endless (a feed) or huge. */

@@ -3,9 +3,10 @@ import { join } from "node:path";
 import {
   type Db,
   FAILURE_GROUPS,
+  FilesystemBackend,
+  type StorageBackend,
   addUrl,
   blockPageReason,
-  createStorageBackend,
   deleteSnapshot,
   getSnapshot,
   hostOf,
@@ -52,6 +53,8 @@ type Outcome =
   | "gone"
   /** Archived, but what came back is an anti-bot or login wall: not sent. */
   | "wall"
+  /** Archived without the browser formats (no Chromium here, or the browser failed): not sent. */
+  | "incomplete"
   /** The server no longer has it as a failure (retried, archived or trashed since): not sent. */
   | "skipped"
   /** Not tried: the domain failed every time already (--give-up-after). */
@@ -74,17 +77,25 @@ const LABELS: Record<Outcome, string> = {
   "still-failing": "still failing here",
   gone: "really gone",
   wall: "anti-bot or login wall, not sent",
+  incomplete: "browser formats failed here, not sent",
   skipped: "no longer a failure on the server",
   "not-tried": "not tried (domain gave up)",
   error: "could not be sent",
 };
 
 /** A request to the server's API, with the key, never following a redirect. */
-async function api<T>(base: URL, apiKey: string, path: string): Promise<T> {
+async function api<T>(base: URL, apiKey: string, path: string, body?: unknown): Promise<T> {
   const url = `${base.href.replace(/\/+$/, "")}/api/v1${path}`;
   let res: Response;
   try {
-    res = await fetch(url, { headers: { authorization: `Bearer ${apiKey}` }, redirect: "manual" });
+    res = await fetch(url, {
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+      },
+      ...(body === undefined ? {} : { method: "POST", body: JSON.stringify(body) }),
+      redirect: "manual",
+    });
   } catch (err) {
     throw new CliError(
       `cannot reach ${base.origin}: ${err instanceof Error ? err.message : String(err)}`,
@@ -96,7 +107,8 @@ async function api<T>(base: URL, apiKey: string, path: string): Promise<T> {
       `the server answered with a redirect (HTTP ${res.status}); pass its final URL to --from`,
     );
   }
-  if (!res.ok) throw new CliError(`GET ${path} failed: HTTP ${res.status}`);
+  if (!res.ok)
+    throw new CliError(`${body === undefined ? "GET" : "POST"} ${path} failed: HTTP ${res.status}`);
   return (await res.json()) as T;
 }
 
@@ -137,9 +149,23 @@ async function confirm(question: string): Promise<boolean> {
 }
 
 /** Archive `url` in the scratch archive and say whether the copy is worth sending. */
+/** The title and visible text of the DOM the browser rendered (what the screenshot and PDF show). */
+function renderedPage(html: string): { title: string | null; text: string } {
+  const title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1]?.trim() ?? null;
+  const body = /<body[^>]*>([\s\S]*)<\/body>/i.exec(html)?.[1] ?? html;
+  const text = body
+    .replace(/<(script|style|noscript|template)\b[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;|&#160;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return { title, text };
+}
+
 async function archiveHere(
   ctx: Context,
   db: Db,
+  storage: StorageBackend,
   workDir: string,
   url: string,
   minText: number,
@@ -150,7 +176,7 @@ async function archiveHere(
     warn: (m: string) => ctx.verbose && ctx.logger.warn(m),
     error: (m: string) => ctx.verbose && ctx.logger.error(m),
   };
-  const localId = await addUrl(db, url, workDir, ctx.verbose ? ctx.logger : quiet);
+  const localId = await addUrl(db, url, workDir, ctx.verbose ? ctx.logger : quiet, storage);
   const snap = await getSnapshot(db, localId);
   if (!snap) return { localId, outcome: "error", reason: "the local snapshot was not recorded" };
   if (snap.status !== "done") {
@@ -176,6 +202,26 @@ async function archiveHere(
   }
   const wall = blockPageReason(title, text, minText);
   if (wall) return { localId, outcome: "wall", reason: wall };
+
+  // The HTML above is what the plain fetch got; a challenge may only appear once its scripts run. The
+  // browser's DOM is what the screenshot, PDF and SingleFile copy show, so it must be there and be the
+  // page too. Without it (no Chromium here) the copy would lack the formats the server failed to make.
+  const dom = snap.archiveResults.find((r) => r.extractor === "dom-snapshot");
+  if (!dom || dom.error !== null || !dom.content) {
+    return {
+      localId,
+      outcome: "incomplete",
+      reason: safeText(dom?.error ?? "no DOM snapshot (is Chromium installed? webfrost doctor)"),
+    };
+  }
+  let rendered: { title: string | null; text: string };
+  try {
+    rendered = renderedPage(new TextDecoder().decode(await storage.getBytes(dom.content)));
+  } catch {
+    return { localId, outcome: "incomplete", reason: "the DOM snapshot could not be read" };
+  }
+  const renderedWall = blockPageReason(rendered.title, rendered.text, minText);
+  if (renderedWall) return { localId, outcome: "wall", reason: `in the browser, ${renderedWall}` };
   return { localId, outcome: "ok" };
 }
 
@@ -217,6 +263,10 @@ export const rescueCommand: Command = {
       description: "Domains worked on at the same time (default 2; one page at a time per domain)",
     },
     "dry-run": { type: "boolean", description: "List what would be tried, then stop" },
+    keep: {
+      type: "boolean",
+      description: "Keep the scratch archive (rescue/) at the end, to look at what was rejected",
+    },
     yes: { type: "boolean", short: "y", description: "Do not ask before starting" },
     insecure: {
       type: "boolean",
@@ -256,6 +306,7 @@ Exit codes:
     const minText = ctx.int("min-text", { min: 0 }) ?? 150;
     const concurrency = ctx.int("concurrency", { min: 1, max: 8 }) ?? 2;
     const json = ctx.bool("json");
+    const keep = ctx.bool("keep");
     const say = (msg: string) => {
       if (!ctx.quiet) process.stderr.write(`${msg}\n`);
     };
@@ -290,10 +341,17 @@ Exit codes:
       }
     }
 
+    // The scratch archive is SQLite and files under rescue/, whatever this shell points WebFrost at: with
+    // DATABASE_URL or S3 settings it would otherwise write (and delete, by id) in a real archive. This
+    // process runs only this command, so its environment can be pinned for the rest of it.
+    Reflect.deleteProperty(process.env, "DATABASE_URL");
+    process.env.WEBFROST_STORAGE_BACKEND = "filesystem";
     const workDir = join(ctx.dir, "rescue");
+    // Leftovers of a run that was killed (and a dead-domain memory that would answer for DNS) go first.
+    rmSync(workDir, { recursive: true, force: true });
     mkdirSync(workDir, { recursive: true });
     const db = await openDb(workDir);
-    const storage = createStorageBackend(workDir);
+    const storage = new FilesystemBackend(join(workDir, "snapshots"));
     const endpoint = `${base.href.replace(/\/+$/, "")}/api/v1/snapshots/import`;
     const results: Result[] = [];
     let stopping = false;
@@ -310,31 +368,42 @@ Exit codes:
       say(`${n} ${LABELS[r.outcome]}: ${safeText(r.url)}${tail ? ` (${printable(tail)})` : ""}`);
     };
 
-    async function rescueOne(f: Failed): Promise<Outcome> {
+    /** Upload, waiting out a busy server (it runs two imports at a time) a few times. */
+    async function send(f: Failed, localId: number, bundle: string, bytes: number) {
+      for (let attempt = 1; ; attempt++) {
+        try {
+          return await upload(ctx, `${endpoint}?replaces=${f.id}`, apiKey, localId, bundle, bytes);
+        } catch (err) {
+          if (!(err instanceof UploadError) || err.status !== 429 || attempt >= 5 || stopping) {
+            throw err;
+          }
+          await Bun.sleep((err.retryAfter ?? 10 * attempt) * 1000);
+        }
+      }
+    }
+
+    /**
+     * One page: archive it once, send it once in place of `f`, and give the same verdict to `twins`,
+     * the other failures of the same URL (a schedule that failed several times), which go to the trash
+     * once the copy is in: one working snapshot stands for all of them.
+     */
+    async function rescueOne(f: Failed, twins: Failed[]): Promise<Outcome> {
+      const all = [f, ...twins];
+      const verdict = (r: Omit<Result, "id" | "url">) => {
+        for (const x of all) record({ id: x.id, url: x.url, ...r });
+      };
       let localId: number | undefined;
       try {
-        const here = await archiveHere(ctx, db, workDir, f.url, minText);
+        const here = await archiveHere(ctx, db, storage, workDir, f.url, minText);
         localId = here.localId;
         if (here.outcome !== "ok") {
-          record({
-            id: f.id,
-            url: f.url,
-            outcome: here.outcome,
-            ...(here.reason ? { reason: here.reason } : {}),
-          });
+          verdict({ outcome: here.outcome, ...(here.reason ? { reason: here.reason } : {}) });
           return here.outcome;
         }
         const bundle = join(workDir, `rescue-${localId}.zip`);
         try {
-          const bytes = await exportBundle({ ...ctx, dir: workDir }, localId, bundle);
-          const remote = await upload(
-            ctx,
-            `${endpoint}?replaces=${f.id}`,
-            apiKey,
-            localId,
-            bundle,
-            bytes,
-          );
+          const bytes = await exportBundle({ dir: workDir }, localId, bundle, storage);
+          const remote = await send(f, localId, bundle, bytes);
           record({
             id: f.id,
             url: f.url,
@@ -342,37 +411,55 @@ Exit codes:
             remoteId: remote.id,
             reason: formatBytes(bytes),
           });
+          if (twins.length > 0) {
+            await api(base, apiKey, `/failures/${group}/trash`, { ids: twins.map((t) => t.id) });
+            for (const t of twins) {
+              record({
+                id: t.id,
+                url: t.url,
+                outcome: "rescued",
+                remoteId: remote.id,
+                reason: `same page as snapshot ${f.id}, moved to the trash`,
+              });
+            }
+          }
           return "rescued";
         } finally {
           rmSync(bundle, { force: true });
         }
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
+        const done = new Set(results.map((r) => r.id));
+        const left = all.filter((x) => !done.has(x.id));
         if (err instanceof UploadError && err.status === 409) {
-          record({ id: f.id, url: f.url, outcome: "skipped", reason });
+          for (const x of left) record({ id: x.id, url: x.url, outcome: "skipped", reason });
           return "skipped";
         }
         // Nothing more can be sent with a rejected key or to a server that cannot be reached.
         if (err instanceof UploadError && (err.status === 401 || err.status === 0)) fatal = reason;
-        record({ id: f.id, url: f.url, outcome: "error", reason });
+        for (const x of left) record({ id: x.id, url: x.url, outcome: "error", reason });
         return "error";
       } finally {
-        if (localId !== undefined) {
+        if (localId !== undefined && !keep) {
           await deleteSnapshot(db, localId, storage).catch(() => {});
         }
       }
     }
 
     // One page at a time per domain (the pipeline also spaces requests to a domain), a few
-    // domains at once.
-    const queue = [...byHost.values()];
+    // domains at once. Failures of the same URL are archived and sent once.
+    const queue = [...byHost.values()].map((list) => {
+      const byUrl = new Map<string, Failed[]>();
+      for (const f of list) byUrl.set(f.url, [...(byUrl.get(f.url) ?? []), f]);
+      return [...byUrl.values()];
+    });
     async function worker() {
-      for (let list = queue.shift(); list; list = queue.shift()) {
+      for (let pages = queue.shift(); pages; pages = queue.shift()) {
         let inARow = 0;
-        for (const [i, f] of list.entries()) {
-          if (stopping || fatal) return;
+        for (const [i, [first, ...twins]] of pages.entries()) {
+          if (stopping || fatal || !first) return;
           if (giveUpAfter > 0 && inARow >= giveUpAfter) {
-            for (const rest of list.slice(i)) {
+            for (const rest of pages.slice(i).flat()) {
               record({
                 id: rest.id,
                 url: rest.url,
@@ -382,8 +469,8 @@ Exit codes:
             }
             break;
           }
-          const outcome = await rescueOne(f);
-          inARow = outcome === "still-failing" || outcome === "wall" ? inARow + 1 : 0;
+          const outcome = await rescueOne(first, twins);
+          inARow = ["still-failing", "wall", "incomplete"].includes(outcome) ? inARow + 1 : 0;
         }
       }
     }
@@ -391,6 +478,7 @@ Exit codes:
       await Promise.all(Array.from({ length: concurrency }, worker));
     } finally {
       await db.close();
+      if (!keep) rmSync(workDir, { recursive: true, force: true });
     }
 
     const summary: Partial<Record<Outcome, number>> = {};
@@ -411,6 +499,7 @@ Exit codes:
       }
     }
     if (fatal) throw new CliError(fatal);
+    if (stopping) return 130;
     return summary.error ? 1 : 0;
   },
 };

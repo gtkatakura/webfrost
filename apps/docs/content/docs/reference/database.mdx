@@ -47,6 +47,29 @@ One row per archived URL.
 | `status` | TEXT | `pending`, `done` or `failed`. `done` means at least one extractor produced output. |
 | `created_at` | TEXT | Creation time |
 | `color_scheme` | TEXT | `light` or `dark`: the theme the page was archived in. `NULL` for snapshots made before schema version 4, which use the server default. |
+| `failure_category` | TEXT | Why a `failed` snapshot failed: `domain_not_found`, `page_not_found`, `access_denied`, `rate_limited`, `timeout`, … ([the list](/docs/reference/rest-api#failures)). `NULL` while not failed, and for snapshots that failed before schema version 5. |
+| `failure_detail` | TEXT | The message behind the category (the fetch, browser or job error) |
+| `trashed_at` | TEXT | When the snapshot was moved to the trash; `NULL` when it is not there. A trashed snapshot is hidden from lists, search and counts, and deleted for good once older than the retention (`app_settings`). |
+
+### dead_hosts
+
+Domains that did not resolve (`ENOTFOUND`), so the next snapshots of them fail at once without another DNS lookup. An entry counts for 7 days after `last_seen_at`; retrying a snapshot of the domain, or "Check again" in Review failures, forgets it.
+
+| Column | Type | Description |
+|---|---|---|
+| `host` | TEXT | Primary key, lower case |
+| `detail` | TEXT | The resolver's message |
+| `first_seen_at`, `last_seen_at` | TEXT | First and latest failure |
+
+### app_settings
+
+Settings changed from the web UI, as name and value. Today only `trash_retention_days` (1 to 365, 30 when absent).
+
+| Column | Type | Description |
+|---|---|---|
+| `name` | TEXT | Primary key |
+| `value` | TEXT | The value, as text |
+| `updated_at` | TEXT | Last change |
 
 ### archive_results
 
@@ -189,6 +212,8 @@ Results are sorted best first and the API's `rank` is "lower is better" on every
 | `idx_snapshots_url` | `snapshots (url)` (MySQL: first 255 characters) |
 | `idx_snapshots_status` | `snapshots (status)` |
 | `idx_snapshots_created_at` | `snapshots (created_at)` |
+| `idx_snapshots_failure` | `snapshots (failure_category)` |
+| `idx_snapshots_trashed` | `snapshots (trashed_at)` |
 | `idx_snapshot_tags_tag` | `snapshot_tags (tag_id)` |
 | `idx_schedules_next_run` | `schedules (next_run_at)` |
 | `idx_api_keys_hash` | `api_keys (key_hash)` |

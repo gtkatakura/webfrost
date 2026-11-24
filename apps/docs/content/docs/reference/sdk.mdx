@@ -183,7 +183,7 @@ await client.retrySnapshot(7);
 
 ### `importSnapshot(bundle, options?): Promise<SnapshotImported>`
 
-Upload a [snapshot bundle](/docs/reference/rest-api#import-a-snapshot-bundle) (the ZIP that `webfrost export` writes) and resolve with the new snapshot, `{ id, url, status: "done" | "failed" }`. `bundle` is a `Blob`, a `Uint8Array` or a `ReadableStream<Uint8Array>`; a stream is sent as it is read, so pass `contentLength` with it when you know the size. `options` is `{ contentLength?, timeoutMs?, signal? }`. Uploads have no timeout unless `timeoutMs` is given, and are never retried (a retry could import the snapshot twice). A rejected bundle throws `VALIDATION`; one over the server's limit `PAYLOAD_TOO_LARGE`.
+Upload a [snapshot bundle](/docs/reference/rest-api#import-a-snapshot-bundle) (the ZIP that `webfrost export` writes) and resolve with the new snapshot, `{ id, url, status: "done" | "failed" }`. `bundle` is a `Blob`, a `Uint8Array` or a `ReadableStream<Uint8Array>`; a stream is sent as it is read, so pass `contentLength` with it when you know the size. `options` is `{ contentLength?, timeoutMs?, signal?, replaces? }`. `replaces` is the id of a failed snapshot of the same URL that this `done` copy takes the place of: it moves to the trash in the same step, the result carries `replaced`, and it throws `CONFLICT` (nothing stored) when that snapshot is not, or no longer, such a failure ([`?replaces=`](/docs/reference/rest-api#import-a-snapshot-bundle); what `webfrost rescue` uses). Uploads have no timeout unless `timeoutMs` is given, and are never retried (a retry could import the snapshot twice). A rejected bundle throws `VALIDATION`; one over the server's limit `PAYLOAD_TOO_LARGE`.
 
 ```ts
 const imported = await client.importSnapshot(await fs.openAsBlob("snapshot-12.zip"));
@@ -261,6 +261,31 @@ await client.importFile(new Blob([text]), "text", { filename: "urls.txt" });
 await client.importFile(fileInput.files[0]); // a File keeps its own name
 ```
 
+## Failures and trash
+
+What [Review failures](/docs/reference/web-ui#review-failures) is built on: failed snapshots in groups that call for the same decision, and the trash. Every action applies to failed snapshots only. Routes: [Failures](/docs/reference/rest-api#failures) and [Trash](/docs/reference/rest-api#trash).
+
+| Method | Returns |
+|---|---|
+| `listFailureGroups()` | `FailureGroupSummary[]`: `{ id, label, categories, count, domains }` for every group, empty ones included |
+| `listFailureDomains(group, { q?, page?, limit? })` | `FailureDomainPage`: the group's domains, most failures first, `{ items: [{ host, count, withWorkingSnapshot, lastFailedAt, example }], total, snapshots, page, limit }`. `q` keeps the domains containing it. |
+| `listFailedSnapshots(group, host, { page?, limit? })` | `Page<FailedSnapshot>`: `{ id, url, createdAt, failure, workingSnapshotId }`, newest first |
+| `retryFailures(group, selection)` | `{ queued, stillGone }`. For `domain-gone` each domain is looked up first; the ones that still do not resolve are in `stillGone`. |
+| `trashFailures(group, selection)` | `{ trashed }` |
+| `deleteFailures(group, selection)` | `{ deleted, busy }`, for good, files included |
+| `listTrash({ page?, limit? })` | `TrashPage`: `{ items: [{ id, url, status, failure, createdAt, trashedAt, deleteAfter }], total, page, limit, retentionDays }` |
+| `restoreFromTrash(ids \| selection)` | `{ restored }` |
+| `deleteFromTrash(ids \| selection)` | `{ deleted, busy }` |
+| `emptyTrash()` | `{ deleted, busy }` |
+| `getGeneralSettings()` / `updateGeneralSettings({ trashRetentionDays })` | `{ trashRetentionDays }` (1 to 365; out of range throws `VALIDATION`) |
+
+A `FailureSelection` is `{ hosts?, ids? }`, or `{ all: true, q?, host?, excludeHosts?, excludeIds? }` for "everything the page shows, less what was unticked", so selecting thousands needs no ids. A `TrashSelection` is `{ ids }` or `{ all: true, excludeIds? }`. Ids that are not (or no longer) failures of the group are ignored.
+
+```ts
+// Every failed snapshot of mangahost mirrors, blocked by the site, to the trash
+const { trashed } = await client.trashFailures("blocked", { all: true, q: "mangahost" });
+```
+
 ## Auth, setup and administration
 
 | Method | Returns |
@@ -287,7 +312,7 @@ type ImportFormat = "rss" | "opml" | "netscape" | "text";
 type ScheduleRunStatus = "success" | "failed";
 
 interface SnapshotCreated { id: number; url: string; status: "pending" }
-interface SnapshotImported { id: number; url: string; status: "done" | "failed" }
+interface SnapshotImported { id: number; url: string; status: "done" | "failed"; replaced?: number }
 
 interface Snapshot {
   id: number;
@@ -299,6 +324,14 @@ interface Snapshot {
   title: string | null;
   excerpt: string | null;
   screenshotUrl: string | null; // absolute URL, or null
+  failure: SnapshotFailure | null; // why it failed; null unless status is "failed"
+}
+
+interface SnapshotFailure {
+  category: string; // stable: "domain_not_found", "page_not_found", "access_denied", "timeout", ...
+  class: "permanent" | "transient" | "blocked" | "internal";
+  label: string; // for people: "Domain does not exist"
+  detail: string | null; // the message behind it; null for guests
 }
 
 interface ArchiveResult {

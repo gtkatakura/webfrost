@@ -18,6 +18,8 @@ SQLite also creates `archive.db-wal` and `archive.db-shm` next to the database w
 
 `tmp/` holds snapshot bundles being uploaded to `POST /api/v1/snapshots/import` ([`webfrost push`](/docs/guides/push)), one private folder (`bundle-<uuid>`) per request, removed when the request ends; folders a crash left behind are removed at the next server start once they are an hour old. It needs no backup.
 
+On a machine that runs [`webfrost rescue`](/docs/reference/cli#webfrost-rescue-group---from-url), `rescue/` is the scratch archive it archives pages in before sending them to the server (its own `archive.db` and `snapshots/`). It is emptied when a run starts and removed when it ends (unless `--keep`); it needs no backup.
+
 ## Snapshot ids
 
 A snapshot's directory is named after its integer id, matching `snapshots.id`. The directory is created when the first file is written.

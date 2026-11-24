@@ -175,6 +175,21 @@ describe("replacing a failed snapshot (webfrost rescue)", () => {
     ]);
   });
 
+  test("the same URL written differently (host case, no path) still matches", async () => {
+    const failed = await seedFailure("https://EXAMPLE.com/quokka");
+    const imported = await importSnapshotBundle(
+      target,
+      targetStorage,
+      await bundle(),
+      {},
+      {
+        replaces: failed,
+      },
+    );
+    expect(imported.replaced).toBe(failed);
+    expect((await row(failed))?.trashed_at).not.toBeNull();
+  });
+
   test("sending it again stores nothing: the failure is no longer there to replace", async () => {
     const failed = await seedFailure();
     const path = await bundle();

@@ -50,8 +50,8 @@ webfrost rescue blocked --from https://archive.example.com
 
 For each failed snapshot it archives the page here, in a scratch archive (`rescue/` in the data directory, not your own archive), and checks the copy before anything is sent:
 
-- It must have finished `done`. A page that fails here too stays as it is on the server.
-- It must be the page itself. A copy whose title or first lines are an anti-bot interstitial ("Just a moment...", "Client Challenge", "Access Denied" and the like), or that has almost no text (a login wall, a cart page), is **not sent**: it would look like a success and hide the failure.
+- It must have finished `done`, with the browser formats (screenshot, PDF, DOM): Chromium has to work on this machine (`webfrost doctor`). A page that fails here too stays as it is on the server.
+- It must be the page itself, both as fetched and as the browser rendered it. A copy whose title or first lines are an anti-bot interstitial ("Just a moment...", "Client Challenge", "Access Denied" and the like, including one a script puts up after the page loads), or that has almost no text (a login wall, a cart page), is **not sent**: it would look like a success and hide the failure.
 - A page that answers 404 here, or a domain that does not resolve, is reported as really gone; trash it in Review failures.
 
 The copy that passes is sent with the id of the failure it replaces. The server stores it, carries over the failure's tags and moves the failure to the trash in one transaction, and only while that snapshot is still a failure of the same URL: if it was retried, archived or trashed in the meantime, the copy is refused and nothing is stored. So running `rescue` again, after a Ctrl+C or a crash, carries on with what is left and never stores a page twice.

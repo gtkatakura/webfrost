@@ -40,6 +40,9 @@ webfrost import bookmarks.html            # Netscape bookmarks, OPML, RSS/Atom, 
 webfrost schedule add https://example.com --cron "0 6 * * *"
 webfrost tag add <snapshot-id> <tag>
 webfrost delete <snapshot-id>
+webfrost push <snapshot-id> --to https://archive.example.com     # send a snapshot archived here to a server
+webfrost rescue blocked --from https://archive.example.com --dry-run
+                                          # archive here what the server could not, replacing its failures
 webfrost help <command>                   # every command has --help
 ```
 
@@ -102,6 +105,9 @@ Every method takes an optional `{ signal }`. Reference (once published): https:/
 ## Things to tell the user
 
 - Pages behind a login are archived as an anonymous visitor sees them.
+- A `failed` snapshot says why in `failure` (`{ category, class, label, detail }`): `permanent` (page or
+  domain gone) will not get better with a retry, `transient` may, `blocked` means the site refuses the
+  server; those can often be archived from the user's own machine with `webfrost rescue`.
 - Private and internal addresses (localhost, 10.x, 192.168.x, cloud metadata) are refused unless the
   server sets `WEBFROST_ALLOW_PRIVATE_URLS=true`. Don't ask them to enable it just to get past an error;
   explain the risk.

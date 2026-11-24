@@ -889,7 +889,8 @@ export class WebFrostClient {
     // fetch measures a Blob or a Uint8Array itself; only a stream needs the length spelled out
     // (browsers drop the header, and send the stream only over HTTP/2).
     const contentLength = bundle instanceof ReadableStream ? request?.contentLength : undefined;
-    return this.json("POST", "/snapshots/import", {
+    const query = request?.replaces !== undefined ? `?replaces=${request.replaces}` : "";
+    return this.json("POST", `/snapshots/import${query}`, {
       raw: {
         body: bundle,
         contentType: "application/zip",

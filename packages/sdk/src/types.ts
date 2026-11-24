@@ -22,6 +22,8 @@ export interface SnapshotImported {
   id: number;
   url: string;
   status: "done" | "failed";
+  /** The failed snapshot this one replaced (now in the trash), when imported with `replaces`. */
+  replaced?: number;
 }
 
 /** Options for {@link WebFrostClient.importSnapshot}. */
@@ -30,6 +32,11 @@ export interface ImportSnapshotOptions extends RequestOptions {
   contentLength?: number;
   /** Give up after this many milliseconds; default 0, no timeout (bundles can be large). */
   timeoutMs?: number;
+  /**
+   * A failed snapshot of the same URL that this (done) copy replaces: it moves to the trash in the same
+   * step. `CONFLICT` (409) when it is not, or no longer, a failure of that URL; nothing is stored then.
+   */
+  replaces?: number;
 }
 
 /** Tag attached to a snapshot */

@@ -1,7 +1,12 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BundleError, createStorageBackend, exportSnapshotBundle } from "@webfrost/core";
+import {
+  BundleError,
+  type StorageBackend,
+  createStorageBackend,
+  exportSnapshotBundle,
+} from "@webfrost/core";
 import { type Command, type Context, parseHttpUrl, parseId } from "../cli";
 import { CliError, UsageError } from "../errors";
 import { printJson, withDb } from "./shared";
@@ -31,6 +36,8 @@ export class UploadError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** Seconds the server asked to wait (Retry-After on a 429), when it said. */
+    readonly retryAfter?: number,
   ) {
     super(message);
     this.name = "UploadError";
@@ -84,11 +91,14 @@ export function formatBytes(n: number): string {
 /** Bundles smaller than this upload without a progress line. */
 const PROGRESS_MIN_BYTES = 1024 * 1024;
 
-export async function exportBundle(ctx: Context, id: number, path: string): Promise<number> {
+export async function exportBundle(
+  ctx: Pick<Context, "dir">,
+  id: number,
+  path: string,
+  storage: StorageBackend = createStorageBackend(ctx.dir),
+): Promise<number> {
   try {
-    const { bytes } = await withDb(ctx, (db) =>
-      exportSnapshotBundle(db, createStorageBackend(ctx.dir), id, path),
-    );
+    const { bytes } = await withDb(ctx, (db) => exportSnapshotBundle(db, storage, id, path));
     return bytes;
   } catch (err) {
     if (err instanceof BundleError) throw new CliError(err.message);
@@ -212,6 +222,14 @@ export async function upload(
   }
   if (res.status === 401)
     throw new UploadError("the server rejected WEBFROST_API_KEY (HTTP 401)", 401);
+  if (res.status === 429) {
+    const wait = Number(res.headers.get("retry-after"));
+    throw new UploadError(
+      "the server is busy with other uploads (HTTP 429)",
+      429,
+      Number.isFinite(wait) && wait > 0 ? Math.min(wait, 300) : undefined,
+    );
+  }
   if (res.status === 413) {
     throw new UploadError(
       `the bundle is larger than the server accepts (HTTP 413; see WEBFROST_IMPORT_BUNDLE_MAX_BYTES, or a proxy's upload limit)`,

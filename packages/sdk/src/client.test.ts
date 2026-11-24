@@ -556,6 +556,17 @@ describe("WebFrostClient.importSnapshot", () => {
     expect(headers.get("authorization")).toBe("Bearer wf_secret");
   });
 
+  test("replaces names the failed snapshot it takes the place of", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ id: 43, url: "https://x.example", status: "done", replaced: 7 }, 201),
+    );
+    const client = new WebFrostClient({ baseUrl: BASE });
+    const result = await client.importSnapshot(new Uint8Array([1]), { replaces: 7 });
+    expect(result.replaced).toBe(7);
+    const [calledUrl] = fetchSpy.mock.calls[0] as [string];
+    expect(calledUrl).toBe(`${BASE}/api/v1/snapshots/import?replaces=7`);
+  });
+
   test("streams a ReadableStream with its declared length, half duplex", async () => {
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ id: 1, url: "https://x.example", status: "failed" }, 201),

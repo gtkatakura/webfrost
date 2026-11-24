@@ -10,6 +10,11 @@ import { closeDatabases, createApiKey, openDb, sql } from "@webfrost/core";
 
 const CLI = join(import.meta.dir, "index.ts");
 const ARTICLE = `<!doctype html><html><head><title>How quokkas live</title></head><body><article><h1>How quokkas live</h1>${"<p>The quokka is a small marsupial that lives on Rottnest Island and eats leaves and grasses.</p>".repeat(8)}</article></body></html>`;
+/** The HTML is the article; a script turns it into a challenge, as a JS anti-bot check does. */
+const SCRIPTED_WALL = ARTICLE.replace(
+  "</body>",
+  `<script>document.title = "Just a moment..."; document.body.innerHTML = "<p>Verify you are human</p>";</script></body>`,
+);
 const WALL = `<!doctype html><html><head><title>Just a moment...</title></head><body><p>${"Checking the browser before letting it in. ".repeat(10)}</p></body></html>`;
 
 let serverDir: string;
@@ -80,6 +85,7 @@ beforeAll(async () => {
       const html = { "content-type": "text/html; charset=utf-8" };
       if (pathname.startsWith("/article")) return new Response(ARTICLE, { headers: html });
       if (pathname === "/wall") return new Response(WALL, { headers: html });
+      if (pathname === "/scripted-wall") return new Response(SCRIPTED_WALL, { headers: html });
       if (pathname === "/gone") return new Response("not here", { status: 404 });
       return new Response("forbidden", { status: 403 });
     },
@@ -171,6 +177,68 @@ describe("webfrost rescue", () => {
       ),
     ).toBe(1);
   }, 120_000);
+
+  test("a challenge that only appears once scripts run is caught in the browser's DOM, not sent", async () => {
+    const id = await seedFailure(page("/scripted-wall"));
+    const run = await runCli(["rescue", "blocked", ...from(), "--yes", "--json"]);
+    const out = JSON.parse(run.stdout) as { results: { outcome: string; reason?: string }[] };
+    expect(out.results[0]?.outcome).toBe("wall");
+    expect(out.results[0]?.reason).toContain("in the browser");
+    expect(await state(id)).toEqual({ status: "failed", trashed: 0 });
+  }, 60_000);
+
+  test("several failures of one URL: archived and sent once, the others go to the trash", async () => {
+    const a = await seedFailure(page("/article/twice"));
+    const b = await seedFailure(page("/article/twice"));
+    const run = await runCli(["rescue", "blocked", ...from(), "--yes", "--json"]);
+    const out = JSON.parse(run.stdout) as {
+      results: { id: number; outcome: string; remoteId?: number }[];
+    };
+    expect(out.results.map((r) => r.outcome)).toEqual(["rescued", "rescued"]);
+    expect(new Set(out.results.map((r) => r.remoteId)).size).toBe(1);
+    expect(await state(a)).toEqual({ status: "failed", trashed: 1 });
+    expect(await state(b)).toEqual({ status: "failed", trashed: 1 });
+    const copies = await onServer(async (db) =>
+      Number(
+        (
+          await db.get<{ n: number }>(
+            sql`SELECT COUNT(*) AS n FROM snapshots WHERE status = 'done'`,
+          )
+        )?.n,
+      ),
+    );
+    expect(copies).toBe(1);
+  }, 60_000);
+
+  test("the scratch archive stays SQLite and files under rescue/, whatever DATABASE_URL says", async () => {
+    const id = await seedFailure(page("/article/isolated"));
+    const proc = Bun.spawn(
+      ["bun", "run", CLI, "rescue", "blocked", ...from(), "--yes", "--json", "--keep"],
+      {
+        cwd: laptopDir,
+        env: {
+          ...process.env,
+          WEBFROST_DIR: laptopDir,
+          WEBFROST_API_KEY: apiKey,
+          WEBFROST_ALLOW_PRIVATE_URLS: "true",
+          WEBFROST_DOMAIN_DELAY_MS: "0",
+          // An archive this machine must not touch: a rescue writing there would create the file.
+          DATABASE_URL: `sqlite://${join(laptopDir, "not-the-scratch.db")}`,
+          WEBFROST_STORAGE_BACKEND: "s3",
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [code, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+    expect(code).toBe(0);
+    expect((JSON.parse(stdout) as { results: { outcome: string }[] }).results[0]?.outcome).toBe(
+      "rescued",
+    );
+    expect(existsSync(join(laptopDir, "not-the-scratch.db"))).toBe(false);
+    expect(existsSync(join(laptopDir, "rescue", "archive.db"))).toBe(true);
+    expect(await state(id)).toEqual({ status: "failed", trashed: 1 });
+  }, 60_000);
 
   test("gives up on a domain after N failures in a row here", async () => {
     // Three blocked pages of the same domain; with --give-up-after 2 the third is not tried.

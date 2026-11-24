@@ -108,15 +108,33 @@ export class ReplaceConflictError extends Error {
   }
 }
 
-/** Why the failed snapshot `id` cannot be replaced by a bundle of `url`, or null when it can. */
-async function replaceProblem(db: Db, id: number, url: string): Promise<string | null> {
+/** `url` as the bundle manifest holds it (WHATWG `href`); the archive keeps URLs as they were given. */
+function comparableUrl(url: string): string {
+  try {
+    return new URL(url).href;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Why the failed snapshot `id` cannot be replaced by a bundle of `url`, or null when it can. Inside the
+ * final transaction `lock` takes the row (FOR UPDATE on PostgreSQL and MySQL; SQLite's write transaction
+ * already excludes other writers), so a retry cannot slip in between the check and the update.
+ */
+async function replaceProblem(
+  db: Db,
+  id: number,
+  url: string,
+  lock = false,
+): Promise<string | null> {
   const row = await db.get<{ url: string; status: string; trashed_at: string | null }>(
-    sql`SELECT url, status, trashed_at FROM snapshots WHERE id = ${id}`,
+    sql`SELECT url, status, trashed_at FROM snapshots WHERE id = ${id} ${lock ? db.forUpdate() : sql``}`,
   );
   if (!row) return `snapshot ${id} does not exist`;
   if (row.trashed_at !== null) return `snapshot ${id} is in the trash`;
   if (row.status !== "failed") return `snapshot ${id} is ${row.status}, not failed`;
-  if (row.url !== url) return `snapshot ${id} is of another URL`;
+  if (comparableUrl(row.url) !== comparableUrl(url)) return `snapshot ${id} is of another URL`;
   return null;
 }
 
@@ -747,15 +765,18 @@ export async function importSnapshotBundle(
       for (const name of snap.tags) tagIds.add(await tagIdFor(tx, name));
       if (replaces !== undefined) {
         // Checked again here: the failure may have been retried or trashed while the files were copied.
-        const problem = await replaceProblem(tx, replaces, snap.url);
+        const problem = await replaceProblem(tx, replaces, snap.url, true);
         if (problem) throw new ReplaceConflictError(problem);
         const kept = await tx.all<{ tag_id: number }>(
           sql`SELECT tag_id FROM snapshot_tags WHERE snapshot_id = ${replaces}`,
         );
         for (const r of kept) tagIds.add(Number(r.tag_id));
-        await tx.run(
+        const moved = await tx.run(
           sql`UPDATE snapshots SET trashed_at = ${tx.now()} WHERE id = ${replaces} AND status = 'failed' AND trashed_at IS NULL`,
         );
+        // Belt and braces: the copy commits only if the failure really went to the trash with it.
+        if (moved !== 1)
+          throw new ReplaceConflictError(`snapshot ${replaces} changed during the import`);
       }
       for (const tagId of tagIds) {
         await tx.run(
