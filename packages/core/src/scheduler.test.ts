@@ -104,6 +104,9 @@ describe("runDueSchedules", () => {
     await makeDue(id);
     const runner = new JobRunner({ dir: testDir });
 
+    // The next run is after the moment this one started. Compared with the time after the archive
+    // finished, the test failed whenever it ran across the schedule's five-minute boundary.
+    const startedAt = Date.now();
     expect(await runDueSchedules({ dir: testDir, runner })).toBe(1);
 
     expect(await snapshots()).toEqual([{ url: `${baseUrl}/page`, status: "done" }]);
@@ -111,7 +114,7 @@ describe("runDueSchedules", () => {
     expect(schedule?.last_status).toBe("success");
     expect(schedule?.consecutive_failures).toBe(0);
     expect(new Date(`${schedule?.next_run_at.replace(" ", "T")}Z`).getTime()).toBeGreaterThan(
-      Date.now(),
+      startedAt,
     );
   }, 60_000);
 
