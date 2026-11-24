@@ -23,7 +23,7 @@ export const FAILURE_GROUPS = [
   {
     id: "site-setup",
     label: "Site misconfigured",
-    categories: ["tls_error", "redirect_loop", "bad_request"],
+    categories: ["tls_error", "redirect_loop", "bad_request", "unsupported_url"],
   },
   { id: "private-address", label: "Private address", categories: ["private_address"] },
   { id: "interrupted", label: "Interrupted", categories: ["interrupted", "no_output", "error"] },

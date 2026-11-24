@@ -19,6 +19,13 @@ describe("categorizeError", () => {
     expect(categorizeError("Fetch timed out after 30000ms: https://x")).toBe("timeout");
     expect(categorizeError("ERR_TLS_CERT_ALTNAME_INVALID fetching https://x")).toBe("tls_error");
     expect(categorizeError("Too many redirects (max 10)")).toBe("redirect_loop");
+    // The address guard refuses other things too, and none of them is a private address.
+    expect(categorizeError("SSRF blocked: unsupported protocol ftp:")).toBe("unsupported_url");
+    expect(categorizeError("SSRF blocked: empty hostname")).toBe("unsupported_url");
+    expect(categorizeError("SSRF blocked: files.example.com did not resolve")).toBe("dns_error");
+    expect(
+      categorizeError("SSRF blocked: intranet.example resolves to private IPv4 10.0.0.5"),
+    ).toBe("private_address");
     expect(categorizeError("SSRF blocked: localhost resolves to private IPv6 ::1")).toBe(
       "private_address",
     );

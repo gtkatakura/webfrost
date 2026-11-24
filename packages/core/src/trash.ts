@@ -52,14 +52,17 @@ export async function restoreSnapshots(db: Db, ids: number[]): Promise<number> {
 
 /**
  * Delete snapshots for good, files included. `onlyTrashed` limits it to snapshots in the trash (the trash
- * page); the failure pages may delete failed snapshots directly. Snapshots being archived are skipped.
+ * page and the retention purge) and `onlyFailed` to failed snapshots outside it (the failure pages). Each
+ * snapshot is checked again when its turn comes, so one restored or archived again while a long delete
+ * runs is left alone. Snapshots being archived are skipped.
  */
 export async function deleteSnapshotsForever(
   db: Db,
   ids: number[],
   storage: StorageBackend,
-  options: { onlyTrashed?: boolean } = {},
+  options: { onlyTrashed?: boolean; onlyFailed?: boolean } = {},
 ): Promise<{ deleted: number; busy: number }> {
+  const only = options.onlyTrashed ? "trashed" : options.onlyFailed ? "failed" : undefined;
   let deleted = 0;
   let busy = 0;
   let allowed = ids;
@@ -75,7 +78,7 @@ export async function deleteSnapshotsForever(
   }
   for (const id of allowed) {
     try {
-      if (await deleteSnapshot(db, id, storage)) deleted++;
+      if (await deleteSnapshot(db, id, storage, only)) deleted++;
     } catch (err) {
       if (!(err instanceof SnapshotBusyError)) throw err;
       busy++;
@@ -125,6 +128,7 @@ export async function purgeExpiredTrash(db: Db, storage: StorageBackend): Promis
     db,
     expired.map((r) => r.id),
     storage,
+    { onlyTrashed: true },
   );
   return deleted;
 }

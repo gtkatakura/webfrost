@@ -39,6 +39,15 @@ describe("isUrlArchived", () => {
     await db.close();
   });
 
+  test("a snapshot in the trash still counts, so a feed does not archive it again", async () => {
+    const db = await makeDb();
+    await db.run(
+      sql`INSERT INTO snapshots (url, status, trashed_at) VALUES ('https://example.com/gone', 'failed', ${db.now()})`,
+    );
+    expect(await isUrlArchived(db, "https://example.com/gone")).toBe(true);
+    await db.close();
+  });
+
   test("returns false for a different URL", async () => {
     const db = await makeDb();
     await db.run(sql`INSERT INTO snapshots (url, status) VALUES ('https://example.com', 'done')`);

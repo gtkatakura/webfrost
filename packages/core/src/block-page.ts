@@ -6,28 +6,48 @@
  * (`webfrost rescue`) checks this first. Generic by design: what the walls say, never a list of sites.
  */
 
-/** Titles (lower case, matched anywhere in the title) that only an interstitial has. */
+/** Phrases (lower case, as whole words anywhere in the title) that only an interstitial's title has. */
 const WALL_TITLES = [
   "just a moment",
   "attention required",
   "client challenge",
-  "access denied",
   "verify you are human",
   "verifying you are human",
   "are you a robot",
   "are you a human",
   "human verification",
   "bot verification",
-  "security check",
   "checking your browser",
-  "one more step",
   "pardon our interruption",
   "request unsuccessful",
   "you have been blocked",
   "ddos-guard",
+];
+
+/**
+ * Words a wall's title has, but a real page's may have too ("The Forbidden City", "How CAPTCHAs
+ * work"). They count only on a page with little text, which a wall is and an article is not.
+ */
+const WALL_TITLE_WORDS = [
+  "access denied",
+  "security check",
+  "one more step",
   "captcha",
   "forbidden",
 ];
+
+/** Under this many characters of text, a title with one of WALL_TITLE_WORDS is taken for a wall. */
+const SHORT_PAGE_TEXT = 1500;
+
+/** `phrase` in `title` as whole words: "security check" is not in "security checklist". */
+function hasPhrase(title: string, phrase: string): boolean {
+  const at = title.indexOf(phrase);
+  if (at < 0) return false;
+  const letter = /[\p{L}\p{N}]/u;
+  const before = title[at - 1];
+  const after = title[at + phrase.length];
+  return !(before && letter.test(before)) && !(after && letter.test(after));
+}
 
 /** Phrases (lower case) an interstitial's text opens with. */
 const WALL_PHRASES = [
@@ -49,9 +69,11 @@ export function blockPageReason(
   minText: number = DEFAULT_MIN_PAGE_TEXT,
 ): string | null {
   const t = (title ?? "").trim().toLowerCase();
-  const wallTitle = WALL_TITLES.find((w) => t.includes(w));
-  if (wallTitle) return `the title says "${title?.trim()}", an anti-bot page`;
   const body = (text ?? "").replace(/\s+/g, " ").trim();
+  const wallTitle =
+    WALL_TITLES.find((w) => hasPhrase(t, w)) ??
+    (body.length < SHORT_PAGE_TEXT ? WALL_TITLE_WORDS.find((w) => hasPhrase(t, w)) : undefined);
+  if (wallTitle) return `the title says "${title?.trim()}", an anti-bot page`;
   const head = body.slice(0, 600).toLowerCase();
   const phrase = WALL_PHRASES.find((p) => head.includes(p));
   if (phrase) return `the page says "${phrase}", an anti-bot page`;
@@ -83,13 +105,16 @@ export function redirectReason(
   } catch {
     return null;
   }
-  const path = (u: URL) => u.pathname.replace(/\/+$/, "") || "/";
+  // /index.html and / are the same page.
+  const path = (u: URL) =>
+    u.pathname.replace(/\/index\.[a-z0-9]+$/i, "/").replace(/\/+$/, "") || "/";
   const host = (u: URL) => u.hostname.replace(/^www\./, "");
   if (host(asked) === host(landed) && path(asked) === path(landed)) return null;
   if (WALL_PATH.test(landed.pathname) && !WALL_PATH.test(asked.pathname)) {
     return `redirected to ${landed.origin}${landed.pathname}, a login or challenge page`;
   }
-  if (path(landed) === "/" && path(asked) !== "/") {
+  // On the same site only: a short link that lands on another site's home page asked for it.
+  if (host(asked) === host(landed) && path(landed) === "/" && path(asked) !== "/") {
     return `redirected to the home page (${landed.origin}/), so the page itself is gone or hidden`;
   }
   return null;

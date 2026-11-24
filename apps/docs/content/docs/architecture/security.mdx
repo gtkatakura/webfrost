@@ -60,8 +60,14 @@ What the two public routes give without an approval is nothing: a request is a s
   returns it, stored as a hash like every other key, and that poll removes the request.
 - **One answer, once.** An approval or a denial cannot be changed, and it is delivered a single
   time; the device code (256 bits, kept only as a hash) is worthless afterwards.
-- **Short-lived and bounded.** A request expires after 10 minutes. At most 200 wait at once, new
-  requests are limited to 10 a minute per client and polls to 60.
+- **Short-lived and bounded.** A request expires after 10 minutes. New requests are limited to 10 a
+  minute per client and polls to 60. One client address has at most 5 waiting and the server 200
+  in all; a new one beyond that replaces the oldest (the client's own first). So memory is
+  bounded, and nobody can keep others from connecting by starting requests: the newest request,
+  the one a person is about to approve, is the last to go.
+- **The command line decides what it opens.** It builds the approval address from the server
+  address you typed and the code, which must be eight letters; a path or a code of another shape
+  sent by the server is refused, so a hostile server cannot make it open something else.
 - **Only a signed-in person approves.** Seeing and answering a request need the session cookie and
   pass the cross-site check below, so another site cannot approve one with the admin's browser. An
   API key cannot approve a request and so turn itself into another key.

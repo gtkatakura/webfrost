@@ -276,3 +276,64 @@ describe("/settings/general", () => {
     ).toBe(7);
   });
 });
+
+describe("bulk actions that take long", () => {
+  test("Check again looks many domains up at once, not one after the other", async () => {
+    const hosts = Array.from({ length: 12 }, (_, i) => `gone-${i}.example`);
+    for (const host of hosts) await seed(`http://${host}/a`, "failed", "domain_not_found");
+
+    const { failuresDns } = await import("./failures");
+    const realLookup = failuresDns.lookup;
+    let inFlight = 0;
+    let most = 0;
+    failuresDns.lookup = async (host: string) => {
+      most = Math.max(most, ++inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      inFlight--;
+      throw Object.assign(new Error(`getaddrinfo ENOTFOUND ${host}`), { code: "ENOTFOUND" });
+    };
+    try {
+      const started = Date.now();
+      const res = await post(await getApp(), "/failures/domain-gone/retry", { all: true });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { queued: number; stillGone: string[] };
+      expect(body.stillGone.sort()).toEqual([...hosts].sort());
+      expect(most).toBe(12);
+      // One after the other this takes 12 × 150 ms.
+      expect(Date.now() - started).toBeLessThan(1200);
+    } finally {
+      failuresDns.lookup = realLookup;
+    }
+  });
+
+  test("emptying a big trash finishes although no data moves for longer than the idle timeout", async () => {
+    const id = await seed("https://big.example/", "failed", "timeout");
+    await withDb((db) =>
+      db.run(sql`UPDATE snapshots SET trashed_at = ${db.now()} WHERE id = ${id}`),
+    );
+
+    const { FilesystemBackend } = await import("@webfrost/core");
+    const { trashRouter } = await import("./trash");
+    const { Elysia } = await import("elysia");
+    const realDeleteAll = FilesystemBackend.prototype.deleteAll;
+    // Deleting the files takes longer than the server waits on a silent connection (below: 1
+    // second, which Bun enforces within 4).
+    FilesystemBackend.prototype.deleteAll = async function (...args: [number]) {
+      await new Promise((resolve) => setTimeout(resolve, 6000));
+      return realDeleteAll.apply(this, args);
+    };
+    const app = new Elysia().use(trashRouter);
+    const listening = app.listen({ port: 0, hostname: "127.0.0.1", idleTimeout: 1 });
+    try {
+      const res = await fetch(`http://127.0.0.1:${listening.server?.port}/trash/empty`, {
+        method: "POST",
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ deleted: 1, busy: 0 });
+    } finally {
+      FilesystemBackend.prototype.deleteAll = realDeleteAll;
+      await app.stop();
+    }
+    expect(existsSync(join(testDir, "snapshots", String(id), "page.html"))).toBe(false);
+  }, 20_000);
+});

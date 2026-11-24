@@ -1458,6 +1458,75 @@ describe("GET /snapshots — page and limit", () => {
   });
 });
 
+describe("a snapshot in the trash, by its address", () => {
+  test("anonymous visitors of a public-read server get 404 for it, its tags and its files; the admin still reaches it", async () => {
+    const { openDb, createSnapshot, createTag, addTagToSnapshot, trashSnapshots } = await import(
+      "@webfrost/core"
+    );
+    const db = await openDb(testDir);
+    const id = await createSnapshot(db, "https://example.com/taken-down");
+    const kept = await createSnapshot(db, "https://example.com/kept");
+    for (const snapshotId of [id, kept]) {
+      await db.run(sql`UPDATE snapshots SET status = 'done' WHERE id = ${snapshotId}`);
+      await db.run(
+        sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${snapshotId}, 'readability', ${JSON.stringify({ title: "T", textContent: "secret text" })})`,
+      );
+      // A file-backed format, for the preview route.
+      const dir = join(testDir, "snapshots", String(snapshotId));
+      mkdirSync(dir, { recursive: true });
+      await Bun.write(join(dir, "singlefile.html"), "<p>secret text</p>");
+      await db.run(
+        sql`INSERT INTO archive_results (snapshot_id, extractor, content) VALUES (${snapshotId}, 'singlefile', ${join(dir, "singlefile.html")})`,
+      );
+    }
+    await addTagToSnapshot(db, id, (await createTag(db, "private")).id);
+    expect(await trashSnapshots(db, [id])).toBe(1);
+    await db.close();
+
+    const paths = (snapshotId: number) => [
+      `/snapshots/${snapshotId}`,
+      `/snapshots/${snapshotId}/tags`,
+      `/snapshots/${snapshotId}/archives/readability/download`,
+      `/snapshots/${snapshotId}/archives/singlefile/preview`,
+      `/snapshots/${snapshotId}/archives/singlefile/download`,
+    ];
+
+    const savedAuth = process.env.AUTH_DISABLED;
+    Reflect.deleteProperty(process.env, "AUTH_DISABLED");
+    process.env.SESSION_SECRET = "test-secret-32-chars-long-enough!!";
+    process.env.WEBFROST_PUBLIC_READ = "true";
+    try {
+      const { authPlugin } = await import("./auth");
+      const { snapshotsRouter } = await import("./snapshots");
+      const { snapshotTagsRouter } = await import("./tags");
+      const { Elysia } = await import("elysia");
+      const app = new Elysia().use(authPlugin).use(snapshotsRouter).use(snapshotTagsRouter);
+      for (const path of paths(id)) {
+        const res = await app.handle(new Request(`http://localhost${path}`));
+        expect([path, res.status]).toEqual([path, 404]);
+        expect(await res.text()).not.toContain("secret text");
+      }
+      // A snapshot that is not in the trash is served as before.
+      for (const path of paths(kept)) {
+        const res = await app.handle(new Request(`http://localhost${path}`));
+        expect([path, res.status]).toEqual([path, 200]);
+      }
+    } finally {
+      if (savedAuth !== undefined) process.env.AUTH_DISABLED = savedAuth;
+      Reflect.deleteProperty(process.env, "SESSION_SECRET");
+      Reflect.deleteProperty(process.env, "WEBFROST_PUBLIC_READ");
+    }
+
+    // Signed in (here: auth disabled) the Trash page's link still opens it.
+    const { snapshotTagsRouter } = await import("./tags");
+    const admin = (await getApp()).use(snapshotTagsRouter);
+    for (const path of paths(id)) {
+      const res = await admin.handle(new Request(`http://localhost${path}`));
+      expect([path, res.status]).toEqual([path, 200]);
+    }
+  });
+});
+
 describe("GET /snapshots/:id — guests", () => {
   test("anonymous visitors never see raw extractor errors", async () => {
     const { openDb, createSnapshot } = await import("@webfrost/core");

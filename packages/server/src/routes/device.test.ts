@@ -179,6 +179,15 @@ describe("webfrost login: the connection request", () => {
     expect((await poll(deviceCode)).body).toEqual({ status: "pending" });
   });
 
+  test("starting requests over and over never locks a client out", async () => {
+    // More than one address may hold: the oldest make room, and the newest is always answerable.
+    let last = await start("first");
+    for (let i = 0; i < 12; i++) last = await start(`again ${i}`);
+    const seen = await call("GET", `/auth/device/requests/${last.userCode}`, { cookie: true });
+    expect(seen.status).toBe(200);
+    expect(seen.body.name).toBe("again 11");
+  });
+
   test("an unknown code or decision changes nothing", async () => {
     expect((await poll("0".repeat(64))).status).toBe(404);
     expect((await call("GET", "/auth/device/requests/BCDF-GHJK", { cookie: true })).status).toBe(
@@ -213,7 +222,6 @@ describe("DeviceAuthStore", () => {
     let now = 1_000_000;
     const store = new DeviceAuthStore({ ttlMs: 60_000, now: () => now });
     const started = store.start({ name: "cli", requesterIp: "203.0.113.7" });
-    if (!started) throw new Error("no request");
     expect(store.find(started.userCode)?.status).toBe("pending");
 
     now += 59_999;
@@ -229,30 +237,69 @@ describe("DeviceAuthStore", () => {
     let now = 0;
     const store = new DeviceAuthStore({ ttlMs: 1000, now: () => now });
     const started = store.start({ name: "cli", requesterIp: "203.0.113.7" });
-    if (!started) throw new Error("no request");
     expect(store.approve(started.userCode)).toBe(true);
     now = 1000;
     expect(store.collect(started.deviceCode)).toEqual({ status: "unknown" });
   });
 
-  test("holds a bounded number of requests, and makes room as they expire", () => {
+  test("one client cannot fill the store: its own oldest request makes room for its next", () => {
     let now = 0;
-    const store = new DeviceAuthStore({ ttlMs: 1000, maxRequests: 3, now: () => now });
-    const input = { name: "cli", requesterIp: "203.0.113.7" };
-    const codes = new Set<string>();
-    for (let i = 0; i < 3; i++) codes.add(store.start(input)?.userCode ?? "");
-    expect(codes.size).toBe(3);
-    expect(store.start(input)).toBeNull();
+    const store = new DeviceAuthStore({ maxPerClient: 3, maxRequests: 10, now: () => now });
+    const other = store.start({ name: "someone else", requesterIp: "198.51.100.9" });
 
-    now = 1000;
-    expect(store.start(input)).not.toBeNull();
-    expect(store.size).toBe(1);
+    const mine = [];
+    for (let i = 0; i < 8; i++) {
+      now += 1000;
+      mine.push(store.start({ name: `flood ${i}`, requesterIp: "203.0.113.7" }));
+    }
+    // The flooding client holds 3 slots, whatever it sends; everyone else's request is untouched.
+    expect(store.size).toBe(4);
+    expect(store.find(other.userCode)?.status).toBe("pending");
+    expect(mine.slice(0, 5).map((r) => store.find(r.userCode))).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
+    expect(mine.slice(5).map((r) => store.find(r.userCode)?.name)).toEqual([
+      "flood 5",
+      "flood 6",
+      "flood 7",
+    ]);
+    // A request that made room is gone for its device code too.
+    expect(store.collect(mine[0]?.deviceCode ?? "")).toEqual({ status: "unknown" });
+  });
+
+  test("a full store drops its oldest request, never the one just started", () => {
+    let now = 0;
+    const store = new DeviceAuthStore({ maxPerClient: 1, maxRequests: 3, now: () => now });
+    const started = [];
+    for (let i = 0; i < 5; i++) {
+      now += 1000;
+      // Many addresses, one request each: only the global bound applies.
+      started.push(store.start({ name: `client ${i}`, requesterIp: `203.0.113.${i}` }));
+    }
+    expect(store.size).toBe(3);
+    expect(started.map((r) => store.find(r.userCode) !== null)).toEqual([
+      false,
+      false,
+      true,
+      true,
+      true,
+    ]);
+    // The newest can still be approved and collected.
+    const newest = started[4];
+    expect(store.approve(newest?.userCode ?? "")).toBe(true);
+    expect(store.collect(newest?.deviceCode ?? "")).toEqual({
+      status: "approved",
+      name: "client 4",
+    });
   });
 
   test("only the hash of the device code is kept", () => {
     const store = new DeviceAuthStore();
     const started = store.start({ name: "cli", requesterIp: "203.0.113.7" });
-    if (!started) throw new Error("no request");
     expect(JSON.stringify([...Object.values(store)])).not.toContain(started.deviceCode);
     expect(store.find(started.userCode)).not.toHaveProperty("deviceCodeHash");
   });

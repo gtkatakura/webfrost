@@ -14,7 +14,7 @@ import {
   trashSnapshots,
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
-import { getDb, getRunner, getStorage } from "../context";
+import { allowLongRequest, getDb, getRunner, getStorage } from "../context";
 import { apiError, apiErrorHandler } from "../errors";
 import { isoTimestampRequired } from "../serialize";
 import { isGuestRequest } from "./auth";
@@ -47,10 +47,16 @@ const pageQuery = {
   limit: t.Optional(t.String({ pattern: "^[0-9]{1,3}$" })),
 };
 
+/** The lookup "Check again" asks, replaceable in tests (a real one cannot be made slow or wrong on purpose). */
+export const failuresDns = { lookup: (host: string): Promise<unknown> => lookup(host) };
+
+/** Domains looked up at once by "Check again": enough to be quick, few enough for any resolver. */
+const LOOKUP_CONCURRENCY = 16;
+
 /** Whether `host` resolves now. Only a definite "no such name" counts as gone; any other error does not. */
 async function stillGone(host: string): Promise<{ gone: boolean; detail: string }> {
   try {
-    await lookup(host);
+    await failuresDns.lookup(host);
     return { gone: false, detail: "" };
   } catch (err) {
     const code = (err as { code?: string }).code ?? "";
@@ -169,9 +175,10 @@ export const failuresRouter = new Elysia({ prefix: "/failures" })
   )
   .post(
     "/:group/retry",
-    async ({ params, body, set }) => {
+    async ({ params, body, set, request, server }) => {
       if (!failureGroup(params.group))
         return apiError(set, 404, "NOT_FOUND", "unknown failure group");
+      allowLongRequest(server, request);
       const db = await getDb();
       try {
         const ids = (await failureGroupSnapshotIds(db, params.group, body)) ?? [];
@@ -190,8 +197,17 @@ export const failuresRouter = new Elysia({ prefix: "/failures" })
             byHost.set(host, [...(byHost.get(host) ?? []), id]);
           }
           toRetry = [];
+          // Lookups a few at a time (hundreds of domains in a row take minutes); the records are
+          // then written one by one, in the order the domains came.
+          const hosts = [...byHost.keys()];
+          const checks = new Map<string, { gone: boolean; detail: string }>();
+          for (let i = 0; i < hosts.length; i += LOOKUP_CONCURRENCY) {
+            const batch = hosts.slice(i, i + LOOKUP_CONCURRENCY);
+            const results = await Promise.all(batch.map((host) => stillGone(host)));
+            batch.forEach((host, n) => checks.set(host, results[n] ?? { gone: false, detail: "" }));
+          }
           for (const [host, hostIds] of byHost) {
-            const check = await stillGone(host);
+            const check = checks.get(host) ?? { gone: false, detail: "" };
             if (check.gone) {
               await markDeadHost(db, host, check.detail);
               stillGoneHosts.push(host);
@@ -213,7 +229,8 @@ export const failuresRouter = new Elysia({ prefix: "/failures" })
   )
   .post(
     "/:group/trash",
-    async ({ params, body, set }) => {
+    async ({ params, body, set, request, server }) => {
+      allowLongRequest(server, request);
       const db = await getDb();
       try {
         const ids = await failureGroupSnapshotIds(db, params.group, body);
@@ -227,12 +244,14 @@ export const failuresRouter = new Elysia({ prefix: "/failures" })
   )
   .post(
     "/:group/delete",
-    async ({ params, body, set }) => {
+    async ({ params, body, set, request, server }) => {
+      allowLongRequest(server, request);
       const db = await getDb();
       try {
         const ids = await failureGroupSnapshotIds(db, params.group, body);
         if (!ids) return apiError(set, 404, "NOT_FOUND", "unknown failure group");
-        return await deleteSnapshotsForever(db, ids, getStorage());
+        // Checked again per snapshot: one retried or trashed while this runs is not a failure to delete.
+        return await deleteSnapshotsForever(db, ids, getStorage(), { onlyFailed: true });
       } finally {
         await db.close();
       }

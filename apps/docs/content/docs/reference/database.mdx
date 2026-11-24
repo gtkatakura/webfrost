@@ -53,7 +53,7 @@ One row per archived URL.
 
 ### dead_hosts
 
-Domains that did not resolve (`ENOTFOUND`), so the next snapshots of them fail at once without another DNS lookup. An entry counts for 7 days after `last_seen_at`; retrying a snapshot of the domain, or "Check again" in Review failures, forgets it.
+Domains that did not resolve (`ENOTFOUND`), so the next snapshots of them fail at once without another DNS lookup. An entry counts for 10 minutes after `last_seen_at` (long enough for a burst of pages of one dead site, short enough that a machine that was offline recovers by itself); retrying a snapshot of the domain, or "Check again" in Review failures, forgets it.
 
 | Column | Type | Description |
 |---|---|---|

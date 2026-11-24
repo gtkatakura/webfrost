@@ -17,6 +17,23 @@ describe("blockPageReason", () => {
     }
   });
 
+  test("a common word in the title is a wall only on a page with little text", () => {
+    const long = "A real article about the subject, with paragraphs of text. ".repeat(40);
+    // Real pages whose title happens to hold a wall's word.
+    expect(blockPageReason("The Forbidden City - Wikipedia", long)).toBeNull();
+    expect(blockPageReason("How CAPTCHAs work", long)).toBeNull();
+    expect(blockPageReason("Access denied: a history of paywalls", long)).toBeNull();
+    // A word that only starts like one is never a match, whatever the length.
+    expect(blockPageReason("Security Checklist for Small Teams", article)).toBeNull();
+    expect(blockPageReason("Security Checklist for Small Teams", long)).toBeNull();
+    // The walls themselves: the same words over a few lines of text.
+    for (const title of ["403 Forbidden", "Access Denied", "Security check", "One more step"]) {
+      expect(blockPageReason(title, article)).toContain("anti-bot");
+    }
+    // An unmistakable wall title needs no second signal.
+    expect(blockPageReason("Just a moment...", long)).toContain("anti-bot");
+  });
+
   test("anti-bot interstitials, by what the page says", () => {
     expect(
       blockPageReason("example.com", `Enable JavaScript and cookies to continue ${article}`),
@@ -46,6 +63,19 @@ describe("redirectReason", () => {
       redirectReason("https://ex.com/post/1", "https://ex.com/cdn-cgi/challenge-platform"),
     ).toContain("challenge");
     expect(redirectReason("https://ex.com/post/1", "https://ex.com/")).toContain("home page");
+  });
+
+  test("an index page and its directory are the same page; another site's home page was asked for", () => {
+    expect(redirectReason("https://a.example/index.html", "https://a.example/")).toBeNull();
+    expect(
+      redirectReason("https://a.example/docs/index.php", "https://a.example/docs/"),
+    ).toBeNull();
+    // A short link that resolves to a site's home page is that page.
+    expect(redirectReason("https://sho.rt/x7Kq", "https://a.example/")).toBeNull();
+    // Sent home by the same site: the page is gone or hidden.
+    expect(redirectReason("https://a.example/post/1", "https://www.a.example/")).toContain(
+      "home page",
+    );
   });
 
   test("the same page, a moved page or no redirect at all is fine", () => {

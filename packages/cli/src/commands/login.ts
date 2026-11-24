@@ -20,8 +20,6 @@ interface Started {
   userCode: string;
   expiresIn: number;
   interval: number;
-  verificationPath: string;
-  verificationPathComplete: string;
 }
 
 type Poll =
@@ -68,9 +66,16 @@ function refusal(base: URL, res: Response): CliError {
   return new CliError(`${base.origin} refused the request (HTTP ${res.status})`);
 }
 
-/** The page where the request is approved: the address the person gave, plus the server's path. */
-function verificationUrl(base: URL, path: string): string {
-  return `${base.href.replace(/\/+$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
+/** A user code as the protocol defines it: nothing else is ever shown, put in a URL or opened. */
+const USER_CODE = /^[A-Z]{4}-[A-Z]{4}$/;
+
+/**
+ * The page where the request is approved. Built here from the address the person gave and the
+ * validated code, never from a path the server sends: the URL is handed to the system's opener,
+ * and a server (or someone between it and a plain-HTTP client) must not choose what gets opened.
+ */
+export function verificationUrl(base: URL, userCode: string): string {
+  return `${base.href.replace(/\/+$/, "")}/#/connect?code=${userCode}`;
 }
 
 /**
@@ -85,8 +90,9 @@ function openBrowser(url: string): boolean {
     command = "open";
     args = [url];
   } else if (platform === "win32") {
-    command = "cmd";
-    args = ["/c", "start", "", url];
+    // Not `cmd /c start`: cmd.exe would interpret &, | and %VAR% in the URL as commands.
+    command = "rundll32";
+    args = ["url.dll,FileProtocolHandler", url];
   } else {
     if (!env.DISPLAY && !env.WAYLAND_DISPLAY) return false;
     command = "xdg-open";
@@ -185,13 +191,13 @@ Exit codes:
     if (
       typeof started.deviceCode !== "string" ||
       typeof started.userCode !== "string" ||
-      typeof started.verificationPathComplete !== "string"
+      !USER_CODE.test(started.userCode)
     ) {
       throw new CliError(`${base.origin} answered something that is not a connection request`);
     }
 
-    const userCode = printable(started.userCode, 32);
-    const url = verificationUrl(base, printable(started.verificationPathComplete, 200));
+    const userCode = started.userCode;
+    const url = verificationUrl(base, userCode);
     const opened = !ctx.bool("no-browser") && openBrowser(url);
     say(opened ? "Opening your browser at:" : "Open this address in a browser:");
     say(`\n  ${url}\n`);

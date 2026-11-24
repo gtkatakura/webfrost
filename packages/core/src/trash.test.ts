@@ -102,6 +102,42 @@ describe("trash", () => {
     expect(existsSync(fileOf(notTrashed))).toBe(true);
   });
 
+  test("a snapshot restored while a long delete runs is left alone", async () => {
+    const first = await seed("https://first.example/", "failed", "timeout");
+    const second = await seed("https://second.example/", "failed", "timeout");
+    await trashSnapshots(db, [first, second]);
+    await db.run(sql`UPDATE snapshots SET trashed_at = ${db.ago(31 * 24 * 60 * 60)}`);
+
+    // The person restores the second snapshot while the purge is busy with the first one's files.
+    const restoring: typeof storage = Object.create(storage);
+    restoring.deleteAll = async (id: number) => {
+      if (id === first) await restoreSnapshots(db, [second]);
+      return storage.deleteAll(id);
+    };
+
+    expect(await purgeExpiredTrash(db, restoring)).toBe(1);
+    expect(existsSync(fileOf(first))).toBe(false);
+    expect(existsSync(fileOf(second))).toBe(true);
+    expect((await listSnapshotsWithExtractorsPaginated(db, 1, 20)).items.map((s) => s.id)).toEqual([
+      second,
+    ]);
+  });
+
+  test("deleting failures skips one that is no longer a failure, or went to the trash meanwhile", async () => {
+    const failed = await seed("https://failed.example/", "failed", "timeout");
+    const retried = await seed("https://retried.example/", "done");
+    const trashed = await seed("https://trashed.example/", "failed", "timeout");
+    await trashSnapshots(db, [trashed]);
+
+    const result = await deleteSnapshotsForever(db, [failed, retried, trashed], storage, {
+      onlyFailed: true,
+    });
+    expect(result).toEqual({ deleted: 1, busy: 0 });
+    expect(existsSync(fileOf(failed))).toBe(false);
+    expect(existsSync(fileOf(retried))).toBe(true);
+    expect(existsSync(fileOf(trashed))).toBe(true);
+  });
+
   test("the sweep deletes for good only what is past the retention", async () => {
     const old = await seed("https://old.example/", "failed", "timeout");
     const recent = await seed("https://recent.example/", "failed", "timeout");

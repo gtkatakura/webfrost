@@ -1,4 +1,4 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SnapshotPage } from "@webfrost/sdk";
 import { toast } from "sonner";
 import { useClient } from "../context";
@@ -25,8 +25,6 @@ export function useSnapshots(page = 1, limit = 20, contains = "") {
   const query = useQuery<SnapshotPage>({
     queryKey: snapshotKeys.list(page, limit, text),
     queryFn: () => client.listSnapshots({ page, limit, ...(text ? { contains: text } : {}) }),
-    // The rows stay while the next page or the next filter loads, instead of a flash of skeletons.
-    placeholderData: keepPreviousData,
     refetchInterval: (q) =>
       q.state.data?.items.some((s) => s.status === "pending") ? PENDING_POLL_MS : false,
   });

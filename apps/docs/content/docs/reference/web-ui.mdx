@@ -29,6 +29,8 @@ Pages live after a `#` in the address, so a link to a page or a snapshot works w
 | `/#/search?q=…` | Search | Yes |
 | `/#/tags` | Tags | Yes, read-only |
 | `/#/schedules` | Schedules | No |
+| `/#/failures` | Review failures (`/#/failures/:group` and `/#/failures/:group/:domain` inside it) | No |
+| `/#/trash` | Trash | No |
 | `/#/import` | Import | No |
 | `/#/settings` | Settings | No |
 | `/#/settings/api-keys` | API keys | No |
@@ -150,7 +152,7 @@ With `WEBFROST_PUBLIC_READ=true`, visitors browse the archive without signing in
 
 ## Navigation
 
-The sidebar has Dashboard, Snapshots, Schedules and Tags, then Import and Settings. At the top, **Search…** opens the search palette; at the bottom are **Dark mode**, **Shortcuts**, the signed-in user and **Sign out**. The arrow at the top collapses the sidebar to icons, and the choice is remembered.
+The sidebar has Dashboard, Snapshots, Schedules, Review failures and Tags, then Import, Trash and Settings. At the top, **Search…** opens the search palette; at the bottom are **Dark mode**, **Shortcuts**, the signed-in user and **Sign out**. The arrow at the top collapses the sidebar to icons, and the choice is remembered.
 
 Below 1024 px wide, the sidebar becomes a drawer opened with the **Menu** button in the top bar.
 

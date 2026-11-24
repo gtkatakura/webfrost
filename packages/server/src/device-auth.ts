@@ -22,6 +22,11 @@ export const DEVICE_REQUEST_TTL_MS = 10 * 60_000;
 export const DEVICE_POLL_INTERVAL_SECONDS = 2;
 /** Requests held at once, over all clients: memory stays bounded whatever arrives. */
 export const MAX_DEVICE_REQUESTS = 200;
+/**
+ * Requests one address may have waiting. Starting one costs nothing and needs no credentials, so
+ * without this a single client could hold every slot and keep everyone else from connecting.
+ */
+export const MAX_DEVICE_REQUESTS_PER_CLIENT = 5;
 
 /**
  * Letters of a user code: no vowels (no words by accident) and none of the pairs people confuse
@@ -86,6 +91,7 @@ export class DeviceAuthStore {
     private readonly options: {
       ttlMs?: number;
       maxRequests?: number;
+      maxPerClient?: number;
       now?: () => number;
     } = {},
   ) {}
@@ -106,18 +112,39 @@ export class DeviceAuthStore {
     }
   }
 
+  /** The request that has waited longest among `entries`, or undefined when there is none. */
+  private static oldest(entries: Iterable<Entry>): Entry | undefined {
+    let found: Entry | undefined;
+    for (const entry of entries) {
+      if (!found || entry.requestedAt < found.requestedAt) found = entry;
+    }
+    return found;
+  }
+
   /**
-   * A new request, or null when too many are waiting already. The device code is returned here
-   * and nowhere else; only its hash is kept.
+   * A new request. The device code is returned here and nowhere else; only its hash is kept.
+   *
+   * It always gets a slot: when the client already has as many requests as it may, or the store
+   * is full, the oldest one makes room (the client's own first). So nobody can keep others from
+   * connecting by starting requests: the newest request, the one a person is about to approve,
+   * is the last to go.
    */
   start(input: { name: string; requesterIp: string }): {
     deviceCode: string;
     userCode: string;
     expiresIn: number;
     interval: number;
-  } | null {
+  } {
     this.dropExpired();
-    if (this.byUserCode.size >= (this.options.maxRequests ?? MAX_DEVICE_REQUESTS)) return null;
+    const mine = [...this.byUserCode.values()].filter((e) => e.requesterIp === input.requesterIp);
+    if (mine.length >= (this.options.maxPerClient ?? MAX_DEVICE_REQUESTS_PER_CLIENT)) {
+      const oldest = DeviceAuthStore.oldest(mine);
+      if (oldest) this.forget(oldest);
+    }
+    if (this.byUserCode.size >= (this.options.maxRequests ?? MAX_DEVICE_REQUESTS)) {
+      const oldest = DeviceAuthStore.oldest(this.byUserCode.values());
+      if (oldest) this.forget(oldest);
+    }
 
     let code = randomUserCode();
     while (this.byUserCode.has(code)) code = randomUserCode();

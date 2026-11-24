@@ -7,7 +7,7 @@ import {
   trashedIds,
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
-import { getDb, getStorage } from "../context";
+import { allowLongRequest, getDb, getStorage } from "../context";
 import { apiErrorHandler } from "../errors";
 import { isoTimestampRequired } from "../serialize";
 import { isGuestRequest } from "./auth";
@@ -78,7 +78,8 @@ export const trashRouter = new Elysia({ prefix: "/trash" })
   )
   .post(
     "/restore",
-    async ({ body }) => {
+    async ({ body, request, server }) => {
+      allowLongRequest(server, request);
       const db = await getDb();
       try {
         return { restored: await restoreSnapshots(db, await selectedIds(db, body)) };
@@ -90,7 +91,8 @@ export const trashRouter = new Elysia({ prefix: "/trash" })
   )
   .post(
     "/delete",
-    async ({ body }) => {
+    async ({ body, request, server }) => {
+      allowLongRequest(server, request);
       const db = await getDb();
       try {
         return await deleteSnapshotsForever(db, await selectedIds(db, body), getStorage(), {
@@ -102,7 +104,8 @@ export const trashRouter = new Elysia({ prefix: "/trash" })
     },
     { body: idsBody },
   )
-  .post("/empty", async () => {
+  .post("/empty", async ({ request, server }) => {
+    allowLongRequest(server, request);
     const db = await getDb();
     try {
       return await deleteSnapshotsForever(db, await trashedIds(db), getStorage(), {

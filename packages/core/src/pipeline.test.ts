@@ -278,6 +278,14 @@ describe("runPipeline", () => {
     expect(row?.failure_category).toBe("domain_not_found");
     // Reported from the record, not from a second DNS lookup.
     expect(row?.failure_detail).toContain("known since");
+
+    // The record is trusted for minutes: "no such name" is also what an offline machine answers,
+    // and a snapshot made once the network is back must ask DNS again.
+    await db.run(sql`UPDATE dead_hosts SET last_seen_at = ${db.ago(11 * 60)} WHERE host = ${host}`);
+    const third = `http://${host}/c`;
+    const id3 = await createSnapshot(db, third);
+    await runPipeline(db, id3, third, testDir);
+    expect((await failureOf(id3))?.failure_detail).not.toContain("known since");
   });
 
   test("a snapshot that succeeds after a failure has no failure left on it", async () => {

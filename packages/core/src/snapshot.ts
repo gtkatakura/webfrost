@@ -80,9 +80,17 @@ export async function deleteSnapshot(
   db: Db,
   id: number,
   storage: StorageBackend,
+  only?: DeleteOnly,
 ): Promise<boolean> {
-  return removeSnapshot(db, id, storage, false);
+  return removeSnapshot(db, id, storage, false, only);
 }
+
+/**
+ * A condition the snapshot must still meet at the moment it is deleted, checked under the row's
+ * lock: a bulk delete chooses its ids first and may reach a row minutes later, after the person
+ * restored it from the trash or archived it again.
+ */
+export type DeleteOnly = "trashed" | "failed";
 
 /**
  * deleteSnapshot, with the import's own cleanup as the one caller allowed to remove a
@@ -93,16 +101,22 @@ export async function removeSnapshot(
   id: number,
   storage: StorageBackend,
   force: boolean,
+  only?: DeleteOnly,
 ): Promise<boolean> {
   const deleted = await db.transaction(async (tx) => {
     // Lock order: job_queue first, then snapshots, as in JobRunner.retry and fenced writes.
     await tx.run(
       sql`SELECT snapshot_id FROM job_queue WHERE snapshot_id = ${id} ${tx.forUpdate()}`,
     );
-    const exists = await tx.get<{ id: number; status: string }>(
-      sql`SELECT id, status FROM snapshots WHERE id = ${id} ${tx.forUpdate()}`,
+    const exists = await tx.get<{ id: number; status: string; trashed_at: string | null }>(
+      sql`SELECT id, status, trashed_at FROM snapshots WHERE id = ${id} ${tx.forUpdate()}`,
     );
     if (!exists) return false;
+    // No longer what the caller set out to delete (restored, or archived again): leave it.
+    if (only === "trashed" && exists.trashed_at === null) return false;
+    if (only === "failed" && (exists.status !== "failed" || exists.trashed_at !== null)) {
+      return false;
+    }
     if (exists.status === IMPORTING_STATUS && !force) throw new SnapshotBusyError(id);
     // A pending snapshot has a pipeline writing files for it; deleting now would leave
     // whatever it writes next in storage with no row pointing at it. Same rule as retry.

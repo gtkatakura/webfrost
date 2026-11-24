@@ -9,7 +9,7 @@ import {
   searchSnapshots,
   sql,
 } from "@webfrost/core";
-import type { SnapshotFilter, SnapshotWithExtractors, StorageBackend } from "@webfrost/core";
+import type { Db, SnapshotFilter, SnapshotWithExtractors, StorageBackend } from "@webfrost/core";
 import { Elysia, t } from "elysia";
 import { getDb, getRunner, getStorage } from "../context";
 import { apiError, apiErrorHandler } from "../errors";
@@ -112,6 +112,19 @@ export function snapshotFilterFromQuery(
   const contains = query.contains?.trim();
   if (contains) filter.contains = contains;
   return { filter };
+}
+
+/**
+ * True when the snapshot is in the trash and the visitor is anonymous (public read). The trash
+ * hides a snapshot from everything a guest can list; its address must not keep serving it. Signed
+ * in, it stays reachable: the Trash page links to it.
+ */
+export async function hiddenFromGuest(db: Db, id: number, request: Request): Promise<boolean> {
+  if (!isGuestRequest(request)) return false;
+  const row = await db.get<{ trashed_at: string | null }>(
+    sql`SELECT trashed_at FROM snapshots WHERE id = ${id}`,
+  );
+  return row?.trashed_at != null;
 }
 
 /** List-level fields shared by the list, search and detail responses. */
@@ -373,7 +386,9 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       const storage = getStorage();
       try {
         const snapshot = await getSnapshot(db, id);
-        if (!snapshot) return apiError(set, 404, "NOT_FOUND", "not found");
+        if (!snapshot || (guest && snapshot.trashed_at !== null)) {
+          return apiError(set, 404, "NOT_FOUND", "not found");
+        }
         const extractorMeta: Record<
           string,
           {
@@ -494,7 +509,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
   )
   .get(
     "/:id/archives/:extractor/preview",
-    async ({ params, set }) => {
+    async ({ params, set, request }) => {
       const id = Number(params.id);
       const { extractor } = params;
       const fail = (status: 400 | 403 | 404, error: string) =>
@@ -511,6 +526,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       const db = await getDb();
       let ref: string | null;
       try {
+        if (await hiddenFromGuest(db, id, request)) return fail(404, "not found");
         const row = await db.get<{ content: string | null }>(
           sql`SELECT content FROM archive_results WHERE snapshot_id = ${id} AND extractor = ${extractor} AND error IS NULL ORDER BY id DESC LIMIT 1`,
         );
@@ -538,7 +554,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
   )
   .get(
     "/:id/archives/:extractor/download",
-    async ({ params, set }) => {
+    async ({ params, set, request }) => {
       const id = Number(params.id);
       const { extractor } = params;
       const fail = (status: 400 | 403 | 404, error: string) =>
@@ -555,6 +571,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       const db = await getDb();
       let content: string | null = null;
       try {
+        if (await hiddenFromGuest(db, id, request)) return fail(404, "not found");
         const row = await db.get<{ content: string | null }>(
           sql`SELECT content FROM archive_results WHERE snapshot_id = ${id} AND extractor = ${extractor} AND error IS NULL ORDER BY id DESC LIMIT 1`,
         );

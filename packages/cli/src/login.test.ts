@@ -227,6 +227,41 @@ describe("webfrost login", () => {
     expect(existsSync(credentialsFile())).toBe(false);
   }, 30_000);
 
+  test("the address to open is built here; a server cannot choose it or slip anything into the code", async () => {
+    let answer: unknown = {};
+    const hostile = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: () => Response.json(answer),
+    });
+    const base = `http://127.0.0.1:${hostile.port}`;
+    const request = { deviceCode: "d".repeat(64), expiresIn: 1, interval: 1 };
+    try {
+      // A path of the server's choosing is ignored: only <server>/#/connect?code=<code> is shown.
+      answer = {
+        ...request,
+        userCode: "WDJB-MJHT",
+        verificationPath: "/#/connect",
+        verificationPathComplete: "/#/connect?code=X&calc.exe",
+      };
+      const ignored = await runCli(["login", base, "--no-browser"]);
+      expect(ignored.stderr).toContain(`${base}/#/connect?code=WDJB-MJHT\n`);
+      expect(ignored.stderr).not.toContain("calc.exe");
+
+      // A code that is not eight letters is refused before anything is printed or opened.
+      for (const userCode of ["WDJB-MJHT&calc.exe", "WDJB-MJHT\u001b[2J", "wdjb-mjht", "", 42]) {
+        answer = { ...request, userCode, verificationPathComplete: "/#/connect?code=WDJB-MJHT" };
+        const refused = await runCli(["login", base, "--no-browser"]);
+        expect(refused.exitCode).toBe(1);
+        expect(refused.stderr).toContain("not a connection request");
+        expect(refused.stderr).not.toContain("calc.exe");
+        expect(refused.stderr).not.toContain("connect?code=");
+      }
+    } finally {
+      hostile.stop(true);
+    }
+  }, 60_000);
+
   test("usage errors: no server, not a URL, plain HTTP to another machine", async () => {
     expect((await runCli(["login"])).exitCode).toBe(2);
     expect((await runCli(["login", "archive.example.com"])).exitCode).toBe(2);

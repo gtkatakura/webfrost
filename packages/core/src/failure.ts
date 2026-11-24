@@ -16,6 +16,7 @@ export const FAILURE_CATEGORIES = {
   tls_error: { class: "permanent", label: "TLS or certificate error" },
   redirect_loop: { class: "permanent", label: "Too many redirects" },
   bad_request: { class: "permanent", label: "Request rejected (400)" },
+  unsupported_url: { class: "permanent", label: "Not a web address (http or https)" },
   access_denied: { class: "blocked", label: "Access denied (401/403)" },
   refused_client: { class: "blocked", label: "Client refused (other 4xx)" },
   rate_limited: { class: "transient", label: "Rate limited (429)" },
@@ -63,14 +64,12 @@ export function categorizeError(message: string): FailureCategory {
   // getaddrinfo ENOTFOUND / NXDOMAIN: the name does not exist. ESERVFAIL and EAI_AGAIN are the resolver's
   // trouble, and ETIMEOUT the lookup's; those can pass.
   if (/\benotfound\b|nxdomain/.test(m)) return "domain_not_found";
-  if (/eservfail|eai_again|getaddrinfo etimeout|enodata/.test(m)) return "dns_error";
-  if (
-    m.includes("ssrf") ||
-    m.includes("private ip") ||
-    m.includes("non-public") ||
-    m.includes("private address")
-  )
-    return "private_address";
+  // The address guard refuses more than private addresses: say which it was.
+  if (/unsupported protocol|empty hostname/.test(m)) return "unsupported_url";
+  // The name exists but has no address record.
+  if (/eservfail|eai_again|getaddrinfo etimeout|enodata|did not resolve/.test(m))
+    return "dns_error";
+  if (/resolves to private|private ip|non-public|private address/.test(m)) return "private_address";
   if (m.includes("too many redirects")) return "redirect_loop";
   if (/timed out|timeout/.test(m)) return "timeout";
   if (/cert|tls|ssl|eproto|handshake/.test(m)) return "tls_error";

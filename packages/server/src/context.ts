@@ -31,6 +31,23 @@ export function getSessionSecret(): string {
 const runners = new Map<string, JobRunner>();
 
 /** Background pipeline runner for the current WEBFROST_DIR. */
+/**
+ * Let a request that works for a long time finish. Bun closes a connection that carries no data
+ * for 10 seconds, and a bulk action (a DNS lookup per domain, thousands of snapshots deleted with
+ * their files) sends nothing until it is done: cut off, the browser shows a network error while
+ * the server carries on. Not served by Bun.serve (in-process tests) there is nothing to extend.
+ */
+export function allowLongRequest(
+  server: { timeout(request: Request, seconds: number): void } | null | undefined,
+  request: Request,
+): void {
+  try {
+    server?.timeout(request, 0);
+  } catch {
+    // The request is not one of this server's.
+  }
+}
+
 export function getRunner(): JobRunner {
   const dir = getWebfrostDir();
   let runner = runners.get(dir);

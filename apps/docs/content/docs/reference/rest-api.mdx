@@ -172,8 +172,8 @@ curl -X POST $API/auth/device/token -H "Content-Type: application/json" -d '{"de
 # { "status": "approved", "apiKey": "…", "key": { "id": "…", "name": "laptop", "expiresAt": null, … } }
 ```
 
-- `deviceCode` is the secret of whoever started the request; `userCode` (8 letters, shown as `XXXX-XXXX`, accepted in any case and without the dash) is what the person compares. The two paths are relative to the server's address, as the client knows it.
-- A request waits `expiresIn` seconds (10 minutes). At most 200 wait at once; further ones get `429`. They are held in memory, so a server restart forgets them and the next poll answers `404`.
+- `deviceCode` is the secret of whoever started the request; `userCode` (8 letters, shown as `XXXX-XXXX`, accepted in any case and without the dash) is what the person compares. The two paths are relative to the server's address, as the client knows it; a client that opens the page for the person should build the address itself from `/#/connect?code=` and the code, after checking the code's shape, rather than open a path it was sent.
+- A request waits `expiresIn` seconds (10 minutes). One client address has at most 5 waiting and the server 200 in all; a new request beyond that takes the place of the oldest one (the client's own first), so starting requests never locks anyone out. They are held in memory, so a server restart forgets them and the next poll answers `404`.
 - The API key is created at the poll that returns it, never before the approval, and that poll removes the request: a device code that leaks later is worth nothing. The key is an ordinary one, listed under `GET /settings/keys` and revoked with `DELETE /settings/keys/:id`.
 - Seeing and answering a request take a session (the web UI), with the usual [cross-site check](/docs/architecture/security#cross-site-requests-csrf). An API key cannot approve one: `403`.
 
@@ -402,14 +402,14 @@ A failed snapshot keeps why it failed as a `category`, grouped in four classes:
 
 | Class | Categories | Meaning |
 |---|---|---|
-| `permanent` | `domain_not_found`, `page_not_found`, `private_address`, `tls_error`, `redirect_loop`, `bad_request` | The page or the site is gone, or cannot be archived from here: retrying does not help. |
+| `permanent` | `domain_not_found`, `page_not_found`, `private_address`, `tls_error`, `redirect_loop`, `bad_request`, `unsupported_url` | The page or the site is gone, or cannot be archived from here: retrying does not help. |
 | `transient` | `rate_limited`, `server_error`, `timeout`, `network_error`, `dns_error` | The site or the network was unwell at that moment. |
 | `blocked` | `access_denied`, `refused_client` | The site answered but refused WebFrost (anti-bot, login). |
 | `internal` | `interrupted`, `no_output`, `error` | WebFrost did not finish the run. |
 
-`domain_not_found` is a name with no DNS record (NXDOMAIN). The first snapshot of such a domain records it for a week: the next snapshots of the same domain fail at once with the same category, without a lookup. Retrying a snapshot of the domain looks it up again.
+`domain_not_found` is a name with no DNS record (NXDOMAIN). The first snapshot of such a domain records it for ten minutes: the next snapshots of the same domain in that time (the other pages of a dead site in an import) fail at once with the same category, without a lookup. The record is short on purpose, because a machine that is offline also answers "no such name", and it must not keep failing a domain once the network is back. Retrying a snapshot of the domain looks it up again at once. `private_address` is a name that resolves to a private or loopback address; `unsupported_url` is a page that sent WebFrost to an address that is not `http` or `https` (a redirect to `ftp:`, for one).
 
-For triage, the failed snapshots are sorted into groups that call for the same decision: `domain-gone` (`domain_not_found`), `page-gone` (`page_not_found`), `blocked` (`access_denied`, `refused_client`), `rate-limited`, `temporary` (`timeout`, `server_error`, `network_error`, `dns_error`), `site-setup` (`tls_error`, `redirect_loop`, `bad_request`), `private-address`, `interrupted` (`interrupted`, `no_output`, `error`) and `unknown` (failed before the category was stored). A group holds failed snapshots only, never ones in the trash, and every decision below applies to those only: an earlier snapshot of the same page that worked is never touched.
+For triage, the failed snapshots are sorted into groups that call for the same decision: `domain-gone` (`domain_not_found`), `page-gone` (`page_not_found`), `blocked` (`access_denied`, `refused_client`), `rate-limited`, `temporary` (`timeout`, `server_error`, `network_error`, `dns_error`), `site-setup` (`tls_error`, `redirect_loop`, `bad_request`, `unsupported_url`), `private-address`, `interrupted` (`interrupted`, `no_output`, `error`) and `unknown` (failed before the category was stored). A group holds failed snapshots only, never ones in the trash, and every decision below applies to those only: an earlier snapshot of the same page that worked is never touched.
 
 | Method | Route | Description |
 |---|---|---|
@@ -425,7 +425,7 @@ Instead of `hosts` and `ids`, a selection can be `{ all: true }`: every failed s
 
 ## Trash
 
-A snapshot in the trash is hidden from every list, search and count but keeps its files. It is deleted for good once it has been there longer than the retention (`trashRetentionDays`, 30 days by default, see `/settings/general`); the server checks every hour. Until then it can be restored as it was.
+A snapshot in the trash is hidden from every list, search and count but keeps its files. Signed in, it can still be opened by its id (the Trash page links to it); to anonymous visitors of a [public-read](/docs/guides/public-read) server its id, tags and files answer `404`. It still counts as a known URL for feed schedules and deduplicated imports, so a feed does not archive again what you moved to the trash. It is deleted for good once it has been there longer than the retention (`trashRetentionDays`, 30 days by default, see `/settings/general`); the server checks every hour. Until then it can be restored as it was.
 
 | Method | Route | Description |
 |---|---|---|

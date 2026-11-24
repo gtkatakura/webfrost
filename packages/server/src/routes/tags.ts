@@ -15,6 +15,7 @@ import { getDb } from "../context";
 import { apiError, apiErrorHandler } from "../errors";
 import { MAX_TAG_COLOR_LENGTH, MAX_TAG_NAME_LENGTH } from "../limits";
 import { isoTimestampRequired, paginate } from "../serialize";
+import { isGuestRequest } from "./auth";
 
 /** A tag as the API returns it. */
 export function serializeTag(tag: Tag) {
@@ -100,7 +101,7 @@ export const snapshotTagsRouter = new Elysia({ prefix: "/snapshots" })
   .onError(apiErrorHandler)
   .get(
     "/:id/tags",
-    async ({ params, query, set }) => {
+    async ({ params, query, set, request }) => {
       const snapshotId = Number(params.id);
       if (!Number.isInteger(snapshotId) || snapshotId <= 0) {
         return apiError(set, 404, "NOT_FOUND", "not found");
@@ -108,7 +109,8 @@ export const snapshotTagsRouter = new Elysia({ prefix: "/snapshots" })
       const db = await getDb();
       try {
         const snapshot = await getSnapshot(db, snapshotId);
-        if (!snapshot) {
+        // In the trash it is hidden from anonymous visitors, like the snapshot itself.
+        if (!snapshot || (isGuestRequest(request) && snapshot.trashed_at !== null)) {
           return apiError(set, 404, "NOT_FOUND", "not found");
         }
         return paginate((await listSnapshotTags(db, snapshotId)).map(serializeTag), query);

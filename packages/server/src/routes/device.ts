@@ -48,15 +48,11 @@ export const deviceRouter = new Elysia({ prefix: "/auth/device" })
   // Public: the CLI has no credentials yet. It only reserves a slot that someone must approve.
   .post(
     "/",
-    ({ body, request, server, set }) => {
+    ({ body, request, server }) => {
       const started = deviceAuth.start({
         name: cleanName(body?.name),
         requesterIp: getClientIp(request, server),
       });
-      if (!started) {
-        set.headers["retry-after"] = "60";
-        return apiError(set, 429, "RATE_LIMITED", "too many connection requests are waiting");
-      }
       return {
         ...started,
         verificationPath: DEVICE_VERIFICATION_PATH,

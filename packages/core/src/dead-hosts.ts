@@ -5,10 +5,14 @@ import type { Failure } from "./failure";
 /**
  * Domains whose name no longer resolves (NXDOMAIN). The first snapshot of such a domain records it here;
  * the next ones, typically a bookmark import with dozens of pages of one dead site, fail at once with
- * the same reason instead of each asking DNS again. A domain can come back (a lapsed registration
- * renewed), so a record is trusted for a week, and retrying a snapshot of the domain forgets it.
+ * the same reason instead of each asking DNS again.
+ *
+ * A record is trusted for ten minutes only. "No such name" is also what a machine that is offline, or
+ * a name served by a VPN that is down, answers; a record kept for long would then fail every later
+ * snapshot of the domain (a schedule, an import) well after the network is back. Ten minutes still
+ * spares a burst its lookups and heals by itself. Retrying a snapshot of the domain forgets the record.
  */
-export const DEAD_HOST_TTL_SECONDS = 7 * 24 * 60 * 60;
+export const DEAD_HOST_TTL_SECONDS = 10 * 60;
 
 /** The host a dead-domain record is keyed by: the URL's hostname, lowercased. Null for a bad URL. */
 export function hostOf(url: string): string | null {
