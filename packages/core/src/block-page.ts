@@ -60,3 +60,37 @@ export function blockPageReason(
   }
   return null;
 }
+
+/** Path segments that only a login, consent or challenge page has. */
+const WALL_PATH =
+  /(^|[/._-])(log-?in|sign-?in|signin|auth|sso|consent|captcha|challenge|cdn-cgi)([/._?#-]|$)/i;
+
+/**
+ * Why landing on `finalUrl` after asking for `requestedUrl` means the page itself was not served, or null.
+ * A site that hides a page behind a login or sends unknown pages home answers 200 there, with plenty of
+ * text, so the text checks alone let it through.
+ */
+export function redirectReason(
+  requestedUrl: string,
+  finalUrl: string | null | undefined,
+): string | null {
+  if (!finalUrl) return null;
+  let asked: URL;
+  let landed: URL;
+  try {
+    asked = new URL(requestedUrl);
+    landed = new URL(finalUrl);
+  } catch {
+    return null;
+  }
+  const path = (u: URL) => u.pathname.replace(/\/+$/, "") || "/";
+  const host = (u: URL) => u.hostname.replace(/^www\./, "");
+  if (host(asked) === host(landed) && path(asked) === path(landed)) return null;
+  if (WALL_PATH.test(landed.pathname) && !WALL_PATH.test(asked.pathname)) {
+    return `redirected to ${landed.origin}${landed.pathname}, a login or challenge page`;
+  }
+  if (path(landed) === "/" && path(asked) !== "/") {
+    return `redirected to the home page (${landed.origin}/), so the page itself is gone or hidden`;
+  }
+  return null;
+}

@@ -330,6 +330,16 @@ describe("snapshot bundle round trip", () => {
     expect(all.map((t) => t.name)).toEqual(["Australia", "Wildlife"]);
   });
 
+  test("exporting over a larger existing file leaves a valid bundle, not the old file's tail", async () => {
+    const sourceId = await seedSnapshot();
+    const bundlePath = join(root, "bundle.zip");
+    writeFileSync(bundlePath, noise(2_000_000, 3));
+    const { bytes } = await exportSnapshotBundle(source, sourceStorage, sourceId, bundlePath);
+    expect(Bun.file(bundlePath).size).toBe(bytes);
+    const imported = await importSnapshotBundle(target, targetStorage, bundlePath);
+    expect(imported.status).toBe("done");
+  });
+
   test("importing the same bundle twice makes two snapshots", async () => {
     const sourceId = await seedSnapshot();
     const bundlePath = join(root, "bundle.zip");

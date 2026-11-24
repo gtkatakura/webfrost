@@ -6,6 +6,7 @@ import { sql } from "kysely";
 import { getTrashRetentionDays, setTrashRetentionDays } from "./app-settings";
 import { type Db, openDb } from "./db";
 import { listFailedSnapshots, listFailureDomains, summarizeFailureGroups } from "./failure-groups";
+import { JobRunner } from "./jobs";
 import { listSnapshotsWithExtractorsPaginated } from "./list";
 import { getStats } from "./stats";
 import { FilesystemBackend } from "./storage";
@@ -70,6 +71,17 @@ describe("trash", () => {
     expect(await restoreSnapshots(db, [id])).toBe(1);
     expect((await listTrash(db, 1, 20)).total).toBe(0);
     expect((await summarizeFailureGroups(db)).find((g) => g.id === "domain-gone")?.count).toBe(1);
+  });
+
+  test("a snapshot in the trash cannot be retried until it is restored", async () => {
+    const id = await seed("https://blocked.example/", "failed", "access_denied");
+    await trashSnapshots(db, [id]);
+    const runner = new JobRunner({ dir: testDir });
+    expect(await runner.retry(db, id)).toBe("missing");
+    const row = await db.get<{ status: string }>(
+      sql`SELECT status FROM snapshots WHERE id = ${id}`,
+    );
+    expect(row?.status).toBe("failed");
   });
 
   test("a snapshot being archived is not moved to the trash", async () => {

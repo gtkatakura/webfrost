@@ -11,3 +11,5 @@ New `webfrost rescue <group> --from <server>`: for every failed snapshot of a gr
 `POST /snapshots/import` takes `?replaces=<id>` for this (`409` when that snapshot is not, or no longer, a failure of the bundle's URL), and `GET /failures/:group/snapshots` lists a group's failed snapshots across domains; the SDK's `importSnapshot` takes `replaces` too. The failure lists answer faster on large archives.
 
 The browser no longer installs its own Ctrl+C handler, so the server's and the CLI's graceful stop (finish what is running, then exit) is what happens on the first signal.
+
+A snapshot in the trash can no longer be retried (`404`, as everywhere else it is hidden) until it is restored, and `webfrost export -o` over a larger existing file no longer leaves a corrupt bundle.

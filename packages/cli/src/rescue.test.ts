@@ -15,6 +15,9 @@ const SCRIPTED_WALL = ARTICLE.replace(
   "</body>",
   `<script>document.title = "Just a moment..."; document.body.innerHTML = "<p>Verify you are human</p>";</script></body>`,
 );
+const PDF = new TextEncoder().encode(
+  "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Count 0/Kids[]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n",
+);
 const WALL = `<!doctype html><html><head><title>Just a moment...</title></head><body><p>${"Checking the browser before letting it in. ".repeat(10)}</p></body></html>`;
 
 let serverDir: string;
@@ -87,6 +90,17 @@ beforeAll(async () => {
       if (pathname === "/wall") return new Response(WALL, { headers: html });
       if (pathname === "/scripted-wall") return new Response(SCRIPTED_WALL, { headers: html });
       if (pathname === "/gone") return new Response("not here", { status: 404 });
+      // A page behind a login: the site sends it to a sign-in page with plenty of text, answering 200.
+      if (pathname === "/members-only") {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "/login?next=/members-only" },
+        });
+      }
+      if (pathname === "/login") return new Response(ARTICLE, { headers: html });
+      if (pathname === "/paper.pdf") {
+        return new Response(PDF, { headers: { "content-type": "application/pdf" } });
+      }
       return new Response("forbidden", { status: 403 });
     },
   });
@@ -185,6 +199,21 @@ describe("webfrost rescue", () => {
     expect(out.results[0]?.outcome).toBe("wall");
     expect(out.results[0]?.reason).toContain("in the browser");
     expect(await state(id)).toEqual({ status: "failed", trashed: 0 });
+  }, 60_000);
+
+  test("a redirect to a login page is not sent; a PDF (no text, no DOM to check) is", async () => {
+    const login = await seedFailure(page("/members-only"));
+    const pdf = await seedFailure(page("/paper.pdf"));
+    const run = await runCli(["rescue", "blocked", ...from(), "--yes", "--json"]);
+    const out = JSON.parse(run.stdout) as {
+      results: { id: number; outcome: string; reason?: string }[];
+    };
+    const byId = Object.fromEntries(out.results.map((r) => [r.id, r]));
+    expect(byId[login]?.outcome).toBe("wall");
+    expect(byId[login]?.reason).toContain("login");
+    expect(byId[pdf]?.outcome).toBe("rescued");
+    expect(await state(login)).toEqual({ status: "failed", trashed: 0 });
+    expect(await state(pdf)).toEqual({ status: "failed", trashed: 1 });
   }, 60_000);
 
   test("several failures of one URL: archived and sent once, the others go to the trash", async () => {

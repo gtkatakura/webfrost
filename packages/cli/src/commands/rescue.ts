@@ -11,6 +11,7 @@ import {
   getSnapshot,
   hostOf,
   openDb,
+  redirectReason,
 } from "@webfrost/core";
 import type { Command, Context } from "../cli";
 import { CliError, UsageError } from "../errors";
@@ -149,6 +150,22 @@ async function confirm(question: string): Promise<boolean> {
 }
 
 /** Archive `url` in the scratch archive and say whether the copy is worth sending. */
+/**
+ * The URL that answered, after redirects: the WARC's last record (`metadata`, small) names it. Read from
+ * the end of the file, so a large download is not read whole.
+ */
+async function finalUrlOf(warcRef: string | null | undefined): Promise<string | null> {
+  if (!warcRef) return null;
+  try {
+    const file = Bun.file(warcRef);
+    const tail = await file.slice(Math.max(0, file.size - 64 * 1024)).text();
+    const uris = [...tail.matchAll(/^WARC-Target-URI: (.+?)\r?$/gm)];
+    return uris.at(-1)?.[1]?.trim() ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** The title and visible text of the DOM the browser rendered (what the screenshot and PDF show). */
 function renderedPage(html: string): { title: string | null; text: string } {
   const title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1]?.trim() ?? null;
@@ -184,6 +201,16 @@ async function archiveHere(
     const reason = safeText(snap.failure_detail ?? category);
     const gone = category === "page_not_found" || category === "domain_not_found";
     return { localId, outcome: gone ? "gone" : "still-failing", reason };
+  }
+  const warc = snap.archiveResults.find((r) => r.extractor === "warc" && r.error === null);
+  const redirected = redirectReason(url, await finalUrlOf(warc?.content));
+  if (redirected) return { localId, outcome: "wall", reason: redirected };
+  // The text extractors run only on a text answer: without an html result this was a download (a PDF,
+  // an image), which no anti-bot or login wall is, and which the fetch got with a 2xx.
+  if (!snap.archiveResults.some((r) => r.extractor === "html")) {
+    return warc
+      ? { localId, outcome: "ok" }
+      : { localId, outcome: "incomplete", reason: "the download was not stored" };
   }
   const readability = snap.archiveResults.find(
     (r) => r.extractor === "readability" && r.error === null,

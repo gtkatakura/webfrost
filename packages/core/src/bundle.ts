@@ -551,6 +551,8 @@ export async function exportSnapshotBundle(
   path: string,
 ): Promise<{ bytes: number; manifest: BundleManifest }> {
   const plan = await planSnapshotBundle(db, storage, snapshotId);
+  // Bun's file writer does not truncate: over a larger existing file the ZIP would keep its tail.
+  await rm(path, { force: true });
   const writer = Bun.file(path).writer();
   let bytes = 0;
   try {

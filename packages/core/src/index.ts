@@ -119,7 +119,7 @@ export {
   knownDeadHost,
   markDeadHost,
 } from "./dead-hosts";
-export { DEFAULT_MIN_PAGE_TEXT, blockPageReason } from "./block-page";
+export { DEFAULT_MIN_PAGE_TEXT, blockPageReason, redirectReason } from "./block-page";
 export type { JobRunnerOptions } from "./jobs";
 export { SCHEDULER_INTERVAL_MS, claimSchedule, runDueSchedules, startScheduler } from "./scheduler";
 export type { Scheduler, SchedulerOptions } from "./scheduler";

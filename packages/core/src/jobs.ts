@@ -109,10 +109,11 @@ export class JobRunner {
       await tx.run(
         sql`SELECT snapshot_id FROM job_queue WHERE snapshot_id = ${snapshotId} ${tx.forUpdate()}`,
       );
-      const row = await tx.get<{ url: string; status: string }>(
-        sql`SELECT url, status FROM snapshots WHERE id = ${snapshotId} ${tx.forUpdate()}`,
+      const row = await tx.get<{ url: string; status: string; trashed_at: string | null }>(
+        sql`SELECT url, status, trashed_at FROM snapshots WHERE id = ${snapshotId} ${tx.forUpdate()}`,
       );
-      if (!row) return { result: "missing" as const };
+      // A snapshot in the trash is hidden everywhere; restore it first to archive it again.
+      if (!row || row.trashed_at !== null) return { result: "missing" as const };
       // A bundle import still writing the snapshot is as busy as a pending run.
       if (row.status === "pending" || row.status === "importing" || this.inFlight.has(snapshotId))
         return { result: "busy" as const };
