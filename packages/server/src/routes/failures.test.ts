@@ -337,3 +337,23 @@ describe("bulk actions that take long", () => {
     expect(existsSync(join(testDir, "snapshots", String(id), "page.html"))).toBe(false);
   }, 20_000);
 });
+
+describe("paging of the failures and trash lists", () => {
+  test("they read page and limit like the snapshot list: capped, truncated, never a 422", async () => {
+    await seed("http://gone-paging.example/a", "failed", "domain_not_found");
+    const app = await getApp();
+    for (const path of [
+      "/failures/domain-gone/domains?limit=5000",
+      "/failures/domain-gone/snapshots?limit=1000&page=-1",
+      "/trash?limit=2.5",
+    ]) {
+      const res = await app.handle(new Request(`http://localhost${path}`));
+      expect([path, res.status]).toEqual([path, 200]);
+      const body = (await res.json()) as { limit: number; page: number };
+      expect(body.limit).toBeLessThanOrEqual(200);
+      expect(body.page).toBeGreaterThanOrEqual(1);
+    }
+    const bad = await app.handle(new Request("http://localhost/trash?limit=Infinity"));
+    expect(bad.status).not.toBe(200);
+  });
+});

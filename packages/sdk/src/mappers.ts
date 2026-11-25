@@ -109,8 +109,8 @@ export function toSearchResult(raw: RawSearchResult): SearchResult {
   return {
     id: raw.id,
     url: raw.url,
-    snippet: raw.snippet,
-    rank: raw.rank,
+    snippet: raw.snippet ?? "",
+    rank: raw.rank ?? 0,
     status: raw.status ?? null,
     createdAt: raw.createdAt ?? "",
     title: raw.title ?? null,

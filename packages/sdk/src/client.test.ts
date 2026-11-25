@@ -804,3 +804,44 @@ describe("WebFrostClient: connecting a command line", () => {
     );
   });
 });
+
+describe("WebFrostClient: blank searches and a reused signal", () => {
+  test("a blank query is not sent: it is an empty result, not the plain list", async () => {
+    const client = new WebFrostClient({ baseUrl: BASE });
+    expect(await client.searchSnapshots("   ")).toEqual([]);
+    expect(await client.searchSnapshotsPage("", { page: 2 })).toEqual({
+      items: [],
+      total: 0,
+      page: 2,
+      limit: 20,
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test("a result without snippet or rank still has a string and a number", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ items: [{ id: 1, url: "https://a.com" }], total: 1, page: 1, limit: 20 }),
+    );
+    const [hit] = await new WebFrostClient({ baseUrl: BASE }).searchSnapshots("a");
+    expect(hit?.snippet).toBe("");
+    expect(hit?.rank).toBe(0);
+  });
+
+  test("one signal for many requests, failed ones included, collects no listeners", async () => {
+    const controller = new AbortController();
+    const added: unknown[] = [];
+    const original = controller.signal.addEventListener.bind(controller.signal);
+    controller.signal.addEventListener = ((
+      ...args: Parameters<AbortSignal["addEventListener"]>
+    ) => {
+      added.push(args[0]);
+      return original(...args);
+    }) as AbortSignal["addEventListener"];
+    const client = new WebFrostClient({ baseUrl: BASE });
+    for (let i = 0; i < 5; i++) {
+      fetchSpy.mockResolvedValueOnce(new Response("nope", { status: 500 }));
+      await client.downloadArchive(1, "pdf", { signal: controller.signal }).catch(() => {});
+    }
+    expect(added).toEqual([]);
+  });
+});

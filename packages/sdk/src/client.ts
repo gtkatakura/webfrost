@@ -69,8 +69,6 @@ interface SendOptions {
   signal?: AbortSignal | undefined;
   /** Non-2xx statuses the caller handles itself (e.g. 404 -> null) instead of throwing. */
   allow?: readonly number[];
-  /** The caller consumes the body after the call, so the timeout must not outlive the headers. */
-  streaming?: boolean;
   /** Send these bytes as they are, with this content type, instead of `body`. */
   raw?: {
     body: Blob | Uint8Array | ReadableStream<Uint8Array>;
@@ -238,7 +236,7 @@ export class WebFrostClient {
     options: SendOptions,
     parse: (res: Response) => Promise<T>,
   ): Promise<T> {
-    const { signal, body, raw, allow = [], streaming = false } = options;
+    const { signal, body, raw, allow = [] } = options;
     const timeoutMs = options.timeoutMs ?? this.timeoutMs;
     if (signal?.aborted) throw abortedError(signal);
 
@@ -256,9 +254,10 @@ export class WebFrostClient {
       payload = JSON.stringify(body);
     }
 
+    // The client's own timeout, combined with the caller's signal without a listener on it: a
+    // signal kept for many requests (and a streamed download read after this returns) leaks nothing.
     const controller = new AbortController();
-    const onAbort = () => controller.abort(signal?.reason);
-    signal?.addEventListener("abort", onAbort, { once: true });
+    const requestSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     let timedOut = false;
     const timer =
       timeoutMs > 0
@@ -298,7 +297,7 @@ export class WebFrostClient {
         method,
         headers,
         credentials: this.credentials,
-        signal: controller.signal,
+        signal: requestSignal,
         ...(payload !== undefined ? { body: payload } : {}),
         // A streamed request body (Node's fetch requires saying so).
         ...(payload instanceof ReadableStream ? { duplex: "half" } : {}),
@@ -309,8 +308,6 @@ export class WebFrostClient {
       throw wrap(err);
     } finally {
       clearTimeout(timer);
-      // A streamed body keeps honouring the caller's signal after this method returns.
-      if (!streaming) signal?.removeEventListener("abort", onAbort);
     }
   }
 
@@ -368,9 +365,9 @@ export class WebFrostClient {
   }
 
   /**
-   * Log in with username and password. Sets a session cookie, which only a browser keeps: from
-   * the browser, pass `credentials: "include"` to the client when the API is on another origin.
-   * Outside the browser, authenticate with an API key instead.
+   * Log in with username and password. Sets a session cookie, which only a browser keeps, and only
+   * on the server's own pages: the cookie is SameSite=Strict, the server sends no CORS headers and
+   * refuses cross-site writes. Anywhere else (another origin, Node, Bun), use an API key.
    */
   login(username: string, password: string, request?: RequestOptions): Promise<LoginResult> {
     return this.json("POST", "/auth/login", {
@@ -536,6 +533,7 @@ export class WebFrostClient {
    * says otherwise), each with an HTML snippet (matching terms wrapped in <mark>).
    */
   async searchSnapshots(query: string, request?: RequestOptions): Promise<SearchResult[]> {
+    if (!query.trim()) return [];
     return (await this.searchSnapshotsPage(query, undefined, request)).items;
   }
 
@@ -549,6 +547,10 @@ export class WebFrostClient {
     options?: SearchSnapshotsOptions,
     request?: RequestOptions,
   ): Promise<SearchPage> {
+    // A blank query is not a search: the server would answer with the plain list instead.
+    if (!query.trim()) {
+      return { items: [], total: 0, page: options?.page ?? 1, limit: options?.limit ?? 20 };
+    }
     const params = pageQuery(options);
     filterQuery(params, options);
     params.set("q", query);
@@ -595,7 +597,7 @@ export class WebFrostClient {
     options?: RequestOptions & { kind?: ArchiveUrlKind },
   ): Promise<Response> {
     const path = this.archivePath(id, extractor, options?.kind ?? "download");
-    return this.send("GET", path, { signal: options?.signal, streaming: true }, async (res) => res);
+    return this.send("GET", path, { signal: options?.signal }, async (res) => res);
   }
 
   // ---------------------------------------------------------------------------

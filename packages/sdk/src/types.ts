@@ -63,7 +63,7 @@ export interface Page<T> {
 export interface PageOptions {
   /** Page number (1-indexed). Defaults to 1. */
   page?: number;
-  /** Items per page (1-200; the server caps larger values). Defaults to 20. */
+  /** Items per page, 1 to 200 (a larger value is capped, a fraction truncated). Defaults to 20. */
   limit?: number;
 }
 
@@ -256,9 +256,9 @@ export interface WebFrostClientOptions {
    */
   maxRetryDelayMs?: number;
   /**
-   * The `credentials` mode for requests. Defaults to "same-origin". Use "include" when the
-   * browser page and the API are on different origins and you rely on the session cookie
-   * (`login()`). Outside the browser, authenticate with an API key instead.
+   * The `credentials` mode for requests. Defaults to "same-origin", which is what the session
+   * cookie (`login()`) needs: it works only on the server's own pages (SameSite=Strict, no CORS).
+   * From another origin, or outside the browser, authenticate with an API key instead.
    */
   credentials?: RequestCredentials;
 }

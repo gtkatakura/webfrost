@@ -14,7 +14,12 @@ import { Elysia, t } from "elysia";
 import { getDb, getRunner, getStorage } from "../context";
 import { apiError, apiErrorHandler } from "../errors";
 import { MAX_URL_LENGTH } from "../limits";
-import { isoTimestampRequired, pageParams, parseIsoTimestamp } from "../serialize";
+import {
+  PAGE_NUMBER_PATTERN,
+  isoTimestampRequired,
+  pageParams,
+  parseIsoTimestamp,
+} from "../serialize";
 import { API_PREFIX } from "../version";
 import { isGuestRequest } from "./auth";
 import { serializeTag } from "./tags";
@@ -375,8 +380,8 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
         // Longer than the parser reads (512 characters) is refused rather than cut silently.
         q: t.Optional(t.String({ maxLength: 1024 })),
         // Plain numbers only: "Infinity" or "1e400" would reach SQL as an invalid OFFSET.
-        page: t.Optional(t.String({ pattern: "^(-?[0-9]{1,15}(\\.[0-9]{1,15})?)?$" })),
-        limit: t.Optional(t.String({ pattern: "^(-?[0-9]{1,15}(\\.[0-9]{1,15})?)?$" })),
+        page: t.Optional(t.String({ pattern: PAGE_NUMBER_PATTERN })),
+        limit: t.Optional(t.String({ pattern: PAGE_NUMBER_PATTERN })),
         // One value or several separated by commas: any of these statuses.
         status: t.Optional(t.String({ maxLength: 200 })),
         // Created at or after `since`, and before `before` (ISO 8601).

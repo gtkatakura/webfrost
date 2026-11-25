@@ -70,13 +70,16 @@ export function pageParams(
   return { page, limit };
 }
 
+/** A number as a page or limit may be written (clamped by pageParams); not "Infinity" or "1e400". */
+export const PAGE_NUMBER_PATTERN = "^(-?[0-9]{1,15}(\\.[0-9]{1,15})?)?$";
+
 /**
  * The query schema of `page` and `limit`, for routes that take only those: plain numbers, since
  * "Infinity" or "1e400" would reach SQL as an invalid OFFSET. Read them with {@link pageParams}.
  */
 export const pageQuerySchema = {
-  page: t.Optional(t.String({ pattern: "^[0-9]{1,9}$" })),
-  limit: t.Optional(t.String({ pattern: "^[0-9]{1,3}$" })),
+  page: t.Optional(t.String({ pattern: PAGE_NUMBER_PATTERN })),
+  limit: t.Optional(t.String({ pattern: PAGE_NUMBER_PATTERN })),
 };
 
 /** The envelope every list endpoint returns. */
