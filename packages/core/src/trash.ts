@@ -3,7 +3,7 @@ import { getTrashRetentionDays } from "./app-settings";
 import { chunks } from "./chunks";
 import type { Db } from "./db";
 import { pageWindow } from "./list";
-import { IMPORTING_STATUS, SnapshotBusyError, deleteSnapshot } from "./snapshot";
+import { type DeleteOnly, IMPORTING_STATUS, SnapshotBusyError, deleteSnapshot } from "./snapshot";
 import type { StorageBackend } from "./storage";
 
 /**
@@ -58,9 +58,16 @@ export async function deleteSnapshotsForever(
   db: Db,
   ids: number[],
   storage: StorageBackend,
-  options: { onlyTrashed?: boolean; onlyFailed?: boolean } = {},
+  options: { onlyTrashed?: boolean; onlyFailed?: boolean; trashedForSeconds?: number } = {},
 ): Promise<{ deleted: number; busy: number }> {
-  const only = options.onlyTrashed ? "trashed" : options.onlyFailed ? "failed" : undefined;
+  const only: DeleteOnly | undefined =
+    options.trashedForSeconds !== undefined
+      ? { trashedForSeconds: options.trashedForSeconds }
+      : options.onlyTrashed
+        ? "trashed"
+        : options.onlyFailed
+          ? "failed"
+          : undefined;
   let deleted = 0;
   let busy = 0;
   // No filtering up front: each snapshot is checked under its lock when its turn comes.
@@ -116,7 +123,8 @@ export async function purgeExpiredTrash(db: Db, storage: StorageBackend): Promis
     db,
     expired.map((r) => r.id),
     storage,
-    { onlyTrashed: true },
+    // Checked again per snapshot: one restored and trashed again meanwhile is not expired.
+    { trashedForSeconds: days * 24 * 60 * 60 },
   );
   return deleted;
 }

@@ -58,18 +58,31 @@ export function categorizeStatus(status: number | null | undefined): FailureCate
   return "error";
 }
 
+/**
+ * The message without the parts a remote site chooses: URLs, and the hostname the address guard
+ * names. A redirect to `http://nxdomain.example/timeout` must not decide the category.
+ */
+function withoutRemoteText(message: string): string {
+  return message
+    .replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, " ")
+    .replace(/^(ssrf blocked: )\S+ (resolves to|did not resolve)/i, "$1<host> $2");
+}
+
 /** The category of an error the page fetch threw (DNS, socket, TLS, timeout, guard). */
 export function categorizeError(message: string): FailureCategory {
-  const m = message.toLowerCase();
+  const m = withoutRemoteText(message).toLowerCase();
+  // The guard's and the fetch's own messages first: they say exactly what happened.
+  if (m.startsWith("ssrf blocked:")) {
+    if (/unsupported protocol|empty hostname/.test(m)) return "unsupported_url";
+    if (m.includes("did not resolve")) return "dns_error";
+    if (m.includes("resolves to private")) return "private_address";
+  }
+  if (m.startsWith("fetch timed out")) return "timeout";
   // getaddrinfo ENOTFOUND / NXDOMAIN: the name does not exist. ESERVFAIL and EAI_AGAIN are the resolver's
   // trouble, and ETIMEOUT the lookup's; those can pass.
-  if (/\benotfound\b|nxdomain/.test(m)) return "domain_not_found";
-  // The address guard refuses more than private addresses: say which it was.
-  if (/unsupported protocol|empty hostname/.test(m)) return "unsupported_url";
-  // The name exists but has no address record.
-  if (/eservfail|eai_again|getaddrinfo etimeout|enodata|did not resolve/.test(m))
-    return "dns_error";
-  if (/resolves to private|private ip|non-public|private address/.test(m)) return "private_address";
+  if (/\benotfound\b|\bnxdomain\b/.test(m)) return "domain_not_found";
+  if (/eservfail|eai_again|getaddrinfo etimeout|enodata/.test(m)) return "dns_error";
+  if (/private ip|non-public|private address/.test(m)) return "private_address";
   if (m.includes("too many redirects")) return "redirect_loop";
   if (/timed out|timeout/.test(m)) return "timeout";
   if (/cert|tls|ssl|eproto|handshake/.test(m)) return "tls_error";

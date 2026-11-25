@@ -27,6 +27,18 @@ const BACKFILL_CONCURRENCY = 16;
  * an archive can hold thousands of artifacts, and a storage service throttles.
  */
 async function backfillSizes(db: Db, storage: StorageBackend): Promise<void> {
+  // One pass at a time per database: a request that comes while one runs waits for it instead of
+  // asking storage about the same files again.
+  const running = backfills.get(db.key);
+  if (running) return running;
+  const pass = measureMissingSizes(db, storage).finally(() => backfills.delete(db.key));
+  backfills.set(db.key, pass);
+  return pass;
+}
+
+const backfills = new Map<string, Promise<void>>();
+
+async function measureMissingSizes(db: Db, storage: StorageBackend): Promise<void> {
   const missing = await db.all<{ id: number; extractor: string; content: string }>(
     sql`SELECT id, extractor, content FROM archive_results
         WHERE size_bytes IS NULL AND error IS NULL AND content IS NOT NULL AND content <> ''`,

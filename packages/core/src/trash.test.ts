@@ -8,6 +8,7 @@ import { type Db, openDb } from "./db";
 import { listFailedSnapshots, listFailureDomains, summarizeFailureGroups } from "./failure-groups";
 import { JobRunner } from "./jobs";
 import { listSnapshotsWithExtractorsPaginated } from "./list";
+import { indexSnapshot, searchSnapshots } from "./search";
 import { getStats } from "./stats";
 import { FilesystemBackend } from "./storage";
 import {
@@ -136,6 +137,35 @@ describe("trash", () => {
     expect(existsSync(fileOf(failed))).toBe(false);
     expect(existsSync(fileOf(retried))).toBe(true);
     expect(existsSync(fileOf(trashed))).toBe(true);
+  });
+
+  test("a snapshot restored and trashed again during the purge is not expired any more", async () => {
+    const first = await seed("https://first.example/", "failed", "timeout");
+    const again = await seed("https://again.example/", "failed", "timeout");
+    await trashSnapshots(db, [first, again]);
+    await setTrashRetentionDays(db, 30);
+    await db.run(sql`UPDATE snapshots SET trashed_at = ${db.ago(31 * 24 * 60 * 60)}`);
+    const storageHook = Object.create(storage) as typeof storage;
+    storageHook.deleteAll = async (id: number) => {
+      if (id === first) {
+        await restoreSnapshots(db, [again]);
+        await trashSnapshots(db, [again]);
+      }
+      return storage.deleteAll(id);
+    };
+    expect(await purgeExpiredTrash(db, storageHook)).toBe(1);
+    expect(existsSync(fileOf(again))).toBe(true);
+    expect((await listTrash(db, 1, 20)).items.map((s) => s.id)).toEqual([again]);
+  });
+
+  test("retrying a snapshot takes its old text out of the search index", async () => {
+    const id = await seed("http://127.0.0.1:9/gone", "done");
+    await indexSnapshot(db, id, "http://127.0.0.1:9/gone", "Old capture", "quokkasearchword", "");
+    expect((await searchSnapshots(db, "quokkasearchword")).total).toBe(1);
+    const runner = new JobRunner({ dir: testDir });
+    expect(await runner.retry(db, id)).toBe("queued");
+    expect((await searchSnapshots(db, "quokkasearchword")).total).toBe(0);
+    await runner.onIdle();
   });
 
   test("the sweep deletes for good only what is past the retention", async () => {

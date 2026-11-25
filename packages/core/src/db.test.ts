@@ -333,7 +333,18 @@ describe.skipIf(!isSqliteRun)("openDb (SQLite archive file)", () => {
       ]);
 
       // ...file-backed ones the first time stats need them, and stored from then on.
-      const stats = await getStats(db, createStorageBackend(testDir));
+      // Two requests at once: storage is asked about each file once, not once per request.
+      const real = createStorageBackend(testDir);
+      let asked = 0;
+      const counting = Object.create(real) as typeof real;
+      counting.fileSize = async (ref: string) => {
+        asked++;
+        await Bun.sleep(20);
+        return real.fileSize(ref);
+      };
+      const [stats] = await Promise.all([getStats(db, counting), getStats(db, counting)]);
+      // One file-backed row is unmeasured here: asked once, though two requests needed it.
+      expect(asked).toBe(1);
       expect(stats.storageByExtractor.screenshot).toBe(1234);
       const detail = await getSnapshot(db, 1);
       expect(detail?.archiveResults.find((r) => r.extractor === "screenshot")?.size_bytes).toBe(

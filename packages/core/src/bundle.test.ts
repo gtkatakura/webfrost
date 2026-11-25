@@ -819,6 +819,36 @@ describe("the importing status", () => {
     expect(stale).not.toBe(fresh);
   });
 
+  test("sweepStaleImports keeps an import that beat, or finished, after the list was read", async () => {
+    const insertStale = async () => {
+      const id = await target.insert(
+        sql`INSERT INTO snapshots (url, status) VALUES ('https://x.example', 'importing')`,
+      );
+      await target.run(
+        sql`INSERT INTO job_queue (snapshot_id, status, created_at) VALUES (${id}, 'importing', ${target.ago(2 * 3600)})`,
+      );
+      await targetStorage.putText(id, "screenshot.png", "partial");
+      return id;
+    };
+    const first = await insertStale();
+    const beat = await insertStale();
+    const finished = await insertStale();
+    // While the sweep deletes the first one's files, the other two show they are alive.
+    const storage = Object.create(targetStorage) as typeof targetStorage;
+    storage.deleteAll = async (id: number) => {
+      if (id === first) {
+        await target.run(
+          sql`UPDATE job_queue SET heartbeat_at = ${target.now()} WHERE snapshot_id = ${beat}`,
+        );
+        await target.run(sql`UPDATE snapshots SET status = 'done' WHERE id = ${finished}`);
+      }
+      return targetStorage.deleteAll(id);
+    };
+    expect(await sweepStaleImports(target, storage)).toBe(1);
+    const left = await target.all<{ id: number }>(sql`SELECT id FROM snapshots ORDER BY id`);
+    expect(left.map((r) => Number(r.id))).toEqual([beat, finished]);
+  });
+
   test("sweepStaleImports keeps an old import whose heartbeat is recent", async () => {
     const id = await target.insert(
       sql`INSERT INTO snapshots (url, status) VALUES ('https://x.example', 'importing')`,

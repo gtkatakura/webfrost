@@ -11,6 +11,7 @@ import {
   runPipeline,
 } from "./pipeline";
 import { newLeaseToken } from "./results";
+import { removeFromIndex } from "./search";
 import type { StorageBackend } from "./storage";
 import {
   type TraceContext,
@@ -129,6 +130,8 @@ export class JobRunner {
         );
       }
       await tx.run(sql`DELETE FROM archive_results WHERE snapshot_id = ${snapshotId}`);
+      // Its old text must not stay searchable while it is archived again, or after the new run fails.
+      await removeFromIndex(tx, snapshotId);
       await tx.run(
         sql`UPDATE snapshots SET status = 'pending', failure_category = NULL, failure_detail = NULL
             WHERE id = ${snapshotId}`,
@@ -289,6 +292,7 @@ export class JobRunner {
             );
           }
           await tx.run(sql`DELETE FROM archive_results WHERE snapshot_id = ${id}`);
+          await removeFromIndex(tx, id);
           picked.push({ id, url, lease, hadLease: updated > 0 });
         }
         return picked;

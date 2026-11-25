@@ -870,7 +870,12 @@ export async function sweepStaleImports(
   );
   let removed = 0;
   for (const { id } of stale) {
-    if (await removeSnapshot(db, Number(id), storage, true)) removed++;
+    // Checked again under the row lock: an import that finished, or beat, since the list was read stays.
+    if (
+      await removeSnapshot(db, Number(id), storage, true, { staleImportSeconds: olderThanSeconds })
+    ) {
+      removed++;
+    }
   }
   return removed;
 }

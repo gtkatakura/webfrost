@@ -110,27 +110,31 @@ async function importBody(
   // The whole body is in; what remains is bounded server-side work.
   setIdleTimeout(0);
 
-  const db = await getDb();
+  // The spool is removed whatever happens next, the database included (it may fail to open).
   try {
-    const imported = await importSnapshotBundle(
-      db,
-      getStorage(),
-      spooled.path,
-      { maxTotalBytes: maxBytes },
-      { replaces },
-    );
-    logger.info(
-      { snapshotId: imported.id, bytes: spooled.bytes, replaced: imported.replaced },
-      "snapshot bundle imported",
-    );
-    set.status = 201;
-    return imported;
-  } catch (err) {
-    if (err instanceof ReplaceConflictError) return apiError(set, 409, "CONFLICT", err.message);
-    if (err instanceof BundleError) return apiError(set, 400, "VALIDATION", err.message);
-    throw err;
+    const db = await getDb();
+    try {
+      const imported = await importSnapshotBundle(
+        db,
+        getStorage(),
+        spooled.path,
+        { maxTotalBytes: maxBytes },
+        { replaces },
+      );
+      logger.info(
+        { snapshotId: imported.id, bytes: spooled.bytes, replaced: imported.replaced },
+        "snapshot bundle imported",
+      );
+      set.status = 201;
+      return imported;
+    } catch (err) {
+      if (err instanceof ReplaceConflictError) return apiError(set, 409, "CONFLICT", err.message);
+      if (err instanceof BundleError) return apiError(set, 400, "VALIDATION", err.message);
+      throw err;
+    } finally {
+      await db.close().catch(() => {});
+    }
   } finally {
-    await db.close();
     await spooled.remove();
   }
 }

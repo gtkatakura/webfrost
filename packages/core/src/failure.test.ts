@@ -9,6 +9,19 @@ describe("categorizeError", () => {
     expect(categorizeError("getaddrinfo ETIMEOUT example.com")).toBe("dns_error");
   });
 
+  test("a hostname or URL the site chose does not decide the category", () => {
+    expect(
+      categorizeError("SSRF blocked: nxdomain.rebind.example resolves to private IPv4 127.0.0.1"),
+    ).toBe("private_address");
+    expect(
+      categorizeError("Fetch timed out after 30000ms: http://slow.example/nxdomain/enotfound"),
+    ).toBe("timeout");
+    expect(categorizeError("SSRF blocked: tls-cert.example did not resolve")).toBe("dns_error");
+    expect(categorizeError("Unable to connect to https://econnreset.example/cert")).not.toBe(
+      "network_error",
+    );
+  });
+
   test("network, TLS, timeout, redirects and the SSRF guard each get their own category", () => {
     expect(categorizeError("ECONNRESET: The socket connection was closed unexpectedly")).toBe(
       "network_error",
