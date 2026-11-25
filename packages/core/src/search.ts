@@ -15,6 +15,7 @@ import {
   capForTsvector,
   parseSearchQuery,
   searchDocument,
+  toFts5,
   toMysqlBoolean,
   toTsquery,
 } from "./search-text";
@@ -199,7 +200,15 @@ export async function searchSnapshots(
   // Snapshots in the trash are not found.
   const filterSql = sql`AND s.trashed_at IS NULL ${snapshotFilterSql(db, toSnapshotFilter(filter))}`;
 
+  // Every engine searches what the same parser makes of the query: its common syntax, capped at
+  // MAX_QUERY_LENGTH characters and MAX_QUERY_TERMS terms.
+  const clauses = parseSearchQuery(query);
+  if (clauses.length === 0) return empty;
+
   if (db.dialect === "sqlite") {
+    // SQLite runs on the server's main thread: the raw query (thousands of `a*` terms, NEAR
+    // groups) must not reach FTS5.
+    const match = toFts5(clauses);
     try {
       const items = await db.all<HitRow>(
         sql`SELECT
@@ -209,7 +218,7 @@ export async function searchSnapshots(
               rank AS score
             FROM snapshots_fts
             JOIN snapshots s ON s.id = snapshots_fts.rowid
-            WHERE snapshots_fts MATCH ${query}
+            WHERE snapshots_fts MATCH ${match}
               ${filterSql}
             ORDER BY rank
             LIMIT ${limit} OFFSET ${offset}`,
@@ -218,7 +227,7 @@ export async function searchSnapshots(
         sql`SELECT COUNT(*) AS total
             FROM snapshots_fts
             JOIN snapshots s ON s.id = snapshots_fts.rowid
-            WHERE snapshots_fts MATCH ${query}
+            WHERE snapshots_fts MATCH ${match}
               ${filterSql}`,
       );
       return {
@@ -241,8 +250,6 @@ export async function searchSnapshots(
   }
 
   // The query is parsed in app code, so an error here is a real database error.
-  const clauses = parseSearchQuery(query);
-  if (clauses.length === 0) return empty;
 
   // `score` is "higher is better" on both engines; it is negated below so `rank`
   // keeps FTS5's "lower is better" meaning for API clients.

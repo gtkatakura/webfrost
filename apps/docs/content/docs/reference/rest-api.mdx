@@ -239,7 +239,7 @@ Each item is `{ id, url, status, failure, createdAt, extractors, title, excerpt,
 curl "$API/snapshots?q=climate+change&page=1&limit=20" -H "Authorization: Bearer $KEY"
 ```
 
-The query uses FTS5 syntax (`"exact phrase"`, prefix `term*`, `OR`, `NOT`; column filters on SQLite). On PostgreSQL and MySQL the same common syntax is accepted; see [full-text search](/docs/reference/database#full-text-search). It searches URL, title, extracted text and tag names. An invalid expression returns no results. `rank` is lower for better matches on every database, but its scale differs between them. Results are ranked by relevance, the list's [filters](#list) (`status`, `since`, `before`, `extractor`, `tag`, `contains`) narrow them before they are counted and paged, and each item adds `snippet` and `rank` to the list fields:
+The query takes words, `"exact phrase"`, prefix `term*`, `OR` and `NOT term` / `-term`, the same on every database, up to 512 characters and 32 terms (the rest is ignored); see [full-text search](/docs/reference/database#full-text-search). It searches URL, title, extracted text and tag names. An invalid expression returns no results. `rank` is lower for better matches on every database, but its scale differs between them. Results are ranked by relevance, the list's [filters](#list) (`status`, `since`, `before`, `extractor`, `tag`, `contains`) narrow them before they are counted and paged, and each item adds `snippet` and `rank` to the list fields:
 
 ```json
 { "id": 1, "url": "https://example.com", "snippet": "...climate <mark>change</mark>...", "rank": -1.2, "status": "done" }

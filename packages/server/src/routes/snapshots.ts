@@ -372,7 +372,8 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
     },
     {
       query: t.Object({
-        q: t.Optional(t.String()),
+        // Longer than the parser reads (512 characters) is refused rather than cut silently.
+        q: t.Optional(t.String({ maxLength: 1024 })),
         // Plain numbers only: "Infinity" or "1e400" would reach SQL as an invalid OFFSET.
         page: t.Optional(t.String({ pattern: "^(-?[0-9]{1,15}(\\.[0-9]{1,15})?)?$" })),
         limit: t.Optional(t.String({ pattern: "^(-?[0-9]{1,15}(\\.[0-9]{1,15})?)?$" })),

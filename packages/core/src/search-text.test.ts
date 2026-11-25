@@ -2,10 +2,12 @@ import { describe, expect, test } from "bun:test";
 import {
   MARK_CLOSE,
   MARK_OPEN,
+  MAX_QUERY_TERMS,
   buildSnippet,
   capForTsvector,
   parseSearchQuery,
   searchDocument,
+  toFts5,
   toMysqlBoolean,
   toTsquery,
   tokenize,
@@ -69,6 +71,28 @@ describe("parseSearchQuery", () => {
       "('it' <-> 's') & ('web' <-> 'page') & ('tool':* | 'kit') & !'spam'",
     );
     expect(toMysqlBoolean(clauses)).toBe('+"it s" +"web page" +(tool* kit) -spam');
+  });
+});
+
+describe("toFts5", () => {
+  test("every term is a quoted phrase; prefix, OR and NOT keep their meaning", () => {
+    expect(toFts5(parseSearchQuery("climate change"))).toBe(`"climate" AND "change"`);
+    expect(toFts5(parseSearchQuery(`"sea ice" melt* -arctic`))).toBe(
+      `"sea ice" AND "melt"* NOT "arctic"`,
+    );
+    expect(toFts5(parseSearchQuery("rust OR go"))).toBe(`("rust" OR "go")`);
+  });
+
+  test("FTS5 syntax that could make a query expensive is not passed through", () => {
+    // NEAR groups and column filters become plain words and phrases.
+    expect(toFts5(parseSearchQuery("NEAR(a b, 2) title:quokka"))).toBe(
+      `"near a" AND "b" AND "2" AND "quokka"`,
+    );
+    // Thousands of prefix terms: at most MAX_QUERY_TERMS reach SQLite.
+    const huge = Array.from({ length: 5000 }, (_, i) => `t${i}*`).join(" OR ");
+    expect(toFts5(parseSearchQuery(huge)).split(" OR ").length).toBeLessThanOrEqual(
+      MAX_QUERY_TERMS,
+    );
   });
 });
 

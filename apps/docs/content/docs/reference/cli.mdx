@@ -123,7 +123,7 @@ Delete a snapshot, its database rows and its stored files. There is no trash. Ex
 
 ### `webfrost search <query>`
 
-Full-text search (SQLite FTS5) over URL, title, text and tags, best match first. Prints `id` and URL, then a plain-text snippet, or `No results.`. The query uses FTS5 syntax: `"exact phrase"`, prefix `term*`, column filters such as `title:term`. An invalid expression returns no results.
+Full-text search (SQLite FTS5) over URL, title, text and tags, best match first. Prints `id` and URL, then a plain-text snippet, or `No results.`. The query takes words, `"exact phrase"`, prefix `term*`, `OR` and `NOT term` / `-term`, up to 512 characters and 32 terms. A query with no word to look for returns no results.
 
 | Flag | Effect |
 |---|---|
