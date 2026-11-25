@@ -321,6 +321,25 @@ async function readCapped(response: Response, maxBytes: number): Promise<Uint8Ar
  * - aborts after WEBFROST_FETCH_TIMEOUT_MS (default 30 s, whole request incl. redirects)
  *   or when `options.signal` aborts
  */
+const FAILED_HOST = Symbol("webfrost.failedHost");
+
+/**
+ * The host whose request failed, when a guarded fetch threw: with redirects it may not be the host
+ * that was asked for. Undefined for an error that did not come from a hop of fetchGuarded.
+ */
+export function failedHostOf(err: unknown): string | undefined {
+  return err !== null && typeof err === "object"
+    ? (err as { [FAILED_HOST]?: string })[FAILED_HOST]
+    : undefined;
+}
+
+function withFailedHost(err: unknown, host: string | undefined): unknown {
+  if (host && err !== null && typeof err === "object" && !(FAILED_HOST in err)) {
+    Object.defineProperty(err, FAILED_HOST, { value: host, enumerable: false });
+  }
+  return err;
+}
+
 export async function fetchGuarded(
   url: string,
   options: SafeFetchOptions = {},
@@ -341,7 +360,15 @@ export async function fetchGuarded(
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     options.signal?.throwIfAborted();
-    const { parsed, addresses } = await checkPublicUrl(currentUrl);
+    let hopHost: string | undefined;
+    try {
+      hopHost = new URL(currentUrl).hostname.toLowerCase() || undefined;
+    } catch {
+      // Not a URL: checkPublicUrl says so.
+    }
+    const { parsed, addresses } = await checkPublicUrl(currentUrl).catch((err: unknown) => {
+      throw withFailedHost(err, hopHost);
+    });
 
     // Try each checked address in turn, as a resolver-driven client would.
     let response: Response | undefined;
@@ -361,7 +388,7 @@ export async function fetchGuarded(
         lastError = err;
       }
     }
-    if (!response) throw failure(lastError);
+    if (!response) throw withFailedHost(failure(lastError), hopHost);
 
     const location = response.headers.get("location");
     if (REDIRECT_STATUSES.has(response.status) && location) {

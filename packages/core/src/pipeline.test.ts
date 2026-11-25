@@ -71,6 +71,13 @@ beforeAll(async () => {
       if (pathname === "/late.json") {
         return Response.json({ text: "arrived after load" });
       }
+      if (pathname === "/to-dead-domain") {
+        // A link whose target is gone: a shortener or a tracking redirect to a dead domain.
+        return new Response(null, {
+          status: 302,
+          headers: { location: "http://webfrost-gone-target.invalid/page" },
+        });
+      }
       if (pathname === "/browsers-only") {
         // Like a server that turns away scripted clients: anything that is not Chrome gets an error.
         if (!/ Chrome\/\d+/.test(req.headers.get("user-agent") ?? "")) {
@@ -287,6 +294,25 @@ describe("runPipeline", () => {
     await runPipeline(db, id3, third, testDir);
     expect((await failureOf(id3))?.failure_detail).not.toContain("known since");
   });
+
+  test("a redirect to a dead domain records that domain, not the live site the link was on", async () => {
+    const link = `${baseUrl}/to-dead-domain`;
+    const id = await createSnapshot(db, link);
+    await runPipeline(db, id, link, testDir);
+    expect((await failureOf(id))?.failure_category).toBe("domain_not_found");
+
+    const hosts = (await db.all<{ host: string }>(sql`SELECT host FROM dead_hosts`)).map(
+      (r) => r.host,
+    );
+    expect(hosts).toContain("webfrost-gone-target.invalid");
+    expect(hosts).not.toContain("127.0.0.1");
+
+    // The site itself is still archived.
+    const article = `${baseUrl}/article`;
+    const next = await createSnapshot(db, article);
+    await runPipeline(db, next, article, testDir);
+    expect(await statusOf(next)).toBe("done");
+  }, 60_000);
 
   test("a snapshot that succeeds after a failure has no failure left on it", async () => {
     const url = `${baseUrl}/article`;

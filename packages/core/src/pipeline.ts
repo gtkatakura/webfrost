@@ -2,7 +2,7 @@ import { sql } from "kysely";
 import { newGuardedContext } from "./browser-guard";
 import { resolveChromium } from "./chromium";
 import type { Db } from "./db";
-import { hostOf, knownDeadHost, markDeadHost } from "./dead-hosts";
+import { knownDeadHost, markDeadHost } from "./dead-hosts";
 import { domSnapshotExtractor } from "./extractors/dom-snapshot";
 import { htmlExtractor } from "./extractors/html";
 import { mediaExtractor } from "./extractors/media";
@@ -15,7 +15,7 @@ import { type Failure, failureFromError, failureFromStatus } from "./failure";
 import { FetchCache } from "./fetch-cache";
 import { newLeaseToken, recordResult, setJobStatus, touchJob } from "./results";
 import { extractIndexFields, indexSnapshot } from "./search";
-import { envInt } from "./ssrf-guard";
+import { envInt, failedHostOf } from "./ssrf-guard";
 import { createStorageBackend } from "./storage";
 import type { StorageBackend } from "./storage";
 import {
@@ -367,7 +367,9 @@ async function archive(
   } catch (err) {
     logger?.error(`fetch failed snapshot=${snapshotId}: ${errorMessage(err)}`);
     const failure = failureFromError(errorMessage(err));
-    const host = hostOf(url);
+    // The host whose lookup failed, which after a redirect is not the one asked for: a link that
+    // redirects to a dead domain must not mark the live site it started on as dead.
+    const host = failedHostOf(err);
     if (failure.category === "domain_not_found" && host) {
       await markDeadHost(db, host, failure.detail).catch((markErr: unknown) =>
         logger?.debug(`could not record dead host ${host}: ${errorMessage(markErr)}`),
