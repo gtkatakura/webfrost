@@ -1,5 +1,53 @@
 # @webfrost/cli
 
+## 0.4.0
+
+### Minor Changes
+
+- ff682e9: New `webfrost login <server>`: connect the CLI to a server without creating and copying an API key. The command shows a short code and opens the server's web UI (**Connect a command line**), where you, signed in, approve the request that shows the same code; the server then creates an API key for that machine, listed and revocable under Settings, API keys. The key is saved in `~/.config/webfrost/credentials.json` (readable by you only) and `push` and `rescue` use it for that server; `WEBFROST_API_KEY` still works and takes precedence. `webfrost logout <server>` revokes the key and forgets it.
+  
+  It follows the OAuth 2.0 Device Authorization Grant (RFC 8628): `POST /auth/device` and `POST /auth/device/token` for the command line (no credentials, rate limited; nothing is created before an approval), `GET /auth/device/requests/:userCode` and `POST /auth/device/requests/:userCode/approve|deny` for the web UI (session only). The SDK gains `startDeviceAuthorization`, `pollDeviceAuthorization`, `getDeviceRequest`, `approveDeviceRequest` and `denyDeviceRequest`.
+  
+  A server behind a proxy that asks for its own sign-in is reachable too, with nothing tied to one product: `webfrost login --headers-command '<command>'` takes a command that prints the headers the proxy wants (its token tool), saved with the key and run again by `push`, `rescue` and `logout`; `WEBFROST_HEADERS` gives fixed headers (a service token) and `WEBFROST_HEADERS_COMMAND` a command for one run. They are sent only to that server, never printed or saved, and never in place of the API key. A server on a private network (a VPN, a tailnet) needs none of it.
+- ff682e9: New `webfrost rescue <group> --from <server>`: for every failed snapshot of a group on a server (for example the pages a site refuses to the server, "Blocked by the site"), archive the page on this machine, check the copy, and send the ones that work. A copy is sent only when it is done and is the page itself, not an anti-bot interstitial or a login wall with almost no text. The server stores it and moves the failure to its trash in one step, and only while the failure is still a failure of the same URL, so running it again carries on with what is left and never stores a page twice. A domain that fails here too is given up after three tries in a row.
+  
+  `POST /snapshots/import` takes `?replaces=<id>` for this (`409` when that snapshot is not, or no longer, a failure of the bundle's URL), and `GET /failures/:group/snapshots` lists a group's failed snapshots across domains; the SDK's `importSnapshot` takes `replaces` too. The failure lists answer faster on large archives.
+  
+  The browser no longer installs its own Ctrl+C handler, so the server's and the CLI's graceful stop (finish what is running, then exit) is what happens on the first signal.
+  
+  A snapshot in the trash can no longer be retried (`404`, as everywhere else it is hidden) until it is restored, and `webfrost export -o` over a larger existing file no longer leaves a corrupt bundle.
+- ff682e9: `webfrost rescue` hardening:
+  - It no longer archives private addresses (localhost, the LAN, cloud metadata) from your machine just because the shell sets `WEBFROST_ALLOW_PRIVATE_URLS`: the addresses come from the server, so it takes an explicit `--allow-private`.
+  - Each run has a scratch archive of its own (`rescue/run-*/`), so two runs at once no longer share ids or files or remove each other's.
+  - Reading the text of a rendered page is a single pass: a page with a million unclosed `<template` tags can no longer hang the run.
+  - When a copy replaces a failure (`POST /snapshots/import?replaces=`), every other failure of exactly the same address goes to the trash in the same transaction, so a run stopped right after an upload never sends that page again.
+- ff682e9: `webfrost rescue` logs every run in `logs/` of the data directory (`rescue-<start time>.jsonl`): one JSON line per page as it is done, with its address, the outcome and the reason (and the server's new snapshot when rescued), then the summary. The record survives a closed terminal, Ctrl+C or a crash; `--no-log` skips it. The upload progress line no longer overwrites the pages' lines, and archiving no longer prints "Could not parse CSS stylesheet" for each stylesheet it cannot read.
+
+### Patch Changes
+
+- ff682e9: - MySQL: a schema step interrupted after adding a column or an index runs again instead of failing every later start.
+  - The server routes a request by the same path its request guard, auth check and rate limiters read (a short `Host` could make them see a different one), and refuses JSON bodies over 1 MiB before reading them, except on `POST /import`.
+  - The `webfrost` binary no longer reads `.env` or `bunfig.toml` from the folder it is run in.
+  - A `--headers-command` that leaves a process running no longer hangs the command line, and its timeout ends everything it started.
+  - Pending `webfrost login` requests are counted per IPv6 /48, and a full store takes room from the client with the most of them.
+  - Pages nested deeper than 512 elements, or with more than 100,000, are not handed to Readability, whose cost grows with the square of the depth.
+- Updated dependencies [ff682e9]
+- Updated dependencies [1d9df5e]
+- Updated dependencies [ff682e9]
+- Updated dependencies [ff682e9]
+- Updated dependencies [ff682e9]
+- Updated dependencies [ff682e9]
+- Updated dependencies [ff682e9]
+- Updated dependencies [ff682e9]
+- Updated dependencies [ff682e9]
+- Updated dependencies [ff682e9]
+- Updated dependencies [ff682e9]
+- Updated dependencies [ff682e9]
+- Updated dependencies [ff682e9]
+- Updated dependencies [ff682e9]
+  - @webfrost/server@0.4.0
+  - @webfrost/core@0.4.0
+
 ## 0.3.2
 
 ### Patch Changes

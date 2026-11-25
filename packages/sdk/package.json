@@ -1,6 +1,6 @@
 {
   "name": "@webfrost/sdk",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "TypeScript client for the WebFrost self-hosted web archiver REST API",
   "keywords": ["webfrost", "web-archive", "archiving", "sdk", "api-client", "typescript"],
   "license": "MIT",
