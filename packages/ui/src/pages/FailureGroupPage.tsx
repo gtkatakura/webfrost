@@ -62,6 +62,10 @@ export function FailureGroupPage() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the applied filter changes
   useEffect(() => exitAll(), [q, exitAll]);
   const totalSnapshots = list.data?.pages[0]?.snapshots ?? 0;
+  // "All" is of the list as it was when chosen: when the totals change under it (a refresh after
+  // something was retried or trashed elsewhere), the counts it shows would no longer be true.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the totals change
+  useEffect(() => exitAll(), [total, totalSnapshots, exitAll]);
   const domainCount = sel.all ? total - sel.size : sel.size;
   const snapshotCount = sel.all ? totalSnapshots - sel.weight : sel.weight;
   const allLoadedSelected = domains.length > 0 && domains.every((d) => sel.isSelected(d.host));

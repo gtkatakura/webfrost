@@ -124,12 +124,23 @@ describe("POST /failures/:group/trash and /delete", () => {
     const app = await getApp();
 
     const res = await post(app, "/failures/domain-gone/trash", { hosts: ["GONE.invalid"] });
-    expect(await res.json()).toEqual({ trashed: 1 });
+    expect(await res.json()).toEqual({ trashed: 1, ids: [a] });
     expect(await rows()).toEqual([
       { id: a, trashed: true },
       { id: worked, trashed: false },
       { id: otherReason, trashed: false },
     ]);
+  });
+
+  test("the answer names only what moved: one already in the trash is not undone with the rest", async () => {
+    const fresh = await seed("http://gone.invalid/a", "failed", "domain_not_found");
+    const already = await seed("http://gone.invalid/b", "failed", "domain_not_found");
+    await withDb((db) =>
+      db.run(sql`UPDATE snapshots SET trashed_at = ${db.now()} WHERE id = ${already}`),
+    );
+    const app = await getApp();
+    const res = await post(app, "/failures/domain-gone/trash", { ids: [fresh, already] });
+    expect(await res.json()).toEqual({ trashed: 1, ids: [fresh] });
   });
 
   test("ids outside the group are ignored, so a stale page cannot delete the wrong snapshot", async () => {
@@ -159,7 +170,9 @@ describe("select all", () => {
       excludeHosts: ["m3.mirrorsite.invalid"],
       excludeIds: [m2b],
     });
-    expect(await res.json()).toEqual({ trashed: 2 });
+    const body = (await res.json()) as { trashed: number; ids: number[] };
+    expect(body.trashed).toBe(2);
+    expect(body.ids.sort((x, y) => x - y)).toEqual([m1, m2]);
     expect(await rows()).toEqual([
       { id: m1, trashed: true },
       { id: m2, trashed: true },

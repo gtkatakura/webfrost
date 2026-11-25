@@ -725,7 +725,7 @@ describe("WebFrostClient failures", () => {
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ items: [], total: 0, snapshots: 0, page: 2, limit: 50 }),
     );
-    fetchSpy.mockResolvedValueOnce(jsonResponse({ trashed: 3 }));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ trashed: 3, ids: [4, 5, 6] }));
     const client = new WebFrostClient({ baseUrl: BASE });
 
     await client.listFailureDomains("domain-gone", { q: "mirror site", page: 2 });
@@ -734,6 +734,7 @@ describe("WebFrostClient failures", () => {
     expect(Object.fromEntries(asked.searchParams)).toEqual({ q: "mirror site", page: "2" });
     expect(await client.trashFailures("domain-gone", { hosts: ["gone.example"] })).toEqual({
       trashed: 3,
+      ids: [4, 5, 6],
     });
     const [url, init] = fetchSpy.mock.calls[1] ?? [];
     expect(String(url)).toBe(`${BASE}/api/v1/failures/domain-gone/trash`);

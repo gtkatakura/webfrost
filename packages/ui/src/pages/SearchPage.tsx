@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { SearchResult, Tag } from "@webfrost/sdk";
 import { Search, SlidersHorizontal, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Pagination } from "../components/Pagination";
 import { Snippet } from "../components/Snippet";
@@ -122,6 +122,20 @@ export function SearchPage() {
     refetch,
   } = useSearchPage(ftsQuery, page, PAGE_SIZE, serverFilters);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  // A page past the end (results shrank, or an old link) steps back to the last one, as the list does.
+  useEffect(() => {
+    if (!ftsQuery || loading || searchError || page <= totalPages) return;
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (totalPages <= 1) next.delete("page");
+        else next.set("page", String(totalPages));
+        return next;
+      },
+      { replace: true },
+    );
+  }, [ftsQuery, loading, searchError, page, totalPages, setParams]);
 
   function goToPage(p: number) {
     setParams((prev) => {

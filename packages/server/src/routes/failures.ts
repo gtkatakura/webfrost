@@ -12,7 +12,7 @@ import {
   markDeadHost,
   sql,
   summarizeFailureGroups,
-  trashSnapshots,
+  trashSnapshotIds,
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
 import { getDb, getRunner, getStorage, longPosts } from "../context";
@@ -233,7 +233,8 @@ export const failuresRouter = new Elysia({ prefix: "/failures" })
       try {
         const ids = await failureGroupSnapshotIds(db, params.group, body);
         if (!ids) return apiError(set, 404, "NOT_FOUND", "unknown failure group");
-        return { trashed: await trashSnapshots(db, ids) };
+        const moved = await trashSnapshotIds(db, ids);
+        return { trashed: moved.length, ids: moved };
       } finally {
         await db.close();
       }

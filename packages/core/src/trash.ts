@@ -24,14 +24,29 @@ export interface TrashedSnapshot {
 
 /** Move snapshots to the trash. Snapshots being archived or imported are left alone. Returns how many moved. */
 export async function trashSnapshots(db: Db, ids: number[]): Promise<number> {
-  if (ids.length === 0) return 0;
-  let moved = 0;
+  return (await trashSnapshotIds(db, ids)).length;
+}
+
+/** trashSnapshots, saying which ones moved: Undo must bring back these, not what was asked for. */
+export async function trashSnapshotIds(db: Db, ids: number[]): Promise<number[]> {
+  const moved: number[] = [];
   for (const chunk of chunks(ids)) {
-    moved += await db.run(
-      sql`UPDATE snapshots SET trashed_at = ${db.now()}
-          WHERE id IN (${sql.join(chunk)}) AND trashed_at IS NULL
-            AND status NOT IN ('pending', ${IMPORTING_STATUS})`,
-    );
+    const done = await db.transaction(async (tx) => {
+      const eligible = (
+        await tx.all<{ id: number }>(
+          sql`SELECT id FROM snapshots
+              WHERE id IN (${sql.join(chunk)}) AND trashed_at IS NULL
+                AND status NOT IN ('pending', ${IMPORTING_STATUS}) ${tx.forUpdate()}`,
+        )
+      ).map((r) => Number(r.id));
+      if (eligible.length > 0) {
+        await tx.run(
+          sql`UPDATE snapshots SET trashed_at = ${tx.now()} WHERE id IN (${sql.join(eligible)})`,
+        );
+      }
+      return eligible;
+    });
+    moved.push(...done);
   }
   return moved;
 }

@@ -13,9 +13,13 @@ export const DRAFT_COMMIT_MS = 350;
  * and the URL only pushes into the draft when it changed from somewhere else (the back button,
  * a saved search, a link). A new value starts again from the first page.
  */
-export function useDraftParam(key: string) {
+export function useDraftParam(key: string, maxLength = Number.POSITIVE_INFINITY) {
   const [params, setParams] = useSearchParams();
   const value = params.get(key) ?? "";
+  // The setter of the latest render: one captured when typing started would rebuild the URL as it
+  // was then, undoing a filter clicked or a Back pressed while the timer ran.
+  const setParamsRef = useRef(setParams);
+  setParamsRef.current = setParams;
 
   const [draft, setDraftState] = useState(value);
   const committed = useRef(value);
@@ -23,6 +27,8 @@ export function useDraftParam(key: string) {
 
   useEffect(() => {
     if (value !== committed.current) {
+      // Changed from elsewhere (Back, a link): a draft still waiting to be committed is dropped.
+      if (timer.current) clearTimeout(timer.current);
       committed.current = value;
       setDraftState(value);
     }
@@ -36,10 +42,11 @@ export function useDraftParam(key: string) {
   );
 
   function commit(text: string) {
-    const trimmed = text.trim();
+    // Never longer than the server takes: a longer value would fail the whole request.
+    const trimmed = text.trim().slice(0, maxLength);
     committed.current = trimmed;
-    // Functional update: the other parameters are read at commit time, not captured from render.
-    setParams(
+    // The latest setter, with a functional update: the other parameters are read at commit time.
+    setParamsRef.current(
       (prev) => {
         const next = new URLSearchParams(prev);
         if (trimmed) next.set(key, trimmed);

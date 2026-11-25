@@ -21,6 +21,8 @@ import { STORAGE_KEYS, readStorage, writeStorage } from "../lib/storage";
 import { parsePositiveInt } from "../lib/url";
 
 const PAGE_SIZE = 20;
+/** What the server takes as `contains`. */
+const MAX_FILTER_LENGTH = 200;
 
 const LAYOUT_LABELS: Record<Density, string> = {
   grid: "Cards",
@@ -39,7 +41,7 @@ export function SnapshotListPage() {
 
   // The filter is a URL parameter and is answered by the server: it looks in the URL and the
   // title of every snapshot in the archive, not only in the rows on this page.
-  const filter = useDraftParam("filter");
+  const filter = useDraftParam("filter", MAX_FILTER_LENGTH);
   const filtering = filter.value.length > 0;
 
   const { snapshots, total, loading, isError, error, refetch } = useSnapshots(
@@ -129,6 +131,7 @@ export function SnapshotListPage() {
             placeholder="Filter by URL or title…"
             title="Looks in the URL and the title of every snapshot in the archive"
             value={filter.draft}
+            maxLength={MAX_FILTER_LENGTH}
             onChange={(e) => {
               filter.setDraft(e.target.value);
               bulk.clearSelection();

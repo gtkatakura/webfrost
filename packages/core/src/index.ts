@@ -93,6 +93,7 @@ export {
   listTrash,
   purgeExpiredTrash,
   restoreSnapshots,
+  trashSnapshotIds,
   trashSnapshots,
   trashedIds,
 } from "./trash";

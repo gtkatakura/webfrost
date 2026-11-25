@@ -313,12 +313,17 @@ export function SelectCell({ selected, label }: { selected: boolean; label: stri
   );
 }
 
-/** This server's address as the CLI's --from wants it (where the web UI is served, without the hash). */
+/**
+ * This server's address as the CLI wants it, for the commands the page offers to copy: the origin
+ * only. The web UI is served at the root (its assets and API are root-absolute), and the path of
+ * the address bar is whatever a link said, `$(…)` and `;` included: it must never end up in a
+ * shell command someone pastes.
+ */
 export function serverUrl(): string {
-  const { origin, pathname } = window.location;
+  const { origin } = window.location;
   // Opened from a file or about:blank there is no address to give.
-  if (!/^https?:/.test(origin)) return "<server>";
-  return `${origin}${pathname.replace(/\/index\.html$/, "").replace(/\/+$/, "")}`;
+  if (!/^https?:\/\/[a-z0-9.:[\]-]+$/i.test(origin)) return "<server>";
+  return origin;
 }
 
 /** `webfrost login` aimed at this server (read when shown, not when the module loads). */

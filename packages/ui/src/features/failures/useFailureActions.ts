@@ -38,11 +38,13 @@ export function useFailureActions(group: FailureGroupId, onDone?: () => void) {
 
   const trash = useMutation({
     mutationFn: (selection: FailureSelection) => client.trashFailures(group, selection),
-    onSuccess: ({ trashed }, selection) => {
+    onSuccess: ({ trashed, ids: moved }, selection) => {
       done();
       const message = `Moved ${plural(trashed, "snapshot")} to the trash`;
-      const ids = selection.ids;
-      if (ids && ids.length > 0 && !selection.hosts?.length) {
+      // Undo brings back what the server moved, never what was asked for: one that was in the trash
+      // already (trashed from another tab) stays there.
+      const ids = moved ?? [];
+      if (ids.length > 0 && selection.ids && !selection.hosts?.length) {
         toast.success(message, {
           action: {
             label: "Undo",

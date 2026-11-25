@@ -286,6 +286,65 @@ describe("ListPage — filter", () => {
 // SearchPage — the filters are answered by the server
 // ---------------------------------------------------------------------------
 
+describe("limits shared with the server", () => {
+  test("the snapshot filter takes at most the 200 characters the server accepts", async () => {
+    const calls: Array<ListSnapshotsOptions | undefined> = [];
+    renderApp(
+      mockClient({
+        listSnapshots: (options) => {
+          calls.push(options);
+          return Promise.resolve(snapshotPage([]));
+        },
+      }),
+      `/snapshots?filter=${"a".repeat(300)}`,
+    );
+    const input = (await screen.findByPlaceholderText(
+      "Filter by URL or title\u2026",
+    )) as HTMLInputElement;
+    expect(input.maxLength).toBe(200);
+    fireEvent.change(input, { target: { value: "b".repeat(300) } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(calls.at(-1)?.contains).toBe("b".repeat(200)));
+  });
+
+  test("a search page past the end steps back to the last page", async () => {
+    const pages: number[] = [];
+    renderApp(
+      mockClient({
+        searchSnapshotsPage: (_q, options) => {
+          pages.push(options?.page ?? 1);
+          const page = options?.page ?? 1;
+          return Promise.resolve({
+            items:
+              page <= 2
+                ? [
+                    {
+                      id: 1,
+                      url: "https://a.example",
+                      snippet: "",
+                      rank: 0,
+                      status: "done",
+                      createdAt: "",
+                      title: "On the last page",
+                      extractors: [],
+                      tags: [],
+                    },
+                  ]
+                : [],
+            total: 30,
+            page,
+            limit: 20,
+          } as unknown as SearchPage);
+        },
+      }),
+      "/search?q=ice&page=98",
+    );
+    expect(await screen.findByText("On the last page")).toBeTruthy();
+    expect(pages).toContain(98);
+    expect(pages.at(-1)).toBe(2);
+  });
+});
+
 describe("SearchPage — filters", () => {
   type Call = { query: string; options: SearchSnapshotsOptions | undefined };
 

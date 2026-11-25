@@ -759,12 +759,12 @@ export class WebFrostClient {
     });
   }
 
-  /** Move the selected failed snapshots to the trash. */
+  /** Move the selected failed snapshots to the trash. `ids` are the ones that moved (for an Undo). */
   trashFailures(
     group: FailureGroupId,
     selection: FailureSelection,
     request?: RequestOptions,
-  ): Promise<{ trashed: number }> {
+  ): Promise<{ trashed: number; ids: number[] }> {
     return this.json("POST", `/failures/${encodeURIComponent(group)}/trash`, {
       body: selection,
       signal: request?.signal,
