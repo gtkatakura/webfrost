@@ -48,6 +48,20 @@ export function allowLongRequest(
   }
 }
 
+/**
+ * A local hook for a router whose POST routes are bulk actions: each gets the time it needs.
+ * `.onBeforeHandle(longPosts)`.
+ */
+export function longPosts({
+  request,
+  server,
+}: {
+  request: Request;
+  server: { timeout(request: Request, seconds: number): void } | null;
+}): void {
+  if (request.method === "POST") allowLongRequest(server, request);
+}
+
 export function getRunner(): JobRunner {
   const dir = getWebfrostDir();
   let runner = runners.get(dir);

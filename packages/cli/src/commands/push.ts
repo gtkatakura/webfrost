@@ -10,7 +10,7 @@ import {
 import { type Command, type Context, parseHttpUrl, parseId } from "../cli";
 import { credentialsPath, isReadableByOthers, savedServer } from "../credentials";
 import { CliError, UsageError } from "../errors";
-import { prepareServer, proxyHeaders, redirectAdvice } from "../proxy-headers";
+import { apiFetch, redirectAdvice, retryAfterSeconds } from "../proxy-headers";
 import { printJson, withDb } from "./shared";
 
 /**
@@ -186,10 +186,13 @@ function withProgress(path: string, total: number, report: (sent: number) => voi
 
 export async function upload(
   ctx: Context,
-  endpoint: string,
+  base: URL,
+  /** The import route, with its query (`/snapshots/import?replaces=…`). */
+  path: string,
   apiKey: string,
   id: number,
-  path: string,
+  /** The bundle on disk. */
+  file: string,
   bytes: number,
   /** Show a progress line on a terminal. Off for a caller that prints lines of its own meanwhile. */
   progress = true,
@@ -204,23 +207,13 @@ export async function upload(
   };
   let res: Response;
   try {
-    res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        ...proxyHeaders(new URL(endpoint)),
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/zip",
-        "content-length": String(bytes),
-      },
-      body: showProgress ? withProgress(path, bytes, report) : Bun.file(path),
-      // The key must never follow a redirect to another host.
-      redirect: "manual",
+    res = await apiFetch(base, path, {
+      apiKey,
+      headers: { "content-type": "application/zip", "content-length": String(bytes) },
+      body: showProgress ? withProgress(file, bytes, report) : Bun.file(file),
     });
   } catch (err) {
-    throw new UploadError(
-      `cannot reach ${new URL(endpoint).origin}: ${err instanceof Error ? err.message : String(err)}`,
-      0,
-    );
+    throw new UploadError(err instanceof Error ? err.message : String(err), 0);
   } finally {
     if (showProgress) process.stderr.write("\n");
   }
@@ -245,11 +238,10 @@ export async function upload(
   }
   if (res.status === 401) throw new UploadError(KEY_REJECTED, 401);
   if (res.status === 429) {
-    const wait = Number(res.headers.get("retry-after"));
     throw new UploadError(
       "the server is busy with other uploads (HTTP 429)",
       429,
-      Number.isFinite(wait) && wait > 0 ? Math.min(wait, 300) : undefined,
+      retryAfterSeconds(res, 300),
     );
   }
   if (res.status === 413) {
@@ -308,8 +300,6 @@ Exit codes:
     const ids = ctx.args.map((raw) => parseId(raw, "snapshot id", ["push"]));
     const base = serverBase(ctx, ctx.string("to"), "to", ["push"]);
     const apiKey = requireApiKey(ctx, base);
-    await prepareServer(ctx, base);
-    const endpoint = `${base.href.replace(/\/+$/, "")}/api/v1/snapshots/import`;
 
     const outcomes: PushOutcome[] = [];
     const tmp = mkdtempSync(join(tmpdir(), "webfrost-push-"));
@@ -318,7 +308,7 @@ Exit codes:
         const path = join(tmp, `snapshot-${id}.zip`);
         try {
           const bytes = await exportBundle(ctx, id, path);
-          const remote = await upload(ctx, endpoint, apiKey, id, path, bytes);
+          const remote = await upload(ctx, base, "/snapshots/import", apiKey, id, path, bytes);
           outcomes.push({ id, ok: true, remote, bytes });
           if (!ctx.bool("json")) {
             ctx.logger.info(

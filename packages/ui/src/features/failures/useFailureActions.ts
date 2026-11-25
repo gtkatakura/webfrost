@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useClient } from "../../context";
 import { errorMessage } from "../../lib/errors";
-import { plural, useRefreshAll } from "./shared";
+import { deletedMessage, plural, useRefreshAll } from "./shared";
 
 /** Retry, trash and delete on a failure group, with the toasts that report each result. */
 export function useFailureActions(group: FailureGroupId, onDone?: () => void) {
@@ -70,9 +70,7 @@ export function useFailureActions(group: FailureGroupId, onDone?: () => void) {
     mutationFn: (selection: FailureSelection) => client.deleteFailures(group, selection),
     onSuccess: ({ deleted, busy }) => {
       done();
-      toast.success(
-        `Deleted ${plural(deleted, "snapshot")}${busy ? ` (${busy} still being archived, kept)` : ""}`,
-      );
+      toast.success(deletedMessage(deleted, busy));
     },
     onError: (e) => toast.error(errorMessage(e)),
   });

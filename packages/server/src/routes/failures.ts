@@ -1,6 +1,7 @@
 import { lookup } from "node:dns/promises";
 import {
   type Db,
+  chunks,
   deleteSnapshotsForever,
   failureGroup,
   failureGroupSnapshotIds,
@@ -14,9 +15,9 @@ import {
   trashSnapshots,
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
-import { allowLongRequest, getDb, getRunner, getStorage } from "../context";
+import { getDb, getRunner, getStorage, longPosts } from "../context";
 import { apiError, apiErrorHandler } from "../errors";
-import { isoTimestampRequired } from "../serialize";
+import { isoTimestampRequired, pageParams, pageQuerySchema } from "../serialize";
 import { isGuestRequest } from "./auth";
 import { serializeFailure } from "./snapshots";
 
@@ -41,11 +42,9 @@ const selectionBody = t.Object({
   excludeIds: t.Optional(idList),
 });
 
-const pageQuery = {
-  // Plain numbers only: "Infinity" or "1e400" would reach SQL as an invalid OFFSET.
-  page: t.Optional(t.String({ pattern: "^[0-9]{1,9}$" })),
-  limit: t.Optional(t.String({ pattern: "^[0-9]{1,3}$" })),
-};
+const pageQuery = pageQuerySchema;
+/** The failure lists' page size unless a request says otherwise. */
+const FAILURE_PAGE = 50;
 
 /** The lookup "Check again" asks, replaceable in tests (a real one cannot be made slow or wrong on purpose). */
 export const failuresDns = { lookup: (host: string): Promise<unknown> => lookup(host) };
@@ -66,9 +65,9 @@ async function stillGone(host: string): Promise<{ gone: boolean; detail: string 
 
 async function urlsOf(db: Db, ids: number[]): Promise<Map<number, string>> {
   const out = new Map<number, string>();
-  for (let i = 0; i < ids.length; i += 500) {
+  for (const chunk of chunks(ids)) {
     const rows = await db.all<{ id: number; url: string }>(
-      sql`SELECT id, url FROM snapshots WHERE id IN (${sql.join(ids.slice(i, i + 500))})`,
+      sql`SELECT id, url FROM snapshots WHERE id IN (${sql.join(chunk)})`,
     );
     for (const r of rows) out.set(r.id, r.url);
   }
@@ -88,8 +87,7 @@ async function failedSnapshotsPage(
   try {
     const result = await listFailedSnapshots(db, group, host, {
       q: query.q,
-      page: Number(query.page ?? 1),
-      limit: Number(query.limit ?? 50),
+      ...pageParams(query, FAILURE_PAGE),
     });
     if (!result) return apiError(set, 404, "NOT_FOUND", "unknown failure group");
     return {
@@ -113,6 +111,7 @@ async function failedSnapshotsPage(
  */
 export const failuresRouter = new Elysia({ prefix: "/failures" })
   .onError(apiErrorHandler)
+  .onBeforeHandle(longPosts)
   .get("/", async () => {
     const db = await getDb();
     try {
@@ -128,8 +127,7 @@ export const failuresRouter = new Elysia({ prefix: "/failures" })
       try {
         const result = await listFailureDomains(db, params.group, {
           q: query.q,
-          page: Number(query.page ?? 1),
-          limit: Number(query.limit ?? 50),
+          ...pageParams(query, FAILURE_PAGE),
         });
         if (!result) return apiError(set, 404, "NOT_FOUND", "unknown failure group");
         return {
@@ -175,10 +173,9 @@ export const failuresRouter = new Elysia({ prefix: "/failures" })
   )
   .post(
     "/:group/retry",
-    async ({ params, body, set, request, server }) => {
+    async ({ params, body, set }) => {
       if (!failureGroup(params.group))
         return apiError(set, 404, "NOT_FOUND", "unknown failure group");
-      allowLongRequest(server, request);
       const db = await getDb();
       try {
         const ids = (await failureGroupSnapshotIds(db, params.group, body)) ?? [];
@@ -194,7 +191,9 @@ export const failuresRouter = new Elysia({ prefix: "/failures" })
           for (const id of ids) {
             const host = hostOf(urls.get(id) ?? "");
             if (!host) continue;
-            byHost.set(host, [...(byHost.get(host) ?? []), id]);
+            const list = byHost.get(host);
+            if (list) list.push(id);
+            else byHost.set(host, [id]);
           }
           toRetry = [];
           // Lookups a few at a time (hundreds of domains in a row take minutes); the records are
@@ -229,8 +228,7 @@ export const failuresRouter = new Elysia({ prefix: "/failures" })
   )
   .post(
     "/:group/trash",
-    async ({ params, body, set, request, server }) => {
-      allowLongRequest(server, request);
+    async ({ params, body, set }) => {
       const db = await getDb();
       try {
         const ids = await failureGroupSnapshotIds(db, params.group, body);
@@ -244,8 +242,7 @@ export const failuresRouter = new Elysia({ prefix: "/failures" })
   )
   .post(
     "/:group/delete",
-    async ({ params, body, set, request, server }) => {
-      allowLongRequest(server, request);
+    async ({ params, body, set }) => {
       const db = await getDb();
       try {
         const ids = await failureGroupSnapshotIds(db, params.group, body);

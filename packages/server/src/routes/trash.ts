@@ -7,9 +7,9 @@ import {
   trashedIds,
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
-import { allowLongRequest, getDb, getStorage } from "../context";
+import { getDb, getStorage, longPosts } from "../context";
 import { apiErrorHandler } from "../errors";
-import { isoTimestampRequired } from "../serialize";
+import { isoTimestampRequired, pageParams, pageQuerySchema } from "../serialize";
 import { isGuestRequest } from "./auth";
 import { serializeFailure } from "./snapshots";
 
@@ -38,6 +38,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** The trash: snapshots moved there, restorable until the retention passes, then deleted for good. */
 export const trashRouter = new Elysia({ prefix: "/trash" })
   .onError(apiErrorHandler)
+  .onBeforeHandle(longPosts)
   .get(
     "/",
     async ({ query, request }) => {
@@ -45,7 +46,8 @@ export const trashRouter = new Elysia({ prefix: "/trash" })
       const db = await getDb();
       try {
         const days = await getTrashRetentionDays(db);
-        const result = await listTrash(db, Number(query.page ?? 1), Number(query.limit ?? 50));
+        const { page, limit } = pageParams(query, 50);
+        const result = await listTrash(db, page, limit);
         return {
           ...result,
           retentionDays: days,
@@ -70,16 +72,12 @@ export const trashRouter = new Elysia({ prefix: "/trash" })
       }
     },
     {
-      query: t.Object({
-        page: t.Optional(t.String({ pattern: "^[0-9]{1,9}$" })),
-        limit: t.Optional(t.String({ pattern: "^[0-9]{1,3}$" })),
-      }),
+      query: t.Object(pageQuerySchema),
     },
   )
   .post(
     "/restore",
-    async ({ body, request, server }) => {
-      allowLongRequest(server, request);
+    async ({ body }) => {
       const db = await getDb();
       try {
         return { restored: await restoreSnapshots(db, await selectedIds(db, body)) };
@@ -91,8 +89,7 @@ export const trashRouter = new Elysia({ prefix: "/trash" })
   )
   .post(
     "/delete",
-    async ({ body, request, server }) => {
-      allowLongRequest(server, request);
+    async ({ body }) => {
       const db = await getDb();
       try {
         return await deleteSnapshotsForever(db, await selectedIds(db, body), getStorage(), {
@@ -104,8 +101,7 @@ export const trashRouter = new Elysia({ prefix: "/trash" })
     },
     { body: idsBody },
   )
-  .post("/empty", async ({ request, server }) => {
-    allowLongRequest(server, request);
+  .post("/empty", async () => {
     const db = await getDb();
     try {
       return await deleteSnapshotsForever(db, await trashedIds(db), getStorage(), {

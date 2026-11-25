@@ -1,5 +1,5 @@
-import { type InfiniteData, useQueryClient } from "@tanstack/react-query";
-import type { FailureGroupId, Page } from "@webfrost/sdk";
+import { type InfiniteData, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { FailureGroupId, FailureGroupSummary, Page } from "@webfrost/sdk";
 import { Check, ChevronRight, Copy, ExternalLink, Info } from "lucide-react";
 import {
   type KeyboardEvent,
@@ -12,6 +12,7 @@ import {
 } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "../../components/ui/Button";
+import { useClient } from "../../context";
 import { snapshotKeys } from "../../hooks/useSnapshots";
 import { useCopy } from "../../lib/clipboard";
 
@@ -93,6 +94,25 @@ export const GROUP_INFO: Record<FailureGroupId, GroupInfo> = {
 
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n.toLocaleString()} ${n === 1 ? one : many}`;
+}
+
+/** What a delete for good reports: how many went, and how many were kept because they were being archived. */
+export function deletedMessage(deleted: number, busy: number): string {
+  return `Deleted ${plural(deleted, "snapshot")}${busy ? ` (${busy} still being archived, kept)` : ""}`;
+}
+
+/** The groups' summary, shared by every failures page (one query, cached). */
+export function useFailureGroups() {
+  const client = useClient();
+  return useQuery<FailureGroupSummary[]>({
+    queryKey: FAILURE_KEYS.groups(),
+    queryFn: () => client.listFailureGroups(),
+  });
+}
+
+/** A group's label for headings and breadcrumbs: its id until the summary has loaded. */
+export function useGroupLabel(id: FailureGroupId): string {
+  return useFailureGroups().data?.find((g) => g.id === id)?.label ?? id;
 }
 
 export function formatDate(iso: string | null): string {

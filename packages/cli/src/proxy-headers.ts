@@ -19,7 +19,6 @@
  * `Authorization`, travel as before: the proxy's are in addition, not instead.
  */
 import { spawn } from "node:child_process";
-import type { Context } from "./cli";
 import { savedServer } from "./credentials";
 import { CliError } from "./errors";
 
@@ -134,7 +133,7 @@ export function headersCommandFor(base: URL, fromFlag?: string): string | undefi
  * `WEBFROST_HEADERS`, then those the headers command prints (which win on the same name). Every
  * later request of the command sends them.
  */
-export async function prepareServer(_ctx: Context, base: URL, commandFlag?: string): Promise<void> {
+export async function prepareServer(base: URL, commandFlag?: string): Promise<void> {
   if (resolved.has(base.origin)) return;
   const headers = parseHeaders(process.env.WEBFROST_HEADERS, "WEBFROST_HEADERS");
   const command = headersCommandFor(base, commandFlag);
@@ -153,4 +152,53 @@ export function redirectAdvice(res: Response): string {
     // No usable Location: the advice stands without it.
   }
   return `it answered with a redirect${to} (HTTP ${res.status}) instead of its API. If that is the server's new address, use it. If it is a sign-in page, something in front of the server wants credentials of its own: give them with --headers-command on webfrost login (a command that prints "Name: value" lines, such as your proxy's token tool) or in WEBFROST_HEADERS, or let requests to /api/ through the proxy (they carry WebFrost's own credentials).`;
+}
+
+/** The address of an API route of the server (`/api/v1` + path). */
+export function apiUrl(base: URL, path: string): string {
+  return `${base.href.replace(/\/+$/, "")}/api/v1${path}`;
+}
+
+/** The Retry-After a response carries, in seconds, at most `cap`; undefined when it gives none. */
+export function retryAfterSeconds(res: Response, cap: number): number | undefined {
+  const wait = Number(res.headers.get("retry-after"));
+  return Number.isFinite(wait) && wait > 0 ? Math.min(wait, cap) : undefined;
+}
+
+/**
+ * One request to the server's API, the way every command sends it: with the headers a proxy in
+ * front of the server wants (worked out on first use, see {@link prepareServer}), with the API key
+ * when there is one, and never following a redirect, so neither goes anywhere else. Throws a
+ * CliError when the server cannot be reached; every answer, errors included, is the caller's.
+ */
+export async function apiFetch(
+  base: URL,
+  path: string,
+  init: {
+    method?: string;
+    apiKey?: string;
+    /** Sent as JSON, with its content type. */
+    json?: unknown;
+    /** Sent as it is (an upload), with `headers` describing it. */
+    body?: BodyInit;
+    headers?: Record<string, string>;
+  } = {},
+): Promise<Response> {
+  await prepareServer(base);
+  const headers: Record<string, string> = { ...proxyHeaders(base), ...init.headers };
+  if (init.apiKey) headers.authorization = `Bearer ${init.apiKey}`;
+  if (init.json !== undefined) headers["content-type"] = "application/json";
+  try {
+    return await fetch(apiUrl(base, path), {
+      method: init.method ?? (init.json !== undefined || init.body ? "POST" : "GET"),
+      headers,
+      ...(init.json !== undefined ? { body: JSON.stringify(init.json) } : {}),
+      ...(init.body ? { body: init.body } : {}),
+      redirect: "manual",
+    });
+  } catch (err) {
+    throw new CliError(
+      `cannot reach ${base.origin}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 }

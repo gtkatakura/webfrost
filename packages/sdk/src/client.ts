@@ -718,12 +718,9 @@ export class WebFrostClient {
     options: { q?: string; page?: number; limit?: number } = {},
     request?: RequestOptions,
   ): Promise<FailureDomainPage> {
-    const params = new URLSearchParams();
+    const params = pageQuery(options);
     if (options.q?.trim()) params.set("q", options.q.trim());
-    if (options.page) params.set("page", String(options.page));
-    if (options.limit) params.set("limit", String(options.limit));
-    const qs = params.toString();
-    return this.json("GET", `/failures/${encodeURIComponent(group)}/domains${qs ? `?${qs}` : ""}`, {
+    return this.json("GET", withQuery(`/failures/${encodeURIComponent(group)}/domains`, params), {
       signal: request?.signal,
     });
   }
@@ -735,13 +732,12 @@ export class WebFrostClient {
     options: PageOptions = {},
     request?: RequestOptions,
   ): Promise<Page<FailedSnapshot>> {
-    const params = new URLSearchParams();
-    if (options.page) params.set("page", String(options.page));
-    if (options.limit) params.set("limit", String(options.limit));
-    const qs = params.toString();
     return this.json(
       "GET",
-      `/failures/${encodeURIComponent(group)}/domains/${encodeURIComponent(host)}/snapshots${qs ? `?${qs}` : ""}`,
+      withQuery(
+        `/failures/${encodeURIComponent(group)}/domains/${encodeURIComponent(host)}/snapshots`,
+        pageQuery(options),
+      ),
       { signal: request?.signal },
     );
   }
@@ -787,11 +783,7 @@ export class WebFrostClient {
 
   /** One page of the trash, most recently trashed first. */
   listTrash(options: PageOptions = {}, request?: RequestOptions): Promise<TrashPage> {
-    const params = new URLSearchParams();
-    if (options.page) params.set("page", String(options.page));
-    if (options.limit) params.set("limit", String(options.limit));
-    const qs = params.toString();
-    return this.json("GET", `/trash${qs ? `?${qs}` : ""}`, { signal: request?.signal });
+    return this.json("GET", withQuery("/trash", pageQuery(options)), { signal: request?.signal });
   }
 
   /** Bring snapshots back from the trash. */

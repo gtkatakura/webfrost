@@ -1,5 +1,5 @@
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import type { FailureGroupId, FailureGroupSummary, FailureSelection } from "@webfrost/sdk";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import type { FailureGroupId, FailureSelection } from "@webfrost/sdk";
 import { CircleCheck, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -23,6 +23,7 @@ import {
   formatDate,
   nextPageParam,
   plural,
+  useGroupLabel,
   useListSelection,
   useRowSelect,
 } from "../features/failures/shared";
@@ -36,11 +37,7 @@ export function FailureDomainPage() {
   // null: closed; "ids": the selection; "domain": every failed snapshot of the domain.
   const [confirming, setConfirming] = useState<null | "ids" | "domain">(null);
 
-  const { data: groups } = useQuery<FailureGroupSummary[]>({
-    queryKey: FAILURE_KEYS.groups(),
-    queryFn: () => client.listFailureGroups(),
-  });
-  const label = groups?.find((g) => g.id === id)?.label ?? id;
+  const label = useGroupLabel(id);
 
   const list = useInfiniteQuery({
     queryKey: FAILURE_KEYS.snapshots(id, host),

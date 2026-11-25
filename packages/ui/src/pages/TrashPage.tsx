@@ -18,6 +18,7 @@ import {
   SelectRow,
   SelectionToolbar,
   TRASH_KEYS,
+  deletedMessage,
   flatten,
   formatDate,
   nextPageParam,
@@ -69,9 +70,7 @@ export function TrashPage() {
     mutationFn: (sel: number[] | TrashSelection) => client.deleteFromTrash(sel),
     onSuccess: ({ deleted, busy }) => {
       done();
-      toast.success(
-        `Deleted ${plural(deleted, "snapshot")}${busy ? ` (${busy} still being archived, kept)` : ""}`,
-      );
+      toast.success(deletedMessage(deleted, busy));
     },
     onError: (e) => toast.error(errorMessage(e)),
   });

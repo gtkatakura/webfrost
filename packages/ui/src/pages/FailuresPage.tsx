@@ -1,19 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
-import type { FailureGroupSummary } from "@webfrost/sdk";
 import { ChevronRight, CircleCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { EmptyState, ErrorState, LoadingRows, PageHeader } from "../components/ui/StateViews";
-import { useClient } from "../context";
-import { FAILURE_KEYS, GROUP_INFO, plural } from "../features/failures/shared";
+import { FAILURE_KEYS, GROUP_INFO, plural, useFailureGroups } from "../features/failures/shared";
 
 export { FAILURE_KEYS };
 
 export function FailuresPage() {
-  const client = useClient();
-  const { data, isPending, isError, error, refetch } = useQuery<FailureGroupSummary[]>({
-    queryKey: FAILURE_KEYS.groups(),
-    queryFn: () => client.listFailureGroups(),
-  });
+  const { data, isPending, isError, error, refetch } = useFailureGroups();
   const groups = (data ?? []).filter((g) => g.count > 0);
 
   return (

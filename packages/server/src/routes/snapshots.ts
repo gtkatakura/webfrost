@@ -119,12 +119,27 @@ export function snapshotFilterFromQuery(
  * hides a snapshot from everything a guest can list; its address must not keep serving it. Signed
  * in, it stays reachable: the Trash page links to it.
  */
-export async function hiddenFromGuest(db: Db, id: number, request: Request): Promise<boolean> {
-  if (!isGuestRequest(request)) return false;
-  const row = await db.get<{ trashed_at: string | null }>(
-    sql`SELECT trashed_at FROM snapshots WHERE id = ${id}`,
+export function hiddenFromGuest(request: Request, trashedAt: string | null): boolean {
+  return trashedAt !== null && isGuestRequest(request);
+}
+
+/**
+ * The newest successful result of one extractor of a snapshot, in the query that also says whether
+ * the visitor may see it; null when there is none, or the snapshot is hidden from this visitor.
+ */
+async function visibleResult(
+  db: Db,
+  id: number,
+  extractor: string,
+  request: Request,
+): Promise<{ content: string | null } | null> {
+  const row = await db.get<{ content: string | null; trashed_at: string | null }>(
+    sql`SELECT ar.content, s.trashed_at
+        FROM archive_results ar JOIN snapshots s ON s.id = ar.snapshot_id
+        WHERE ar.snapshot_id = ${id} AND ar.extractor = ${extractor} AND ar.error IS NULL
+        ORDER BY ar.id DESC LIMIT 1`,
   );
-  return row?.trashed_at != null;
+  return row && !hiddenFromGuest(request, row.trashed_at) ? row : null;
 }
 
 /** List-level fields shared by the list, search and detail responses. */
@@ -386,7 +401,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       const storage = getStorage();
       try {
         const snapshot = await getSnapshot(db, id);
-        if (!snapshot || (guest && snapshot.trashed_at !== null)) {
+        if (!snapshot || hiddenFromGuest(request, snapshot.trashed_at)) {
           return apiError(set, 404, "NOT_FOUND", "not found");
         }
         const extractorMeta: Record<
@@ -526,11 +541,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       const db = await getDb();
       let ref: string | null;
       try {
-        if (await hiddenFromGuest(db, id, request)) return fail(404, "not found");
-        const row = await db.get<{ content: string | null }>(
-          sql`SELECT content FROM archive_results WHERE snapshot_id = ${id} AND extractor = ${extractor} AND error IS NULL ORDER BY id DESC LIMIT 1`,
-        );
-        ref = row?.content ?? null;
+        ref = (await visibleResult(db, id, extractor, request))?.content ?? null;
       } finally {
         await db.close();
       }
@@ -571,10 +582,7 @@ export const snapshotsRouter = new Elysia({ prefix: "/snapshots" })
       const db = await getDb();
       let content: string | null = null;
       try {
-        if (await hiddenFromGuest(db, id, request)) return fail(404, "not found");
-        const row = await db.get<{ content: string | null }>(
-          sql`SELECT content FROM archive_results WHERE snapshot_id = ${id} AND extractor = ${extractor} AND error IS NULL ORDER BY id DESC LIMIT 1`,
-        );
+        const row = await visibleResult(db, id, extractor, request);
         if (!row) return fail(404, "not found");
         content = row.content;
       } finally {

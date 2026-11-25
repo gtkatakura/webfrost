@@ -16,7 +16,7 @@ import {
 import type { Command, Context } from "../cli";
 import { CliError, UsageError } from "../errors";
 import { isInteractive } from "../prompt";
-import { prepareServer, proxyHeaders, redirectAdvice } from "../proxy-headers";
+import { apiFetch, redirectAdvice } from "../proxy-headers";
 import { openRunLog } from "../run-log";
 import { safeText } from "../sanitize";
 import { VERSION } from "../version";
@@ -88,25 +88,9 @@ const LABELS: Record<Outcome, string> = {
   error: "could not be sent",
 };
 
-/** A request to the server's API, with the key, never following a redirect. */
+/** A request to the server's API with the key: GET, or POST of `body` as JSON. */
 async function api<T>(base: URL, apiKey: string, path: string, body?: unknown): Promise<T> {
-  const url = `${base.href.replace(/\/+$/, "")}/api/v1${path}`;
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      headers: {
-        ...proxyHeaders(base),
-        authorization: `Bearer ${apiKey}`,
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
-      },
-      ...(body === undefined ? {} : { method: "POST", body: JSON.stringify(body) }),
-      redirect: "manual",
-    });
-  } catch (err) {
-    throw new CliError(
-      `cannot reach ${base.origin}: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
+  const res = await apiFetch(base, path, { apiKey, json: body });
   if (res.status === 401) throw new CliError(KEY_REJECTED);
   if (res.status >= 300 && res.status < 400) {
     throw new CliError(`${base.origin} could not be asked: ${redirectAdvice(res)}`);
@@ -152,7 +136,6 @@ async function confirm(question: string): Promise<boolean> {
   return false;
 }
 
-/** Archive `url` in the scratch archive and say whether the copy is worth sending. */
 /**
  * The URL that answered, after redirects: the WARC's last record (`metadata`, small) names it. Read from
  * the end of the file, so a large download is not read whole.
@@ -182,6 +165,7 @@ function renderedPage(html: string): { title: string | null; text: string } {
   return { title, text };
 }
 
+/** Archive `url` in the scratch archive and say whether the copy is worth sending. */
 async function archiveHere(
   ctx: Context,
   db: Db,
@@ -340,7 +324,6 @@ Exit codes:
     }
     const base = serverBase(ctx, ctx.string("from"), "from", PATH);
     const apiKey = requireApiKey(ctx, base);
-    await prepareServer(ctx, base);
     const limit = ctx.int("limit", { min: 1 });
     const giveUpAfter = ctx.int("give-up-after", { min: 0 }) ?? 3;
     const minText = ctx.int("min-text", { min: 0 }) ?? 150;
@@ -354,7 +337,11 @@ Exit codes:
     let failures = await listFailures(base, apiKey, group, ctx.string("q"), ctx.string("host"));
     if (limit) failures = failures.slice(0, limit);
     const byHost = new Map<string, Failed[]>();
-    for (const f of failures) byHost.set(f.host, [...(byHost.get(f.host) ?? []), f]);
+    for (const f of failures) {
+      const list = byHost.get(f.host);
+      if (list) list.push(f);
+      else byHost.set(f.host, [f]);
+    }
 
     say(
       `${failures.length} failed snapshot${failures.length === 1 ? "" : "s"} across ${byHost.size} domain${byHost.size === 1 ? "" : "s"} in "${info.label}" on ${base.origin}.`,
@@ -392,7 +379,6 @@ Exit codes:
     mkdirSync(workDir, { recursive: true });
     const db = await openDb(workDir);
     const storage = new FilesystemBackend(join(workDir, "snapshots"));
-    const endpoint = `${base.href.replace(/\/+$/, "")}/api/v1/snapshots/import`;
     const results: Result[] = [];
     let stopping = false;
     let fatal: string | undefined;
@@ -450,7 +436,8 @@ Exit codes:
           // No progress line per upload: with pages done side by side it would overwrite theirs.
           return await upload(
             ctx,
-            `${endpoint}?replaces=${f.id}`,
+            base,
+            `/snapshots/import?replaces=${f.id}`,
             apiKey,
             localId,
             bundle,
@@ -534,7 +521,11 @@ Exit codes:
     // domains at once. Failures of the same URL are archived and sent once.
     const queue = [...byHost.values()].map((list) => {
       const byUrl = new Map<string, Failed[]>();
-      for (const f of list) byUrl.set(f.url, [...(byUrl.get(f.url) ?? []), f]);
+      for (const f of list) {
+        const same = byUrl.get(f.url);
+        if (same) same.push(f);
+        else byUrl.set(f.url, [f]);
+      }
       return [...byUrl.values()];
     });
     async function worker() {

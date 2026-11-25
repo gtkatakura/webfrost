@@ -12,7 +12,7 @@ import { hostname } from "node:os";
 import type { Command, Context } from "../cli";
 import { credentialsPath, removeServer, saveServer, savedServer } from "../credentials";
 import { CliError } from "../errors";
-import { prepareServer, proxyHeaders, redirectAdvice } from "../proxy-headers";
+import { apiFetch, prepareServer, redirectAdvice, retryAfterSeconds } from "../proxy-headers";
 import { printable, serverUrl } from "./push";
 import { printJson } from "./shared";
 
@@ -27,25 +27,8 @@ type Poll =
   | { status: "pending" | "denied" }
   | { status: "approved"; apiKey: string; key: { id: string; name: string } };
 
-function apiUrl(base: URL, path: string): string {
-  return `${base.href.replace(/\/+$/, "")}/api/v1${path}`;
-}
-
-/** A request without credentials that never follows a redirect, like every request to a server. */
-async function post(base: URL, path: string, body: unknown): Promise<Response> {
-  try {
-    return await fetch(apiUrl(base, path), {
-      method: "POST",
-      headers: { ...proxyHeaders(base), "content-type": "application/json" },
-      body: JSON.stringify(body),
-      redirect: "manual",
-    });
-  } catch (err) {
-    throw new CliError(
-      `cannot reach ${base.origin}: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-}
+/** A request without credentials: the CLI has none yet. */
+const post = (base: URL, path: string, json: unknown) => apiFetch(base, path, { json });
 
 /** Why the server did not answer the API, in words that say what to do. */
 function refusal(base: URL, res: Response): CliError {
@@ -107,23 +90,19 @@ function openBrowser(url: string): boolean {
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 /** Poll until the request is answered or its time is up. */
 async function waitForAnswer(base: URL, started: Started): Promise<Poll | { status: "expired" }> {
   const deadline = Date.now() + started.expiresIn * 1000;
   let interval = Math.max(1, started.interval) * 1000;
   while (Date.now() < deadline) {
-    await sleep(interval);
+    await Bun.sleep(interval);
     const res = await post(base, "/auth/device/token", { deviceCode: started.deviceCode });
     if (res.status === 404) return { status: "expired" };
     if (res.status === 429) {
       // Asked to slow down: wait what the server says, and keep the slower pace.
-      const wait = Number(res.headers.get("retry-after"));
+      const wait = retryAfterSeconds(res, 60);
       interval = Math.min(30_000, interval + 2000);
-      if (Number.isFinite(wait) && wait > 0) await sleep(Math.min(wait, 60) * 1000);
+      if (wait) await Bun.sleep(wait * 1000);
       continue;
     }
     if (!res.ok) throw refusal(base, res);
@@ -197,7 +176,7 @@ Exit codes:
     // one run and is not saved).
     const headersCommand =
       ctx.string("headers-command")?.trim() || savedServer(base.origin)?.headersCommand;
-    await prepareServer(ctx, base, ctx.string("headers-command"));
+    await prepareServer(base, ctx.string("headers-command"));
     const say = (msg: string) => {
       if (!ctx.quiet) process.stderr.write(`${msg}\n`);
     };
@@ -287,11 +266,9 @@ Exit codes:
     let revoked: "yes" | "gone" | "unknown" = "unknown";
     let why = "";
     try {
-      await prepareServer(ctx, base);
-      const res = await fetch(apiUrl(base, `/settings/keys/${encodeURIComponent(saved.keyId)}`), {
+      const res = await apiFetch(base, `/settings/keys/${encodeURIComponent(saved.keyId)}`, {
         method: "DELETE",
-        headers: { ...proxyHeaders(base), authorization: `Bearer ${saved.apiKey}` },
-        redirect: "manual",
+        apiKey: saved.apiKey,
       });
       // 401: the key no longer works there (revoked or expired); 404: it is not listed any more.
       if (res.status === 204) revoked = "yes";

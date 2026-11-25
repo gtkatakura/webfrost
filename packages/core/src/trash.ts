@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 import { getTrashRetentionDays } from "./app-settings";
+import { chunks } from "./chunks";
 import type { Db } from "./db";
 import { pageWindow } from "./list";
 import { IMPORTING_STATUS, SnapshotBusyError, deleteSnapshot } from "./snapshot";
@@ -25,9 +26,7 @@ export interface TrashedSnapshot {
 export async function trashSnapshots(db: Db, ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
   let moved = 0;
-  // In chunks, so a selection of thousands never makes one statement with thousands of parameters.
-  for (let i = 0; i < ids.length; i += 500) {
-    const chunk = ids.slice(i, i + 500);
+  for (const chunk of chunks(ids)) {
     moved += await db.run(
       sql`UPDATE snapshots SET trashed_at = ${db.now()}
           WHERE id IN (${sql.join(chunk)}) AND trashed_at IS NULL
@@ -41,8 +40,7 @@ export async function trashSnapshots(db: Db, ids: number[]): Promise<number> {
 export async function restoreSnapshots(db: Db, ids: number[]): Promise<number> {
   if (ids.length === 0) return 0;
   let restored = 0;
-  for (let i = 0; i < ids.length; i += 500) {
-    const chunk = ids.slice(i, i + 500);
+  for (const chunk of chunks(ids)) {
     restored += await db.run(
       sql`UPDATE snapshots SET trashed_at = NULL WHERE id IN (${sql.join(chunk)}) AND trashed_at IS NOT NULL`,
     );
@@ -65,18 +63,8 @@ export async function deleteSnapshotsForever(
   const only = options.onlyTrashed ? "trashed" : options.onlyFailed ? "failed" : undefined;
   let deleted = 0;
   let busy = 0;
-  let allowed = ids;
-  if (options.onlyTrashed && ids.length > 0) {
-    allowed = [];
-    for (let i = 0; i < ids.length; i += 500) {
-      const chunk = ids.slice(i, i + 500);
-      const rows = await db.all<{ id: number }>(
-        sql`SELECT id FROM snapshots WHERE id IN (${sql.join(chunk)}) AND trashed_at IS NOT NULL`,
-      );
-      allowed.push(...rows.map((r) => r.id));
-    }
-  }
-  for (const id of allowed) {
+  // No filtering up front: each snapshot is checked under its lock when its turn comes.
+  for (const id of ids) {
     try {
       if (await deleteSnapshot(db, id, storage, only)) deleted++;
     } catch (err) {

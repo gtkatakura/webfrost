@@ -235,3 +235,4 @@ export type {
 } from "./telemetry";
 export { getStats } from "./stats";
 export type { Stats } from "./stats";
+export { ID_CHUNK, chunks } from "./chunks";

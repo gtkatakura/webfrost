@@ -729,9 +729,9 @@ describe("WebFrostClient failures", () => {
     const client = new WebFrostClient({ baseUrl: BASE });
 
     await client.listFailureDomains("domain-gone", { q: "mirror site", page: 2 });
-    expect(String(fetchSpy.mock.calls[0]?.[0])).toBe(
-      `${BASE}/api/v1/failures/domain-gone/domains?q=mirror+site&page=2`,
-    );
+    const asked = new URL(String(fetchSpy.mock.calls[0]?.[0]));
+    expect(asked.pathname).toBe("/api/v1/failures/domain-gone/domains");
+    expect(Object.fromEntries(asked.searchParams)).toEqual({ q: "mirror site", page: "2" });
     expect(await client.trashFailures("domain-gone", { hosts: ["gone.example"] })).toEqual({
       trashed: 3,
     });

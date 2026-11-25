@@ -1,11 +1,5 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { useQuery } from "@tanstack/react-query";
-import type {
-  FailureDomainPage,
-  FailureGroupId,
-  FailureGroupSummary,
-  FailureSelection,
-} from "@webfrost/sdk";
+import type { FailureDomainPage, FailureGroupId, FailureSelection } from "@webfrost/sdk";
 import { CircleCheck, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -30,6 +24,7 @@ import {
   nextPageParam,
   plural,
   useDebounced,
+  useGroupLabel,
   useListSelection,
   useRowSelect,
 } from "../features/failures/shared";
@@ -43,11 +38,7 @@ export function FailureGroupPage() {
   const q = useDebounced(query.trim());
   const [confirming, setConfirming] = useState(false);
 
-  const { data: groups } = useQuery<FailureGroupSummary[]>({
-    queryKey: FAILURE_KEYS.groups(),
-    queryFn: () => client.listFailureGroups(),
-  });
-  const label = groups?.find((g) => g.id === id)?.label ?? id;
+  const label = useGroupLabel(id);
   const info = GROUP_INFO[id];
 
   const list = useInfiniteQuery({
