@@ -175,6 +175,24 @@ describe("replacing a failed snapshot (webfrost rescue)", () => {
     ]);
   });
 
+  test("the other failures of the same address go to the trash with it, in the same transaction", async () => {
+    const failed = await seedFailure();
+    const twin = await target.insert(
+      sql`INSERT INTO snapshots (url, status) VALUES ('https://example.com/quokka', 'failed')`,
+    );
+    const other = await target.insert(
+      sql`INSERT INTO snapshots (url, status) VALUES ('https://example.com/another', 'failed')`,
+    );
+    const worked = await target.insert(
+      sql`INSERT INTO snapshots (url, status) VALUES ('https://example.com/quokka', 'done')`,
+    );
+    await importSnapshotBundle(target, targetStorage, await bundle(), {}, { replaces: failed });
+    expect((await row(twin))?.trashed_at).not.toBeNull();
+    // Another address, and a snapshot of the same address that worked, are left as they were.
+    expect((await row(other))?.trashed_at).toBeNull();
+    expect(await row(worked)).toEqual({ status: "done", trashed_at: null });
+  });
+
   test("the same URL written differently (host case, no path) still matches", async () => {
     const failed = await seedFailure("https://EXAMPLE.com/quokka");
     const imported = await importSnapshotBundle(

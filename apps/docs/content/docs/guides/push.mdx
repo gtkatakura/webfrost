@@ -50,7 +50,7 @@ webfrost rescue blocked --from https://archive.example.com --host www.example.co
 webfrost rescue blocked --from https://archive.example.com
 ```
 
-For each failed snapshot it archives the page here, in a scratch archive (`rescue/` in the data directory, not your own archive), and checks the copy before anything is sent:
+For each failed snapshot it archives the page here, in a scratch archive of the run (`rescue/run-*/` in the data directory, not your own archive), and checks the copy before anything is sent:
 
 - It must have finished `done`, with the browser formats (screenshot, PDF, DOM): Chromium has to work on this machine (`webfrost doctor`). A page that fails here too stays as it is on the server.
 - It must be the page itself, both as fetched and as the browser rendered it. A copy whose title or first lines are an anti-bot interstitial ("Just a moment...", "Client Challenge", "Access Denied" and the like, including one a script puts up after the page loads), or that has almost no text (a login wall, a cart page), or that was redirected to a sign-in page or to the home page, is **not sent**: it would look like a success and hide the failure. PDFs and other downloads go as they are.

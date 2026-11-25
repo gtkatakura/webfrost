@@ -18,7 +18,7 @@ SQLite also creates `archive.db-wal` and `archive.db-shm` next to the database w
 
 `tmp/` holds snapshot bundles being uploaded to `POST /api/v1/snapshots/import` ([`webfrost push`](/docs/guides/push)), one private folder (`bundle-<uuid>`) per request, removed when the request ends; folders a crash left behind are removed at the next server start once they are an hour old. It needs no backup.
 
-On a machine that runs [`webfrost rescue`](/docs/reference/cli#webfrost-rescue-group---from-url), `rescue/` is the scratch archive it archives pages in before sending them to the server (its own `archive.db` and `snapshots/`). It is emptied when a run starts and removed when it ends (unless `--keep`); it needs no backup.
+On a machine that runs [`webfrost rescue`](/docs/reference/cli#webfrost-rescue-group---from-url), `rescue/` holds the scratch archive of each run in progress, `rescue/run-<random>/` (its own `archive.db` and `snapshots/`), where it archives pages before sending them to the server. A run removes its folder when it ends (unless `--keep`), and a later run removes one left by a killed run after a day; it needs no backup.
 
 `logs/` holds the log of each run of `webfrost rescue` (`rescue-<start time>.jsonl`, see [the log of a run](/docs/reference/cli#the-log-of-a-run)). Nothing removes them; keep or delete them as you like.
 

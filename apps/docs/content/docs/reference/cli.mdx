@@ -280,6 +280,7 @@ webfrost rescue blocked --from https://archive.example.com
 | `--min-text <chars>` | Readable text a copy needs to be sent (default 150; 0 = no minimum). |
 | `--concurrency <n>` | Domains worked on at once (default 2, at most 8). Pages of one domain are always one at a time. |
 | `--dry-run` | Print the domains and their counts (`count<TAB>domain`), then stop. |
+| `--allow-private` | Also archive private addresses (localhost, your LAN, `10.x`, cloud metadata) from this machine. Off by default, whatever `WEBFROST_ALLOW_PRIVATE_URLS` says in the shell: the addresses come from the server, so use it only with a server whose snapshots you trust (an intranet archive). |
 | `--keep` | Keep the scratch archive at the end, copies included, to look at what was rejected (`WEBFROST_DIR=~/.webfrost/rescue webfrost list`). |
 | `--no-log` | Do not write the [log of the run](#the-log-of-a-run). |
 | `-y`, `--yes` | Start without asking. Needed when stdin is not a terminal. |
@@ -289,7 +290,7 @@ A copy is sent only when it finished `done`, the browser formats were made (a DO
 
 Several failures of the same URL (a schedule that failed more than once) are archived and sent once; the copy replaces the first, and the others go to the trash with it. A server that is busy with other uploads (`429`) is waited for, as its `Retry-After` says, up to five times.
 
-The pages are archived in a scratch archive, `rescue/` in the data directory, never in your own archive: always SQLite and files there, even when `DATABASE_URL` or the S3 settings are set in the shell. It is emptied when a run starts and removed when it ends (unless `--keep`). Running it again goes on with what is left: a rescued page is no longer in the group, and the server refuses a copy whose failure changed, so nothing is stored twice. Ctrl+C stops after the pages in progress and prints the summary (a second Ctrl+C quits at once). Exit code 0 when it ran to the end, 1 when a copy could not be sent, 2 for a usage error, 130 when stopped; a rejected key or a server that cannot be reached stops the run.
+The pages are archived in a scratch archive of the run, `rescue/run-<random>/` in the data directory, never in your own archive: always SQLite and files there, even when `DATABASE_URL` or the S3 settings are set in the shell. Each run has its own, so two runs at once do not share ids or files; it is removed when the run ends (unless `--keep`), and one a killed run left behind is removed by a later run after a day. Running it again goes on with what is left: a rescued page is no longer in the group, and the server refuses a copy whose failure changed, so nothing is stored twice. Ctrl+C stops after the pages in progress and prints the summary (a second Ctrl+C quits at once). Exit code 0 when it ran to the end, 1 when a copy could not be sent, 2 for a usage error, 130 when stopped; a rejected key or a server that cannot be reached stops the run.
 
 #### The log of a run
 

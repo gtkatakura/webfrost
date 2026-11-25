@@ -7,6 +7,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeDatabases, createApiKey, openDb, sql } from "@webfrost/core";
+import { withoutHiddenElements } from "./commands/rescue";
 
 const CLI = join(import.meta.dir, "index.ts");
 const ARTICLE = `<!doctype html><html><head><title>How quokkas live</title></head><body><article><h1>How quokkas live</h1>${"<p>The quokka is a small marsupial that lives on Rottnest Island and eats leaves and grasses.</p>".repeat(8)}</article></body></html>`;
@@ -142,7 +143,14 @@ describe("webfrost rescue", () => {
     const gone = await seedFailure(page("/gone"));
     const blocked = await seedFailure(page("/blocked"));
 
-    const run = await runCli(["rescue", "blocked", ...from(), "--yes", "--json"]);
+    const run = await runCli([
+      "rescue",
+      "blocked",
+      ...from(),
+      "--allow-private",
+      "--yes",
+      "--json",
+    ]);
     expect(run.stderr).not.toContain("Error");
     expect(run.exitCode).toBe(0);
     const out = JSON.parse(run.stdout) as {
@@ -171,12 +179,19 @@ describe("webfrost rescue", () => {
     );
     expect(JSON.parse(title?.content ?? "{}").title).toBe("How quokkas live");
 
-    // Nothing is left in the scratch archive.
-    const scratch = join(laptopDir, "rescue", "snapshots");
+    // Nothing is left of the run's scratch archive.
+    const scratch = join(laptopDir, "rescue");
     expect(existsSync(scratch) ? readdirSync(scratch) : []).toEqual([]);
 
     // Again: the rescued page is no longer in the group, so it is neither archived nor sent twice.
-    const again = await runCli(["rescue", "blocked", ...from(), "--yes", "--json"]);
+    const again = await runCli([
+      "rescue",
+      "blocked",
+      ...from(),
+      "--allow-private",
+      "--yes",
+      "--json",
+    ]);
     const second = JSON.parse(again.stdout) as { results: { id: number }[] };
     expect(second.results.map((r) => r.id).sort()).toEqual([wall, gone, blocked].sort());
     expect(
@@ -198,10 +213,17 @@ describe("webfrost rescue", () => {
     const logs = join(laptopDir, "logs");
 
     // Looking is not a run: nothing is logged.
-    await runCli(["rescue", "blocked", ...from(), "--dry-run"]);
+    await runCli(["rescue", "blocked", ...from(), "--allow-private", "--dry-run"]);
     expect(existsSync(logs)).toBe(false);
 
-    const run = await runCli(["rescue", "blocked", ...from(), "--yes", "--json"]);
+    const run = await runCli([
+      "rescue",
+      "blocked",
+      ...from(),
+      "--allow-private",
+      "--yes",
+      "--json",
+    ]);
     expect(run.exitCode).toBe(0);
     const out = JSON.parse(run.stdout) as {
       log: string;
@@ -245,16 +267,23 @@ describe("webfrost rescue", () => {
 
     // The next run gets a file of its own; --no-log writes none.
     await seedFailure(page("/blocked"));
-    await runCli(["rescue", "blocked", ...from(), "--yes", "--no-log"]);
+    await runCli(["rescue", "blocked", ...from(), "--allow-private", "--yes", "--no-log"]);
     expect(readdirSync(logs)).toHaveLength(1);
-    const again = await runCli(["rescue", "blocked", ...from(), "--yes"]);
+    const again = await runCli(["rescue", "blocked", ...from(), "--allow-private", "--yes"]);
     expect(again.stderr).toContain("Every page and why, in ");
     expect(readdirSync(logs)).toHaveLength(2);
   }, 120_000);
 
   test("a challenge that only appears once scripts run is caught in the browser's DOM, not sent", async () => {
     const id = await seedFailure(page("/scripted-wall"));
-    const run = await runCli(["rescue", "blocked", ...from(), "--yes", "--json"]);
+    const run = await runCli([
+      "rescue",
+      "blocked",
+      ...from(),
+      "--allow-private",
+      "--yes",
+      "--json",
+    ]);
     const out = JSON.parse(run.stdout) as { results: { outcome: string; reason?: string }[] };
     expect(out.results[0]?.outcome).toBe("wall");
     expect(out.results[0]?.reason).toContain("in the browser");
@@ -264,7 +293,14 @@ describe("webfrost rescue", () => {
   test("a redirect to a login page is not sent; a PDF (no text, no DOM to check) is", async () => {
     const login = await seedFailure(page("/members-only"));
     const pdf = await seedFailure(page("/paper.pdf"));
-    const run = await runCli(["rescue", "blocked", ...from(), "--yes", "--json"]);
+    const run = await runCli([
+      "rescue",
+      "blocked",
+      ...from(),
+      "--allow-private",
+      "--yes",
+      "--json",
+    ]);
     const out = JSON.parse(run.stdout) as {
       results: { id: number; outcome: string; reason?: string }[];
     };
@@ -279,7 +315,14 @@ describe("webfrost rescue", () => {
   test("several failures of one URL: archived and sent once, the others go to the trash", async () => {
     const a = await seedFailure(page("/article/twice"));
     const b = await seedFailure(page("/article/twice"));
-    const run = await runCli(["rescue", "blocked", ...from(), "--yes", "--json"]);
+    const run = await runCli([
+      "rescue",
+      "blocked",
+      ...from(),
+      "--allow-private",
+      "--yes",
+      "--json",
+    ]);
     const out = JSON.parse(run.stdout) as {
       results: { id: number; outcome: string; remoteId?: number }[];
     };
@@ -302,7 +345,18 @@ describe("webfrost rescue", () => {
   test("the scratch archive stays SQLite and files under rescue/, whatever DATABASE_URL says", async () => {
     const id = await seedFailure(page("/article/isolated"));
     const proc = Bun.spawn(
-      ["bun", "run", CLI, "rescue", "blocked", ...from(), "--yes", "--json", "--keep"],
+      [
+        "bun",
+        "run",
+        CLI,
+        "rescue",
+        "blocked",
+        ...from(),
+        "--allow-private",
+        "--yes",
+        "--json",
+        "--keep",
+      ],
       {
         cwd: laptopDir,
         env: {
@@ -325,8 +379,24 @@ describe("webfrost rescue", () => {
       "rescued",
     );
     expect(existsSync(join(laptopDir, "not-the-scratch.db"))).toBe(false);
-    expect(existsSync(join(laptopDir, "rescue", "archive.db"))).toBe(true);
+    // Kept (--keep) in a folder of its own for this run.
+    const runs = readdirSync(join(laptopDir, "rescue"));
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toStartWith("run-");
+    expect(existsSync(join(laptopDir, "rescue", runs[0] ?? "", "archive.db"))).toBe(true);
     expect(await state(id)).toEqual({ status: "failed", trashed: 1 });
+  }, 60_000);
+
+  test("an address the server sends is archived from this network only if it is public, unless --allow-private", async () => {
+    // The test site is on 127.0.0.1, so here every page is a private address.
+    const id = await seedFailure(page("/article/private"));
+    // The shell allows private addresses for its own archiving: that is not enough for rescue.
+    const run = await runCli(["rescue", "blocked", ...from(), "--yes", "--json"]);
+    expect(run.exitCode).toBe(0);
+    const out = JSON.parse(run.stdout) as { results: { outcome: string; reason?: string }[] };
+    expect(out.results[0]?.outcome).not.toBe("rescued");
+    expect(String(out.results[0]?.reason)).toContain("private");
+    expect(await state(id)).toEqual({ status: "failed", trashed: 0 });
   }, 60_000);
 
   test("gives up on a domain after N failures in a row here", async () => {
@@ -352,11 +422,11 @@ describe("webfrost rescue", () => {
 
   test("--dry-run lists and changes nothing; without a terminal it needs --yes", async () => {
     const id = await seedFailure(page("/article/dry"));
-    const dry = await runCli(["rescue", "blocked", ...from(), "--dry-run"]);
+    const dry = await runCli(["rescue", "blocked", ...from(), "--allow-private", "--dry-run"]);
     expect(dry.exitCode).toBe(0);
     expect(dry.stdout).toBe("1\t127.0.0.1\n");
     expect(dry.stderr).toContain('1 failed snapshot across 1 domain in "Blocked by the site"');
-    const noYes = await runCli(["rescue", "blocked", ...from()]);
+    const noYes = await runCli(["rescue", "blocked", ...from(), "--allow-private"]);
     expect(noYes.exitCode).toBe(2);
     expect(noYes.stderr).toContain("--yes");
     expect(await state(id)).toEqual({ status: "failed", trashed: 0 });
@@ -364,4 +434,23 @@ describe("webfrost rescue", () => {
     expect(bad.exitCode).toBe(2);
     expect(bad.stderr).toContain("Unknown group");
   }, 60_000);
+});
+
+describe("withoutHiddenElements", () => {
+  test("drops script, style, noscript and template contents, and keeps the rest", () => {
+    expect(
+      withoutHiddenElements(
+        "<p>a</p><SCRIPT>x()</script><p>b</p><style>p{}</style><template>t</template>c",
+      ),
+    ).toBe("<p>a</p> <p>b</p>  c");
+    // One that never closes hides the rest, as in a browser.
+    expect(withoutHiddenElements("<p>a</p><script>never closed <p>b</p>")).toBe("<p>a</p> ");
+  });
+
+  test("a page of a million unclosed tags takes milliseconds, not hours", () => {
+    const page = `<p>text</p><!--${"<template".repeat(1_000_000)}-->`;
+    const started = performance.now();
+    withoutHiddenElements(page);
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
 });

@@ -779,6 +779,17 @@ export async function importSnapshotBundle(
         // Belt and braces: the copy commits only if the failure really went to the trash with it.
         if (moved !== 1)
           throw new ReplaceConflictError(`snapshot ${replaces} changed during the import`);
+        // Other failures of the very same address have their working copy now too. Done here, with
+        // the copy, so a client that stops after the upload never leaves them to be sent again.
+        const replaced = await tx.get<{ url: string }>(
+          sql`SELECT url FROM snapshots WHERE id = ${replaces}`,
+        );
+        if (replaced) {
+          await tx.run(
+            sql`UPDATE snapshots SET trashed_at = ${tx.now()}
+                WHERE url = ${replaced.url} AND status = 'failed' AND trashed_at IS NULL`,
+          );
+        }
       }
       for (const tagId of tagIds) {
         await tx.run(

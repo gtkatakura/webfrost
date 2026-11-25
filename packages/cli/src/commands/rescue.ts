@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   type Db,
@@ -152,17 +152,53 @@ async function finalUrlOf(warcRef: string | null | undefined): Promise<string | 
   }
 }
 
+/**
+ * `html` without the contents of script, style, noscript and template elements, in one pass. A
+ * regular expression with a lazy match would scan to the end of the page for every opening tag that
+ * has no closing one, which a page can repeat a million times to hang the run.
+ */
+export function withoutHiddenElements(html: string): string {
+  const lower = html.toLowerCase();
+  const open = /<(script|style|noscript|template)\b/g;
+  let out = "";
+  let from = 0;
+  for (let m = open.exec(lower); m; m = open.exec(lower)) {
+    if (m.index < from) continue;
+    const close = lower.indexOf(`</${m[1]}`, m.index + m[0].length);
+    out += `${html.slice(from, m.index)} `;
+    // An element that never closes hides the rest, as in a browser.
+    from = close < 0 ? html.length : lower.indexOf(">", close) + 1 || html.length;
+    open.lastIndex = from;
+  }
+  return out + html.slice(from);
+}
+
 /** The title and visible text of the DOM the browser rendered (what the screenshot and PDF show). */
 function renderedPage(html: string): { title: string | null; text: string } {
   const title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1]?.trim() ?? null;
   const body = /<body[^>]*>([\s\S]*)<\/body>/i.exec(html)?.[1] ?? html;
-  const text = body
-    .replace(/<(script|style|noscript|template)\b[\s\S]*?<\/\1>/gi, " ")
+  const text = withoutHiddenElements(body)
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;|&#160;/g, " ")
     .replace(/\s+/g, " ")
     .trim();
   return { title, text };
+}
+
+/** Scratch folders of runs that ended without removing theirs (killed): gone after a day. */
+const STALE_RUN_MS = 24 * 60 * 60 * 1000;
+
+function removeStaleRuns(root: string): void {
+  for (const name of readdirSync(root)) {
+    const path = join(root, name);
+    try {
+      if (Date.now() - statSync(path).mtimeMs > STALE_RUN_MS) {
+        rmSync(path, { recursive: true, force: true });
+      }
+    } catch {
+      // Removed meanwhile, or not ours to read: leave it.
+    }
+  }
 }
 
 /** Archive `url` in the scratch archive and say whether the copy is worth sending. */
@@ -279,7 +315,13 @@ export const rescueCommand: Command = {
     "dry-run": { type: "boolean", description: "List what would be tried, then stop" },
     keep: {
       type: "boolean",
-      description: "Keep the scratch archive (rescue/) at the end, to look at what was rejected",
+      description:
+        "Keep the scratch archive (rescue/run-*/) at the end, to look at what was rejected",
+    },
+    "allow-private": {
+      type: "boolean",
+      description:
+        "Archive private addresses (localhost, your LAN) too. The addresses come from the server: use it only with a server you trust",
     },
     "no-log": {
       type: "boolean",
@@ -293,7 +335,7 @@ export const rescueCommand: Command = {
     json: { type: "boolean", description: "Print JSON: { summary, results } at the end" },
   },
   notes: `
-The pages are archived in a scratch archive (rescue/ in the data directory),
+The pages are archived in a scratch archive (rescue/run-*/ in the data directory, one per run),
 not your own, and each copy is deleted there once it was sent or rejected.
 
 Every run is logged in logs/ of the data directory (rescue-<start time>.jsonl):
@@ -373,10 +415,15 @@ Exit codes:
     // process runs only this command, so its environment can be pinned for the rest of it.
     Reflect.deleteProperty(process.env, "DATABASE_URL");
     process.env.WEBFROST_STORAGE_BACKEND = "filesystem";
-    const workDir = join(ctx.dir, "rescue");
-    // Leftovers of a run that was killed (and a dead-domain memory that would answer for DNS) go first.
-    rmSync(workDir, { recursive: true, force: true });
-    mkdirSync(workDir, { recursive: true });
+    // The addresses come from the server, not from the person running this: a private one is archived
+    // from this machine's network only with --allow-private, whatever this shell sets for its own use.
+    if (ctx.bool("allow-private")) process.env.WEBFROST_ALLOW_PRIVATE_URLS = "true";
+    else Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
+    // A folder of its own per run: two runs at once must not share ids, files or a cleanup.
+    const scratchRoot = join(ctx.dir, "rescue");
+    mkdirSync(scratchRoot, { recursive: true });
+    removeStaleRuns(scratchRoot);
+    const workDir = mkdtempSync(join(scratchRoot, "run-"));
     const db = await openDb(workDir);
     const storage = new FilesystemBackend(join(workDir, "snapshots"));
     const results: Result[] = [];
