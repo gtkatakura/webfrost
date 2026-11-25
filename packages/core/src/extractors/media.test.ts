@@ -353,9 +353,68 @@ describe("mediaExtractor", () => {
       expect(args.slice(0, YT_DLP_BASE_ARGS.length)).toEqual([...YT_DLP_BASE_ARGS]);
       expect(args).toContain("--ignore-config");
       expect(args).toContain("--no-playlist");
-      expect(args[args.indexOf("--use-extractors") + 1]).toBe("default,-generic");
+      expect(args[args.indexOf("--use-extractors") + 1]).toBe(
+        "default,-generic,-mediasite,-mediasitecatalog,-mediasitenamedcatalog",
+      );
       expect(args.slice(-2)).toEqual(["--", url]);
+      // Every connection yt-dlp opens goes through the SSRF egress proxy (hostname sent, checked there).
+      expect(args[args.indexOf("--proxy") + 1]).toMatch(/^socks5h:\/\/127\.0\.0\.1:\d+$/);
     }
+    // One proxy for the whole extraction, closed at the end.
+    const proxy = calls[0]?.[calls[0].indexOf("--proxy") + 1] ?? "";
+    expect(calls.every((args) => args.includes(proxy))).toBe(true);
+    const port = Number(proxy.split(":").at(-1));
+    await expect(
+      Bun.connect({ hostname: "127.0.0.1", port, socket: { data() {} } }),
+    ).rejects.toThrow();
+  });
+
+  test("the proxy yt-dlp is given refuses a private address", async () => {
+    let proxy = "";
+    let reply: number[] = [];
+    const spawner: YtDlpSpawner = async (args) => {
+      proxy = args[args.indexOf("--proxy") + 1] ?? "";
+      // Ask the proxy, while yt-dlp would be running, for a loopback address, as SOCKS5 does.
+      const port = Number(proxy.split(":").at(-1));
+      reply = await new Promise<number[]>((resolve, reject) => {
+        let step = 0;
+        Bun.connect({
+          hostname: "127.0.0.1",
+          port,
+          socket: {
+            open(socket) {
+              socket.write(new Uint8Array([0x05, 0x01, 0x00]));
+            },
+            data(socket, data) {
+              if (step++ === 0) {
+                // CONNECT 127.0.0.1:80
+                socket.write(new Uint8Array([0x05, 0x01, 0x00, 0x01, 127, 0, 0, 1, 0, 80]));
+              } else {
+                resolve([...data]);
+                socket.end();
+              }
+            },
+            error(_socket, err) {
+              reject(err);
+            },
+          },
+        }).catch(reject);
+      });
+      return FAIL;
+    };
+    const saved = process.env.WEBFROST_ALLOW_PRIVATE_URLS;
+    Reflect.deleteProperty(process.env, "WEBFROST_ALLOW_PRIVATE_URLS");
+    try {
+      await mediaExtractor(db, 1, makeStorage(), "https://example.com/v", {
+        _spawner: spawner,
+      }).catch(() => {});
+    } finally {
+      if (saved !== undefined) process.env.WEBFROST_ALLOW_PRIVATE_URLS = saved;
+    }
+    expect(proxy).toStartWith("socks5h://127.0.0.1:");
+    // A SOCKS5 reply, and not "succeeded" (0x00): the connection was refused.
+    expect(reply[0]).toBe(0x05);
+    expect(reply[1]).not.toBe(0x00);
   });
 
   test("passes its signal to yt-dlp and records nothing once aborted", async () => {

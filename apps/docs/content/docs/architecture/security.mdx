@@ -191,9 +191,10 @@ where it sends, and WebFrost never adds trace headers to the pages it archives.
 - **Network-specific NAT64 prefixes.** Only the well-known `64:ff9b::/96` is decoded. A host
   behind NAT64 with its own prefix inside `2000::/3` should block that prefix's private mappings
   at the network layer.
-- **yt-dlp** makes its own requests and follows its own redirects. It is only invoked for a URL
-  that already passed `safeFetch`, and it is limited as described in
-  [Media extraction](#media-extraction-yt-dlp), but its requests do not go through the guard.
+- **yt-dlp** makes its own requests and follows its own redirects. They all go through the same
+  egress proxy as the browser (see [Media extraction](#media-extraction-yt-dlp)), so a private
+  address is refused on the connection itself; what remains is what any proxy cannot see, such
+  as a site that serves different media to WebFrost than to you.
 
 If WebFrost archives URLs from people you do not fully trust, treat the application-level guard as
 one layer and add a network-level one: run the container in a network with no route to your
@@ -207,14 +208,19 @@ The archived URL is untrusted input to yt-dlp, so every call passes:
   or change output paths;
 - `--no-playlist --playlist-items 1`: a playlist or channel URL cannot fan out into hundreds of
   downloads;
-- `--use-extractors default,-generic`: only sites yt-dlp explicitly supports. The generic extractor
-  would fetch and scan arbitrary pages for embedded media, a second request outside the SSRF guard.
+- `--use-extractors default,-generic,-mediasite,-mediasitecatalog,-mediasitenamedcatalog`: only
+  sites yt-dlp explicitly supports. The generic extractor would fetch and scan arbitrary pages for
+  embedded media; the Mediasite ones accept any host and follow addresses the page gives them.
+- `--proxy socks5h://127.0.0.1:<port>`: every connection yt-dlp opens (the page, its APIs, the
+  manifests and the media itself, each redirect included) goes through the SSRF egress proxy,
+  which checks the address it actually connects to. If the proxy cannot start, the media step
+  is skipped rather than run unguarded.
 
 The URL always comes after `--`, so it can never be read as an option. yt-dlp runs in its own
 process group with a hard timeout (`WEBFROST_MEDIA_TIMEOUT_MS`); on timeout, cancellation or
 shutdown the whole group is killed, ffmpeg included, so no download keeps running outside the
-concurrency limit. Its network requests still do not go through WebFrost's guard: isolate the
-network at the container or firewall level when archiving untrusted URLs.
+concurrency limit. A downloader yt-dlp hands a stream to (ffmpeg, for some formats) is outside
+the proxy: isolate the network at the container or firewall level when archiving untrusted URLs.
 
 ## Content security
 
