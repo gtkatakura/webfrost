@@ -22,6 +22,8 @@ export interface SnapshotImported {
   id: number;
   url: string;
   status: "done" | "failed";
+  /** The failed snapshot this one replaced (now in the trash), when imported with `replaces`. */
+  replaced?: number;
 }
 
 /** Options for {@link WebFrostClient.importSnapshot}. */
@@ -30,6 +32,11 @@ export interface ImportSnapshotOptions extends RequestOptions {
   contentLength?: number;
   /** Give up after this many milliseconds; default 0, no timeout (bundles can be large). */
   timeoutMs?: number;
+  /**
+   * A failed snapshot of the same URL that this (done) copy replaces: it moves to the trash in the same
+   * step. `CONFLICT` (409) when it is not, or no longer, a failure of that URL; nothing is stored then.
+   */
+  replaces?: number;
 }
 
 /** Tag attached to a snapshot */
@@ -56,15 +63,120 @@ export interface Page<T> {
 export interface PageOptions {
   /** Page number (1-indexed). Defaults to 1. */
   page?: number;
-  /** Items per page (1-200; the server caps larger values). Defaults to 20. */
+  /** Items per page, 1 to 200 (a larger value is capped, a fraction truncated). Defaults to 20. */
   limit?: number;
 }
 
 /** Single snapshot from GET /snapshots list. Timestamps are ISO 8601 UTC ("2026-11-21T21:42:38Z"). */
+/** What kind of failure a category is: what is worth doing about it. */
+export type FailureClass = "permanent" | "transient" | "blocked" | "internal";
+
+/** Why a failed snapshot could not be archived. */
+export interface SnapshotFailure {
+  /** Stable id, e.g. "domain_not_found", "page_not_found", "access_denied", "timeout". */
+  category: string;
+  class: FailureClass;
+  /** For people, e.g. "Domain does not exist". */
+  label: string;
+  /** The message behind it; null for guests. */
+  detail: string | null;
+}
+
+/** A group of failed snapshots that call for the same decision. */
+export type FailureGroupId =
+  | "domain-gone"
+  | "page-gone"
+  | "blocked"
+  | "rate-limited"
+  | "temporary"
+  | "site-setup"
+  | "private-address"
+  | "interrupted"
+  | "unknown";
+
+export interface FailureGroupSummary {
+  id: FailureGroupId;
+  label: string;
+  categories: string[];
+  /** Failed snapshots in the group (not counting the trash). */
+  count: number;
+  /** Distinct domains among them. */
+  domains: number;
+}
+
+/** A domain within a failure group. */
+export interface FailureDomain {
+  host: string;
+  count: number;
+  /** Of those, the pages that also have a snapshot that worked (never touched from the failure pages). */
+  withWorkingSnapshot: number;
+  lastFailedAt: string;
+  example: { id: number; url: string };
+}
+
+export interface FailureDomainPage extends Page<FailureDomain> {
+  /** Failed snapshots across every domain that matches (not only this page). */
+  snapshots: number;
+}
+
+export interface FailedSnapshot {
+  id: number;
+  url: string;
+  createdAt: string;
+  failure: SnapshotFailure | null;
+  /** The newest snapshot of the same URL that worked, if any. */
+  workingSnapshotId: number | null;
+}
+
+/**
+ * What a bulk decision on a failure group applies to: explicit `hosts` and/or `ids`, or `all` (every
+ * failed snapshot of the group, narrowed by the page's filter `q` and, on a domain's page, `host`) less
+ * what was unticked (`excludeHosts`, `excludeIds`). "Select all N" sends no ids.
+ */
+export interface FailureSelection {
+  hosts?: string[];
+  ids?: number[];
+  all?: boolean;
+  q?: string;
+  host?: string;
+  excludeHosts?: string[];
+  excludeIds?: number[];
+}
+
+/** Explicit `ids`, or `all` (everything in the trash) less `excludeIds`. */
+export interface TrashSelection {
+  ids?: number[];
+  all?: boolean;
+  excludeIds?: number[];
+}
+
+export interface TrashedSnapshot {
+  id: number;
+  url: string;
+  status: SnapshotStatus;
+  failure: SnapshotFailure | null;
+  createdAt: string;
+  trashedAt: string;
+  /** When it is deleted for good. */
+  deleteAfter: string | null;
+}
+
+export interface TrashPage extends Page<TrashedSnapshot> {
+  retentionDays: number;
+}
+
+export interface GeneralSettings {
+  /** Days a snapshot stays in the trash before it is deleted for good. */
+  trashRetentionDays: number;
+  trashRetentionLimits: { min: number; max: number };
+}
+
 export interface Snapshot {
   id: number;
   url: string;
   status: SnapshotStatus;
+  /** Why the snapshot failed; null unless status is "failed" (and for servers older than 0.3). */
+  failure: SnapshotFailure | null;
   createdAt: string;
   /** Extractor names that have produced results for this snapshot (e.g. ["warc", "readability"]) */
   extractors: string[];
@@ -144,9 +256,9 @@ export interface WebFrostClientOptions {
    */
   maxRetryDelayMs?: number;
   /**
-   * The `credentials` mode for requests. Defaults to "same-origin". Use "include" when the
-   * browser page and the API are on different origins and you rely on the session cookie
-   * (`login()`). Outside the browser, authenticate with an API key instead.
+   * The `credentials` mode for requests. Defaults to "same-origin", which is what the session
+   * cookie (`login()`) needs: it works only on the server's own pages (SameSite=Strict, no CORS).
+   * From another origin, or outside the browser, authenticate with an API key instead.
    */
   credentials?: RequestCredentials;
 }
@@ -157,10 +269,29 @@ export interface RequestOptions {
   signal?: AbortSignal | undefined;
 }
 
-export interface ListSnapshotsOptions extends PageOptions {
-  /** Filter by snapshot status. */
-  status?: SnapshotStatus;
+/**
+ * Filters of the snapshot list and of the search. The server applies them to the whole archive,
+ * so `total` and the pages count only what they keep.
+ */
+export interface SnapshotFilters {
+  /** One status, or several: a snapshot in any of them is kept. */
+  status?: SnapshotStatus | readonly SnapshotStatus[];
+  /** Created at or after this moment: an ISO 8601 date or timestamp, or a Date. */
+  since?: string | Date;
+  /** Created before this moment: an ISO 8601 date or timestamp, or a Date. */
+  before?: string | Date;
+  /** Extractor names (`"pdf"`, `"warc"`, ...): kept when every one of them produced output. */
+  extractors?: readonly string[];
+  /** Tag ids: kept when the snapshot carries every one of them. */
+  tags?: readonly number[];
+  /** The URL or the title contains this text (the case of ASCII letters is ignored). */
+  contains?: string;
 }
+
+export interface ListSnapshotsOptions extends PageOptions, SnapshotFilters {}
+
+/** Options for {@link WebFrostClient.searchSnapshotsPage}: the page plus the list's filters. */
+export interface SearchSnapshotsOptions extends PageOptions, SnapshotFilters {}
 
 /** Options for {@link WebFrostClient.iterateSnapshots}: the list filters plus a signal. */
 export interface IterateSnapshotsOptions extends ListSnapshotsOptions, RequestOptions {}
@@ -260,6 +391,46 @@ export interface ApiKey {
 /** Response from POST /settings/keys — includes raw key shown once */
 export interface ApiKeyCreated extends ApiKey {
   rawKey: string;
+}
+
+/**
+ * A request to connect a command line to the server, from POST /auth/device. The command line
+ * keeps `deviceCode` to itself and shows `userCode`; a signed-in person approves it at
+ * `verificationPath` in the web UI.
+ */
+export interface DeviceAuthorization {
+  /** Secret of the client that started the request: what it polls with. */
+  deviceCode: string;
+  /** The short code the person compares, such as "WDJB-MJHT". */
+  userCode: string;
+  /** Seconds until the request expires unanswered. */
+  expiresIn: number;
+  /** Seconds to wait between polls. */
+  interval: number;
+  /** Path of the approval page, relative to the server's address. */
+  verificationPath: string;
+  /** The same page with the code filled in. */
+  verificationPathComplete: string;
+}
+
+/** What a poll of a connection request learns. `approved` is answered once, with the new API key. */
+export type DevicePollResult =
+  | { status: "pending" }
+  | { status: "denied" }
+  /** The request expired, was collected already, or the server restarted. */
+  | { status: "expired" }
+  | { status: "approved"; apiKey: string; key: ApiKey };
+
+/** A connection request as the person approving it sees it. */
+export interface DeviceRequest {
+  userCode: string;
+  /** The name the command line gave itself; the API key is created under it. */
+  name: string;
+  /** The address the request came from, as the server saw it. */
+  requesterIp: string;
+  status: "pending" | "approved" | "denied";
+  requestedAt: string;
+  expiresAt: string;
 }
 
 /** Single record from GET /imports */

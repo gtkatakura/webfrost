@@ -333,7 +333,18 @@ describe.skipIf(!isSqliteRun)("openDb (SQLite archive file)", () => {
       ]);
 
       // ...file-backed ones the first time stats need them, and stored from then on.
-      const stats = await getStats(db, createStorageBackend(testDir));
+      // Two requests at once: storage is asked about each file once, not once per request.
+      const real = createStorageBackend(testDir);
+      let asked = 0;
+      const counting = Object.create(real) as typeof real;
+      counting.fileSize = async (ref: string) => {
+        asked++;
+        await Bun.sleep(20);
+        return real.fileSize(ref);
+      };
+      const [stats] = await Promise.all([getStats(db, counting), getStats(db, counting)]);
+      // One file-backed row is unmeasured here: asked once, though two requests needed it.
+      expect(asked).toBe(1);
       expect(stats.storageByExtractor.screenshot).toBe(1234);
       const detail = await getSnapshot(db, 1);
       expect(detail?.archiveResults.find((r) => r.extractor === "screenshot")?.size_bytes).toBe(
@@ -365,13 +376,64 @@ describe.skipIf(!isSqliteRun)("openDb (SQLite archive file)", () => {
     const db = await openDb(testDir);
     try {
       expect((await db.get<{ user_version: number }>(sql`PRAGMA user_version`))?.user_version).toBe(
-        4,
+        SCHEMA_VERSION,
       );
-      expect(SCHEMA_VERSION).toBe(4);
+      expect(SCHEMA_VERSION).toBe(6);
       expect(
         (await db.get<{ color_scheme: string | null }>(sql`SELECT color_scheme FROM snapshots`))
           ?.color_scheme,
       ).toBeNull();
+    } finally {
+      await db.close();
+    }
+  });
+
+  test("upgrades a schema-version-4 archive: failure columns and dead_hosts are added", async () => {
+    await (await openDb(testDir)).close();
+    // Put the file back to what 0.2 left: no failure columns, no dead_hosts, version 4.
+    withRaw((raw) => {
+      raw.exec("INSERT INTO snapshots (url, status) VALUES ('https://example.com/old', 'failed')");
+      raw.exec("DROP INDEX idx_snapshots_failure");
+      raw.exec("ALTER TABLE snapshots DROP COLUMN failure_category");
+      raw.exec("ALTER TABLE snapshots DROP COLUMN failure_detail");
+      raw.exec("DROP TABLE dead_hosts");
+      raw.exec("PRAGMA user_version = 4");
+    });
+
+    const db = await openDb(testDir);
+    try {
+      expect((await db.get<{ user_version: number }>(sql`PRAGMA user_version`))?.user_version).toBe(
+        SCHEMA_VERSION,
+      );
+      // An old failure has no reason: NULL, not a made-up one.
+      expect(await db.get(sql`SELECT failure_category, failure_detail FROM snapshots`)).toEqual({
+        failure_category: null,
+        failure_detail: null,
+      });
+      expect(await db.all(sql`SELECT host FROM dead_hosts`)).toEqual([]);
+    } finally {
+      await db.close();
+    }
+  });
+
+  test("upgrades a schema-version-5 archive: trashed_at and app_settings are added", async () => {
+    await (await openDb(testDir)).close();
+    withRaw((raw) => {
+      raw.exec("INSERT INTO snapshots (url, status) VALUES ('https://example.com/old', 'done')");
+      raw.exec("DROP INDEX idx_snapshots_trashed");
+      raw.exec("ALTER TABLE snapshots DROP COLUMN trashed_at");
+      raw.exec("DROP TABLE app_settings");
+      raw.exec("PRAGMA user_version = 5");
+    });
+
+    const db = await openDb(testDir);
+    try {
+      expect((await db.get<{ user_version: number }>(sql`PRAGMA user_version`))?.user_version).toBe(
+        SCHEMA_VERSION,
+      );
+      // Nothing was in the trash before.
+      expect(await db.get(sql`SELECT trashed_at FROM snapshots`)).toEqual({ trashed_at: null });
+      expect(await db.all(sql`SELECT name FROM app_settings`)).toEqual([]);
     } finally {
       await db.close();
     }
@@ -510,3 +572,15 @@ const V2_SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_schedules_next_run ON schedules (next_run_at);
   CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys (key_hash);
 `;
+
+describe("MySQL migrations run again after an interruption", () => {
+  test("a column or index the interrupted run already made counts as applied; other errors do not", async () => {
+    const { isAlreadyApplied } = await import("./db");
+    expect(isAlreadyApplied({ errno: 1060, code: "ER_DUP_FIELDNAME" })).toBe(true);
+    expect(isAlreadyApplied({ errno: 1061, code: "ER_DUP_KEYNAME" })).toBe(true);
+    expect(isAlreadyApplied({ code: "ER_DUP_FIELDNAME" })).toBe(true);
+    expect(isAlreadyApplied({ errno: 1146, code: "ER_NO_SUCH_TABLE" })).toBe(false);
+    expect(isAlreadyApplied(new Error("connection lost"))).toBe(false);
+    expect(isAlreadyApplied(null)).toBe(false);
+  });
+});

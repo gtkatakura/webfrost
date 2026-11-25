@@ -1,9 +1,13 @@
 import {
   type ApiKey,
+  SettingRangeError,
+  TRASH_RETENTION_DAYS,
   createApiKey,
+  getTrashRetentionDays,
   listApiKeys,
   parseDbTimestamp,
   revokeApiKey,
+  setTrashRetentionDays,
   sql,
 } from "@webfrost/core";
 import { Elysia, t } from "elysia";
@@ -14,7 +18,7 @@ import { isoTimestamp, isoTimestampRequired, paginate, parseIsoTimestamp } from 
 import { apiKeyOf } from "./auth";
 
 /** An API key as the API returns it: never its hash, and only active keys are listed. */
-function serializeApiKey(key: ApiKey) {
+export function serializeApiKey(key: ApiKey) {
   return {
     id: key.id,
     name: key.name,
@@ -40,6 +44,41 @@ export const settingsRouter = new Elysia({ prefix: "/settings" })
       await db.close();
     }
   })
+  .get("/general", async () => {
+    const db = await getDb();
+    try {
+      return {
+        trashRetentionDays: await getTrashRetentionDays(db),
+        trashRetentionLimits: { min: TRASH_RETENTION_DAYS.min, max: TRASH_RETENTION_DAYS.max },
+      };
+    } finally {
+      await db.close();
+    }
+  })
+  .patch(
+    "/general",
+    async ({ body, set }) => {
+      const db = await getDb();
+      try {
+        if (body.trashRetentionDays !== undefined) {
+          try {
+            await setTrashRetentionDays(db, body.trashRetentionDays);
+          } catch (err) {
+            if (err instanceof SettingRangeError)
+              return apiError(set, 400, "VALIDATION", err.message);
+            throw err;
+          }
+        }
+        return {
+          trashRetentionDays: await getTrashRetentionDays(db),
+          trashRetentionLimits: { min: TRASH_RETENTION_DAYS.min, max: TRASH_RETENTION_DAYS.max },
+        };
+      } finally {
+        await db.close();
+      }
+    },
+    { body: t.Object({ trashRetentionDays: t.Optional(t.Integer()) }) },
+  )
   .get(
     "/keys",
     async ({ query }) => {

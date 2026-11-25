@@ -269,3 +269,38 @@ describe("WEBFROST_DEFAULT_THEME", () => {
     }
   });
 });
+
+describe("routing and the guards see the same path", () => {
+  test("a short Host cannot route /api past the request guard and the rate limiter", async () => {
+    // Elysia once routed http://a/XY/api/v1/… as /api/v1/… while every guard read /XY/api/v1/….
+    const res = await app.handle(
+      new Request("http://a/XY/api/v1/auth/login", {
+        method: "POST",
+        headers: { "content-type": "text/plain" },
+        body: "not json",
+      }),
+    );
+    expect(res.status).not.toBe(415);
+    expect([404, 401]).toContain(res.status);
+  });
+});
+
+describe("body size", () => {
+  test("a large JSON body is refused before it is read, except on the URL import", async () => {
+    const big = "x".repeat(2 * 1024 * 1024);
+    const post = (path: string) =>
+      app.handle(
+        new Request(`http://localhost${path}`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "content-length": String(big.length + 20),
+          },
+          body: JSON.stringify({ username: big, password: "x" }),
+        }),
+      );
+    expect((await post("/api/v1/auth/login")).status).toBe(413);
+    expect((await post("/api/v1/snapshots")).status).toBe(413);
+    expect((await post("/api/v1/import")).status).not.toBe(413);
+  });
+});

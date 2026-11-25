@@ -105,6 +105,14 @@ export class S3Backend implements StorageBackend {
     return join(this.tempRoot, String(snapshotId), filename);
   }
 
+  async discardStage(snapshotId: number, stage: string): Promise<void> {
+    if (!this.tempRoot) return;
+    await rm(join(this.tempRoot, String(snapshotId), `.stage-${stage}`), {
+      recursive: true,
+      force: true,
+    });
+  }
+
   /** Remove the private temp directory and anything left in it. */
   async cleanup(): Promise<void> {
     const root = this.tempRoot;
@@ -116,14 +124,14 @@ export class S3Backend implements StorageBackend {
 
   // ── StorageBackend implementation ──────────────────────────
 
-  async localPath(snapshotId: number, filename: string): Promise<string> {
-    const p = await this.tempPath(snapshotId, filename);
+  async localPath(snapshotId: number, filename: string, stage?: string): Promise<string> {
+    const p = await this.tempPath(snapshotId, stage ? join(`.stage-${stage}`, filename) : filename);
     await mkdir(dirname(p), { recursive: true });
     return p;
   }
 
-  async finalize(snapshotId: number, filename: string): Promise<string> {
-    const p = await this.tempPath(snapshotId, filename);
+  async finalize(snapshotId: number, filename: string, stage?: string): Promise<string> {
+    const p = await this.tempPath(snapshotId, stage ? join(`.stage-${stage}`, filename) : filename);
     const key = this.key(snapshotId, filename);
 
     try {

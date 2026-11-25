@@ -2,6 +2,7 @@ import { sql } from "kysely";
 import { newGuardedContext } from "./browser-guard";
 import { resolveChromium } from "./chromium";
 import type { Db } from "./db";
+import { knownDeadHost, markDeadHost } from "./dead-hosts";
 import { domSnapshotExtractor } from "./extractors/dom-snapshot";
 import { htmlExtractor } from "./extractors/html";
 import { mediaExtractor } from "./extractors/media";
@@ -10,10 +11,11 @@ import { readabilityExtractor } from "./extractors/readability";
 import { screenshotExtractor } from "./extractors/screenshot";
 import { singleFileExtractor } from "./extractors/singlefile";
 import { warcExtractor } from "./extractors/warc";
+import { type Failure, failureFromError, failureFromStatus } from "./failure";
 import { FetchCache } from "./fetch-cache";
-import { newLeaseToken, recordResult, setJobStatus, touchJob } from "./results";
+import { fencedStorage, newLeaseToken, recordResult, setJobStatus, touchJob } from "./results";
 import { extractIndexFields, indexSnapshot } from "./search";
-import { envInt } from "./ssrf-guard";
+import { envInt, failedHostOf } from "./ssrf-guard";
 import { createStorageBackend } from "./storage";
 import type { StorageBackend } from "./storage";
 import {
@@ -90,10 +92,19 @@ export function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promis
  * WebRTC may only use the proxy, so a page cannot reach an internal address over UDP
  * (STUN/TURN) around the SSRF egress proxy.
  */
-export function chromiumLaunchOptions(): { executablePath?: string; args: string[] } {
+export function chromiumLaunchOptions(): {
+  executablePath?: string;
+  args: string[];
+  handleSIGINT: false;
+  handleSIGTERM: false;
+  handleSIGHUP: false;
+} {
   const { path } = resolveChromium();
   const args = ["--force-webrtc-ip-handling-policy=disable_non_proxied_udp"];
-  return path ? { executablePath: path, args } : { args };
+  // The server and the CLI handle their own signals (finish what is running, then exit). Playwright's
+  // default would close the browser and exit the process on the first Ctrl+C, before any of that.
+  const signals = { handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false } as const;
+  return path ? { executablePath: path, args, ...signals } : { args, ...signals };
 }
 
 /** How far down the page the scroll pass goes; past that, a page is endless (a feed) or huge. */
@@ -238,10 +249,18 @@ export async function runPipeline(
         () => void touchJob(db, snapshotId, options?.lease),
         JOB_HEARTBEAT_MS,
       );
+      // A leased run writes its files apart and puts each in place only while it holds the lease,
+      // so a run that stalled and was adopted cannot overwrite the files of the run that took over.
+      const base = storage ?? createStorageBackend(dir);
+      const runStorage = options?.lease ? fencedStorage(db, base, snapshotId, options.lease) : base;
       try {
-        await archive(db, snapshotId, url, dir, span, cache, logger, storage, options);
+        await archive(db, snapshotId, url, dir, span, cache, logger, runStorage, options);
       } finally {
         clearInterval(heartbeat);
+        // What it staged and never put in place (a failed extractor, a lost lease) is removed.
+        if ("discard" in runStorage) {
+          await (runStorage as { discard(): Promise<void> }).discard().catch(() => {});
+        }
       }
     },
   );
@@ -269,13 +288,13 @@ async function archive(
   const lease = options?.lease;
 
   /** Returns false when the job's lease has passed to another worker. */
-  /** `reason`: why the run failed, as a `failureCategory`. */
+  /** `failure`: why the run failed; stored on the snapshot and traced as its category. */
   async function setStatus(
     status: "running" | "done" | "failed",
-    reason?: string,
+    failure?: Failure,
   ): Promise<boolean> {
     try {
-      const owned = await setJobStatus(db, snapshotId, status, lease);
+      const owned = await setJobStatus(db, snapshotId, status, lease, failure);
       if (!owned) {
         logger?.warn(
           `lease lost snapshot=${snapshotId}: another worker adopted the job; dropping status=${status}`,
@@ -283,7 +302,7 @@ async function archive(
         span.setAttributes({ "webfrost.lease.lost": true });
       } else if (status !== "running") {
         span.setAttributes({ "webfrost.snapshot.status": status });
-        if (status === "failed") span.fail(undefined, reason ?? "no_output");
+        if (status === "failed") span.fail(undefined, failure?.category ?? "no_output");
         recordMetric("snapshots.finished", 1, { "webfrost.snapshot.status": status });
       }
       return owned;
@@ -306,6 +325,19 @@ async function archive(
   }
 
   if (!(await setStatus("running"))) return;
+
+  // A domain that did not resolve a moment ago does not resolve now: report it without asking DNS again.
+  try {
+    const dead = await knownDeadHost(db, url);
+    if (dead) {
+      logger?.warn(`fetch skipped snapshot=${snapshotId}: ${dead.detail}`);
+      await setStatus("failed", dead);
+      return;
+    }
+  } catch (err) {
+    // Only a shortcut: without it the fetch finds out the same.
+    logger?.debug(`dead host check failed snapshot=${snapshotId}: ${errorMessage(err)}`);
+  }
 
   // Politeness: never start two runs against the same host closer than the configured gap.
   if (options?.throttle !== false) {
@@ -342,13 +374,22 @@ async function archive(
     );
   } catch (err) {
     logger?.error(`fetch failed snapshot=${snapshotId}: ${errorMessage(err)}`);
-    await setStatus("failed", `fetch_${failureCategory(errorMessage(err))}`);
+    const failure = failureFromError(errorMessage(err));
+    // The host whose lookup failed, which after a redirect is not the one asked for: a link that
+    // redirects to a dead domain must not mark the live site it started on as dead.
+    const host = failedHostOf(err);
+    if (failure.category === "domain_not_found" && host) {
+      await markDeadHost(db, host, failure.detail).catch((markErr: unknown) =>
+        logger?.debug(`could not record dead host ${host}: ${errorMessage(markErr)}`),
+      );
+    }
+    await setStatus("failed", failure);
     return;
   }
 
   if (!cached.status || cached.status >= 400) {
     logger?.warn(`fetch error snapshot=${snapshotId} status=${cached.status ?? "none"} url=${url}`);
-    await setStatus("failed", "fetch_http_status");
+    await setStatus("failed", failureFromStatus(cached.status, url));
     return;
   }
 

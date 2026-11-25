@@ -87,6 +87,7 @@ describe("WebFrostClient.listSnapshots", () => {
         id: 1,
         url: "https://a.com",
         status: "done",
+        failure: null,
         createdAt: "2024-01-01T00:00:00.000Z",
         extractors: ["warc"],
         tags: [],
@@ -98,6 +99,7 @@ describe("WebFrostClient.listSnapshots", () => {
         id: 2,
         url: "https://b.com",
         status: "pending",
+        failure: null,
         createdAt: "2024-01-02T00:00:00.000Z",
         extractors: [],
         tags: [],
@@ -236,6 +238,7 @@ describe("WebFrostClient.getSnapshot", () => {
       id: 1,
       url: "https://example.com",
       status: "done",
+      failure: null,
       createdAt: "2024-01-01T00:00:00.000Z",
       extractors: ["warc"],
       tags: [],
@@ -279,6 +282,75 @@ describe("WebFrostClient.getSnapshot", () => {
 
     const client = new WebFrostClient({ baseUrl: BASE });
     await expect(client.getSnapshot(1)).rejects.toBeInstanceOf(WebFrostError);
+  });
+});
+
+describe("WebFrostClient snapshot filters", () => {
+  /** The query string the client sent on its only request. */
+  function sentParams(): URLSearchParams {
+    return new URL((fetchSpy.mock.calls[0] as unknown[])[0] as string).searchParams;
+  }
+
+  test("listSnapshots sends every filter to the server", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ items: [], total: 0, page: 1, limit: 20 }));
+    const client = new WebFrostClient({ baseUrl: BASE });
+    await client.listSnapshots({
+      status: ["done", "failed"],
+      since: "2026-11-01",
+      before: new Date("2026-12-01T00:00:00Z"),
+      extractors: ["pdf", "warc"],
+      tags: [3, 7],
+      contains: "  example.com/docs  ",
+    });
+
+    expect(Object.fromEntries(sentParams())).toEqual({
+      status: "done,failed",
+      since: "2026-11-01",
+      before: "2026-12-01T00:00:00.000Z",
+      extractor: "pdf,warc",
+      tag: "3,7",
+      contains: "example.com/docs",
+    });
+  });
+
+  test("empty filters send nothing", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ items: [], total: 0, page: 1, limit: 20 }));
+    const client = new WebFrostClient({ baseUrl: BASE });
+    await client.listSnapshots({ status: [], extractors: [], tags: [], contains: "   " });
+
+    expect((fetchSpy.mock.calls[0] as unknown[])[0]).toBe(`${BASE}/api/v1/snapshots`);
+  });
+
+  test("searchSnapshotsPage sends the filters with the query", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ items: [], total: 0, page: 2, limit: 20 }));
+    const client = new WebFrostClient({ baseUrl: BASE });
+    await client.searchSnapshotsPage("glacier", {
+      page: 2,
+      status: "done",
+      since: "2026-11-01",
+      extractors: ["pdf"],
+      tags: [3],
+    });
+
+    expect(Object.fromEntries(sentParams())).toEqual({
+      q: "glacier",
+      page: "2",
+      status: "done",
+      since: "2026-11-01",
+      extractor: "pdf",
+      tag: "3",
+    });
+  });
+
+  test("iterateSnapshots keeps the filters on every page", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ items: [], total: 0, page: 1, limit: 100 }));
+    const client = new WebFrostClient({ baseUrl: BASE });
+    for await (const _ of client.iterateSnapshots({ contains: "example", tags: [3] })) {
+      // no items
+    }
+
+    expect(sentParams().get("contains")).toBe("example");
+    expect(sentParams().get("tag")).toBe("3");
   });
 });
 
@@ -553,6 +625,17 @@ describe("WebFrostClient.importSnapshot", () => {
     expect(headers.get("authorization")).toBe("Bearer wf_secret");
   });
 
+  test("replaces names the failed snapshot it takes the place of", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ id: 43, url: "https://x.example", status: "done", replaced: 7 }, 201),
+    );
+    const client = new WebFrostClient({ baseUrl: BASE });
+    const result = await client.importSnapshot(new Uint8Array([1]), { replaces: 7 });
+    expect(result.replaced).toBe(7);
+    const [calledUrl] = fetchSpy.mock.calls[0] as [string];
+    expect(calledUrl).toBe(`${BASE}/api/v1/snapshots/import?replaces=7`);
+  });
+
   test("streams a ReadableStream with its declared length, half duplex", async () => {
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ id: 1, url: "https://x.example", status: "failed" }, 201),
@@ -601,5 +684,165 @@ describe("WebFrostClient.importSnapshot", () => {
       .importSnapshot(new Blob(["x"]), { timeoutMs: 10 })
       .catch((e: unknown) => e)) as WebFrostError;
     expect(timedOut.code).toBe("TIMEOUT");
+  });
+});
+
+describe("WebFrostClient failures", () => {
+  test("a failed snapshot carries its failure; an older server's answer maps to null", async () => {
+    const failure = {
+      category: "domain_not_found",
+      class: "permanent",
+      label: "Domain does not exist",
+      detail: "getaddrinfo ENOTFOUND gone.example",
+    } as const;
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({
+        items: [
+          {
+            id: 1,
+            url: "https://gone.example",
+            status: "failed",
+            failure,
+            createdAt: "2024-01-01T00:00:00Z",
+          },
+          {
+            id: 2,
+            url: "https://old.example",
+            status: "failed",
+            createdAt: "2024-01-01T00:00:00Z",
+          },
+        ],
+        total: 2,
+        page: 1,
+        limit: 20,
+      }),
+    );
+    const page = await new WebFrostClient({ baseUrl: BASE }).listSnapshots();
+    expect(page.items.map((s) => s.failure)).toEqual([failure, null]);
+  });
+
+  test("listFailureDomains passes the filter and trashFailures posts the selection", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ items: [], total: 0, snapshots: 0, page: 2, limit: 50 }),
+    );
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ trashed: 3, ids: [4, 5, 6] }));
+    const client = new WebFrostClient({ baseUrl: BASE });
+
+    await client.listFailureDomains("domain-gone", { q: "mirror site", page: 2 });
+    const asked = new URL(String(fetchSpy.mock.calls[0]?.[0]));
+    expect(asked.pathname).toBe("/api/v1/failures/domain-gone/domains");
+    expect(Object.fromEntries(asked.searchParams)).toEqual({ q: "mirror site", page: "2" });
+    expect(await client.trashFailures("domain-gone", { hosts: ["gone.example"] })).toEqual({
+      trashed: 3,
+      ids: [4, 5, 6],
+    });
+    const [url, init] = fetchSpy.mock.calls[1] ?? [];
+    expect(String(url)).toBe(`${BASE}/api/v1/failures/domain-gone/trash`);
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({ hosts: ["gone.example"] });
+  });
+});
+
+describe("WebFrostClient: connecting a command line", () => {
+  test("startDeviceAuthorization asks without credentials and returns the codes", async () => {
+    const started = {
+      deviceCode: "d".repeat(64),
+      userCode: "WDJB-MJHT",
+      expiresIn: 600,
+      interval: 2,
+      verificationPath: "/#/connect",
+      verificationPathComplete: "/#/connect?code=WDJB-MJHT",
+    };
+    fetchSpy.mockResolvedValueOnce(jsonResponse(started));
+    const client = new WebFrostClient({ baseUrl: BASE });
+    expect(await client.startDeviceAuthorization({ name: "laptop" })).toEqual(started);
+
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${BASE}/api/v1/auth/device`);
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ name: "laptop" });
+  });
+
+  test("pollDeviceAuthorization reports pending, approved with the key, and a gone request as expired", async () => {
+    const client = new WebFrostClient({ baseUrl: BASE });
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ status: "pending" }));
+    expect(await client.pollDeviceAuthorization("abc")).toEqual({ status: "pending" });
+    expect(JSON.parse((fetchSpy.mock.calls[0] as [string, RequestInit])[1].body as string)).toEqual(
+      { deviceCode: "abc" },
+    );
+
+    const key = { id: "k1", name: "laptop", expiresAt: null, lastUsedAt: null, createdAt: "x" };
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ status: "approved", apiKey: "secret", key }));
+    expect(await client.pollDeviceAuthorization("abc")).toEqual({
+      status: "approved",
+      apiKey: "secret",
+      key,
+    });
+
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ error: "unknown or expired connection request", code: "NOT_FOUND" }, 404),
+    );
+    expect(await client.pollDeviceAuthorization("abc")).toEqual({ status: "expired" });
+  });
+
+  test("getDeviceRequest is null for an unknown code; approve and deny say whether they applied", async () => {
+    const client = new WebFrostClient({ baseUrl: BASE });
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ error: "x", code: "NOT_FOUND" }, 404));
+    expect(await client.getDeviceRequest("WDJB MJHT")).toBeNull();
+    expect((fetchSpy.mock.calls[0] as [string])[0]).toBe(
+      `${BASE}/api/v1/auth/device/requests/WDJB%20MJHT`,
+    );
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ ok: true }));
+    expect(await client.approveDeviceRequest("WDJB-MJHT")).toBe(true);
+    const [url, init] = fetchSpy.mock.calls[1] as [string, RequestInit];
+    expect(url).toBe(`${BASE}/api/v1/auth/device/requests/WDJB-MJHT/approve`);
+    expect(init.method).toBe("POST");
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ error: "x", code: "NOT_FOUND" }, 404));
+    expect(await client.denyDeviceRequest("WDJB-MJHT")).toBe(false);
+    expect((fetchSpy.mock.calls[2] as [string])[0]).toBe(
+      `${BASE}/api/v1/auth/device/requests/WDJB-MJHT/deny`,
+    );
+  });
+});
+
+describe("WebFrostClient: blank searches and a reused signal", () => {
+  test("a blank query is not sent: it is an empty result, not the plain list", async () => {
+    const client = new WebFrostClient({ baseUrl: BASE });
+    expect(await client.searchSnapshots("   ")).toEqual([]);
+    expect(await client.searchSnapshotsPage("", { page: 2 })).toEqual({
+      items: [],
+      total: 0,
+      page: 2,
+      limit: 20,
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test("a result without snippet or rank still has a string and a number", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ items: [{ id: 1, url: "https://a.com" }], total: 1, page: 1, limit: 20 }),
+    );
+    const [hit] = await new WebFrostClient({ baseUrl: BASE }).searchSnapshots("a");
+    expect(hit?.snippet).toBe("");
+    expect(hit?.rank).toBe(0);
+  });
+
+  test("one signal for many requests, failed ones included, collects no listeners", async () => {
+    const controller = new AbortController();
+    const added: unknown[] = [];
+    const original = controller.signal.addEventListener.bind(controller.signal);
+    controller.signal.addEventListener = ((
+      ...args: Parameters<AbortSignal["addEventListener"]>
+    ) => {
+      added.push(args[0]);
+      return original(...args);
+    }) as AbortSignal["addEventListener"];
+    const client = new WebFrostClient({ baseUrl: BASE });
+    for (let i = 0; i < 5; i++) {
+      fetchSpy.mockResolvedValueOnce(new Response("nope", { status: 500 }));
+      await client.downloadArchive(1, "pdf", { signal: controller.signal }).catch(() => {});
+    }
+    expect(added).toEqual([]);
   });
 });

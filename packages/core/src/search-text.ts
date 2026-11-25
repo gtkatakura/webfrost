@@ -158,6 +158,29 @@ export function toTsquery(clauses: QueryClause[]): string {
     .join(" & ");
 }
 
+/**
+ * SQLite FTS5 `MATCH` input. Every term is a quoted phrase (tokens are letters and digits, so the
+ * quotes are safe), a prefix gets `*` after its closing quote, and nothing else of FTS5's syntax
+ * (NEAR, column filters, ^) can be written: one query cannot ask for more than MAX_QUERY_TERMS
+ * terms, however long it is. FTS5's NOT is binary, so the negated clauses come last.
+ */
+export function toFts5(clauses: QueryClause[]): string {
+  const term = (t: QueryTerm): string => `"${t.words.join(" ")}"${t.prefix ? "*" : ""}`;
+  const body = (c: QueryClause): string =>
+    c.alternatives.length > 1
+      ? `(${c.alternatives.map(term).join(" OR ")})`
+      : term(c.alternatives[0] as QueryTerm);
+  const positive = clauses
+    .filter((c) => !c.negate)
+    .map(body)
+    .join(" AND ");
+  const negative = clauses
+    .filter((c) => c.negate)
+    .map((c) => ` NOT ${body(c)}`)
+    .join("");
+  return `${positive}${negative}`;
+}
+
 /** MySQL `MATCH … AGAINST (… IN BOOLEAN MODE)` input. */
 export function toMysqlBoolean(clauses: QueryClause[]): string {
   const term = (t: QueryTerm): string =>

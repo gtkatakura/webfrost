@@ -1,9 +1,16 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BundleError, createStorageBackend, exportSnapshotBundle } from "@webfrost/core";
+import {
+  BundleError,
+  type StorageBackend,
+  createStorageBackend,
+  exportSnapshotBundle,
+} from "@webfrost/core";
 import { type Command, type Context, parseHttpUrl, parseId } from "../cli";
+import { credentialsPath, isReadableByOthers, savedServer } from "../credentials";
 import { CliError, UsageError } from "../errors";
+import { apiFetch, redirectAdvice, retryAfterSeconds } from "../proxy-headers";
 import { printJson, withDb } from "./shared";
 
 /**
@@ -26,21 +33,94 @@ export function isLoopbackHost(hostname: string): boolean {
   );
 }
 
-/** Bundles smaller than this upload without a progress line. */
-const PROGRESS_MIN_BYTES = 1024 * 1024;
+/** The server refused an upload; `status` is its HTTP status (0 when it could not be reached). */
+export class UploadError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    /** Seconds the server asked to wait (Retry-After on a 429), when it said. */
+    readonly retryAfter?: number,
+  ) {
+    super(message);
+    this.name = "UploadError";
+  }
+}
 
-function formatBytes(n: number): string {
+/**
+ * The server's base URL from `--to`/`--from`: http(s) only, and plain HTTP only to this machine or with
+ * --insecure (warned about), since the API key travels with every request.
+ */
+export function serverBase(
+  ctx: Context,
+  raw: string | undefined,
+  flag: string,
+  path: string[],
+): URL {
+  if (!raw) throw new UsageError(`Missing --${flag} <url>: the WebFrost server.`, path);
+  return serverUrl(ctx, raw, path);
+}
+
+/** The same check for a server URL given as an argument (`webfrost login <server>`). */
+export function serverUrl(ctx: Context, raw: string, path: string[]): URL {
+  const base = parseHttpUrl(raw, path);
+  if (base.protocol === "http:" && !isLoopbackHost(base.hostname)) {
+    if (!ctx.bool("insecure")) {
+      throw new UsageError(
+        `${base.origin} is plain HTTP: the API key and the snapshot would travel unencrypted. Use https, or pass --insecure if this network is trusted.`,
+        path,
+      );
+    }
+    ctx.logger.warn(
+      `${base.origin} is plain HTTP (--insecure): the API key and the snapshot travel unencrypted.`,
+    );
+  }
+  return base;
+}
+
+/**
+ * The API key for a server: WEBFROST_API_KEY when it is set (a key is never taken from a flag,
+ * which would land in shell history and process lists), else the one `webfrost login` saved for
+ * this server. A saved key is only ever sent to the server it was issued by.
+ */
+export function requireApiKey(ctx: Context, base: URL): string {
+  const fromEnv = process.env.WEBFROST_API_KEY;
+  if (fromEnv) return fromEnv;
+  const saved = savedServer(base.origin);
+  if (saved) {
+    if (isReadableByOthers(credentialsPath())) {
+      ctx.logger.warn(
+        `${credentialsPath()} can be read by other users of this machine: chmod 600 it.`,
+      );
+    }
+    return saved.apiKey;
+  }
+  throw new CliError(
+    `No API key for ${base.origin}. Connect once with: webfrost login ${base.origin}\n(or set WEBFROST_API_KEY to a key from the server's Settings > API keys)`,
+  );
+}
+
+/** What to say when the server answers 401 to the key. */
+export const KEY_REJECTED =
+  "the server rejected the API key (HTTP 401): it was revoked or has expired. Connect again with webfrost login <server>, or set WEBFROST_API_KEY";
+
+export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KB`;
   if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`;
   return `${(n / 1024 ** 3).toFixed(2)} GB`;
 }
 
-async function exportBundle(ctx: Context, id: number, path: string): Promise<number> {
+/** Bundles smaller than this upload without a progress line. */
+const PROGRESS_MIN_BYTES = 1024 * 1024;
+
+export async function exportBundle(
+  ctx: Pick<Context, "dir">,
+  id: number,
+  path: string,
+  storage: StorageBackend = createStorageBackend(ctx.dir),
+): Promise<number> {
   try {
-    const { bytes } = await withDb(ctx, (db) =>
-      exportSnapshotBundle(db, createStorageBackend(ctx.dir), id, path),
-    );
+    const { bytes } = await withDb(ctx, (db) => exportSnapshotBundle(db, storage, id, path));
     return bytes;
   } catch (err) {
     if (err instanceof BundleError) throw new CliError(err.message);
@@ -104,15 +184,21 @@ function withProgress(path: string, total: number, report: (sent: number) => voi
   });
 }
 
-async function upload(
+export async function upload(
   ctx: Context,
-  endpoint: string,
+  base: URL,
+  /** The import route, with its query (`/snapshots/import?replaces=…`). */
+  path: string,
   apiKey: string,
   id: number,
-  path: string,
+  /** The bundle on disk. */
+  file: string,
   bytes: number,
-): Promise<{ id: number; url: string; status: string }> {
-  const showProgress = !ctx.quiet && process.stderr.isTTY === true && bytes >= PROGRESS_MIN_BYTES;
+  /** Show a progress line on a terminal. Off for a caller that prints lines of its own meanwhile. */
+  progress = true,
+): Promise<{ id: number; url: string; status: string; replaced?: number }> {
+  const showProgress =
+    progress && !ctx.quiet && process.stderr.isTTY === true && bytes >= PROGRESS_MIN_BYTES;
   const report = (sent: number) => {
     const pct = Math.floor((sent / bytes) * 100);
     process.stderr.write(
@@ -121,27 +207,19 @@ async function upload(
   };
   let res: Response;
   try {
-    res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/zip",
-        "content-length": String(bytes),
-      },
-      body: showProgress ? withProgress(path, bytes, report) : Bun.file(path),
-      // The key must never follow a redirect to another host.
-      redirect: "manual",
+    res = await apiFetch(base, path, {
+      apiKey,
+      headers: { "content-type": "application/zip", "content-length": String(bytes) },
+      body: showProgress ? withProgress(file, bytes, report) : Bun.file(file),
     });
   } catch (err) {
-    throw new Error(
-      `cannot reach ${endpoint}: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    throw new UploadError(err instanceof Error ? err.message : String(err), 0);
   } finally {
     if (showProgress) process.stderr.write("\n");
   }
 
   const text = await res.text();
-  let body: { id?: number; url?: string; status?: string; error?: string } = {};
+  let body: { id?: number; url?: string; status?: string; replaced?: number; error?: string } = {};
   try {
     body = JSON.parse(text);
   } catch {
@@ -152,21 +230,29 @@ async function upload(
       id: body.id,
       url: printable(String(body.url), 8192),
       status: printable(String(body.status)),
+      ...(typeof body.replaced === "number" ? { replaced: body.replaced } : {}),
     };
   }
   if (res.status >= 300 && res.status < 400) {
-    throw new Error(
-      `the server answered with a redirect (HTTP ${res.status}); pass its final URL to --to`,
+    throw new UploadError(`the server could not be asked: ${redirectAdvice(res)}`, res.status);
+  }
+  if (res.status === 401) throw new UploadError(KEY_REJECTED, 401);
+  if (res.status === 429) {
+    throw new UploadError(
+      "the server is busy with other uploads (HTTP 429)",
+      429,
+      retryAfterSeconds(res, 300),
     );
   }
-  if (res.status === 401) throw new Error("the server rejected WEBFROST_API_KEY (HTTP 401)");
   if (res.status === 413) {
-    throw new Error(
+    throw new UploadError(
       `the bundle is larger than the server accepts (HTTP 413; see WEBFROST_IMPORT_BUNDLE_MAX_BYTES, or a proxy's upload limit)`,
+      413,
     );
   }
-  throw new Error(
+  throw new UploadError(
     `the server refused it: ${printable(typeof body.error === "string" ? body.error : text) || "no details"} (HTTP ${res.status})`,
+    res.status,
   );
 }
 
@@ -196,42 +282,24 @@ export const pushCommand: Command = {
   },
   notes: `
 Environment:
-  WEBFROST_API_KEY  An API key of the server (Settings > API keys). Read from the
-                    environment only, never a flag, so it stays out of shell history
-                    and process lists.
+  WEBFROST_API_KEY  An API key of the server, instead of the one webfrost login
+                    saved for it. Read from the environment only, never a flag, so
+                    it stays out of shell history and process lists.
 
 Exit codes:
   0  every snapshot was stored on the server
   1  at least one could not be exported or was refused (the others are still sent)
   2  usage error`,
   examples: [
-    "WEBFROST_API_KEY=wf_... webfrost push 12 --to https://archive.example.com",
+    "webfrost login https://archive.example.com   # once",
+    "webfrost push 12 --to https://archive.example.com",
     "webfrost push 12 13 14 --to https://archive.example.com --json",
     "webfrost push 12 --to http://192.168.1.20:3000 --insecure",
   ],
   async run(ctx) {
-    const to = ctx.string("to");
-    if (!to) throw new UsageError("Missing --to <url>: the server to push to.", ["push"]);
-    const base = parseHttpUrl(to, ["push"]);
-    if (base.protocol === "http:" && !isLoopbackHost(base.hostname) && !ctx.bool("insecure")) {
-      throw new UsageError(
-        `${base.origin} is plain HTTP: the API key and the snapshot would travel unencrypted. Use https, or pass --insecure if this network is trusted.`,
-        ["push"],
-      );
-    }
     const ids = ctx.args.map((raw) => parseId(raw, "snapshot id", ["push"]));
-    const apiKey = process.env.WEBFROST_API_KEY;
-    if (!apiKey) {
-      throw new CliError(
-        "WEBFROST_API_KEY is not set. Create an API key on the server (Settings > API keys) and export it: WEBFROST_API_KEY=wf_... webfrost push ...",
-      );
-    }
-    if (base.protocol === "http:" && !isLoopbackHost(base.hostname)) {
-      ctx.logger.warn(
-        `${base.origin} is plain HTTP (--insecure): the API key and the snapshot travel unencrypted.`,
-      );
-    }
-    const endpoint = `${base.href.replace(/\/+$/, "")}/api/v1/snapshots/import`;
+    const base = serverBase(ctx, ctx.string("to"), "to", ["push"]);
+    const apiKey = requireApiKey(ctx, base);
 
     const outcomes: PushOutcome[] = [];
     const tmp = mkdtempSync(join(tmpdir(), "webfrost-push-"));
@@ -240,7 +308,7 @@ Exit codes:
         const path = join(tmp, `snapshot-${id}.zip`);
         try {
           const bytes = await exportBundle(ctx, id, path);
-          const remote = await upload(ctx, endpoint, apiKey, id, path, bytes);
+          const remote = await upload(ctx, base, "/snapshots/import", apiKey, id, path, bytes);
           outcomes.push({ id, ok: true, remote, bytes });
           if (!ctx.bool("json")) {
             ctx.logger.info(

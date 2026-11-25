@@ -17,6 +17,8 @@ For the structured analysis (assets, trust boundaries, risks by component) see t
 ## Authentication
 
 Every `/api/v1/*` route requires authentication except `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`,
+the two routes of [`webfrost login`](#connecting-a-command-line) (`POST /api/v1/auth/device` and
+`POST /api/v1/auth/device/token`),
 `GET /api/v1/setup/status` and `POST /api/v1/setup` (which only works while no admin user exists, and
 only with `WEBFROST_SETUP_TOKEN` when that is set). While no admin exists and no setup token is
 configured, the server logs a warning at startup: anyone who reaches it can claim it.
@@ -42,7 +44,45 @@ generates one on first run when it is unset and keeps it in `<data dir>/session-
 
 `AUTH_DISABLED=true` turns all of the above off. It exists for local development and automated
 tests. Never set it on anything reachable from a network you do not fully control. With it the
-server binds to `127.0.0.1` unless `HOST` is set explicitly.
+server binds to `127.0.0.1` unless `HOST` is set explicitly, and the API refuses (`403`) any
+request whose `Host` is not `localhost`, a `127.x` address or `[::1]` (or a name in
+`WEBFROST_ALLOWED_HOSTS`): a page that re-points its own name at `127.0.0.1` (DNS rebinding)
+reaches the loopback listener, but still under its own name.
+
+### Connecting a command line
+
+`webfrost login <server>` gets an API key without anyone copying one, following the OAuth 2.0 Device
+Authorization Grant (RFC 8628). The command line starts a request (`POST /api/v1/auth/device`) and
+shows a short code; a person signed in to the web UI opens the approval page, sees the same code,
+the name and the address the request came from, and approves or denies; the command line polls
+(`POST /api/v1/auth/device/token`) and receives the key.
+
+What the two public routes give without an approval is nothing: a request is a slot in memory.
+
+- **No key before approval, and none at rest in plain text.** The key is created at the poll that
+  returns it, stored as a hash like every other key, and that poll removes the request.
+- **One answer, once.** An approval or a denial cannot be changed, and it is delivered a single
+  time; the device code (256 bits, kept only as a hash) is worthless afterwards.
+- **Short-lived and bounded.** A request expires after 10 minutes. New requests are limited to 10 a
+  minute per client and polls to 60. One client address has at most 5 waiting and the server 200
+  in all; a new one beyond that replaces the oldest (the client's own first). So memory is
+  bounded, and nobody can keep others from connecting by starting requests: the newest request,
+  the one a person is about to approve, is the last to go.
+- **The command line decides what it opens.** It builds the approval address from the server
+  address you typed and the code, which must be eight letters; a path or a code of another shape
+  sent by the server is refused, so a hostile server cannot make it open something else.
+- **Only a signed-in person approves.** Seeing and answering a request need the session cookie and
+  pass the cross-site check below, so another site cannot approve one with the admin's browser. An
+  API key cannot approve a request and so turn itself into another key.
+- **The key is an ordinary API key**: named after what the command line called itself (shown before
+  approving, as plain text), listed under Settings, API keys and revocable there or with
+  `webfrost logout`. On the client it is saved in `~/.config/webfrost/credentials.json`, mode
+  `0600`, and only ever sent to the server it came from, never along a redirect.
+
+The risk this kind of flow carries is being talked into approving someone else's request: an
+attacker starts one and sends you its link. The approval page says so, and shows the code, the
+name and the address of the requester; approve only a request you started yourself, whose code
+your own terminal shows. A request you did not start costs nothing to deny or ignore.
 
 ### Cross-site requests (CSRF)
 
@@ -91,6 +131,8 @@ In-memory, sliding one-minute window, per client IP:
 | Scope | Limit |
 |---|---|
 | `POST /api/v1/auth/login`, `/api/v1/auth/change-password`, `/api/v1/setup` | 10 / min |
+| `POST /api/v1/auth/device` | 10 / min |
+| `POST /api/v1/auth/device/token` | 60 / min |
 | `POST /api/v1/snapshots`, `/api/v1/snapshots/:id/retry`, `/api/v1/snapshots/import`, `/api/v1/import`, `/api/v1/import/file` | 60 / min |
 | `GET` / `HEAD` on `/api/v1/*` | 300 / min |
 
@@ -134,10 +176,13 @@ Only `http:` and `https:` URLs are accepted.
 **Opt-out:** `WEBFROST_ALLOW_PRIVATE_URLS=true` disables the address check everywhere, for
 deployments that intentionally archive intranet pages. The `http(s)`-only rule still applies.
 
-**Not an archived URL:** `webfrost push` uploads to the server the user names with `--to`, usually
+**Not an archived URL:** `webfrost push` (and `webfrost rescue`, with `--from`) uploads to the server the user names with `--to`, usually
 their own server on a private address, so it uses a plain `fetch` rather than `safeFetch`. It sends
-the API key only there: redirects are not followed, and the key is read from `WEBFROST_API_KEY`,
-never from the command line. On the receiving side the import fetches nothing.
+the API key only there: redirects are not followed, and the key is the one `webfrost login` saved
+for that server or `WEBFROST_API_KEY`, never an argument on the command line. The same holds for the
+credentials of a proxy in front of the server (`WEBFROST_HEADERS`, or the headers a command of the
+user's prints): sent only to that server, never printed or saved, and never in place of WebFrost's
+own (see [the CLI reference](/docs/reference/cli#a-server-behind-a-proxy-or-on-a-private-network)). On the receiving side the import fetches nothing.
 
 **Not user-controlled:** the optional [OpenTelemetry export](/docs/guides/observability) sends to
 the `OTEL_EXPORTER_OTLP_*ENDPOINT` the operator set in the environment, usually a collector on a
@@ -149,9 +194,10 @@ where it sends, and WebFrost never adds trace headers to the pages it archives.
 - **Network-specific NAT64 prefixes.** Only the well-known `64:ff9b::/96` is decoded. A host
   behind NAT64 with its own prefix inside `2000::/3` should block that prefix's private mappings
   at the network layer.
-- **yt-dlp** makes its own requests and follows its own redirects. It is only invoked for a URL
-  that already passed `safeFetch`, and it is limited as described in
-  [Media extraction](#media-extraction-yt-dlp), but its requests do not go through the guard.
+- **yt-dlp** makes its own requests and follows its own redirects. They all go through the same
+  egress proxy as the browser (see [Media extraction](#media-extraction-yt-dlp)), so a private
+  address is refused on the connection itself; what remains is what any proxy cannot see, such
+  as a site that serves different media to WebFrost than to you.
 
 If WebFrost archives URLs from people you do not fully trust, treat the application-level guard as
 one layer and add a network-level one: run the container in a network with no route to your
@@ -165,14 +211,19 @@ The archived URL is untrusted input to yt-dlp, so every call passes:
   or change output paths;
 - `--no-playlist --playlist-items 1`: a playlist or channel URL cannot fan out into hundreds of
   downloads;
-- `--use-extractors default,-generic`: only sites yt-dlp explicitly supports. The generic extractor
-  would fetch and scan arbitrary pages for embedded media, a second request outside the SSRF guard.
+- `--use-extractors default,-generic,-mediasite,-mediasitecatalog,-mediasitenamedcatalog`: only
+  sites yt-dlp explicitly supports. The generic extractor would fetch and scan arbitrary pages for
+  embedded media; the Mediasite ones accept any host and follow addresses the page gives them.
+- `--proxy socks5h://127.0.0.1:<port>`: every connection yt-dlp opens (the page, its APIs, the
+  manifests and the media itself, each redirect included) goes through the SSRF egress proxy,
+  which checks the address it actually connects to. If the proxy cannot start, the media step
+  is skipped rather than run unguarded.
 
 The URL always comes after `--`, so it can never be read as an option. yt-dlp runs in its own
 process group with a hard timeout (`WEBFROST_MEDIA_TIMEOUT_MS`); on timeout, cancellation or
 shutdown the whole group is killed, ffmpeg included, so no download keeps running outside the
-concurrency limit. Its network requests still do not go through WebFrost's guard: isolate the
-network at the container or firewall level when archiving untrusted URLs.
+concurrency limit. A downloader yt-dlp hands a stream to (ffmpeg, for some formats) is outside
+the proxy: isolate the network at the container or firewall level when archiving untrusted URLs.
 
 ## Content security
 

@@ -3,6 +3,7 @@ import {
   closeDatabases,
   hasAdminUser,
   initTelemetry,
+  purgeExpiredTrash,
   shutdownTelemetry,
   startScheduler,
   sweepStaleBundleUploads,
@@ -17,6 +18,8 @@ import { logger } from "./logger";
 import { rateLimiterPlugin } from "./middleware/rateLimiter";
 import { requestGuardPlugin } from "./middleware/requestGuard";
 import { authPlugin, authRouter } from "./routes/auth";
+import { deviceRouter } from "./routes/device";
+import { failuresRouter } from "./routes/failures";
 import { importRouter, importsRouter } from "./routes/import";
 import { schedulesRouter } from "./routes/schedules";
 import { settingsRouter } from "./routes/settings";
@@ -25,6 +28,7 @@ import { snapshotImportRouter } from "./routes/snapshot-import";
 import { snapshotsRouter } from "./routes/snapshots";
 import { statsRouter } from "./routes/stats";
 import { snapshotTagsRouter, tagsRouter } from "./routes/tags";
+import { trashRouter } from "./routes/trash";
 import { gracefulShutdown, installShutdownHandlers, shutdownTimeoutMs } from "./shutdown";
 import { telemetryPlugin } from "./telemetry";
 import { type UiAssets, defaultUiAssets, mimeTypeFor } from "./ui-assets";
@@ -98,17 +102,23 @@ const apiRoutes = () =>
     .use(authPlugin)
     .use(setupRouter)
     .use(authRouter)
+    .use(deviceRouter)
     .use(snapshotImportRouter)
     .use(snapshotsRouter)
     .use(snapshotTagsRouter)
     .use(schedulesRouter)
+    .use(failuresRouter)
+    .use(trashRouter)
     .use(tagsRouter)
     .use(importRouter)
     .use(importsRouter)
     .use(settingsRouter)
     .use(statsRouter);
 
-export const app = new Elysia()
+// standardHostname off: Elysia would otherwise route by cutting the URL at a fixed offset, so with a
+// short Host (http://a/XY/api/v1/…) it routed /api/v1/… while the guards, the auth check and the
+// rate limiters, reading URL.pathname, saw /XY/api/v1/… and let it through unchecked.
+export const app = new Elysia({ handler: { standardHostname: false } })
   // A server span per request when OpenTelemetry export is on; nothing otherwise.
   .use(telemetryPlugin)
   .onRequest(({ request, store, set }) => {
@@ -175,6 +185,24 @@ export const app = new Elysia()
       windowMs: 60_000,
       methods: ["POST"],
       path: /^\/api(?:\/v1)?\/(auth\/login|auth\/change-password|setup)\/?$/,
+    }),
+  )
+  // `webfrost login`, which needs no credentials: 10 new connection requests a minute, and 60
+  // polls for their answer (the CLI polls every 2 seconds).
+  .use(
+    rateLimiterPlugin({
+      limit: 10,
+      windowMs: 60_000,
+      methods: ["POST"],
+      path: /^\/api(?:\/v1)?\/auth\/device\/?$/,
+    }),
+  )
+  .use(
+    rateLimiterPlugin({
+      limit: 60,
+      windowMs: 60_000,
+      methods: ["POST"],
+      path: /^\/api(?:\/v1)?\/auth\/device\/token\/?$/,
     }),
   )
   .group(API_PREFIX, (app) => app.use(apiRoutes()))
@@ -267,6 +295,9 @@ export function startBackgroundWork(options: { importSweepMs?: number } = {}): {
     () => void sweepInterruptedImports(dir),
     options.importSweepMs ?? IMPORT_SWEEP_INTERVAL_MS,
   );
+  // Snapshots past the trash retention are deleted for good: at startup, then every hour.
+  void emptyExpiredTrash();
+  const trashSweep = setInterval(() => void emptyExpiredTrash(), TRASH_SWEEP_INTERVAL_MS);
 
   if (process.env.WEBFROST_SCHEDULER === "false") {
     logger.info("WEBFROST_SCHEDULER=false — schedules are not run by this process");
@@ -274,6 +305,7 @@ export function startBackgroundWork(options: { importSweepMs?: number } = {}): {
       stop: () => {
         clearInterval(recovery);
         clearInterval(importSweep);
+        clearInterval(trashSweep);
       },
     };
   }
@@ -284,9 +316,27 @@ export function startBackgroundWork(options: { importSweepMs?: number } = {}): {
     stop: () => {
       clearInterval(recovery);
       clearInterval(importSweep);
+      clearInterval(trashSweep);
       scheduler.stop();
     },
   };
+}
+
+const TRASH_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+
+/** Delete for good the snapshots that have been in the trash longer than the retention. Never throws. */
+export async function emptyExpiredTrash(): Promise<void> {
+  try {
+    const db = await getDb();
+    try {
+      const deleted = await purgeExpiredTrash(db, getStorage());
+      if (deleted > 0) logger.info({ deleted }, "deleted snapshots past the trash retention");
+    } finally {
+      await db.close();
+    }
+  } catch (err) {
+    logger.error({ err }, "emptying the expired trash failed");
+  }
 }
 
 /**

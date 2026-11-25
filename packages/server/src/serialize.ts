@@ -1,3 +1,4 @@
+import { t } from "elysia";
 /**
  * The API's output conventions, applied at the HTTP boundary (the database keeps its own
  * formats): ISO 8601 UTC timestamps and one pagination envelope for every list.
@@ -57,14 +58,29 @@ export interface PageQuery {
  * The page a request asks for: whole numbers only (SQL rejects a fractional LIMIT/OFFSET),
  * page ≥ 1, and a limit between 1 and MAX_LIST_LIMIT for everyone, guests included.
  */
-export function pageParams(query: PageQuery): { page: number; limit: number } {
+export function pageParams(
+  query: PageQuery,
+  defaultLimit = DEFAULT_LIST_LIMIT,
+): { page: number; limit: number } {
   const page = Math.max(1, Math.trunc(Number(query.page)) || 1);
   const limit = Math.min(
     MAX_LIST_LIMIT,
-    Math.max(1, Math.trunc(Number(query.limit)) || DEFAULT_LIST_LIMIT),
+    Math.max(1, Math.trunc(Number(query.limit)) || defaultLimit),
   );
   return { page, limit };
 }
+
+/** A number as a page or limit may be written (clamped by pageParams); not "Infinity" or "1e400". */
+export const PAGE_NUMBER_PATTERN = "^(-?[0-9]{1,15}(\\.[0-9]{1,15})?)?$";
+
+/**
+ * The query schema of `page` and `limit`, for routes that take only those: plain numbers, since
+ * "Infinity" or "1e400" would reach SQL as an invalid OFFSET. Read them with {@link pageParams}.
+ */
+export const pageQuerySchema = {
+  page: t.Optional(t.String({ pattern: PAGE_NUMBER_PATTERN })),
+  limit: t.Optional(t.String({ pattern: PAGE_NUMBER_PATTERN })),
+};
 
 /** The envelope every list endpoint returns. */
 export interface Page<T> {

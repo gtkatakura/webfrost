@@ -51,6 +51,10 @@ export async function fetchRssFeedUrls(feedUrl: string): Promise<string[]> {
 /**
  * Returns true if a snapshot with this exact URL already exists in the database.
  * Used to deduplicate RSS feed imports.
+ *
+ * A snapshot in the trash counts: moving a feed item to the trash is a decision about that URL,
+ * and the next run of the feed must not undo it by archiving the URL again. Once it is deleted
+ * for good the URL is unknown again, as after any delete.
  */
 export async function isUrlArchived(db: Db, url: string): Promise<boolean> {
   const row = await db.get<{ id: number }>(

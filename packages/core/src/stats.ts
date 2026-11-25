@@ -27,6 +27,18 @@ const BACKFILL_CONCURRENCY = 16;
  * an archive can hold thousands of artifacts, and a storage service throttles.
  */
 async function backfillSizes(db: Db, storage: StorageBackend): Promise<void> {
+  // One pass at a time per database: a request that comes while one runs waits for it instead of
+  // asking storage about the same files again.
+  const running = backfills.get(db.key);
+  if (running) return running;
+  const pass = measureMissingSizes(db, storage).finally(() => backfills.delete(db.key));
+  backfills.set(db.key, pass);
+  return pass;
+}
+
+const backfills = new Map<string, Promise<void>>();
+
+async function measureMissingSizes(db: Db, storage: StorageBackend): Promise<void> {
   const missing = await db.all<{ id: number; extractor: string; content: string }>(
     sql`SELECT id, extractor, content FROM archive_results
         WHERE size_bytes IS NULL AND error IS NULL AND content IS NOT NULL AND content <> ''`,
@@ -59,7 +71,7 @@ async function backfillSizes(db: Db, storage: StorageBackend): Promise<void> {
 export async function getStats(db: Db, storage: StorageBackend): Promise<Stats> {
   // Total snapshot count
   const snapshotRow = await db.get<{ count: number }>(
-    sql`SELECT COUNT(*) AS count FROM snapshots WHERE status <> 'importing'`,
+    sql`SELECT COUNT(*) AS count FROM snapshots WHERE status <> 'importing' AND trashed_at IS NULL`,
   );
   const snapshotCount = Number(snapshotRow?.count ?? 0);
 
@@ -81,7 +93,7 @@ export async function getStats(db: Db, storage: StorageBackend): Promise<Stats> 
           SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done,
           SUM(CASE WHEN status NOT IN ('pending', 'importing') THEN 1 ELSE 0 END) AS total
         FROM snapshots
-        WHERE created_at >= ${db.ago(30 * 24 * 60 * 60)}`,
+        WHERE created_at >= ${db.ago(30 * 24 * 60 * 60)} AND trashed_at IS NULL`,
   );
   const done = Number(successRow?.done ?? 0);
   const total = Number(successRow?.total ?? 0);
@@ -96,7 +108,7 @@ export async function getStats(db: Db, storage: StorageBackend): Promise<Stats> 
   // Snapshots that failed today (UTC day boundary)
   const failedRow = await db.get<{ count: number }>(
     sql`SELECT COUNT(*) AS count FROM snapshots
-        WHERE status = 'failed'
+        WHERE status = 'failed' AND trashed_at IS NULL
           AND created_at >= ${db.today()}`,
   );
   const failedToday = Number(failedRow?.count ?? 0);

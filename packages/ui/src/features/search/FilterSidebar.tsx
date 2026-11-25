@@ -1,4 +1,4 @@
-import type { Tag } from "@webfrost/sdk";
+import type { SnapshotFilters, SnapshotStatus, Tag } from "@webfrost/sdk";
 import { Check, X } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -35,6 +35,66 @@ export const NO_FILTERS: Filters = {
 
 export function hasFilters(f: Filters): boolean {
   return f.statuses.size > 0 || f.days !== null || f.extractors.size > 0 || f.tags.size > 0;
+}
+
+/** The URL parameters the filters live in, so Back, a reload or a shared link keep them. */
+const PARAMS = { statuses: "status", days: "days", extractors: "extractor", tags: "tag" } as const;
+
+function listOf(params: URLSearchParams, key: string): string[] {
+  return (params.get(key) ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
+}
+
+/** The filters a URL carries. Values the sidebar does not offer are ignored. */
+export function filtersFromParams(params: URLSearchParams): Filters {
+  const days = Number(params.get(PARAMS.days));
+  return {
+    statuses: new Set(
+      listOf(params, PARAMS.statuses).filter((s) => (STATUSES as readonly string[]).includes(s)),
+    ),
+    days: DATE_PRESETS.some((preset) => preset.days === days) ? days : null,
+    extractors: new Set(
+      listOf(params, PARAMS.extractors).filter((e) => KNOWN_EXTRACTORS.includes(e)),
+    ),
+    tags: new Set(
+      listOf(params, PARAMS.tags)
+        .map(Number)
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ),
+  };
+}
+
+/** `params` with the filters written in (and removed where they filter nothing). */
+export function withFilters(params: URLSearchParams, filters: Filters): URLSearchParams {
+  const next = new URLSearchParams(params);
+  const put = (key: string, values: readonly (string | number)[]) => {
+    if (values.length > 0) next.set(key, values.join(","));
+    else next.delete(key);
+  };
+  put(PARAMS.statuses, [...filters.statuses]);
+  put(PARAMS.days, filters.days === null ? [] : [filters.days]);
+  put(PARAMS.extractors, [...filters.extractors]);
+  put(PARAMS.tags, [...filters.tags]);
+  return next;
+}
+
+/** The first day of "the last N days", as a date (UTC), which stays the same all day long. */
+function dateFromDays(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** The filters as the search request sends them to the server. */
+export function toSnapshotFilters(filters: Filters): SnapshotFilters {
+  return {
+    ...(filters.statuses.size > 0 ? { status: [...filters.statuses] as SnapshotStatus[] } : {}),
+    ...(filters.days !== null ? { since: dateFromDays(filters.days) } : {}),
+    ...(filters.extractors.size > 0 ? { extractors: [...filters.extractors] } : {}),
+    ...(filters.tags.size > 0 ? { tags: [...filters.tags] } : {}),
+  };
 }
 
 export function toggled<T>(set: Set<T>, value: T): Set<T> {
@@ -83,7 +143,7 @@ function FilterChip({
   );
 }
 
-/** Filters for the current page of results. They never reach the server (yet). */
+/** Filters for the search. The server applies them, so they narrow every result, on any page. */
 export function FilterSidebar({
   filters,
   onChange,
@@ -96,7 +156,7 @@ export function FilterSidebar({
   return (
     <div>
       <div className="mb-2 flex min-h-7 items-center justify-between px-2">
-        <h2 className="m-0 text-ui-base font-semibold text-high">Filter this page</h2>
+        <h2 className="m-0 text-ui-base font-semibold text-high">Filters</h2>
         {hasFilters(filters) && (
           <button
             type="button"
@@ -108,10 +168,6 @@ export function FilterSidebar({
           </button>
         )}
       </div>
-      <p className="m-0 mx-2 rounded-md bg-overlay px-2.5 py-2 text-ui-xs text-mid">
-        These filters apply to the current page of results only. They do not search the rest of your
-        archive.
-      </p>
 
       <SectionLabel>Status</SectionLabel>
       <div className="flex flex-col gap-0.5">

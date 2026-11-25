@@ -48,6 +48,9 @@ const LOGIN_ROUTE = /^(?:\/api(?:\/v1)?)?\/auth\/login\/?$/;
 const LOGOUT_ROUTE = /^(?:\/api(?:\/v1)?)?\/auth\/logout\/?$/;
 const SETUP_STATUS_ROUTE = /^(?:\/api(?:\/v1)?)?\/setup\/status\/?$/;
 const SETUP_ROUTE = /^(?:\/api(?:\/v1)?)?\/setup\/?$/;
+// `webfrost login`: the CLI starts a connection request and polls for its answer before it has
+// any credentials. Neither route gives anything until a signed-in person approves the request.
+const DEVICE_ROUTES = /^(?:\/api(?:\/v1)?)?\/auth\/device(?:\/token)?\/?$/;
 
 // Requests let through as anonymous guests, so routes can hold back details
 // (such as storage paths) that only the admin should see.
@@ -77,6 +80,29 @@ export function apiKeyOf(request: Request): AuthenticatedApiKey | null {
  */
 let warnedAuthDisabled = false;
 
+/**
+ * With auth disabled, the Host names the API answers to: this machine's, plus WEBFROST_ALLOWED_HOSTS
+ * (comma-separated). Binding to loopback is not enough on its own: a web page whose name an
+ * attacker re-points at 127.0.0.1 (DNS rebinding) reaches the loopback listener from the browser,
+ * and its requests are same-origin to that name. They still carry the attacker's name as Host.
+ */
+export function isAllowedHost(hostHeader: string | null): boolean {
+  if (!hostHeader) return false;
+  let name: string;
+  try {
+    name = new URL(`http://${hostHeader}`).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  } catch {
+    return false;
+  }
+  if (name === "localhost" || name.endsWith(".localhost") || name === "::1") return true;
+  if (/^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(name)) return true;
+  const extra = (process.env.WEBFROST_ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+  return extra.includes(name);
+}
+
 export function authPlugin(app: Elysia) {
   const authDisabled = process.env.AUTH_DISABLED === "true";
 
@@ -86,7 +112,18 @@ export function authPlugin(app: Elysia) {
       warnedAuthDisabled = true;
       logger.warn("AUTH_DISABLED=true — all auth checks bypassed (dev mode only)");
     }
-    return app;
+    return app.onBeforeHandle(({ request, set }) => {
+      // In a request built in process (tests) there is no Host header: the URL carries it.
+      if (!isAllowedHost(request.headers.get("host") ?? new URL(request.url).host)) {
+        return apiError(
+          set,
+          403,
+          "FORBIDDEN",
+          "with AUTH_DISABLED=true the API answers only to localhost (see WEBFROST_ALLOWED_HOSTS)",
+        );
+      }
+      return undefined;
+    });
   }
 
   return app.onBeforeHandle(async ({ request, set }) => {
@@ -97,6 +134,7 @@ export function authPlugin(app: Elysia) {
     if (request.method === "POST" && LOGOUT_ROUTE.test(url.pathname)) return;
     if (request.method === "GET" && SETUP_STATUS_ROUTE.test(url.pathname)) return;
     if (request.method === "POST" && SETUP_ROUTE.test(url.pathname)) return;
+    if (request.method === "POST" && DEVICE_ROUTES.test(url.pathname)) return;
 
     const authHeader = request.headers.get("authorization");
     const bearer = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;

@@ -1,6 +1,12 @@
 import { sql } from "kysely";
 import type { Db } from "./db";
-import { type PaginatedResult, pageWindow } from "./list";
+import {
+  type PaginatedResult,
+  type SnapshotFilter,
+  pageWindow,
+  snapshotFilterSql,
+  toSnapshotFilter,
+} from "./list";
 import {
   MARK_CLOSE,
   MARK_OPEN,
@@ -9,6 +15,7 @@ import {
   capForTsvector,
   parseSearchQuery,
   searchDocument,
+  toFts5,
   toMysqlBoolean,
   toTsquery,
 } from "./search-text";
@@ -175,21 +182,33 @@ function isFts5QueryError(err: unknown): boolean {
  * On SQLite the FTS5 MATCH syntax is supported (e.g. "phrase query", term*,
  * col:term); PostgreSQL and MySQL accept its common subset (see search-text.ts).
  * Returns an empty result on invalid query expressions.
+ *
+ * `filter` narrows the hits before they are counted and paged: a status alone, or a
+ * {@link SnapshotFilter}.
  */
 export async function searchSnapshots(
   db: Db,
   query: string,
   requestedLimit = 20,
   requestedPage = 1,
-  status?: string,
+  filter?: SnapshotFilter | string,
 ): Promise<PaginatedResult<SearchResult>> {
   // LIMIT/OFFSET must be integers the database can hold (not Infinity, not a fraction).
   const { page, limit, offset } = pageWindow(requestedPage, requestedLimit);
   const empty = { items: [], total: 0, page, limit };
   if (!query.trim()) return empty;
-  const statusFilter = status ? sql`AND s.status = ${status}` : sql``;
+  // Snapshots in the trash are not found.
+  const filterSql = sql`AND s.trashed_at IS NULL ${snapshotFilterSql(db, toSnapshotFilter(filter))}`;
+
+  // Every engine searches what the same parser makes of the query: its common syntax, capped at
+  // MAX_QUERY_LENGTH characters and MAX_QUERY_TERMS terms.
+  const clauses = parseSearchQuery(query);
+  if (clauses.length === 0) return empty;
 
   if (db.dialect === "sqlite") {
+    // SQLite runs on the server's main thread: the raw query (thousands of `a*` terms, NEAR
+    // groups) must not reach FTS5.
+    const match = toFts5(clauses);
     try {
       const items = await db.all<HitRow>(
         sql`SELECT
@@ -199,8 +218,8 @@ export async function searchSnapshots(
               rank AS score
             FROM snapshots_fts
             JOIN snapshots s ON s.id = snapshots_fts.rowid
-            WHERE snapshots_fts MATCH ${query}
-              ${statusFilter}
+            WHERE snapshots_fts MATCH ${match}
+              ${filterSql}
             ORDER BY rank
             LIMIT ${limit} OFFSET ${offset}`,
       );
@@ -208,8 +227,8 @@ export async function searchSnapshots(
         sql`SELECT COUNT(*) AS total
             FROM snapshots_fts
             JOIN snapshots s ON s.id = snapshots_fts.rowid
-            WHERE snapshots_fts MATCH ${query}
-              ${statusFilter}`,
+            WHERE snapshots_fts MATCH ${match}
+              ${filterSql}`,
       );
       return {
         items: items.map((r) => ({
@@ -231,8 +250,6 @@ export async function searchSnapshots(
   }
 
   // The query is parsed in app code, so an error here is a real database error.
-  const clauses = parseSearchQuery(query);
-  if (clauses.length === 0) return empty;
 
   // `score` is "higher is better" on both engines; it is negated below so `rank`
   // keeps FTS5's "lower is better" meaning for API clients.
@@ -256,12 +273,12 @@ export async function searchSnapshots(
   const rows = await db.all<{ id: number; url: string; text_content: string; score: number }>(
     sql`SELECT si.snapshot_id AS id, si.url AS url, left(si.text_content, ${sql.lit(MAX_SNIPPET_SOURCE)}) AS text_content, ${score} AS score
         FROM ${from}
-        WHERE ${match} ${statusFilter}
+        WHERE ${match} ${filterSql}
         ORDER BY score DESC, si.snapshot_id
         LIMIT ${limit} OFFSET ${offset}`,
   );
   const count = await db.get<{ total: number }>(
-    sql`SELECT COUNT(*) AS total FROM ${from} WHERE ${match} ${statusFilter}`,
+    sql`SELECT COUNT(*) AS total FROM ${from} WHERE ${match} ${filterSql}`,
   );
   return {
     items: rows.map((r) => ({

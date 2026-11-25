@@ -4,6 +4,7 @@ import type {
   SearchResult,
   Snapshot,
   SnapshotDetail,
+  SnapshotFailure,
   SnapshotStatus,
   Tag,
 } from "./types.js";
@@ -23,6 +24,7 @@ export interface RawSnapshot {
   id: number;
   url: string;
   status: SnapshotStatus;
+  failure?: SnapshotFailure | null;
   createdAt: string;
   extractors: string[];
   tags: RawTag[];
@@ -56,6 +58,7 @@ export interface RawSnapshotDetail {
   id: number;
   url: string;
   status: SnapshotStatus;
+  failure?: SnapshotFailure | null;
   createdAt: string;
   extractors?: string[];
   tags?: RawTag[];
@@ -92,6 +95,7 @@ export function toSnapshot(raw: RawSnapshot, resolve: ResolveUrl): Snapshot {
     id: raw.id,
     url: raw.url,
     status: raw.status,
+    failure: raw.failure ?? null,
     createdAt: raw.createdAt,
     extractors: raw.extractors ?? [],
     tags: (raw.tags ?? []).map(toTag),
@@ -105,8 +109,8 @@ export function toSearchResult(raw: RawSearchResult): SearchResult {
   return {
     id: raw.id,
     url: raw.url,
-    snippet: raw.snippet,
-    rank: raw.rank,
+    snippet: raw.snippet ?? "",
+    rank: raw.rank ?? 0,
     status: raw.status ?? null,
     createdAt: raw.createdAt ?? "",
     title: raw.title ?? null,
@@ -120,6 +124,7 @@ export function toSnapshotDetail(raw: RawSnapshotDetail, resolve: ResolveUrl): S
     id: raw.id,
     url: raw.url,
     status: raw.status,
+    failure: raw.failure ?? null,
     createdAt: raw.createdAt,
     extractors: raw.extractors ?? [],
     tags: (raw.tags ?? []).map(toTag),

@@ -14,12 +14,18 @@ import type Database from "bun:sqlite";
  *   PostgreSQL and MySQL start here, with the full schema in one step.
  * - 4: `snapshots.color_scheme`, the light or dark preference the browser
  *   archived the page with (NULL: the server default, WEBFROST_COLOR_SCHEME).
+ * - 5: `snapshots.failure_category` and `failure_detail` (why a failed snapshot
+ *   failed, see failure.ts) and `dead_hosts`, the domains whose name no longer
+ *   resolves, so the next snapshots of the same domain fail without a lookup.
+ * - 6: `snapshots.trashed_at` (a snapshot in the trash: hidden everywhere and
+ *   deleted for good once the retention passes) and `app_settings`, settings
+ *   changed from the web UI (the trash retention).
  *
  * Add a step by appending to each dialect's list with the next number. Steps
  * run in order, each once, under a lock (BEGIN IMMEDIATE on SQLite, an advisory
  * lock on PostgreSQL, GET_LOCK on MySQL), so concurrent processes are safe.
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 6;
 
 /** Extractors whose `content` holds a storage reference rather than the data itself. */
 export const FILE_BACKED_EXTRACTORS = [
@@ -169,11 +175,39 @@ function sqliteV3(db: Database): void {
   `);
 }
 
+function sqliteV5(db: Database): void {
+  addColumn(db, "ALTER TABLE snapshots ADD COLUMN failure_category TEXT");
+  addColumn(db, "ALTER TABLE snapshots ADD COLUMN failure_detail TEXT");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS dead_hosts (
+      host TEXT PRIMARY KEY,
+      detail TEXT,
+      first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_seen_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_snapshots_failure ON snapshots (failure_category);
+  `);
+}
+
+function sqliteV6(db: Database): void {
+  addColumn(db, "ALTER TABLE snapshots ADD COLUMN trashed_at TEXT");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      name TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_snapshots_trashed ON snapshots (trashed_at);
+  `);
+}
+
 /** SQLite steps, indexed by the version they bring the archive to. */
 export const SQLITE_MIGRATIONS: ReadonlyArray<{ version: number; up: (db: Database) => void }> = [
   { version: 2, up: sqliteV2 },
   { version: 3, up: sqliteV3 },
   { version: 4, up: (db) => addColumn(db, "ALTER TABLE snapshots ADD COLUMN color_scheme TEXT") },
+  { version: 5, up: sqliteV5 },
+  { version: 6, up: sqliteV6 },
 ];
 
 // ---------------------------------------------------------------------------
@@ -291,6 +325,32 @@ export const POSTGRES_MIGRATIONS: ReadonlyArray<{ version: number; statements: s
   {
     version: 4,
     statements: ["ALTER TABLE snapshots ADD COLUMN IF NOT EXISTS color_scheme VARCHAR(8)"],
+  },
+  {
+    version: 5,
+    statements: [
+      "ALTER TABLE snapshots ADD COLUMN IF NOT EXISTS failure_category TEXT",
+      "ALTER TABLE snapshots ADD COLUMN IF NOT EXISTS failure_detail TEXT",
+      `CREATE TABLE IF NOT EXISTS dead_hosts (
+         host TEXT PRIMARY KEY,
+         detail TEXT,
+         first_seen_at TEXT NOT NULL DEFAULT ${PG_NOW},
+         last_seen_at TEXT NOT NULL DEFAULT ${PG_NOW}
+       )`,
+      "CREATE INDEX IF NOT EXISTS idx_snapshots_failure ON snapshots (failure_category)",
+    ],
+  },
+  {
+    version: 6,
+    statements: [
+      "ALTER TABLE snapshots ADD COLUMN IF NOT EXISTS trashed_at TEXT",
+      `CREATE TABLE IF NOT EXISTS app_settings (
+         name TEXT PRIMARY KEY,
+         value TEXT NOT NULL,
+         updated_at TEXT NOT NULL DEFAULT ${PG_NOW}
+       )`,
+      "CREATE INDEX IF NOT EXISTS idx_snapshots_trashed ON snapshots (trashed_at)",
+    ],
   },
 ];
 
@@ -416,4 +476,30 @@ const MY_V3 = [
 export const MYSQL_MIGRATIONS: ReadonlyArray<{ version: number; statements: string[] }> = [
   { version: 3, statements: MY_V3 },
   { version: 4, statements: ["ALTER TABLE snapshots ADD COLUMN color_scheme VARCHAR(8)"] },
+  {
+    version: 5,
+    statements: [
+      "ALTER TABLE snapshots ADD COLUMN failure_category VARCHAR(32)",
+      "ALTER TABLE snapshots ADD COLUMN failure_detail TEXT",
+      `CREATE TABLE IF NOT EXISTS dead_hosts (
+         host VARCHAR(255) NOT NULL PRIMARY KEY,
+         detail TEXT,
+         first_seen_at VARCHAR(32) NOT NULL DEFAULT ${MY_NOW},
+         last_seen_at VARCHAR(32) NOT NULL DEFAULT ${MY_NOW}
+       ) ${MY_TABLE}`,
+      "CREATE INDEX idx_snapshots_failure ON snapshots (failure_category)",
+    ],
+  },
+  {
+    version: 6,
+    statements: [
+      "ALTER TABLE snapshots ADD COLUMN trashed_at VARCHAR(32)",
+      `CREATE TABLE IF NOT EXISTS app_settings (
+         name VARCHAR(64) NOT NULL PRIMARY KEY,
+         value TEXT NOT NULL,
+         updated_at VARCHAR(32) NOT NULL DEFAULT ${MY_NOW}
+       ) ${MY_TABLE}`,
+      "CREATE INDEX idx_snapshots_trashed ON snapshots (trashed_at)",
+    ],
+  },
 ];

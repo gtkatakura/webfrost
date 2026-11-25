@@ -123,7 +123,7 @@ Delete a snapshot, its database rows and its stored files. There is no trash. Ex
 
 ### `webfrost search <query>`
 
-Full-text search (SQLite FTS5) over URL, title, text and tags, best match first. Prints `id` and URL, then a plain-text snippet, or `No results.`. The query uses FTS5 syntax: `"exact phrase"`, prefix `term*`, column filters such as `title:term`. An invalid expression returns no results.
+Full-text search (SQLite FTS5) over URL, title, text and tags, best match first. Prints `id` and URL, then a plain-text snippet, or `No results.`. The query takes words, `"exact phrase"`, prefix `term*`, `OR` and `NOT term` / `-term`, up to 512 characters and 32 terms. A query with no word to look for returns no results.
 
 | Flag | Effect |
 |---|---|
@@ -165,12 +165,83 @@ webfrost import snapshot-12.zip
 
 Archive on one machine, keep the snapshot on another. The guide: [Archive on your machine, keep it on the server](/docs/guides/push).
 
+### `webfrost login <server>`
+
+Connect this machine to a WebFrost server, with no API key to create and copy:
+
+```bash
+webfrost login https://archive.example.com
+# Opening your browser at:
+#
+#   https://archive.example.com/#/connect?code=WDJB-MJHT
+#
+# Sign in if asked, check that the page shows this code, and approve:
+#
+#   WDJB-MJHT
+#
+# Waiting for your approval (10 minutes at most)...
+# Connected to https://archive.example.com. The API key "webfrost CLI on laptop" is saved in ~/.config/webfrost/credentials.json; ...
+```
+
+The page it opens is the server's own web UI: signed in, you see the same code, the name and the address the request came from, and approve or deny. On approval the server creates an API key for this machine, listed under Settings, API keys and revocable there. `push` and `rescue` then use it for that server. Nothing is created if you deny or let the 10 minutes pass.
+
+| Option | Description |
+|---|---|
+| `--name <text>` | The name the key is listed under on the server. Default: `webfrost CLI on <hostname>`. |
+| `--no-browser` | Do not open a browser, only print the address. Over SSH or in a container no browser is opened anyway: open the address on any device where you are signed in to the server. |
+| `--headers-command <command>` | For a server [behind a proxy with its own sign-in](#a-server-behind-a-proxy-or-on-a-private-network): a command that prints the headers the proxy wants. Saved with the key and run again by `push`, `rescue` and `logout`. |
+| `--insecure` | Allow a plain-`http` server that is not this machine. |
+| `--json` | Print `{ server, key: { id, name }, file }` at the end. The key itself is never printed. |
+
+The key is saved in `$XDG_CONFIG_HOME/webfrost/credentials.json` (`~/.config/webfrost/credentials.json`), one entry per server address, in a file only you can read (mode `0600`, in a `0700` directory); a saved key is only ever sent to the server it came from. Approve a request only when you started it yourself and the codes match: whoever started it receives the key. Exit code 0 when connected, 1 when denied, expired or the server could not be reached. The protocol is in the [REST API](/docs/reference/rest-api#connect-a-command-line), and what it protects against in [Security](/docs/architecture/security#connecting-a-command-line).
+
+If the server is too old for it, the command says so; create a key by hand and use `WEBFROST_API_KEY` then.
+
+#### A server behind a proxy, or on a private network
+
+How the command line reaches the server is separate from how it proves who it is to WebFrost:
+
+- **A private network** (a VPN, WireGuard, a tailnet such as Tailscale's): nothing to set up. Give `login`, `push` and `rescue` the address the server has on that network. Plain `http` to another machine still needs `--insecure`, since nothing on the command line can tell that the network encrypts it.
+- **A proxy that asks for its own sign-in** before anything reaches WebFrost (an identity-aware proxy, an OAuth proxy, a load balancer's sign-in): your browser passes it with its sign-in page; the command line is answered with a redirect to that page. It needs the proxy's credentials as request headers, which every such proxy has a way to give to programs: a token its own tool prints, or a service token.
+
+Give them in one of two ways, both independent of any product:
+
+```bash
+# A command that prints the headers, one "Name: value" per line. WEBFROST_SERVER is the server's address.
+webfrost login https://archive.example.com \
+  --headers-command 'printf "x-proxy-token: %s\n" "$(proxy-cli token --for "$WEBFROST_SERVER")"'
+
+# Or the headers themselves, for a token that does not expire (a service token, in CI)
+export WEBFROST_HEADERS='x-proxy-client-id: 1234
+x-proxy-client-secret: …'
+```
+
+`--headers-command` is saved with the server's key, so `push`, `rescue` and `logout` run it again by themselves and always send a fresh token; `WEBFROST_HEADERS_COMMAND` gives a command for one run without saving it. The command is yours: it comes from the flag, the variable or your own credentials file, never from a server. As one example, behind Cloudflare Access, after `cloudflared access login https://archive.example.com` once:
+
+```bash
+webfrost login https://archive.example.com \
+  --headers-command 'printf "cf-access-token: %s\n" "$(cloudflared access token -app="$WEBFROST_SERVER")"'
+```
+
+What keeps the proxy's credentials from leaking:
+
+- They are sent to the server you named and nowhere else: no request of the command line follows a redirect.
+- They are never printed, not in errors either, and never saved: the file keeps the command, not what it prints.
+- They are sent next to WebFrost's API key, never instead of it: `Authorization`, `Cookie` and `Host` cannot be set this way, so a proxy that takes its own credentials in `Authorization` is not supported.
+- Have the command fetch the secret rather than contain it: a command line can be seen by other users of the machine while it runs.
+
+The other way round, a proxy can let requests to `/api/` through without its sign-in, since they carry WebFrost's own credentials; then the command line needs nothing extra, and the API is as exposed as WebFrost's own authentication makes it.
+
+### `webfrost logout <server>`
+
+Revoke, on the server, the key `login` saved for it, and remove it from this machine. If the server cannot be reached the key is removed here only and the command says so (exit 1): revoke it in the server's Settings, API keys.
+
 ### `webfrost push <id...> --to <url>`
 
 Export each snapshot as a bundle and upload it to a WebFrost server ([`POST /api/v1/snapshots/import`](/docs/reference/rest-api#import-a-snapshot-bundle)), which stores it as a new snapshot with a new id: same files, results, status, creation time and tag names (tags are created on the server when missing). The snapshots must have finished (`done` or `failed`).
 
 ```bash
-export WEBFROST_API_KEY=wf_...        # an API key of the server
+webfrost login https://archive.example.com   # once per machine
 webfrost push 12 --to https://archive.example.com
 # Pushed snapshot 12 (73.4 MB): snapshot 57 on https://archive.example.com, done
 webfrost push 12 13 14 --to https://archive.example.com --json
@@ -182,9 +253,54 @@ webfrost push 12 13 14 --to https://archive.example.com --json
 | `--insecure` | Allow a plain-`http` `--to` URL that is not this machine. Without it such a URL is a usage error (exit 2), since the key and the archive would travel unencrypted. |
 | `--json` | Print `[{ id, ok, remote: { id, url, status }, bytes, error }]`, one per snapshot. |
 
-The key comes from `WEBFROST_API_KEY` only, never from a flag, so it does not end up in shell history or process lists. Without it the command fails before sending anything. Create a key in the web UI (Settings, API keys) or with `webfrost admin key create --name laptop` on the server. A plain-`http` URL is accepted for this machine (`localhost`, `*.localhost`, `127.0.0.0/8`, `[::1]`) and otherwise only with `--insecure`, which still prints a warning. Text from the server (error messages) is printed with control characters removed, so a hostile server cannot send terminal escape sequences. Redirects are not followed, so the key never goes to another host.
+The API key is the one [`webfrost login`](#webfrost-login-server) saved for this server, or `WEBFROST_API_KEY` when that is set (for scripts and CI: a key from the web UI's Settings, API keys, or from `webfrost admin key create --name ci` on the server). It is never taken from a flag, so it does not end up in shell history or process lists. Without either the command fails before sending anything. A plain-`http` URL is accepted for this machine (`localhost`, `*.localhost`, `127.0.0.0/8`, `[::1]`) and otherwise only with `--insecure`, which still prints a warning. Text from the server (error messages) is printed with control characters removed, so a hostile server cannot send terminal escape sequences. Redirects are not followed, so the key never goes to another host.
 
 Each bundle is written to a temporary file and uploaded with its size known; on a terminal, uploads over 1 MB show a progress line. One snapshot that fails (not found, refused by the server) does not stop the others. Exit code 0 when every snapshot was stored, 1 otherwise, 2 for a usage error. A reverse proxy in front of the server may have its own upload limit below the server's `WEBFROST_IMPORT_BUNDLE_MAX_BYTES` (default 2 GiB); raise it for large videos.
+
+### `webfrost rescue <group> --from <url>`
+
+For the failed snapshots of a group on a server (the groups of [Review failures](/docs/reference/web-ui#review-failures), e.g. `blocked`), archive each page on this machine, check the copy, and send the ones that work to the server, which stores the copy and moves the failure to its trash in one step ([`?replaces=`](/docs/reference/rest-api#import-a-snapshot-bundle)). Use it for pages a site refuses to your server but not to your own connection. The guide: [Many failed pages at once](/docs/guides/push#many-failed-pages-at-once).
+
+```bash
+webfrost login https://archive.example.com   # once per machine
+webfrost rescue blocked --from https://archive.example.com --dry-run   # what would be tried
+webfrost rescue blocked --from https://archive.example.com
+# 1155 failed snapshots across 459 domains in "Blocked by the site" on https://archive.example.com.
+# Archive them here and replace each one that works? [y/N] y
+# [1/1155] rescued: https://www.example.com/article (snapshot 7344)
+# [2/1155] anti-bot or login wall, not sent: https://shop.example.com/cart (only 27 characters of text ...)
+```
+
+| Option | Description |
+|---|---|
+| `--from <url>` | Required. The server's base URL. Plain `http` follows the same rule as `push` (`--insecure`). |
+| `--host <domain>`, `--q <text>` | Only that domain, or the domains containing the text (like the filter in the web UI). |
+| `--limit <n>` | At most `n` snapshots. |
+| `--give-up-after <n>` | After `n` failures in a row on a domain here, skip the rest of it (default 3; 0 = never), so a site that refuses this machine too is not asked hundreds of times. |
+| `--min-text <chars>` | Readable text a copy needs to be sent (default 150; 0 = no minimum). |
+| `--concurrency <n>` | Domains worked on at once (default 2, at most 8). Pages of one domain are always one at a time. |
+| `--dry-run` | Print the domains and their counts (`count<TAB>domain`), then stop. |
+| `--allow-private` | Also archive private addresses (localhost, your LAN, `10.x`, cloud metadata) from this machine. Off by default, whatever `WEBFROST_ALLOW_PRIVATE_URLS` says in the shell: the addresses come from the server, so use it only with a server whose snapshots you trust (an intranet archive). |
+| `--keep` | Keep the scratch archive at the end, copies included, to look at what was rejected (`WEBFROST_DIR=~/.webfrost/rescue webfrost list`). |
+| `--no-log` | Do not write the [log of the run](#the-log-of-a-run). |
+| `-y`, `--yes` | Start without asking. Needed when stdin is not a terminal. |
+| `--json` | Print `{ summary, results: [{ id, url, outcome, remoteId?, reason? }] }` at the end. |
+
+A copy is sent only when it finished `done`, the browser formats were made (a DOM snapshot at least, so Chromium must work here: `webfrost doctor`), and it is the page itself, both in the HTML the fetch got and in the DOM the browser rendered: not an anti-bot interstitial (Cloudflare's "Just a moment...", "Client Challenge", "Access Denied" and similar, by title or by what the page says; one that a script puts up after loading is caught in the DOM) not a page with almost no text (a login wall or an empty shell), and not a redirect to a login, consent or challenge page or to the site's home page (where a hidden or removed page often lands, with a 200 and plenty of text). A download that is not HTML (a PDF, an image) has no text or DOM to judge and no wall can be one, so it is sent when the fetch got it. Each result is one of `rescued`, `still-failing` (fails here too), `gone` (404/410 or a domain that does not resolve here; it stays in its group on the server, trash it there), `wall` (not sent), `incomplete` (the browser formats failed here, not sent), `skipped` (the server no longer has it as a failure: retried, archived or trashed since), `not-tried` (`--give-up-after`) and `error` (could not be sent).
+
+Several failures of the same URL (a schedule that failed more than once) are archived and sent once; the copy replaces the first, and the others go to the trash with it. A server that is busy with other uploads (`429`) is waited for, as its `Retry-After` says, up to five times.
+
+The pages are archived in a scratch archive of the run, `rescue/run-<random>/` in the data directory, never in your own archive: always SQLite and files there, even when `DATABASE_URL` or the S3 settings are set in the shell. Each run has its own, so two runs at once do not share ids or files; it is removed when the run ends (unless `--keep`), and one a killed run left behind is removed by a later run after a day. Running it again goes on with what is left: a rescued page is no longer in the group, and the server refuses a copy whose failure changed, so nothing is stored twice. Ctrl+C stops after the pages in progress and prints the summary (a second Ctrl+C quits at once). Exit code 0 when it ran to the end, 1 when a copy could not be sent, 2 for a usage error, 130 when stopped; a rejected key or a server that cannot be reached stops the run.
+
+#### The log of a run
+
+Every run (not `--dry-run`) is logged in `logs/` of the data directory, `rescue-<start time>.jsonl`, and the command says where at the start and the end (`--json` adds it as `log`). It is JSON Lines, one object per line, written to disk as each page is done, so a run whose terminal was closed, or that was stopped or killed, keeps its record up to that page:
+
+- `{"event":"start", server, group, total, domains, ...}`, once;
+- `{"event":"page", n, of, id, url, outcome, reason?, remoteId?}` per page, `outcome` as in `--json`, `remoteId` the server's new snapshot when it was rescued;
+- `{"event":"end", summary, notReached, stopped}`, when the run ends.
+
+Each line also has `time` (ISO 8601 UTC) and `msg`, a sentence for people. Read it with `jq` (`jq -r 'select(.outcome=="wall") | .url' logs/rescue-*.jsonl`) or `pino-pretty`. It never holds the API key or the proxy's headers; it does hold the addresses of the pages. Old logs are not removed: delete them when you no longer need them.
 
 ### `webfrost export <id> [-o <file>]`
 
@@ -277,7 +393,10 @@ Every command that opens a browser (`add`, `import`, `schedule worker`, `serve`)
 | `WEBFROST_DOMAIN_DELAY_MS` | `1000` | Spacing of archives of the same host, in milliseconds |
 | `WEBFROST_CHROMIUM_PATH` | none | Use an existing Chromium or Chrome binary |
 | `WEBFROST_PASSWORD` | none | Password for `admin create` |
-| `WEBFROST_API_KEY` | none | API key of the server `push` uploads to |
+| `WEBFROST_API_KEY` | none | API key of the server `push` and `rescue` talk to, used instead of the one `login` saved |
+| `XDG_CONFIG_HOME` | `~/.config` | Where `login` keeps `webfrost/credentials.json` |
+| `WEBFROST_HEADERS` | none | Extra request headers for `login`, `logout`, `push` and `rescue`, one `Name: value` per line: the credentials of [a proxy in front of the server](#a-server-behind-a-proxy-or-on-a-private-network) |
+| `WEBFROST_HEADERS_COMMAND` | none | A command that prints such headers, run once per command, instead of the one `login --headers-command` saved |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | none | Send traces and metrics of every command to your OpenTelemetry collector; flushed when the command ends. See [Observability](/docs/guides/observability). |
 
 Timeouts, storage and the server variables `serve` reads are in [Configuration](/docs/reference/configuration).

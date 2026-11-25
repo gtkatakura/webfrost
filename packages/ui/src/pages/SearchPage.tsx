@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { SearchResult, Tag } from "@webfrost/sdk";
 import { Search, SlidersHorizontal, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Pagination } from "../components/Pagination";
 import { Snippet } from "../components/Snippet";
@@ -12,23 +12,19 @@ import { MOD_KEY } from "../features/layout/Sidebar";
 import {
   FilterSidebar,
   type Filters,
-  NO_FILTERS,
+  filtersFromParams,
   hasFilters,
+  toSnapshotFilters,
+  withFilters,
 } from "../features/search/FilterSidebar";
 import { SavedSearches } from "../features/search/SavedSearches";
+import { useDraftParam } from "../hooks/useDraftParam";
 import { useSearchPage } from "../hooks/useSearch";
 import { tagKeys } from "../hooks/useTags";
 import { collect } from "../lib/collect";
 import { parsePositiveInt } from "../lib/url";
 
 const PAGE_SIZE = 20;
-const DEBOUNCE_MS = 350;
-
-function dateFromDays(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
-}
 
 function ResultCard({ result }: { result: SearchResult }) {
   return (
@@ -98,61 +94,48 @@ export function SearchPage() {
   const client = useClient();
   const [params, setParams] = useSearchParams();
 
-  const ftsQuery = params.get("q") ?? "";
   const page = parsePositiveInt(params.get("page")) ?? 1;
 
-  // The input is the user's draft; the URL (q) is the committed query. They are reconciled in
-  // one direction at a time: typing commits to the URL after a pause, and the URL only pushes
-  // into the input when q changed from somewhere else (saved search, back button, palette).
-  const [inputVal, setInputVal] = useState(ftsQuery);
-  const committed = useRef(ftsQuery);
-  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The input is the draft; the URL (q) is the committed query, sent to the server.
+  const { value: ftsQuery, draft: inputVal, setDraft: setQ } = useDraftParam("q");
 
-  useEffect(() => {
-    if (ftsQuery !== committed.current) {
-      committed.current = ftsQuery;
-      setInputVal(ftsQuery);
-    }
-  }, [ftsQuery]);
+  // ── Filters: URL parameters, applied by the server to every result ─────────
+  const filters = useMemo(() => filtersFromParams(params), [params]);
+  const filtering = hasFilters(filters);
+  const serverFilters = useMemo(() => toSnapshotFilters(filters), [filters]);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  useEffect(
-    () => () => {
-      if (debounce.current) clearTimeout(debounce.current);
-    },
-    [],
-  );
-
-  function commitQuery(q: string) {
-    const trimmed = q.trim();
-    committed.current = trimmed;
-    // Functional update: other params (page) are read at commit time, not captured from render.
-    setParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        if (trimmed) next.set("q", trimmed);
-        else next.delete("q");
-        if (trimmed !== (prev.get("q") ?? "")) next.delete("page");
-        return next;
-      },
-      { replace: true },
-    );
-  }
-
-  function setQ(q: string, immediate = false) {
-    setInputVal(q);
-    if (debounce.current) clearTimeout(debounce.current);
-    if (immediate) commitQuery(q);
-    else debounce.current = setTimeout(() => commitQuery(q), DEBOUNCE_MS);
+  function setFilters(next: Filters) {
+    // A new filter is a new list of results: it starts again from the first page.
+    setParams((prev) => {
+      const updated = withFilters(prev, next);
+      updated.delete("page");
+      return updated;
+    });
   }
 
   const {
-    results: rawResults,
+    results,
     total,
     loading,
     error: searchError,
     refetch,
-  } = useSearchPage(ftsQuery, page, PAGE_SIZE);
+  } = useSearchPage(ftsQuery, page, PAGE_SIZE, serverFilters);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  // A page past the end (results shrank, or an old link) steps back to the last one, as the list does.
+  useEffect(() => {
+    if (!ftsQuery || loading || searchError || page <= totalPages) return;
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (totalPages <= 1) next.delete("page");
+        else next.set("page", String(totalPages));
+        return next;
+      },
+      { replace: true },
+    );
+  }, [ftsQuery, loading, searchError, page, totalPages, setParams]);
 
   function goToPage(p: number) {
     setParams((prev) => {
@@ -163,28 +146,10 @@ export function SearchPage() {
     });
   }
 
-  // ── Filters (applied to the page of results already loaded) ────────────────
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const filtering = hasFilters(filters);
-
   const { data: allTags = [] } = useQuery<Tag[]>({
     queryKey: tagKeys.list(),
     queryFn: () => collect(client.iterateTags()),
   });
-
-  const results = useMemo(() => {
-    if (!hasFilters(filters)) return rawResults;
-    const threshold = filters.days ? dateFromDays(filters.days) : null;
-    return rawResults.filter((r) => {
-      if (filters.statuses.size > 0 && (!r.status || !filters.statuses.has(r.status))) return false;
-      if (threshold && r.createdAt < threshold) return false;
-      for (const ext of filters.extractors) if (!r.extractors.includes(ext)) return false;
-      const tagIds = new Set(r.tags.map((t) => t.id));
-      for (const tid of filters.tags) if (!tagIds.has(tid)) return false;
-      return true;
-    });
-  }, [rawResults, filters]);
 
   const pager = (
     <Pagination
@@ -212,7 +177,7 @@ export function SearchPage() {
         >
           <span className="inline-flex items-center gap-2">
             <SlidersHorizontal size={14} aria-hidden="true" />
-            Filter this page{filtering ? " (active)" : ""}
+            Filters{filtering ? " (active)" : ""}
           </span>
           <span className="text-mid">{filtersOpen ? "Hide" : "Show"}</span>
         </button>
@@ -258,9 +223,7 @@ export function SearchPage() {
             <p role="status" className="mb-3.5 mt-0 text-ui-sm text-mid">
               {total === 0
                 ? "No results"
-                : filtering
-                  ? `${results.length} of ${rawResults.length} result${rawResults.length !== 1 ? "s" : ""} on this page match the filters (${total} total)`
-                  : `${total} result${total !== 1 ? "s" : ""}`}
+                : `${total} result${total !== 1 ? "s" : ""}${filtering ? ` match${total === 1 ? "es" : ""} the filters` : ""}`}
             </p>
           )}
 
@@ -272,8 +235,8 @@ export function SearchPage() {
             ) : results.length === 0 ? (
               <div>
                 <EmptyState icon={<Search size={26} />} title={`No results for "${ftsQuery}"`}>
-                  {filtering && rawResults.length > 0
-                    ? "No result on this page matches the filters. Clear them to see the other results."
+                  {filtering
+                    ? "Nothing in the archive matches these words and the filters. Clear a filter to widen the search."
                     : "Try different keywords."}
                 </EmptyState>
                 {pager}

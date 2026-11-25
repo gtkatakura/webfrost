@@ -74,6 +74,53 @@ export { HostThrottle, domainThrottle } from "./throttle";
 export { runProcess } from "./subprocess";
 export type { ProcessResult, RunProcessOptions } from "./subprocess";
 export { JobRunner } from "./jobs";
+export {
+  FAILURE_GROUPS,
+  type FailedSnapshot,
+  type FailureDomain,
+  type FailureGroupId,
+  type FailureGroupSummary,
+  failureGroup,
+  failureGroupSnapshotIds,
+  groupOfCategory,
+  listFailedSnapshots,
+  listFailureDomains,
+  summarizeFailureGroups,
+} from "./failure-groups";
+export {
+  type TrashedSnapshot,
+  deleteSnapshotsForever,
+  listTrash,
+  purgeExpiredTrash,
+  restoreSnapshots,
+  trashSnapshotIds,
+  trashSnapshots,
+  trashedIds,
+} from "./trash";
+export {
+  SettingRangeError,
+  TRASH_RETENTION_DAYS,
+  getTrashRetentionDays,
+  setTrashRetentionDays,
+} from "./app-settings";
+export {
+  FAILURE_CATEGORIES,
+  type Failure,
+  type FailureCategory,
+  type FailureClass,
+  categorizeError,
+  categorizeStatus,
+  failureClass,
+  isFailureCategory,
+} from "./failure";
+export {
+  DEAD_HOST_TTL_SECONDS,
+  forgetDeadHost,
+  hostOf,
+  knownDeadHost,
+  markDeadHost,
+} from "./dead-hosts";
+export { DEFAULT_MIN_PAGE_TEXT, blockPageReason, redirectReason } from "./block-page";
 export type { JobRunnerOptions } from "./jobs";
 export { SCHEDULER_INTERVAL_MS, claimSchedule, runDueSchedules, startScheduler } from "./scheduler";
 export type { Scheduler, SchedulerOptions } from "./scheduler";
@@ -83,7 +130,12 @@ export {
   listSnapshotsWithExtractors,
   listSnapshotsWithExtractorsPaginated,
 } from "./list";
-export type { Snapshot, SnapshotWithExtractors, PaginatedResult } from "./list";
+export type {
+  Snapshot,
+  SnapshotFilter,
+  SnapshotWithExtractors,
+  PaginatedResult,
+} from "./list";
 export {
   JOB_LEASE_SECONDS,
   addUrl,
@@ -104,6 +156,7 @@ export {
   BUNDLE_FORMAT,
   BUNDLE_VERSION,
   BundleError,
+  ReplaceConflictError,
   BundleTooLargeError,
   DEFAULT_BUNDLE_MAX_BYTES,
   exportSnapshotBundle,
@@ -183,3 +236,4 @@ export type {
 } from "./telemetry";
 export { getStats } from "./stats";
 export type { Stats } from "./stats";
+export { ID_CHUNK, chunks } from "./chunks";

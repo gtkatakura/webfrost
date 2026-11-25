@@ -1,3 +1,4 @@
+import { startEgressProxy } from "../browser-guard";
 import type { Db } from "../db";
 import type { Logger } from "../pipeline";
 import { recordResult } from "../results";
@@ -22,9 +23,12 @@ export type YtDlpSpawner = (args: string[], signal?: AbortSignal) => Promise<Spa
  *   such as `--exec` or change where files go;
  * - `--no-playlist`, `--playlist-items 1`: a video URL that is also part of a
  *   playlist, or a playlist / channel URL, fetches one item, not hundreds;
- * - `--use-extractors default,-generic`: only sites yt-dlp knows. The generic
- *   extractor would download and scan any web page for embedded media, which is
- *   a second full fetch of every archived page outside the SSRF guard.
+ * - `--use-extractors default,-generic,-mediasite…`: only sites yt-dlp knows. The
+ *   generic extractor would download and scan any web page for embedded media; the
+ *   Mediasite ones accept any host and follow addresses the page hands them.
+ * - `--proxy` (added per run): every connection yt-dlp opens goes through the SSRF
+ *   egress proxy, which checks the address it connects to, so no extractor can reach
+ *   a private address whatever a page tells it.
  * The URL always comes after `--` so it can never be read as an option.
  */
 export const YT_DLP_BASE_ARGS = [
@@ -33,7 +37,7 @@ export const YT_DLP_BASE_ARGS = [
   "--playlist-items",
   "1",
   "--use-extractors",
-  "default,-generic",
+  "default,-generic,-mediasite,-mediasitecatalog,-mediasitenamedcatalog",
 ] as const;
 
 function defaultSpawner(args: string[], signal?: AbortSignal): Promise<SpawnResult> {
@@ -96,8 +100,8 @@ export function posterSeconds(duration: unknown): number {
   return typeof duration === "number" && duration > 0 ? Math.min(duration * 0.1, 30) : 3;
 }
 
-function ytDlpArgs(options: string[], url: string): string[] {
-  return [...YT_DLP_BASE_ARGS, ...options, "--", url];
+function ytDlpArgs(options: string[], url: string, proxy: string): string[] {
+  return [...YT_DLP_BASE_ARGS, "--proxy", proxy, ...options, "--", url];
 }
 
 /** The first ERROR line yt-dlp printed, without its prefix and trimmed to a readable length. */
@@ -125,16 +129,52 @@ export async function mediaExtractor(
   snapshotId: number,
   storage: StorageBackend,
   url: string,
-  options?: {
-    maxFileSize?: string;
-    _spawner?: YtDlpSpawner;
-    logger?: Logger;
-    /** Aborted when the pipeline has given up on this extractor; nothing is recorded after that. */
-    signal?: AbortSignal;
-    /** Job lease the results are written under (see results.ts). */
-    lease?: string;
-    _frameGrabber?: FrameGrabber;
-  },
+  options?: MediaOptions,
+): Promise<void> {
+  // yt-dlp makes its own requests (pages, APIs, manifests, the media itself): all of them go through
+  // the egress proxy, which refuses private addresses on the connection itself. Without it, no media.
+  let proxy: Awaited<ReturnType<typeof startEgressProxy>>;
+  try {
+    proxy = await startEgressProxy();
+  } catch (err) {
+    options?.logger?.warn(
+      `[media] the egress proxy could not start, skipping media extraction: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return;
+  }
+  try {
+    // socks5h: yt-dlp sends the hostname, and the proxy resolves and checks it.
+    await extractMedia(
+      db,
+      snapshotId,
+      storage,
+      url,
+      proxy.server.replace(/^socks5:/, "socks5h:"),
+      options,
+    );
+  } finally {
+    await proxy.close();
+  }
+}
+
+interface MediaOptions {
+  maxFileSize?: string;
+  _spawner?: YtDlpSpawner;
+  logger?: Logger;
+  /** Aborted when the pipeline has given up on this extractor; nothing is recorded after that. */
+  signal?: AbortSignal;
+  /** Job lease the results are written under (see results.ts). */
+  lease?: string;
+  _frameGrabber?: FrameGrabber;
+}
+
+async function extractMedia(
+  db: Db,
+  snapshotId: number,
+  storage: StorageBackend,
+  url: string,
+  proxy: string,
+  options?: MediaOptions,
 ): Promise<void> {
   const maxFileSize = options?.maxFileSize ?? "500m";
   const spawner = options?._spawner ?? defaultSpawner;
@@ -146,7 +186,7 @@ export async function mediaExtractor(
   // installed and supports the URL (a non-zero exit means it is not a media page).
   let metaResult: SpawnResult;
   try {
-    metaResult = await spawner(ytDlpArgs(["--dump-json", "--quiet"], url), signal);
+    metaResult = await spawner(ytDlpArgs(["--dump-json", "--quiet"], url, proxy), signal);
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
       logger?.info("[media] yt-dlp not found — skipping media extraction");
@@ -202,6 +242,7 @@ export async function mediaExtractor(
           videoLocalPath,
         ],
         url,
+        proxy,
       ),
       signal,
     );
@@ -264,6 +305,7 @@ export async function mediaExtractor(
           audioLocalPath,
         ],
         url,
+        proxy,
       ),
       signal,
     );

@@ -46,7 +46,7 @@ One trace per piece of work. A snapshot queued by an API request is part of that
 |---|---|---|
 | `GET /api/v1/snapshots/:id` (method and route template) | server | `http.request.method`, `http.route`, `http.response.status_code`, `url.scheme`. An incoming W3C `traceparent` header is continued. |
 | `job_queue.enqueue` | producer | `webfrost.snapshot.id` |
-| `snapshot.archive`: one pipeline run | internal | `webfrost.snapshot.id`, `server.address` (host of the page), `webfrost.extractors` (the formats run), `webfrost.snapshot.status` (`done` or `failed`), `webfrost.browser.failure`, `error.type` when the run failed (`fetch_network`, `fetch_http_status`, `no_output`...) |
+| `snapshot.archive`: one pipeline run | internal | `webfrost.snapshot.id`, `server.address` (host of the page), `webfrost.extractors` (the formats run), `webfrost.snapshot.status` (`done` or `failed`), `webfrost.browser.failure`, `error.type` when the run failed: the snapshot's [failure category](/docs/reference/rest-api#failures) (`domain_not_found`, `page_not_found`, `access_denied`, `timeout`, `network_error`, `no_output`...) |
 | `page.fetch`: the one HTTP fetch | client | `http.request.method`, `server.address`, `http.response.status_code`, `http.response.body.size`, `webfrost.fetch.redirects`, `webfrost.fetch.text` |
 | `browser.navigate`: Chromium launch and the one navigation | internal | `server.address`, `error.type` on failure (`timeout`, `blocked`, `network`...) |
 | `extractor.<format>` (`extractor.pdf`, `extractor.warc`...) | internal | `webfrost.extractor.format`, `webfrost.extractor.outcome` (`ok`, `failed`, `timeout`), `webfrost.extractor.bytes`, `webfrost.extractor.failure` (a short category, not the message) |

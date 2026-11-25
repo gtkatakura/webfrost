@@ -73,3 +73,11 @@ describe("AUR package", () => {
     ).toThrow("webfrost-linux-arm64.tar.gz");
   });
 });
+
+describe("the standalone binary", () => {
+  test("does not load .env or bunfig.toml from the folder it is run in", async () => {
+    const script = await Bun.file(new URL("../scripts/build-binary.ts", import.meta.url)).text();
+    expect(script).toContain("autoloadDotenv: false");
+    expect(script).toContain("autoloadBunfig: false");
+  });
+});

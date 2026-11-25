@@ -16,6 +16,7 @@ import {
   BundleError,
   type BundleManifest,
   MAX_INLINE_CONTENT_BYTES,
+  ReplaceConflictError,
   exportSnapshotBundle,
   importSnapshotBundle,
   parseManifest,
@@ -130,6 +131,135 @@ function storedSnapshotDirs(): string[] {
   return existsSync(dir) ? readdirSync(dir) : [];
 }
 
+describe("replacing a failed snapshot (webfrost rescue)", () => {
+  async function seedFailure(url = "https://example.com/quokka"): Promise<number> {
+    const id = await target.insert(
+      sql`INSERT INTO snapshots (url, status, failure_category, failure_detail)
+          VALUES (${url}, 'failed', 'access_denied', 'HTTP 403')`,
+    );
+    const tag = await createTag(target, "Reading list");
+    await addTagToSnapshot(target, id, tag.id);
+    return id;
+  }
+
+  async function bundle(): Promise<string> {
+    const path = join(root, "bundle.zip");
+    await exportSnapshotBundle(source, sourceStorage, await seedSnapshot(), path);
+    return path;
+  }
+
+  async function row(id: number) {
+    return target.get<{ status: string; trashed_at: string | null }>(
+      sql`SELECT status, trashed_at FROM snapshots WHERE id = ${id}`,
+    );
+  }
+
+  test("the working copy comes in, keeps the failure's tags, and the failure goes to the trash", async () => {
+    const failed = await seedFailure();
+    const imported = await importSnapshotBundle(
+      target,
+      targetStorage,
+      await bundle(),
+      {},
+      {
+        replaces: failed,
+      },
+    );
+    expect(imported).toMatchObject({ status: "done", replaced: failed });
+    expect((await row(failed))?.trashed_at).not.toBeNull();
+    expect((await row(imported.id))?.status).toBe("done");
+    expect((await listSnapshotTags(target, imported.id)).map((t) => t.name)).toEqual([
+      "Australia",
+      "Reading list",
+      "Wildlife",
+    ]);
+  });
+
+  test("the other failures of the same address go to the trash with it, in the same transaction", async () => {
+    const failed = await seedFailure();
+    const twin = await target.insert(
+      sql`INSERT INTO snapshots (url, status) VALUES ('https://example.com/quokka', 'failed')`,
+    );
+    const other = await target.insert(
+      sql`INSERT INTO snapshots (url, status) VALUES ('https://example.com/another', 'failed')`,
+    );
+    const worked = await target.insert(
+      sql`INSERT INTO snapshots (url, status) VALUES ('https://example.com/quokka', 'done')`,
+    );
+    await importSnapshotBundle(target, targetStorage, await bundle(), {}, { replaces: failed });
+    expect((await row(twin))?.trashed_at).not.toBeNull();
+    // Another address, and a snapshot of the same address that worked, are left as they were.
+    expect((await row(other))?.trashed_at).toBeNull();
+    expect(await row(worked)).toEqual({ status: "done", trashed_at: null });
+  });
+
+  test("the same URL written differently (host case, no path) still matches", async () => {
+    const failed = await seedFailure("https://EXAMPLE.com/quokka");
+    const imported = await importSnapshotBundle(
+      target,
+      targetStorage,
+      await bundle(),
+      {},
+      {
+        replaces: failed,
+      },
+    );
+    expect(imported.replaced).toBe(failed);
+    expect((await row(failed))?.trashed_at).not.toBeNull();
+  });
+
+  test("sending it again stores nothing: the failure is no longer there to replace", async () => {
+    const failed = await seedFailure();
+    const path = await bundle();
+    await importSnapshotBundle(target, targetStorage, path, {}, { replaces: failed });
+    const before = await countRows(target);
+    const dirs = storedSnapshotDirs();
+    await expect(
+      importSnapshotBundle(target, targetStorage, path, {}, { replaces: failed }),
+    ).rejects.toBeInstanceOf(ReplaceConflictError);
+    expect(await countRows(target)).toEqual(before);
+    expect(storedSnapshotDirs()).toEqual(dirs);
+  });
+
+  test("another URL, a snapshot that is not failed, or none at all: refused, nothing stored", async () => {
+    const path = await bundle();
+    const other = await seedFailure("https://example.com/wombat");
+    const done = await target.insert(
+      sql`INSERT INTO snapshots (url, status) VALUES ('https://example.com/quokka', 'done')`,
+    );
+    const before = await countRows(target);
+    for (const [replaces, message] of [
+      [other, "another URL"],
+      [done, "is done, not failed"],
+      [9999, "does not exist"],
+    ] as const) {
+      await expect(
+        importSnapshotBundle(target, targetStorage, path, {}, { replaces }),
+      ).rejects.toThrow(message);
+    }
+    expect(await countRows(target)).toEqual(before);
+    expect((await row(other))?.trashed_at).toBeNull();
+    expect(storedSnapshotDirs()).toEqual([]);
+  });
+
+  test("a failure retried while the files were copied stays, and the import is undone", async () => {
+    const failed = await seedFailure();
+    const path = await bundle();
+    // Someone presses Retry on the server in the middle of the upload.
+    const racing = new FilesystemBackend(join(targetDir, "snapshots"));
+    const localPath = racing.localPath.bind(racing);
+    racing.localPath = async (snapshotId, filename) => {
+      await target.run(sql`UPDATE snapshots SET status = 'pending' WHERE id = ${failed}`);
+      return localPath(snapshotId, filename);
+    };
+    await expect(
+      importSnapshotBundle(target, racing, path, {}, { replaces: failed }),
+    ).rejects.toBeInstanceOf(ReplaceConflictError);
+    expect(await row(failed)).toEqual({ status: "pending", trashed_at: null });
+    expect((await countRows(target)).snapshots).toBe(1);
+  });
+});
+
 describe("snapshot bundle round trip", () => {
   test("export from one archive, import into another: same files, results, tags; searchable; new id", async () => {
     // Occupy id 1 in the target so the import cannot reuse the source id by accident.
@@ -216,6 +346,16 @@ describe("snapshot bundle round trip", () => {
     expect(tags.find((t) => t.name === "Wildlife")?.id).toBe(existing.id);
     const all = await target.all<{ name: string }>(sql`SELECT name FROM tags ORDER BY name`);
     expect(all.map((t) => t.name)).toEqual(["Australia", "Wildlife"]);
+  });
+
+  test("exporting over a larger existing file leaves a valid bundle, not the old file's tail", async () => {
+    const sourceId = await seedSnapshot();
+    const bundlePath = join(root, "bundle.zip");
+    writeFileSync(bundlePath, noise(2_000_000, 3));
+    const { bytes } = await exportSnapshotBundle(source, sourceStorage, sourceId, bundlePath);
+    expect(Bun.file(bundlePath).size).toBe(bytes);
+    const imported = await importSnapshotBundle(target, targetStorage, bundlePath);
+    expect(imported.status).toBe("done");
   });
 
   test("importing the same bundle twice makes two snapshots", async () => {
@@ -677,6 +817,36 @@ describe("the importing status", () => {
     expect(left.map((r) => Number(r.id))).toEqual([fresh]);
     expect(storedSnapshotDirs()).toEqual([String(fresh)]);
     expect(stale).not.toBe(fresh);
+  });
+
+  test("sweepStaleImports keeps an import that beat, or finished, after the list was read", async () => {
+    const insertStale = async () => {
+      const id = await target.insert(
+        sql`INSERT INTO snapshots (url, status) VALUES ('https://x.example', 'importing')`,
+      );
+      await target.run(
+        sql`INSERT INTO job_queue (snapshot_id, status, created_at) VALUES (${id}, 'importing', ${target.ago(2 * 3600)})`,
+      );
+      await targetStorage.putText(id, "screenshot.png", "partial");
+      return id;
+    };
+    const first = await insertStale();
+    const beat = await insertStale();
+    const finished = await insertStale();
+    // While the sweep deletes the first one's files, the other two show they are alive.
+    const storage = Object.create(targetStorage) as typeof targetStorage;
+    storage.deleteAll = async (id: number) => {
+      if (id === first) {
+        await target.run(
+          sql`UPDATE job_queue SET heartbeat_at = ${target.now()} WHERE snapshot_id = ${beat}`,
+        );
+        await target.run(sql`UPDATE snapshots SET status = 'done' WHERE id = ${finished}`);
+      }
+      return targetStorage.deleteAll(id);
+    };
+    expect(await sweepStaleImports(target, storage)).toBe(1);
+    const left = await target.all<{ id: number }>(sql`SELECT id FROM snapshots ORDER BY id`);
+    expect(left.map((r) => Number(r.id))).toEqual([beat, finished]);
   });
 
   test("sweepStaleImports keeps an old import whose heartbeat is recent", async () => {

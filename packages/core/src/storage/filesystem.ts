@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rename, rm } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import type { StorageBackend } from "./interface";
 
@@ -20,15 +20,34 @@ export class FilesystemBackend implements StorageBackend {
     return join(this.snapshotsDir, String(snapshotId), filename);
   }
 
-  async localPath(snapshotId: number, filename: string): Promise<string> {
-    const p = this.absolutePath(snapshotId, filename);
+  /** Where a stage writes `filename`: next to the final file's folder, on the same disk. */
+  private stagedPath(snapshotId: number, filename: string, stage: string): string {
+    return join(this.snapshotsDir, String(snapshotId), `.stage-${stage}`, filename);
+  }
+
+  async localPath(snapshotId: number, filename: string, stage?: string): Promise<string> {
+    const p = stage
+      ? this.stagedPath(snapshotId, filename, stage)
+      : this.absolutePath(snapshotId, filename);
     await mkdir(dirname(p), { recursive: true });
     return p;
   }
 
-  async finalize(snapshotId: number, filename: string): Promise<string> {
-    // File was already written to the final path — just return the ref.
-    return this.absolutePath(snapshotId, filename);
+  async finalize(snapshotId: number, filename: string, stage?: string): Promise<string> {
+    const final = this.absolutePath(snapshotId, filename);
+    // Without a stage the file was written in place: just return the ref.
+    if (!stage) return final;
+    await mkdir(dirname(final), { recursive: true });
+    // A rename on one disk: the final file is either the old one or this run's, never a mix.
+    await rename(this.stagedPath(snapshotId, filename, stage), final);
+    return final;
+  }
+
+  async discardStage(snapshotId: number, stage: string): Promise<void> {
+    await rm(join(this.snapshotsDir, String(snapshotId), `.stage-${stage}`), {
+      recursive: true,
+      force: true,
+    });
   }
 
   async putText(snapshotId: number, filename: string, content: string): Promise<string> {

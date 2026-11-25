@@ -161,3 +161,43 @@ describe("lease fencing", () => {
     expect(attempts.map((a) => Number(a.attempts))).toEqual(ids.map(() => 1));
   }, 30_000);
 });
+
+describe("fencedStorage: a run that lost its lease leaves the files alone", () => {
+  test("files are staged apart and put in place only while the run holds its lease", async () => {
+    const { FilesystemBackend } = await import("./storage");
+    const { LeaseLostError, fencedStorage } = await import("./results");
+    const { existsSync, readFileSync } = await import("node:fs");
+    const base = new FilesystemBackend(join(testDir, "snapshots"));
+    const { snapshotId, lease: stale } = await createSnapshotJob(db, "https://example.com/");
+    const staleRun = fencedStorage(db, base, snapshotId, stale);
+
+    // The stale run starts writing its screenshot: nothing lands at the final path yet.
+    const stalePath = await staleRun.localPath(snapshotId, "screenshot.png");
+    await Bun.write(stalePath, "stale run's capture");
+    const finalPath = join(testDir, "snapshots", String(snapshotId), "screenshot.png");
+    expect(existsSync(finalPath)).toBe(false);
+
+    // Another worker adopts the job and stores its own screenshot.
+    await db.run(
+      sql`UPDATE job_queue SET lease_token = 'new-owner' WHERE snapshot_id = ${snapshotId}`,
+    );
+    const newRun = fencedStorage(db, base, snapshotId, "new-owner");
+    await Bun.write(await newRun.localPath(snapshotId, "screenshot.png"), "new run's capture");
+    expect(await newRun.finalize(snapshotId, "screenshot.png")).toBe(finalPath);
+
+    // The stale run resumes: it cannot put its file in place, nor write any other.
+    await expect(staleRun.finalize(snapshotId, "screenshot.png")).rejects.toBeInstanceOf(
+      LeaseLostError,
+    );
+    await expect(staleRun.putText(snapshotId, "dom.html", "<p>stale</p>")).rejects.toBeInstanceOf(
+      LeaseLostError,
+    );
+    expect(readFileSync(finalPath, "utf8")).toBe("new run's capture");
+    expect(existsSync(join(testDir, "snapshots", String(snapshotId), "dom.html"))).toBe(false);
+
+    // What it staged is removed.
+    await staleRun.discard();
+    expect(existsSync(stalePath)).toBe(false);
+    expect(readFileSync(finalPath, "utf8")).toBe("new run's capture");
+  });
+});

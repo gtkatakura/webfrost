@@ -19,6 +19,9 @@ export interface SnapshotDetail {
   url: string;
   status: string;
   created_at: string;
+  failure_category: string | null;
+  failure_detail: string | null;
+  trashed_at: string | null;
   archiveResults: ArchiveResult[];
 }
 
@@ -45,8 +48,16 @@ export class SnapshotBusyError extends Error {
 
 /** A snapshot, or null when it does not exist or is still being imported. */
 export async function getSnapshot(db: Db, id: number): Promise<SnapshotDetail | null> {
-  const snapshot = await db.get<{ id: number; url: string; status: string; created_at: string }>(
-    sql`SELECT id, url, status, created_at FROM snapshots WHERE id = ${id} AND status <> ${IMPORTING_STATUS}`,
+  const snapshot = await db.get<{
+    id: number;
+    url: string;
+    status: string;
+    created_at: string;
+    failure_category: string | null;
+    failure_detail: string | null;
+    trashed_at: string | null;
+  }>(
+    sql`SELECT id, url, status, created_at, failure_category, failure_detail, trashed_at FROM snapshots WHERE id = ${id} AND status <> ${IMPORTING_STATUS}`,
   );
 
   if (!snapshot) return null;
@@ -69,9 +80,23 @@ export async function deleteSnapshot(
   db: Db,
   id: number,
   storage: StorageBackend,
+  only?: DeleteOnly,
 ): Promise<boolean> {
-  return removeSnapshot(db, id, storage, false);
+  return removeSnapshot(db, id, storage, false, only);
 }
+
+/**
+ * A condition the snapshot must still meet at the moment it is deleted, checked under the row's
+ * lock: a bulk delete chooses its ids first and may reach a row minutes later, after the person
+ * restored it from the trash or archived it again.
+ */
+export type DeleteOnly =
+  | "trashed"
+  | "failed"
+  /** In the trash for at least this long (the retention purge: one restored and trashed again is newer). */
+  | { trashedForSeconds: number }
+  /** An import whose heartbeat is still older than this (the stale-import sweep: a live one beat since). */
+  | { staleImportSeconds: number };
 
 /**
  * deleteSnapshot, with the import's own cleanup as the one caller allowed to remove a
@@ -82,16 +107,38 @@ export async function removeSnapshot(
   id: number,
   storage: StorageBackend,
   force: boolean,
+  only?: DeleteOnly,
 ): Promise<boolean> {
   const deleted = await db.transaction(async (tx) => {
     // Lock order: job_queue first, then snapshots, as in JobRunner.retry and fenced writes.
     await tx.run(
       sql`SELECT snapshot_id FROM job_queue WHERE snapshot_id = ${id} ${tx.forUpdate()}`,
     );
-    const exists = await tx.get<{ id: number; status: string }>(
-      sql`SELECT id, status FROM snapshots WHERE id = ${id} ${tx.forUpdate()}`,
+    const exists = await tx.get<{ id: number; status: string; trashed_at: string | null }>(
+      sql`SELECT id, status, trashed_at FROM snapshots WHERE id = ${id} ${tx.forUpdate()}`,
     );
     if (!exists) return false;
+    // No longer what the caller set out to delete (restored, or archived again): leave it.
+    if (only === "trashed" && exists.trashed_at === null) return false;
+    if (only === "failed" && (exists.status !== "failed" || exists.trashed_at !== null)) {
+      return false;
+    }
+    if (typeof only === "object" && "trashedForSeconds" in only) {
+      const expired = await tx.get(
+        sql`SELECT 1 AS ok FROM snapshots
+            WHERE id = ${id} AND trashed_at IS NOT NULL AND trashed_at < ${tx.ago(only.trashedForSeconds)}`,
+      );
+      if (!expired) return false;
+    }
+    if (typeof only === "object" && "staleImportSeconds" in only) {
+      if (exists.status !== IMPORTING_STATUS) return false;
+      const alive = await tx.get(
+        sql`SELECT 1 AS ok FROM job_queue
+            WHERE snapshot_id = ${id}
+              AND COALESCE(heartbeat_at, created_at) >= ${tx.ago(only.staleImportSeconds)}`,
+      );
+      if (alive) return false;
+    }
     if (exists.status === IMPORTING_STATUS && !force) throw new SnapshotBusyError(id);
     // A pending snapshot has a pipeline writing files for it; deleting now would leave
     // whatever it writes next in storage with no row pointing at it. Same rule as retry.

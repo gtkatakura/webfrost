@@ -14,6 +14,15 @@ import type {
   ArchiveUrlKind,
   CreateApiKeyOptions,
   DashboardStats,
+  DeviceAuthorization,
+  DevicePollResult,
+  DeviceRequest,
+  FailedSnapshot,
+  FailureDomainPage,
+  FailureGroupId,
+  FailureGroupSummary,
+  FailureSelection,
+  GeneralSettings,
   ImportFormat,
   ImportOptions,
   ImportRecord,
@@ -30,15 +39,19 @@ import type {
   Schedule,
   SearchPage,
   SearchResult,
+  SearchSnapshotsOptions,
   ServerInfo,
   SetupResult,
   SetupStatusResult,
   Snapshot,
   SnapshotCreated,
   SnapshotDetail,
+  SnapshotFilters,
   SnapshotImported,
   SnapshotPage,
   Tag,
+  TrashPage,
+  TrashSelection,
   WebFrostClientOptions,
 } from "./types.js";
 
@@ -56,8 +69,6 @@ interface SendOptions {
   signal?: AbortSignal | undefined;
   /** Non-2xx statuses the caller handles itself (e.g. 404 -> null) instead of throwing. */
   allow?: readonly number[];
-  /** The caller consumes the body after the call, so the timeout must not outlive the headers. */
-  streaming?: boolean;
   /** Send these bytes as they are, with this content type, instead of `body`. */
   raw?: {
     body: Blob | Uint8Array | ReadableStream<Uint8Array>;
@@ -125,6 +136,25 @@ function pageQuery(options: { page?: number; limit?: number } | undefined): URLS
   if (options?.page !== undefined) params.set("page", String(options.page));
   if (options?.limit !== undefined) params.set("limit", String(options.limit));
   return params;
+}
+
+/** The snapshot filters as query parameters (only the ones given; an empty list filters nothing). */
+function filterQuery(params: URLSearchParams, filters: SnapshotFilters | undefined): void {
+  if (!filters) return;
+  const list = (name: string, values: readonly (string | number)[]) => {
+    if (values.length > 0) params.set(name, values.join(","));
+  };
+  const moment = (name: string, value: string | Date | undefined) => {
+    if (value !== undefined) params.set(name, value instanceof Date ? value.toISOString() : value);
+  };
+  if (filters.status !== undefined) {
+    list("status", typeof filters.status === "string" ? [filters.status] : filters.status);
+  }
+  moment("since", filters.since);
+  moment("before", filters.before);
+  list("extractor", filters.extractors ?? []);
+  list("tag", filters.tags ?? []);
+  if (filters.contains?.trim()) params.set("contains", filters.contains.trim());
 }
 
 function withQuery(path: string, params: URLSearchParams): string {
@@ -206,7 +236,7 @@ export class WebFrostClient {
     options: SendOptions,
     parse: (res: Response) => Promise<T>,
   ): Promise<T> {
-    const { signal, body, raw, allow = [], streaming = false } = options;
+    const { signal, body, raw, allow = [] } = options;
     const timeoutMs = options.timeoutMs ?? this.timeoutMs;
     if (signal?.aborted) throw abortedError(signal);
 
@@ -224,9 +254,10 @@ export class WebFrostClient {
       payload = JSON.stringify(body);
     }
 
+    // The client's own timeout, combined with the caller's signal without a listener on it: a
+    // signal kept for many requests (and a streamed download read after this returns) leaks nothing.
     const controller = new AbortController();
-    const onAbort = () => controller.abort(signal?.reason);
-    signal?.addEventListener("abort", onAbort, { once: true });
+    const requestSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     let timedOut = false;
     const timer =
       timeoutMs > 0
@@ -266,7 +297,7 @@ export class WebFrostClient {
         method,
         headers,
         credentials: this.credentials,
-        signal: controller.signal,
+        signal: requestSignal,
         ...(payload !== undefined ? { body: payload } : {}),
         // A streamed request body (Node's fetch requires saying so).
         ...(payload instanceof ReadableStream ? { duplex: "half" } : {}),
@@ -277,8 +308,6 @@ export class WebFrostClient {
       throw wrap(err);
     } finally {
       clearTimeout(timer);
-      // A streamed body keeps honouring the caller's signal after this method returns.
-      if (!streaming) signal?.removeEventListener("abort", onAbort);
     }
   }
 
@@ -336,9 +365,9 @@ export class WebFrostClient {
   }
 
   /**
-   * Log in with username and password. Sets a session cookie, which only a browser keeps: from
-   * the browser, pass `credentials: "include"` to the client when the API is on another origin.
-   * Outside the browser, authenticate with an API key instead.
+   * Log in with username and password. Sets a session cookie, which only a browser keeps, and only
+   * on the server's own pages: the cookie is SameSite=Strict, the server sends no CORS headers and
+   * refuses cross-site writes. Anywhere else (another origin, Node, Bun), use an API key.
    */
   login(username: string, password: string, request?: RequestOptions): Promise<LoginResult> {
     return this.json("POST", "/auth/login", {
@@ -444,13 +473,15 @@ export class WebFrostClient {
 
   /**
    * List snapshots, newest first, one page at a time (20 per page unless `limit` says otherwise).
+   * The filters (`status`, `since`, `before`, `extractors`, `tags`, `contains`) are applied by
+   * the server to the whole archive: `total` is the number of snapshots they keep.
    */
   async listSnapshots(
     options?: ListSnapshotsOptions,
     request?: RequestOptions,
   ): Promise<SnapshotPage> {
     const params = pageQuery(options);
-    if (options?.status !== undefined) params.set("status", options.status);
+    filterQuery(params, options);
     return (await this.page(
       "/snapshots",
       params,
@@ -502,19 +533,26 @@ export class WebFrostClient {
    * says otherwise), each with an HTML snippet (matching terms wrapped in <mark>).
    */
   async searchSnapshots(query: string, request?: RequestOptions): Promise<SearchResult[]> {
+    if (!query.trim()) return [];
     return (await this.searchSnapshotsPage(query, undefined, request)).items;
   }
 
   /**
    * Full-text search with pagination.
-   * Returns the page of ranked results plus the total match count.
+   * Returns the page of ranked results plus the total match count. `options` also takes the
+   * list's filters, applied by the server before the results are counted and paged.
    */
   async searchSnapshotsPage(
     query: string,
-    options?: PageOptions,
+    options?: SearchSnapshotsOptions,
     request?: RequestOptions,
   ): Promise<SearchPage> {
+    // A blank query is not a search: the server would answer with the plain list instead.
+    if (!query.trim()) {
+      return { items: [], total: 0, page: options?.page ?? 1, limit: options?.limit ?? 20 };
+    }
     const params = pageQuery(options);
+    filterQuery(params, options);
     params.set("q", query);
     return (await this.page("/snapshots", params, toSearchResult, request)) as SearchPage;
   }
@@ -559,7 +597,7 @@ export class WebFrostClient {
     options?: RequestOptions & { kind?: ArchiveUrlKind },
   ): Promise<Response> {
     const path = this.archivePath(id, extractor, options?.kind ?? "download");
-    return this.send("GET", path, { signal: options?.signal, streaming: true }, async (res) => res);
+    return this.send("GET", path, { signal: options?.signal }, async (res) => res);
   }
 
   // ---------------------------------------------------------------------------
@@ -665,6 +703,127 @@ export class WebFrostClient {
   }
 
   // ---------------------------------------------------------------------------
+  // Failures and trash
+  // ---------------------------------------------------------------------------
+
+  /** Every failure group with its counts. */
+  async listFailureGroups(request?: RequestOptions): Promise<FailureGroupSummary[]> {
+    const res = await this.json<{ groups: FailureGroupSummary[] }>("GET", "/failures", {
+      signal: request?.signal,
+    });
+    return res.groups;
+  }
+
+  /** The domains of a failure group, most failed snapshots first. `q` keeps domains containing it. */
+  listFailureDomains(
+    group: FailureGroupId,
+    options: { q?: string; page?: number; limit?: number } = {},
+    request?: RequestOptions,
+  ): Promise<FailureDomainPage> {
+    const params = pageQuery(options);
+    if (options.q?.trim()) params.set("q", options.q.trim());
+    return this.json("GET", withQuery(`/failures/${encodeURIComponent(group)}/domains`, params), {
+      signal: request?.signal,
+    });
+  }
+
+  /** The failed snapshots of one domain in a group, newest first. */
+  listFailedSnapshots(
+    group: FailureGroupId,
+    host: string,
+    options: PageOptions = {},
+    request?: RequestOptions,
+  ): Promise<Page<FailedSnapshot>> {
+    return this.json(
+      "GET",
+      withQuery(
+        `/failures/${encodeURIComponent(group)}/domains/${encodeURIComponent(host)}/snapshots`,
+        pageQuery(options),
+      ),
+      { signal: request?.signal },
+    );
+  }
+
+  /**
+   * Archive the selected failed snapshots again. For "domain-gone" each domain is looked up first and
+   * only the ones that resolve again are retried; the others come back in `stillGone`.
+   */
+  retryFailures(
+    group: FailureGroupId,
+    selection: FailureSelection,
+    request?: RequestOptions,
+  ): Promise<{ queued: number; stillGone: string[] }> {
+    return this.json("POST", `/failures/${encodeURIComponent(group)}/retry`, {
+      body: selection,
+      signal: request?.signal,
+    });
+  }
+
+  /** Move the selected failed snapshots to the trash. `ids` are the ones that moved (for an Undo). */
+  trashFailures(
+    group: FailureGroupId,
+    selection: FailureSelection,
+    request?: RequestOptions,
+  ): Promise<{ trashed: number; ids: number[] }> {
+    return this.json("POST", `/failures/${encodeURIComponent(group)}/trash`, {
+      body: selection,
+      signal: request?.signal,
+    });
+  }
+
+  /** Delete the selected failed snapshots for good, files included. */
+  deleteFailures(
+    group: FailureGroupId,
+    selection: FailureSelection,
+    request?: RequestOptions,
+  ): Promise<{ deleted: number; busy: number }> {
+    return this.json("POST", `/failures/${encodeURIComponent(group)}/delete`, {
+      body: selection,
+      signal: request?.signal,
+    });
+  }
+
+  /** One page of the trash, most recently trashed first. */
+  listTrash(options: PageOptions = {}, request?: RequestOptions): Promise<TrashPage> {
+    return this.json("GET", withQuery("/trash", pageQuery(options)), { signal: request?.signal });
+  }
+
+  /** Bring snapshots back from the trash. */
+  restoreFromTrash(
+    selection: number[] | TrashSelection,
+    request?: RequestOptions,
+  ): Promise<{ restored: number }> {
+    const body = Array.isArray(selection) ? { ids: selection } : selection;
+    return this.json("POST", "/trash/restore", { body, signal: request?.signal });
+  }
+
+  /** Delete snapshots in the trash for good. */
+  deleteFromTrash(
+    selection: number[] | TrashSelection,
+    request?: RequestOptions,
+  ): Promise<{ deleted: number; busy: number }> {
+    const body = Array.isArray(selection) ? { ids: selection } : selection;
+    return this.json("POST", "/trash/delete", { body, signal: request?.signal });
+  }
+
+  /** Delete everything in the trash for good. */
+  emptyTrash(request?: RequestOptions): Promise<{ deleted: number; busy: number }> {
+    return this.json("POST", "/trash/empty", { signal: request?.signal });
+  }
+
+  /** Settings changed from the web UI (the trash retention). */
+  getGeneralSettings(request?: RequestOptions): Promise<GeneralSettings> {
+    return this.json("GET", "/settings/general", { signal: request?.signal });
+  }
+
+  updateGeneralSettings(
+    update: { trashRetentionDays?: number },
+    request?: RequestOptions,
+  ): Promise<GeneralSettings> {
+    return this.json("PATCH", "/settings/general", { body: update, signal: request?.signal });
+  }
+
+  // ---------------------------------------------------------------------------
   // Server, stats and keys
   // ---------------------------------------------------------------------------
 
@@ -710,6 +869,75 @@ export class WebFrostClient {
   }
 
   // ---------------------------------------------------------------------------
+  // Connecting a command line (webfrost login)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Start a request to connect this client to the server: no credentials needed. Show
+   * `userCode`, send the person to `verificationPathComplete` on the server, and poll with
+   * {@link pollDeviceAuthorization} every `interval` seconds.
+   */
+  startDeviceAuthorization(
+    options?: { name?: string } & RequestOptions,
+  ): Promise<DeviceAuthorization> {
+    return this.json("POST", "/auth/device", {
+      body: options?.name !== undefined ? { name: options.name } : {},
+      signal: options?.signal,
+    });
+  }
+
+  /**
+   * Ask whether a connection request was answered. `approved` comes once, with an API key the
+   * server created for this client; after it (or once the request expires) the answer is
+   * `expired`.
+   */
+  pollDeviceAuthorization(deviceCode: string, request?: RequestOptions): Promise<DevicePollResult> {
+    return this.send(
+      "POST",
+      "/auth/device/token",
+      { body: { deviceCode }, signal: request?.signal, allow: [404] },
+      async (res) =>
+        res.status === 404 ? { status: "expired" } : ((await res.json()) as DevicePollResult),
+    );
+  }
+
+  /** The connection request a code names, or null when there is none (any more). */
+  getDeviceRequest(userCode: string, request?: RequestOptions): Promise<DeviceRequest | null> {
+    return this.send(
+      "GET",
+      `/auth/device/requests/${encodeURIComponent(userCode)}`,
+      { signal: request?.signal, allow: [404] },
+      async (res) => (res.status === 404 ? null : ((await res.json()) as DeviceRequest)),
+    );
+  }
+
+  private answerDeviceRequest(
+    userCode: string,
+    decision: "approve" | "deny",
+    request?: RequestOptions,
+  ): Promise<boolean> {
+    return this.send(
+      "POST",
+      `/auth/device/requests/${encodeURIComponent(userCode)}/${decision}`,
+      { signal: request?.signal, allow: [404] },
+      async (res) => res.status !== 404,
+    );
+  }
+
+  /**
+   * Approve a connection request: the client that started it receives an API key. Needs a
+   * session (the web UI), not an API key. False when the code is unknown, expired or answered.
+   */
+  approveDeviceRequest(userCode: string, request?: RequestOptions): Promise<boolean> {
+    return this.answerDeviceRequest(userCode, "approve", request);
+  }
+
+  /** Deny a connection request. False when the code is unknown, expired or answered. */
+  denyDeviceRequest(userCode: string, request?: RequestOptions): Promise<boolean> {
+    return this.answerDeviceRequest(userCode, "deny", request);
+  }
+
+  // ---------------------------------------------------------------------------
   // Import
   // ---------------------------------------------------------------------------
 
@@ -752,7 +980,8 @@ export class WebFrostClient {
     // fetch measures a Blob or a Uint8Array itself; only a stream needs the length spelled out
     // (browsers drop the header, and send the stream only over HTTP/2).
     const contentLength = bundle instanceof ReadableStream ? request?.contentLength : undefined;
-    return this.json("POST", "/snapshots/import", {
+    const query = request?.replaces !== undefined ? `?replaces=${request.replaces}` : "";
+    return this.json("POST", `/snapshots/import${query}`, {
       raw: {
         body: bundle,
         contentType: "application/zip",

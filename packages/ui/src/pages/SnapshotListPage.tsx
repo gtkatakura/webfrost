@@ -1,5 +1,5 @@
 import { AlignJustify, LayoutGrid, LayoutList, SlidersHorizontal } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { Pagination } from "../components/Pagination";
 import { EmptyState, ErrorState, Skeleton } from "../components/ui/StateViews";
@@ -14,12 +14,15 @@ import {
   SnapshotRowSkeleton,
 } from "../features/snapshots/SnapshotRow";
 import { useBulkSnapshots } from "../hooks/useBulkSnapshots";
+import { useDraftParam } from "../hooks/useDraftParam";
 import { useCreateSnapshot, useSnapshots } from "../hooks/useSnapshots";
 import { useTags } from "../hooks/useTags";
 import { STORAGE_KEYS, readStorage, writeStorage } from "../lib/storage";
 import { parsePositiveInt } from "../lib/url";
 
 const PAGE_SIZE = 20;
+/** What the server takes as `contains`. */
+const MAX_FILTER_LENGTH = 200;
 
 const LAYOUT_LABELS: Record<Density, string> = {
   grid: "Cards",
@@ -36,28 +39,27 @@ export function SnapshotListPage() {
   const legacyDetailId = parsePositiveInt(searchParams.get("detail"));
   const page = parsePositiveInt(searchParams.get("page")) ?? 1;
 
-  const { snapshots, total, loading, isError, error, refetch } = useSnapshots(page, PAGE_SIZE);
+  // The filter is a URL parameter and is answered by the server: it looks in the URL and the
+  // title of every snapshot in the archive, not only in the rows on this page.
+  const filter = useDraftParam("filter", MAX_FILTER_LENGTH);
+  const filtering = filter.value.length > 0;
+
+  const { snapshots, total, loading, isError, error, refetch } = useSnapshots(
+    page,
+    PAGE_SIZE,
+    filter.value,
+  );
   const { tags: allTags } = useTags();
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const [search, setSearch] = useState("");
   const [density, setDensity] = useState<Density>(() => {
     const saved = readStorage(STORAGE_KEYS.snapshotDensity);
     // Cards unless the browser remembers rows: an archive is browsed by sight first.
     return saved === "compact" || saved === "comfortable" ? saved : "grid";
   });
 
-  // Client-side filter: it narrows the rows of the current page only.
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return snapshots;
-    return snapshots.filter(
-      (s) => s.url.toLowerCase().includes(q) || s.title?.toLowerCase().includes(q),
-    );
-  }, [snapshots, search]);
-
   const bulk = useBulkSnapshots(
-    filtered.map((s) => s.id),
+    snapshots.map((s) => s.id),
     canWrite,
   );
 
@@ -103,8 +105,6 @@ export function SnapshotListPage() {
   const rowTo = (id: number) => `/snapshots/${id}`;
   const rowState = { back: `/snapshots${listSearch()}` };
 
-  const filtering = search.trim().length > 0;
-
   if (legacyDetailId !== null) return <Navigate to={`/snapshots/${legacyDetailId}`} replace />;
 
   return (
@@ -116,9 +116,9 @@ export function SnapshotListPage() {
           {!loading && !isError && (
             <span
               className="rounded-full bg-overlay px-2 py-0.5 text-ui-xs font-semibold tabular-nums text-mid"
-              title={filtering ? "Matches on this page" : "Total snapshots"}
+              title={filtering ? "Snapshots matching the filter" : "Total snapshots"}
             >
-              {filtering ? filtered.length : total}
+              {total}
             </span>
           )}
         </div>
@@ -127,14 +127,16 @@ export function SnapshotListPage() {
           <input
             type="search"
             data-page-search
-            aria-label="Filter this page by URL or title"
+            aria-label="Filter snapshots by URL or title"
             placeholder="Filter by URL or title…"
-            title="Filters the snapshots on this page"
-            value={search}
+            title="Looks in the URL and the title of every snapshot in the archive"
+            value={filter.draft}
+            maxLength={MAX_FILTER_LENGTH}
             onChange={(e) => {
-              setSearch(e.target.value);
+              filter.setDraft(e.target.value);
               bulk.clearSelection();
             }}
+            onKeyDown={(e) => e.key === "Enter" && filter.setDraft(filter.draft, true)}
             className="field !w-full sm:!w-56"
           />
 
@@ -179,7 +181,7 @@ export function SnapshotListPage() {
 
       {/* Cards have no table header: select all sits in a slim bar of its own. */}
       {/* Shown while loading too (disabled), so the cards do not move down when the data arrives. */}
-      {density === "grid" && canWrite && !isError && (loading || filtered.length > 0) && (
+      {density === "grid" && canWrite && !isError && (loading || snapshots.length > 0) && (
         <div className="flex h-9 shrink-0 items-center border-b border-border bg-surface px-4 sm:px-5">
           <label className="flex cursor-pointer items-center gap-2 text-ui-xs font-medium text-mid">
             <input
@@ -198,7 +200,7 @@ export function SnapshotListPage() {
       {/* ── Table header (rows only; cards carry their own labels) ── */}
       {density !== "grid" && (
         <div
-          aria-hidden={loading || isError || filtered.length === 0 ? true : undefined}
+          aria-hidden={loading || isError || snapshots.length === 0 ? true : undefined}
           className="flex h-8 shrink-0 items-center border-b border-border bg-surface text-ui-xs font-medium text-mid"
         >
           <div className={`flex shrink-0 items-center justify-center ${canWrite ? "w-10" : "w-5"}`}>
@@ -243,22 +245,25 @@ export function SnapshotListPage() {
           </ul>
         ) : isError ? (
           <ErrorState title="Could not load snapshots" error={error} onRetry={() => refetch()} />
-        ) : filtered.length === 0 ? (
-          snapshots.length === 0 ? (
+        ) : snapshots.length === 0 ? (
+          filtering ? (
+            <EmptyState
+              icon={<SlidersHorizontal size={24} />}
+              title="No snapshots match your filter"
+            >
+              No snapshot in the archive has this text in its URL or title. To look inside the
+              pages, use Search.
+            </EmptyState>
+          ) : (
             <EmptyState mascot title="No snapshots yet">
               {canWrite
                 ? "Use the New Snapshot button to archive your first URL."
                 : "Nothing has been archived here yet."}
             </EmptyState>
-          ) : (
-            <EmptyState icon={<SlidersHorizontal size={24} />} title="No results match your filter">
-              Try a different search term. The filter only looks at the {snapshots.length} snapshots
-              on this page.
-            </EmptyState>
           )
         ) : density === "grid" ? (
           <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-4 p-4 sm:p-5">
-            {filtered.map((snapshot) => (
+            {snapshots.map((snapshot) => (
               <SnapshotCard
                 key={snapshot.id}
                 snapshot={snapshot}
@@ -271,7 +276,7 @@ export function SnapshotListPage() {
           </ul>
         ) : (
           <ul className="m-0 list-none p-0">
-            {filtered.map((snapshot) => (
+            {snapshots.map((snapshot) => (
               <SnapshotRow
                 key={snapshot.id}
                 snapshot={snapshot}
