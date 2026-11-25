@@ -1,5 +1,51 @@
 # @webfrost/core
 
+## 0.4.0
+
+### Minor Changes
+
+- ff682e9: A failed snapshot now says why it failed: the archive stores a category (`domain_not_found`, `page_not_found`, `access_denied`, `rate_limited`, `timeout`, …) and the message behind it, and the API and SDK return it as `failure: { category, class, label, detail }`. A domain that no longer resolves is remembered for ten minutes, so the other pages of a dead site in the same import fail at once without asking DNS again.
+  
+  The new **Review failures** page in the web UI groups the failed snapshots by why (domain gone, page gone, blocked, rate limited, temporary, …), then by domain, then snapshot by snapshot, with a filter and infinite scrolling. Retry, move to trash or delete for good many at once; only failed snapshots are touched, never an earlier snapshot of the same page that worked. Deleting for good asks you to type the domain name.
+  
+  Snapshots can now go to a **Trash**: hidden from every list, search and count (and from anonymous visitors of a public-read server by their address too), restorable, and deleted for good after 30 days (a setting, 1 to 365). A trashed snapshot still counts as a known URL for feed schedules, so a feed does not archive it again. New routes: `GET /failures`, `GET /failures/:group/domains`, `GET /failures/:group/domains/:host/snapshots`, `POST /failures/:group/{retry,trash,delete}`, `GET /trash`, `POST /trash/{restore,delete,empty}` and `GET`/`PATCH /settings/general`. Snapshots that failed before this version are in the **Reason not recorded** group.
+  
+  In traces, `error.type` on the `snapshot.archive` span is now that failure category (`page_not_found`, `network_error`, …) instead of `fetch_network` or `fetch_http_status`: update alerts that match the old values.
+- ff682e9: New `webfrost rescue <group> --from <server>`: for every failed snapshot of a group on a server (for example the pages a site refuses to the server, "Blocked by the site"), archive the page on this machine, check the copy, and send the ones that work. A copy is sent only when it is done and is the page itself, not an anti-bot interstitial or a login wall with almost no text. The server stores it and moves the failure to its trash in one step, and only while the failure is still a failure of the same URL, so running it again carries on with what is left and never stores a page twice. A domain that fails here too is given up after three tries in a row.
+  
+  `POST /snapshots/import` takes `?replaces=<id>` for this (`409` when that snapshot is not, or no longer, a failure of the bundle's URL), and `GET /failures/:group/snapshots` lists a group's failed snapshots across domains; the SDK's `importSnapshot` takes `replaces` too. The failure lists answer faster on large archives.
+  
+  The browser no longer installs its own Ctrl+C handler, so the server's and the CLI's graceful stop (finish what is running, then exit) is what happens on the first signal.
+  
+  A snapshot in the trash can no longer be retried (`404`, as everywhere else it is hidden) until it is restored, and `webfrost export -o` over a larger existing file no longer leaves a corrupt bundle.
+- ff682e9: SQLite search now goes through the same query parser as PostgreSQL and MySQL: words, `"phrase"`, `term*`, `OR` and `NOT` / `-term`, up to 512 characters and 32 terms. A query of thousands of `a*` terms or `NEAR` groups can no longer stall the server, which runs SQLite on its main thread. FTS5-only syntax (`NEAR`, `col:term`) is no longer taken: `title:x` searches every field for `x`. `q` longer than 1024 characters answers `400`.
+- ff682e9: Filters look at the whole archive. In the web UI, **Filter by URL or title** on Snapshots and the status, date, extractor and tag filters on Search used to narrow only the 20 rows already on the page, so a snapshot on another page was never found. They are now answered by the database: the list, the count and the pages are of what matches in the archive, and the filter is kept in the address.
+  
+  `GET /snapshots` takes `since`, `before`, `extractor`, `tag` and `contains` (text in the URL or the title), and `status` takes several values; they work on the list and on a search (`q`). A value that cannot be read answers `400`. The SDK's `listSnapshots`, `iterateSnapshots` and `searchSnapshotsPage` take the same filters (`status`, `since`, `before`, `extractors`, `tags`, `contains`).
+
+### Patch Changes
+
+- 1d9df5e: The page fetch, SingleFile's resource fetches and the bookmark and feed imports send the headers of a Chrome navigation (`User-Agent`, `Accept`, `Accept-Language`). Servers that reset the connection or answer an error to a client that does not look like a browser used to fail the snapshot, although the browser of the same run opened the page. Troubleshooting has a new section for pages that open in a browser and fail to archive, including sites under a certificate authority the runtime does not know yet (`NODE_EXTRA_CA_CERTS`).
+- ff682e9: - Retrying a snapshot takes its old text out of the search index, so it is not found by what it said before while it is archived again, or after the new run fails.
+  - The trash purge and the sweep of interrupted imports check again, under the row's lock, that a snapshot is still expired or still a stale import: one restored and trashed again, or an import that finished meanwhile, is kept.
+  - Concurrent requests for the stats share one measuring pass instead of each asking storage about every unmeasured file.
+  - An uploaded bundle is removed even when the database cannot be opened to import it.
+  - A failure's category no longer depends on words in the hostname or URL a site redirected to.
+- ff682e9: - MySQL: a schema step interrupted after adding a column or an index runs again instead of failing every later start.
+  - The server routes a request by the same path its request guard, auth check and rate limiters read (a short `Host` could make them see a different one), and refuses JSON bodies over 1 MiB before reading them, except on `POST /import`.
+  - The `webfrost` binary no longer reads `.env` or `bunfig.toml` from the folder it is run in.
+  - A `--headers-command` that leaves a process running no longer hangs the command line, and its timeout ends everything it started.
+  - Pending `webfrost login` requests are counted per IPv6 /48, and a full store takes room from the client with the most of them.
+  - Pages nested deeper than 512 elements, or with more than 100,000, are not handed to Readability, whose cost grows with the square of the depth.
+- ff682e9: A run whose job was taken over by another worker (it stalled, and was presumed dead) can no longer overwrite the files of the run that took over. Each run writes its files in a folder of its own (`<snapshot>/.stage-<lease>/`) and moves each into place only while it still holds the job's lease; what it never moved is removed when it ends. `StorageBackend` gains an optional `stage` on `localPath`/`finalize` and `discardStage`.
+- ff682e9: yt-dlp's requests now go through the SSRF egress proxy, like the browser's: a media page can no longer make yt-dlp fetch a private address (cloud metadata, a service on the server), whatever a site's extractor follows. The Mediasite extractors, which accept any host, are no longer used. If the proxy cannot start, media extraction is skipped rather than run unguarded.
+- ff682e9: `webfrost rescue` hardening:
+  - It no longer archives private addresses (localhost, the LAN, cloud metadata) from your machine just because the shell sets `WEBFROST_ALLOW_PRIVATE_URLS`: the addresses come from the server, so it takes an explicit `--allow-private`.
+  - Each run has a scratch archive of its own (`rescue/run-*/`), so two runs at once no longer share ids or files or remove each other's.
+  - Reading the text of a rendered page is a single pass: a page with a million unclosed `<template` tags can no longer hang the run.
+  - When a copy replaces a failure (`POST /snapshots/import?replaces=`), every other failure of exactly the same address goes to the trash in the same transaction, so a run stopped right after an upload never sends that page again.
+- ff682e9: `webfrost rescue` logs every run in `logs/` of the data directory (`rescue-<start time>.jsonl`): one JSON line per page as it is done, with its address, the outcome and the reason (and the server's new snapshot when rescued), then the summary. The record survives a closed terminal, Ctrl+C or a crash; `--no-log` skips it. The upload progress line no longer overwrites the pages' lines, and archiving no longer prints "Could not parse CSS stylesheet" for each stylesheet it cannot read.
+
 ## 0.3.2
 
 ### Patch Changes

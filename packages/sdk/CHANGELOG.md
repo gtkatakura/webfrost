@@ -1,5 +1,42 @@
 # @webfrost/sdk
 
+## 0.4.0
+
+### Minor Changes
+
+- ff682e9: New `webfrost login <server>`: connect the CLI to a server without creating and copying an API key. The command shows a short code and opens the server's web UI (**Connect a command line**), where you, signed in, approve the request that shows the same code; the server then creates an API key for that machine, listed and revocable under Settings, API keys. The key is saved in `~/.config/webfrost/credentials.json` (readable by you only) and `push` and `rescue` use it for that server; `WEBFROST_API_KEY` still works and takes precedence. `webfrost logout <server>` revokes the key and forgets it.
+  
+  It follows the OAuth 2.0 Device Authorization Grant (RFC 8628): `POST /auth/device` and `POST /auth/device/token` for the command line (no credentials, rate limited; nothing is created before an approval), `GET /auth/device/requests/:userCode` and `POST /auth/device/requests/:userCode/approve|deny` for the web UI (session only). The SDK gains `startDeviceAuthorization`, `pollDeviceAuthorization`, `getDeviceRequest`, `approveDeviceRequest` and `denyDeviceRequest`.
+  
+  A server behind a proxy that asks for its own sign-in is reachable too, with nothing tied to one product: `webfrost login --headers-command '<command>'` takes a command that prints the headers the proxy wants (its token tool), saved with the key and run again by `push`, `rescue` and `logout`; `WEBFROST_HEADERS` gives fixed headers (a service token) and `WEBFROST_HEADERS_COMMAND` a command for one run. They are sent only to that server, never printed or saved, and never in place of the API key. A server on a private network (a VPN, a tailnet) needs none of it.
+- ff682e9: A failed snapshot now says why it failed: the archive stores a category (`domain_not_found`, `page_not_found`, `access_denied`, `rate_limited`, `timeout`, …) and the message behind it, and the API and SDK return it as `failure: { category, class, label, detail }`. A domain that no longer resolves is remembered for ten minutes, so the other pages of a dead site in the same import fail at once without asking DNS again.
+  
+  The new **Review failures** page in the web UI groups the failed snapshots by why (domain gone, page gone, blocked, rate limited, temporary, …), then by domain, then snapshot by snapshot, with a filter and infinite scrolling. Retry, move to trash or delete for good many at once; only failed snapshots are touched, never an earlier snapshot of the same page that worked. Deleting for good asks you to type the domain name.
+  
+  Snapshots can now go to a **Trash**: hidden from every list, search and count (and from anonymous visitors of a public-read server by their address too), restorable, and deleted for good after 30 days (a setting, 1 to 365). A trashed snapshot still counts as a known URL for feed schedules, so a feed does not archive it again. New routes: `GET /failures`, `GET /failures/:group/domains`, `GET /failures/:group/domains/:host/snapshots`, `POST /failures/:group/{retry,trash,delete}`, `GET /trash`, `POST /trash/{restore,delete,empty}` and `GET`/`PATCH /settings/general`. Snapshots that failed before this version are in the **Reason not recorded** group.
+  
+  In traces, `error.type` on the `snapshot.archive` span is now that failure category (`page_not_found`, `network_error`, …) instead of `fetch_network` or `fetch_http_status`: update alerts that match the old values.
+- ff682e9: New `webfrost rescue <group> --from <server>`: for every failed snapshot of a group on a server (for example the pages a site refuses to the server, "Blocked by the site"), archive the page on this machine, check the copy, and send the ones that work. A copy is sent only when it is done and is the page itself, not an anti-bot interstitial or a login wall with almost no text. The server stores it and moves the failure to its trash in one step, and only while the failure is still a failure of the same URL, so running it again carries on with what is left and never stores a page twice. A domain that fails here too is given up after three tries in a row.
+  
+  `POST /snapshots/import` takes `?replaces=<id>` for this (`409` when that snapshot is not, or no longer, a failure of the bundle's URL), and `GET /failures/:group/snapshots` lists a group's failed snapshots across domains; the SDK's `importSnapshot` takes `replaces` too. The failure lists answer faster on large archives.
+  
+  The browser no longer installs its own Ctrl+C handler, so the server's and the CLI's graceful stop (finish what is running, then exit) is what happens on the first signal.
+  
+  A snapshot in the trash can no longer be retried (`404`, as everywhere else it is hidden) until it is restored, and `webfrost export -o` over a larger existing file no longer leaves a corrupt bundle.
+- ff682e9: Filters look at the whole archive. In the web UI, **Filter by URL or title** on Snapshots and the status, date, extractor and tag filters on Search used to narrow only the 20 rows already on the page, so a snapshot on another page was never found. They are now answered by the database: the list, the count and the pages are of what matches in the archive, and the filter is kept in the address.
+  
+  `GET /snapshots` takes `since`, `before`, `extractor`, `tag` and `contains` (text in the URL or the title), and `status` takes several values; they work on the list and on a search (`q`). A value that cannot be read answers `400`. The SDK's `listSnapshots`, `iterateSnapshots` and `searchSnapshotsPage` take the same filters (`status`, `since`, `before`, `extractors`, `tags`, `contains`).
+
+### Patch Changes
+
+- ff682e9: `searchSnapshots("")` and `searchSnapshotsPage("")` return an empty result instead of the plain list typed as search results, and a result always has a `snippet` (string) and a `rank` (number). A signal passed to many requests (downloads, and failed or retried ones) no longer collects one abort listener per request. The docs no longer suggest `credentials: "include"` for cookie auth from another origin, which the server does not allow: use an API key there.
+- ff682e9: - The `webfrost login` and `webfrost rescue` commands the web UI offers to copy carry the server's origin only: a link with shell syntax in its path can no longer put it into a command someone pastes.
+  - Typing in a filter or search box no longer undoes a filter clicked, or a Back pressed, while the text waited to be sent.
+  - The snapshot filter takes at most the 200 characters the server accepts, instead of failing the whole list.
+  - A search page past the end steps back to the last page, as the snapshot list does.
+  - "Select all" on a failure group ends when the list's totals change, so a confirmation never shows fewer snapshots than will be acted on.
+  - `POST /failures/:group/trash` answers with the `ids` it moved, and Undo restores exactly those (one already in the trash stays there).
+
 ## 0.3.2
 
 ### Patch Changes
