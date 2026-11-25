@@ -16,6 +16,7 @@
     "@webfrost/core": "workspace:*",
     "@webfrost/server": "workspace:*",
     "fflate": "0.8.3",
+    "pino": "10.4.0",
     "playwright-core": "1.65.1"
   }
 }

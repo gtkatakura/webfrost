@@ -17,7 +17,9 @@ import type { Command, Context } from "../cli";
 import { CliError, UsageError } from "../errors";
 import { isInteractive } from "../prompt";
 import { prepareServer, proxyHeaders, redirectAdvice } from "../proxy-headers";
+import { openRunLog } from "../run-log";
 import { safeText } from "../sanitize";
+import { VERSION } from "../version";
 import {
   KEY_REJECTED,
   UploadError,
@@ -295,6 +297,10 @@ export const rescueCommand: Command = {
       type: "boolean",
       description: "Keep the scratch archive (rescue/) at the end, to look at what was rejected",
     },
+    "no-log": {
+      type: "boolean",
+      description: "Do not write the log of this run to logs/ in the data directory",
+    },
     yes: { type: "boolean", short: "y", description: "Do not ask before starting" },
     insecure: {
       type: "boolean",
@@ -305,6 +311,10 @@ export const rescueCommand: Command = {
   notes: `
 The pages are archived in a scratch archive (rescue/ in the data directory),
 not your own, and each copy is deleted there once it was sent or rejected.
+
+Every run is logged in logs/ of the data directory (rescue-<start time>.jsonl):
+one JSON line per page as it is done, with its address, the outcome and the
+reason, so a run that was closed or killed can still be read. --no-log skips it.
 
 Environment:
   WEBFROST_API_KEY  An API key of the server, instead of the one webfrost login
@@ -386,6 +396,32 @@ Exit codes:
     const results: Result[] = [];
     let stopping = false;
     let fatal: string | undefined;
+
+    // What this run does, page by page, on disk as it happens: a run of hours must not leave its
+    // only record in a terminal's scrollback.
+    const log = ctx.bool("no-log") ? undefined : openRunLog(ctx.dir, "rescue");
+    if (log) {
+      log.write(
+        "start",
+        `rescue ${group} from ${base.origin}: ${failures.length} failed snapshots`,
+        {
+          command: "rescue",
+          version: VERSION,
+          server: base.origin,
+          group,
+          ...(ctx.string("q") ? { q: ctx.string("q") } : {}),
+          ...(ctx.string("host") ? { host: ctx.string("host") } : {}),
+          total: failures.length,
+          domains: byHost.size,
+          concurrency,
+          giveUpAfter,
+          minText,
+        },
+      );
+      if (log.problem)
+        ctx.logger.warn(`No log of this run: ${log.path} cannot be written (${log.problem})`);
+      else say(`Log of this run: ${log.path}`);
+    }
     ctx.onSignal(() => {
       stopping = true;
       say("Stopping after the pages in progress (Ctrl+C again to quit now)...");
@@ -393,6 +429,15 @@ Exit codes:
 
     const record = (r: Result) => {
       results.push(r);
+      log?.write("page", `${LABELS[r.outcome]}: ${r.url}`, {
+        n: results.length,
+        of: failures.length,
+        outcome: r.outcome,
+        url: r.url,
+        id: r.id,
+        ...(r.remoteId !== undefined ? { remoteId: r.remoteId } : {}),
+        ...(r.reason !== undefined ? { reason: r.reason } : {}),
+      });
       const n = `[${results.length}/${failures.length}]`;
       const tail = r.outcome === "rescued" ? `snapshot ${r.remoteId}` : (r.reason ?? "");
       say(`${n} ${LABELS[r.outcome]}: ${safeText(r.url)}${tail ? ` (${printable(tail)})` : ""}`);
@@ -402,7 +447,16 @@ Exit codes:
     async function send(f: Failed, localId: number, bundle: string, bytes: number) {
       for (let attempt = 1; ; attempt++) {
         try {
-          return await upload(ctx, `${endpoint}?replaces=${f.id}`, apiKey, localId, bundle, bytes);
+          // No progress line per upload: with pages done side by side it would overwrite theirs.
+          return await upload(
+            ctx,
+            `${endpoint}?replaces=${f.id}`,
+            apiKey,
+            localId,
+            bundle,
+            bytes,
+            false,
+          );
         } catch (err) {
           if (!(err instanceof UploadError) || err.status !== 429 || attempt >= 5 || stopping) {
             throw err;
@@ -513,8 +567,15 @@ Exit codes:
 
     const summary: Partial<Record<Outcome, number>> = {};
     for (const r of results) summary[r.outcome] = (summary[r.outcome] ?? 0) + 1;
+    log?.write("end", stopping ? "stopped before the end" : "finished", {
+      summary,
+      notReached: failures.length - results.length,
+      stopped: stopping,
+      ...(fatal ? { error: fatal } : {}),
+    });
+    const logged = log && !log.problem ? log.path : undefined;
     if (json) {
-      printJson({ summary, results });
+      printJson({ summary, results, ...(logged ? { log: logged } : {}) });
     } else {
       say("");
       for (const o of Object.keys(LABELS) as Outcome[]) {
@@ -527,6 +588,7 @@ Exit codes:
           `\nThe pages that are really gone stay in "${info.label}" on the server: trash them there, in Review failures.`,
         );
       }
+      if (logged) say(`\nEvery page and why, in ${logged}`);
     }
     if (fatal) throw new CliError(fatal);
     if (stopping) return 130;

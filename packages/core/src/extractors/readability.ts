@@ -1,5 +1,5 @@
 import { Readability } from "@mozilla/readability";
-import { JSDOM } from "jsdom";
+import { JSDOM, VirtualConsole } from "jsdom";
 import type { Db } from "../db";
 import { recordResult } from "../results";
 import { envInt } from "../ssrf-guard";
@@ -132,7 +132,10 @@ export async function readabilityExtractor(
       html,
       envInt("WEBFROST_READABILITY_MAX_BYTES", DEFAULT_READABILITY_MAX_BYTES),
     );
-    const dom = new JSDOM(input, { url });
+    // A console of its own, with nobody listening: jsdom reports every stylesheet it cannot
+    // parse ("Could not parse CSS stylesheet") on the process's console otherwise, once per
+    // sheet per page, and Readability does not use the styles.
+    const dom = new JSDOM(input, { url, virtualConsole: new VirtualConsole() });
     // The page's own <title>, read before Readability rewrites the document: pages that are
     // not articles (a video, an app) still get a name.
     const pageTitle = dom.window.document.title.trim() || null;

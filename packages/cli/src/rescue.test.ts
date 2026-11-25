@@ -3,7 +3,7 @@
  * local test site, and the CLI as a subprocess archiving them on its own archive and sending them back.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeDatabases, createApiKey, openDb, sql } from "@webfrost/core";
@@ -190,6 +190,66 @@ describe("webfrost rescue", () => {
         ),
       ),
     ).toBe(1);
+  }, 120_000);
+
+  test("every run leaves a log in logs/: one line per page as it is done, then the summary", async () => {
+    const article = await seedFailure(page("/article"));
+    const gone = await seedFailure(page("/gone"));
+    const logs = join(laptopDir, "logs");
+
+    // Looking is not a run: nothing is logged.
+    await runCli(["rescue", "blocked", ...from(), "--dry-run"]);
+    expect(existsSync(logs)).toBe(false);
+
+    const run = await runCli(["rescue", "blocked", ...from(), "--yes", "--json"]);
+    expect(run.exitCode).toBe(0);
+    const out = JSON.parse(run.stdout) as {
+      log: string;
+      results: { id: number; remoteId?: number }[];
+    };
+    const files = readdirSync(logs);
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatch(/^rescue-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z\.jsonl$/);
+    expect(out.log).toBe(join(logs, files[0] ?? ""));
+    expect(run.stderr).toContain(`Log of this run: ${out.log}`);
+
+    const raw = readFileSync(out.log, "utf8");
+    const lines = raw
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(lines.map((l) => l.event)).toEqual(["start", "page", "page", "end"]);
+    expect(lines[0]).toMatchObject({
+      command: "rescue",
+      server: `http://127.0.0.1:${server.port}`,
+      group: "blocked",
+      total: 2,
+      domains: 1,
+    });
+    const pages = Object.fromEntries(lines.slice(1, 3).map((l) => [l.id, l]));
+    expect(pages[article]).toMatchObject({
+      outcome: "rescued",
+      url: page("/article"),
+      of: 2,
+      remoteId: out.results.find((r) => r.id === article)?.remoteId,
+    });
+    expect(pages[gone]).toMatchObject({ outcome: "gone", url: page("/gone") });
+    expect(String(pages[gone]?.reason)).toContain("404");
+    expect(lines[3]).toMatchObject({
+      summary: { rescued: 1, gone: 1 },
+      notReached: 0,
+      stopped: false,
+    });
+    // What it was done with is not in it.
+    expect(raw).not.toContain(apiKey);
+
+    // The next run gets a file of its own; --no-log writes none.
+    await seedFailure(page("/blocked"));
+    await runCli(["rescue", "blocked", ...from(), "--yes", "--no-log"]);
+    expect(readdirSync(logs)).toHaveLength(1);
+    const again = await runCli(["rescue", "blocked", ...from(), "--yes"]);
+    expect(again.stderr).toContain("Every page and why, in ");
+    expect(readdirSync(logs)).toHaveLength(2);
   }, 120_000);
 
   test("a challenge that only appears once scripts run is caught in the browser's DOM, not sent", async () => {

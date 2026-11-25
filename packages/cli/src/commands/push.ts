@@ -191,8 +191,11 @@ export async function upload(
   id: number,
   path: string,
   bytes: number,
+  /** Show a progress line on a terminal. Off for a caller that prints lines of its own meanwhile. */
+  progress = true,
 ): Promise<{ id: number; url: string; status: string; replaced?: number }> {
-  const showProgress = !ctx.quiet && process.stderr.isTTY === true && bytes >= PROGRESS_MIN_BYTES;
+  const showProgress =
+    progress && !ctx.quiet && process.stderr.isTTY === true && bytes >= PROGRESS_MIN_BYTES;
   const report = (sent: number) => {
     const pct = Math.floor((sent / bytes) * 100);
     process.stderr.write(
