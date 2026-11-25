@@ -457,25 +457,30 @@ describe("bundle import limits and crash recovery", () => {
   });
 });
 
-describe("POST /snapshots/import when the database cannot be opened", () => {
-  test("the uploaded bundle is removed anyway", async () => {
-    // A data folder where the database cannot be opened: archive.db is a folder.
-    const broken = join(root, "broken");
-    mkdirSync(join(broken, "archive.db"), { recursive: true });
-    process.env.WEBFROST_DIR = broken;
-    const { snapshotImportRouter } = await import("./snapshot-import");
-    const { Elysia } = await import("elysia");
-    const res = await new Elysia().use(snapshotImportRouter).handle(
-      new Request("http://localhost/snapshots/import", {
-        method: "POST",
-        headers: { "content-type": "application/zip" },
-        body: await laptopBundle(),
-      }),
-    );
-    expect(res.status).toBeGreaterThanOrEqual(400);
-    const tmp = join(broken, "tmp");
-    expect(existsSync(tmp) ? readdirSync(tmp).filter((n) => n.startsWith("bundle-")) : []).toEqual(
-      [],
-    );
-  });
-});
+// SQLite only: the database is broken through its file. On PostgreSQL or MySQL (CI) the test server
+// stays reachable; the spool cleanup under test does not depend on the dialect.
+describe.skipIf(Boolean(process.env.WEBFROST_TEST_DATABASE_URL?.trim()))(
+  "POST /snapshots/import when the database cannot be opened",
+  () => {
+    test("the uploaded bundle is removed anyway", async () => {
+      // A data folder where the database cannot be opened: archive.db is a folder.
+      const broken = join(root, "broken");
+      mkdirSync(join(broken, "archive.db"), { recursive: true });
+      process.env.WEBFROST_DIR = broken;
+      const { snapshotImportRouter } = await import("./snapshot-import");
+      const { Elysia } = await import("elysia");
+      const res = await new Elysia().use(snapshotImportRouter).handle(
+        new Request("http://localhost/snapshots/import", {
+          method: "POST",
+          headers: { "content-type": "application/zip" },
+          body: await laptopBundle(),
+        }),
+      );
+      expect(res.status).toBeGreaterThanOrEqual(400);
+      const tmp = join(broken, "tmp");
+      expect(
+        existsSync(tmp) ? readdirSync(tmp).filter((n) => n.startsWith("bundle-")) : [],
+      ).toEqual([]);
+    });
+  },
+);
