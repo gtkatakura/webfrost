@@ -434,3 +434,34 @@ describe("session revocation", () => {
     expect(await protectedStatus(app, forged)).toBe(401);
   });
 });
+
+describe("authPlugin — AUTH_DISABLED answers only to this machine's names", () => {
+  test("a request under another Host (DNS rebinding) gets 403; localhost and loopback addresses pass", async () => {
+    const app = await getAppWithPlugin();
+    const ask = (host: string) =>
+      app.handle(new Request("http://localhost/protected", { headers: { host } }));
+    for (const host of [
+      "attacker.example",
+      "attacker.example:3000",
+      "192.168.1.20:3000",
+      "localhost.attacker.example",
+    ]) {
+      expect([host, (await ask(host)).status]).toEqual([host, 403]);
+    }
+    for (const host of [
+      "localhost",
+      "localhost:3000",
+      "127.0.0.1:3000",
+      "[::1]:3000",
+      "app.localhost:5173",
+    ]) {
+      expect([host, (await ask(host)).status]).toEqual([host, 200]);
+    }
+    process.env.WEBFROST_ALLOWED_HOSTS = "devbox.lan, other.lan";
+    try {
+      expect((await ask("devbox.lan:3000")).status).toBe(200);
+    } finally {
+      Reflect.deleteProperty(process.env, "WEBFROST_ALLOWED_HOSTS");
+    }
+  });
+});

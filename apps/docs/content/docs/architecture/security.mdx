@@ -44,7 +44,10 @@ generates one on first run when it is unset and keeps it in `<data dir>/session-
 
 `AUTH_DISABLED=true` turns all of the above off. It exists for local development and automated
 tests. Never set it on anything reachable from a network you do not fully control. With it the
-server binds to `127.0.0.1` unless `HOST` is set explicitly.
+server binds to `127.0.0.1` unless `HOST` is set explicitly, and the API refuses (`403`) any
+request whose `Host` is not `localhost`, a `127.x` address or `[::1]` (or a name in
+`WEBFROST_ALLOWED_HOSTS`): a page that re-points its own name at `127.0.0.1` (DNS rebinding)
+reaches the loopback listener, but still under its own name.
 
 ### Connecting a command line
 
