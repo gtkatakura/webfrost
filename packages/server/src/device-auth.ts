@@ -83,6 +83,15 @@ function randomUserCode(): string {
   return code;
 }
 
+/**
+ * Who a request counts against: its address, or for IPv6 its /48 (the rate limiter's keys are /64s,
+ * and one customer of a provider usually holds a /56 or a /48, so 256 or more of them).
+ */
+export function clientBucket(requesterIp: string): string {
+  const v6 = /^([0-9a-f]+):([0-9a-f]+):([0-9a-f]+):[0-9a-f]+::\/64$/i.exec(requesterIp);
+  return v6 ? `${v6[1]}:${v6[2]}:${v6[3]}::/48` : requesterIp;
+}
+
 export class DeviceAuthStore {
   private readonly byUserCode = new Map<string, Entry>();
   private readonly byDeviceCode = new Map<string, Entry>();
@@ -139,16 +148,30 @@ export class DeviceAuthStore {
     // Only requests still waiting for an answer make room. One a person has approved is about
     // to be collected by its command line: dropping it would fail a login after the approval.
     const waiting = [...this.byUserCode.values()].filter((e) => e.status === "pending");
-    const mine = waiting.filter((e) => e.requesterIp === input.requesterIp);
+    const mine = waiting.filter(
+      (e) => clientBucket(e.requesterIp) === clientBucket(input.requesterIp),
+    );
     if (mine.length >= (this.options.maxPerClient ?? MAX_DEVICE_REQUESTS_PER_CLIENT)) {
       const oldest = DeviceAuthStore.oldest(mine);
       if (oldest) this.forget(oldest);
     }
     if (this.byUserCode.size >= (this.options.maxRequests ?? MAX_DEVICE_REQUESTS)) {
-      // Answered ones go only when nothing else can: they are few, and expire like the rest.
+      // The client with the most requests waiting gives one up (its oldest): someone holding many
+      // addresses fills the store with theirs, so they are the ones who lose them, never a person
+      // with the one request they are approving. Answered ones go only when nothing else can.
+      const byClient = new Map<string, Entry[]>();
+      for (const e of waiting) {
+        const key = clientBucket(e.requesterIp);
+        const list = byClient.get(key);
+        if (list) list.push(e);
+        else byClient.set(key, [e]);
+      }
+      let fullest: Entry[] = [];
+      for (const list of byClient.values()) {
+        if (list.length > fullest.length) fullest = list;
+      }
       const oldest =
-        DeviceAuthStore.oldest(waiting.filter((e) => this.byDeviceCode.has(e.deviceCodeHash))) ??
-        DeviceAuthStore.oldest(this.byUserCode.values());
+        DeviceAuthStore.oldest(fullest) ?? DeviceAuthStore.oldest(this.byUserCode.values());
       if (oldest) this.forget(oldest);
     }
 

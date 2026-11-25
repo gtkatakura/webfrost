@@ -13,6 +13,15 @@ const MULTIPART_ROUTE = /^\/api(?:\/v1)?\/import\/file\/?$/;
 /** The one route that takes a ZIP body: a snapshot bundle, streamed to disk. */
 const BUNDLE_ROUTE = /^\/api(?:\/v1)?\/snapshots\/import\/?$/;
 
+/** The one JSON route with a large body: `POST /import` (a pasted list or feed). */
+const IMPORT_JSON_ROUTE = /^\/api(?:\/v1)?\/import\/?$/;
+
+/**
+ * Every other JSON body: the largest is a bulk selection (5,000 ids or 500 host names), well under
+ * a megabyte.
+ */
+export const MAX_JSON_BODY_BYTES = 1024 * 1024;
+
 /** Slack over the import limit for multipart framing and the other form fields. */
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
 
@@ -112,7 +121,10 @@ export function checkApiRequest(
     return null;
   }
 
-  if (Number(declaredLength ?? "0") > maxRequestBodyBytes()) {
+  // Only the URL import takes a large JSON body (pasted lists, feeds); every other route gets a
+  // small one, refused here before anything reads or parses it, signed in or not.
+  const cap = IMPORT_JSON_ROUTE.test(pathname) ? maxRequestBodyBytes() : MAX_JSON_BODY_BYTES;
+  if (Number(declaredLength ?? "0") > cap) {
     return { status: 413, code: "PAYLOAD_TOO_LARGE", error: "request body too large" };
   }
 

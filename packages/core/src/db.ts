@@ -433,9 +433,21 @@ async function migratePostgres(db: Kysely<Schema>): Promise<void> {
   });
 }
 
+/** MySQL's answer to adding a column or an index that exists: 1060 ER_DUP_FIELDNAME, 1061 ER_DUP_KEYNAME. */
+export function isAlreadyApplied(err: unknown): boolean {
+  const e = err as { errno?: number; code?: string } | null;
+  return (
+    e?.errno === 1060 ||
+    e?.errno === 1061 ||
+    e?.code === "ER_DUP_FIELDNAME" ||
+    e?.code === "ER_DUP_KEYNAME"
+  );
+}
+
 async function migrateMysql(db: Kysely<Schema>): Promise<void> {
-  // DDL is not transactional on MySQL: a named lock serialises processes, and every
-  // statement is idempotent so an interrupted step simply runs again.
+  // DDL is not transactional on MySQL: a named lock serialises processes, and an interrupted step
+  // runs again. MySQL 8 has no IF NOT EXISTS for ADD COLUMN or CREATE INDEX, so a column or an
+  // index the interrupted run already made (ER_DUP_FIELDNAME, ER_DUP_KEYNAME) counts as applied.
   await db.connection().execute(async (conn) => {
     const lock = sql`CONCAT('webfrost_migrate:', DATABASE())`;
     const got = await sql<{ l: number | null }>`SELECT GET_LOCK(${lock}, 120) AS l`.execute(conn);
@@ -452,7 +464,13 @@ async function migrateMysql(db: Kysely<Schema>): Promise<void> {
         ).rows[0]?.v ?? 0;
       for (const step of MYSQL_MIGRATIONS) {
         if (step.version <= current) continue;
-        for (const statement of step.statements) await sql.raw(statement).execute(conn);
+        for (const statement of step.statements) {
+          try {
+            await sql.raw(statement).execute(conn);
+          } catch (err) {
+            if (!isAlreadyApplied(err)) throw err;
+          }
+        }
         await sql`INSERT INTO webfrost_schema (version, applied_at) VALUES (${step.version}, ${new Date().toISOString()})`.execute(
           conn,
         );

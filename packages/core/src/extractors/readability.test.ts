@@ -177,3 +177,17 @@ describe("plain", () => {
     expect(plain(null)).toBeNull();
   });
 });
+
+describe("pages too costly to read", () => {
+  test("deep nesting or too many elements is refused in one linear pass", async () => {
+    const { tooCostlyToRead, MAX_ELEMENT_DEPTH } = await import("./readability");
+    expect(tooCostlyToRead("<html><body><p>a<br>b</p><img src=x></body></html>")).toBeNull();
+    const deep = `${"<section>".repeat(MAX_ELEMENT_DEPTH + 1)}text`;
+    expect(tooCostlyToRead(deep)).toContain("nested");
+    // Void elements and self-closing tags do not nest.
+    expect(tooCostlyToRead("<br>".repeat(MAX_ELEMENT_DEPTH * 2))).toBeNull();
+    const started = performance.now();
+    expect(tooCostlyToRead("<section>".repeat(2_000_000))).not.toBeNull();
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+});

@@ -112,6 +112,49 @@ export function plain(value: string | null | undefined): string | null {
   return text.replace(/\u00a0/g, " ").trim() || null;
 }
 
+/** Deeper than Chromium nests elements (its parser stops at 512): a page built to be slow to read. */
+export const MAX_ELEMENT_DEPTH = 512;
+/** More elements than an article page has; Readability's own limit, checked before it starts. */
+export const MAX_ELEMENTS = 100_000;
+
+const VOID_ELEMENTS = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "source",
+  "track",
+  "wbr",
+]);
+
+/**
+ * Why `html` is too costly to hand to jsdom and Readability, or null. Their cost grows with the
+ * square of the nesting depth (every scored element reads its whole subtree's text), so a few MB of
+ * nested tags would hold the server's thread for minutes. One linear pass over the tags decides.
+ */
+export function tooCostlyToRead(html: string): string | null {
+  const tag = /<(\/?)([a-zA-Z][\w:-]*)[^>]*?(\/?)>/g;
+  let depth = 0;
+  let elements = 0;
+  for (let m = tag.exec(html); m; m = tag.exec(html)) {
+    const name = (m[2] ?? "").toLowerCase();
+    if (m[1]) {
+      if (depth > 0) depth--;
+      continue;
+    }
+    if (++elements > MAX_ELEMENTS) return `more than ${MAX_ELEMENTS} elements`;
+    if (m[3] || VOID_ELEMENTS.has(name)) continue;
+    if (++depth > MAX_ELEMENT_DEPTH) return `elements nested more than ${MAX_ELEMENT_DEPTH} deep`;
+  }
+  return null;
+}
+
 interface ReadabilityResult {
   title: string | null;
   byline: string | null;
@@ -135,11 +178,13 @@ export async function readabilityExtractor(
     // A console of its own, with nobody listening: jsdom reports every stylesheet it cannot
     // parse ("Could not parse CSS stylesheet") on the process's console otherwise, once per
     // sheet per page, and Readability does not use the styles.
+    const costly = tooCostlyToRead(input);
+    if (costly) throw new Error(`not read: ${costly}`);
     const dom = new JSDOM(input, { url, virtualConsole: new VirtualConsole() });
     // The page's own <title>, read before Readability rewrites the document: pages that are
     // not articles (a video, an app) still get a name.
     const pageTitle = dom.window.document.title.trim() || null;
-    const reader = new Readability(dom.window.document);
+    const reader = new Readability(dom.window.document, { maxElemsToParse: MAX_ELEMENTS });
     const article = reader.parse();
     result = {
       title: plain(article?.title) || pageTitle,

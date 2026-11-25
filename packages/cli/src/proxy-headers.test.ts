@@ -59,3 +59,16 @@ describe("redirectAdvice", () => {
     expect(redirectAdvice(redirect("/relative"))).toContain("with a redirect (HTTP 302)");
   });
 });
+
+describe("the headers command", () => {
+  test("a helper that leaves something running does not hang the command line", async () => {
+    const { headersCommandFor } = await import("./proxy-headers");
+    void headersCommandFor;
+    const { prepareServer, proxyHeaders } = await import("./proxy-headers");
+    const base = new URL("http://headers-bg.example");
+    const started = Date.now();
+    await prepareServer(base, "printf 'x-token: abc\\n'; sleep 30 &");
+    expect(proxyHeaders(base)).toEqual({ "x-token": "abc" });
+    expect(Date.now() - started).toBeLessThan(5000);
+  }, 15_000);
+});

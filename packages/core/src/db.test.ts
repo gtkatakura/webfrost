@@ -572,3 +572,15 @@ const V2_SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_schedules_next_run ON schedules (next_run_at);
   CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys (key_hash);
 `;
+
+describe("MySQL migrations run again after an interruption", () => {
+  test("a column or index the interrupted run already made counts as applied; other errors do not", async () => {
+    const { isAlreadyApplied } = await import("./db");
+    expect(isAlreadyApplied({ errno: 1060, code: "ER_DUP_FIELDNAME" })).toBe(true);
+    expect(isAlreadyApplied({ errno: 1061, code: "ER_DUP_KEYNAME" })).toBe(true);
+    expect(isAlreadyApplied({ code: "ER_DUP_FIELDNAME" })).toBe(true);
+    expect(isAlreadyApplied({ errno: 1146, code: "ER_NO_SUCH_TABLE" })).toBe(false);
+    expect(isAlreadyApplied(new Error("connection lost"))).toBe(false);
+    expect(isAlreadyApplied(null)).toBe(false);
+  });
+});

@@ -115,7 +115,10 @@ const apiRoutes = () =>
     .use(settingsRouter)
     .use(statsRouter);
 
-export const app = new Elysia()
+// standardHostname off: Elysia would otherwise route by cutting the URL at a fixed offset, so with a
+// short Host (http://a/XY/api/v1/…) it routed /api/v1/… while the guards, the auth check and the
+// rate limiters, reading URL.pathname, saw /XY/api/v1/… and let it through unchecked.
+export const app = new Elysia({ handler: { standardHostname: false } })
   // A server span per request when OpenTelemetry export is on; nothing otherwise.
   .use(telemetryPlugin)
   .onRequest(({ request, store, set }) => {

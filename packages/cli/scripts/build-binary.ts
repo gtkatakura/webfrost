@@ -171,7 +171,14 @@ export async function buildBinary(options: {
 
   const result = await Bun.build({
     entrypoints: [join(cliDir, "src/index.ts")],
-    compile: { target: `bun-${target}` as `bun-${string}`, outfile },
+    // A standalone binary would otherwise read .env and bunfig.toml from the folder it is run in:
+    // a cloned repository could then set WEBFROST_HEADERS_COMMAND (run through sh) or preload code.
+    compile: {
+      target: `bun-${target}` as `bun-${string}`,
+      outfile,
+      autoloadDotenv: false,
+      autoloadBunfig: false,
+    },
     minify: true,
     target: "bun",
     external: ["electron", "chromium-bidi/*"],

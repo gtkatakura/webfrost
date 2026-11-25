@@ -330,3 +330,21 @@ describe("DeviceAuthStore", () => {
     expect(normalizeUserCode("WDJB MJHT")).toBe("WDJBMJHT");
   });
 });
+
+describe("DeviceAuthStore: a client with many addresses", () => {
+  test("fills the store with its own requests only: the person approving keeps theirs", () => {
+    let now = 0;
+    const store = new DeviceAuthStore({ maxPerClient: 5, maxRequests: 50, now: () => now });
+    const mine = store.start({ name: "me", requesterIp: "198.51.100.1" });
+    // 60 IPv6 /64s of one /48 (what one customer of a provider holds), 5 requests each, all newer.
+    for (let a = 0; a < 60; a++) {
+      for (let i = 0; i < 5; i++) {
+        now += 1;
+        store.start({ name: `flood ${a}`, requesterIp: `2001:db8:7:${a.toString(16)}::/64` });
+      }
+    }
+    expect(store.find(mine.userCode)?.name).toBe("me");
+    // They hold one bucket's worth.
+    expect(store.size).toBe(6);
+  });
+});

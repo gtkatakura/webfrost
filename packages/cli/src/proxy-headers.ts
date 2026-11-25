@@ -61,29 +61,32 @@ export function parseHeaders(raw: string | undefined, source: string): Record<st
  */
 function runHeadersCommand(command: string, origin: string): Promise<Record<string, string>> {
   return new Promise((resolve, reject) => {
-    const shell = process.platform === "win32";
-    const child = shell
+    const windows = process.platform === "win32";
+    // A process group of its own, so a timeout ends the helper and whatever it started, not only sh.
+    const child = windows
       ? spawn(command, { shell: true, stdio: ["ignore", "pipe", "inherit"], env: env(origin) })
-      : spawn("sh", ["-c", command], { stdio: ["ignore", "pipe", "inherit"], env: env(origin) });
+      : spawn("sh", ["-c", command], {
+          stdio: ["ignore", "pipe", "inherit"],
+          env: env(origin),
+          detached: true,
+        });
     let out = "";
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill();
-    }, COMMAND_TIMEOUT_MS);
-    child.stdout?.on("data", (chunk: Buffer) => {
-      out += chunk.toString();
-    });
-    child.on("error", (err) => {
-      clearTimeout(timer);
-      reject(new CliError(`the headers command could not be run: ${err.message}`));
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      if (timedOut) {
-        reject(new CliError("the headers command did not finish within 2 minutes"));
-        return;
+    let settled = false;
+    const killAll = () => {
+      try {
+        if (!windows && child.pid) process.kill(-child.pid, "SIGKILL");
+        else child.kill("SIGKILL");
+      } catch {
+        // Already gone.
       }
+    };
+    const finish = (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearTimeout(grace);
+      // Something the command left running may hold the pipe: what it printed so far is the answer.
+      child.stdout?.destroy();
       if (code !== 0) {
         reject(
           new CliError(
@@ -103,7 +106,29 @@ function runHeadersCommand(command: string, origin: string): Promise<Record<stri
       } catch (err) {
         reject(err);
       }
+    };
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      killAll();
+      reject(new CliError("the headers command did not finish within 2 minutes"));
+    }, COMMAND_TIMEOUT_MS);
+    let grace: ReturnType<typeof setTimeout> | undefined;
+    child.stdout?.on("data", (chunk: Buffer) => {
+      out += chunk.toString();
     });
+    child.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(new CliError(`the headers command could not be run: ${err.message}`));
+    });
+    // The output is complete when the pipe closes; once the command has exited, a short wait is
+    // enough, so a background process that keeps the pipe open does not hang the command line.
+    child.on("exit", (code) => {
+      grace = setTimeout(() => finish(code), 500);
+    });
+    child.on("close", (code) => finish(code));
   });
 }
 
