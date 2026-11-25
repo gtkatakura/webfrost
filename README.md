@@ -68,8 +68,8 @@ webfrost serve
 
 ## Three ways in
 
-- **Web UI**: dashboard, search with highlights, previews of every format, tags, schedules, imports. [Reference](https://webfrost.dev/docs/reference/web-ui)
-- **CLI**: archive, import, search and schedule from a terminal, straight against an archive folder. [Reference](https://webfrost.dev/docs/reference/cli)
+- **Web UI**: dashboard, search with highlights, previews of every format, tags, schedules, imports, failures reviewed by why they failed, and a trash. [Reference](https://webfrost.dev/docs/reference/web-ui)
+- **CLI**: archive, import, search and schedule from a terminal, straight against an archive folder; `webfrost login` connects it to a server, and `webfrost rescue` archives from your own machine the pages a site refused to the server. [Reference](https://webfrost.dev/docs/reference/cli)
 - **HTTP API**: everything the UI does, over REST, with API keys. [Reference](https://webfrost.dev/docs/reference/rest-api)
 
 A typed TypeScript client with no dependencies, `@webfrost/sdk`, lives in [`packages/sdk`](packages/sdk)
