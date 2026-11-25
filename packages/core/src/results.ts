@@ -1,6 +1,7 @@
 import { sql } from "kysely";
 import type { Db } from "./db";
 import type { Failure } from "./failure";
+import type { StorageBackend } from "./storage";
 
 /**
  * Lease fencing.
@@ -102,6 +103,59 @@ export async function touchJob(db: Db, snapshotId: number, lease?: string): Prom
 }
 
 /** A fresh lease token. */
+/** A run tried to write after its job passed to another worker; nothing of it is kept. */
+export class LeaseLostError extends Error {
+  constructor(snapshotId: number) {
+    super(`snapshot ${snapshotId}: this run's job was taken over by another worker`);
+    this.name = "LeaseLostError";
+  }
+}
+
+/**
+ * Storage for one leased run of a snapshot. Files prepared with `localPath` are written in a stage
+ * of the run's own and put in place by `finalize` only while the run still holds its lease (checked
+ * just before); `putText`/`putBytes` check it too. A run that lost its lease (stalled, then
+ * adopted by another worker) gets a LeaseLostError and leaves the other run's files alone.
+ * `discard()` removes whatever the run staged and never finalized.
+ */
+export function fencedStorage(
+  db: Db,
+  inner: StorageBackend,
+  snapshotId: number,
+  lease: string,
+): StorageBackend & { discard(): Promise<void> } {
+  const stillHolds = async () => {
+    if (!(await db.transaction((tx) => holdsLease(tx, snapshotId, lease)))) {
+      throw new LeaseLostError(snapshotId);
+    }
+  };
+  return {
+    localPath: (id, filename) => inner.localPath(id, filename, lease),
+    finalize: async (id, filename) => {
+      await stillHolds();
+      return inner.finalize(id, filename, lease);
+    },
+    putText: async (id, filename, content) => {
+      await stillHolds();
+      return inner.putText(id, filename, content);
+    },
+    putBytes: async (id, filename, content) => {
+      await stillHolds();
+      return inner.putBytes(id, filename, content);
+    },
+    getBytes: (ref) => inner.getBytes(ref),
+    getStream: (ref) => inner.getStream(ref),
+    fileExists: (ref) => inner.fileExists(ref),
+    fileSize: (ref) => inner.fileSize(ref),
+    deleteAll: (id) => inner.deleteAll(id),
+    validateRef: (ref) => inner.validateRef(ref),
+    presignedDownloadUrl: (ref, expiresIn, response) =>
+      inner.presignedDownloadUrl(ref, expiresIn, response),
+    discardStage: (id, stage) => inner.discardStage(id, stage),
+    discard: () => inner.discardStage(snapshotId, lease),
+  };
+}
+
 export function newLeaseToken(): string {
   return crypto.randomUUID();
 }

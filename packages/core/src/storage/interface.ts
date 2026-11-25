@@ -22,8 +22,11 @@ export interface StorageBackend {
    * For S3Backend:         creates a temp dir and returns a path inside it.
    *
    * After writing, call `finalize()` to make the file permanently available.
+   *
+   * With `stage` (a run's lease), the file is written apart from the final one and only
+   * `finalize(…, stage)` puts it in place: two runs of a snapshot never write the same file.
    */
-  localPath(snapshotId: number, filename: string): Promise<string>;
+  localPath(snapshotId: number, filename: string, stage?: string): Promise<string>;
 
   /**
    * Commit a file previously prepared by `localPath()`.
@@ -32,7 +35,10 @@ export interface StorageBackend {
    * For S3Backend:         uploads the temp file to S3, removes the temp file,
    *                        and returns the `s3:` ref.
    */
-  finalize(snapshotId: number, filename: string): Promise<string>;
+  finalize(snapshotId: number, filename: string, stage?: string): Promise<string>;
+
+  /** Remove what a stage wrote and never finalized (a run that stopped, or lost its lease). */
+  discardStage(snapshotId: number, stage: string): Promise<void>;
 
   /**
    * Write text (or binary) content directly and return the DB ref.

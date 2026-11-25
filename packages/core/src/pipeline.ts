@@ -13,7 +13,7 @@ import { singleFileExtractor } from "./extractors/singlefile";
 import { warcExtractor } from "./extractors/warc";
 import { type Failure, failureFromError, failureFromStatus } from "./failure";
 import { FetchCache } from "./fetch-cache";
-import { newLeaseToken, recordResult, setJobStatus, touchJob } from "./results";
+import { fencedStorage, newLeaseToken, recordResult, setJobStatus, touchJob } from "./results";
 import { extractIndexFields, indexSnapshot } from "./search";
 import { envInt, failedHostOf } from "./ssrf-guard";
 import { createStorageBackend } from "./storage";
@@ -249,10 +249,18 @@ export async function runPipeline(
         () => void touchJob(db, snapshotId, options?.lease),
         JOB_HEARTBEAT_MS,
       );
+      // A leased run writes its files apart and puts each in place only while it holds the lease,
+      // so a run that stalled and was adopted cannot overwrite the files of the run that took over.
+      const base = storage ?? createStorageBackend(dir);
+      const runStorage = options?.lease ? fencedStorage(db, base, snapshotId, options.lease) : base;
       try {
-        await archive(db, snapshotId, url, dir, span, cache, logger, storage, options);
+        await archive(db, snapshotId, url, dir, span, cache, logger, runStorage, options);
       } finally {
         clearInterval(heartbeat);
+        // What it staged and never put in place (a failed extractor, a lost lease) is removed.
+        if ("discard" in runStorage) {
+          await (runStorage as { discard(): Promise<void> }).discard().catch(() => {});
+        }
       }
     },
   );
